@@ -21,6 +21,9 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  SystemUpdateCheckResponse,
+  SystemUpdateJobStatusResponse,
+  SystemUpdateTask,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -69,8 +72,8 @@ export async function getCurrentLogCleanupTask() {
   return res.data
 }
 
-export async function getSystemTask(taskId: string) {
-  const res = await api.get<SystemTaskResponse<LogCleanupTask>>(
+export async function getSystemTask<TTask = LogCleanupTask>(taskId: string) {
+  const res = await api.get<SystemTaskResponse<TTask>>(
     `/api/system-task/${taskId}`
   )
   return res.data
@@ -80,6 +83,38 @@ export async function listSystemTasks(limit = 20) {
   const res = await api.get<SystemTaskListResponse>('/api/system-task/list', {
     params: { limit },
   })
+  return res.data
+}
+
+export async function checkSystemUpdate() {
+  const res = await api.get<SystemUpdateCheckResponse>(
+    '/api/system-update/check'
+  )
+  return res.data
+}
+
+export async function startSystemUpdate(version: string) {
+  const res = await api.post<SystemTaskResponse<SystemUpdateTask>>(
+    '/api/system-update/apply',
+    { version }
+  )
+  return res.data
+}
+
+export async function getCurrentSystemUpdateTask() {
+  const res = await api.get<SystemTaskResponse<SystemUpdateTask | null>>(
+    '/api/system-task/current',
+    {
+      params: { type: 'system_update' },
+    }
+  )
+  return res.data
+}
+
+export async function getSystemUpdateJob(jobId: string) {
+  const res = await api.get<SystemUpdateJobStatusResponse>(
+    `/api/system-update/job/${encodeURIComponent(jobId)}`
+  )
   return res.data
 }
 

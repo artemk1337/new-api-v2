@@ -94,6 +94,68 @@ export type LogCleanupTask = SystemTask<
   LogCleanupTaskResult
 >
 
+export type SystemUpdateRelease = {
+  tag_name: string
+  name?: string
+  body?: string
+  html_url?: string
+  published_at?: string
+}
+
+export type SystemUpdateCheck = {
+  enabled: boolean
+  repository: string
+  current_version: string
+  latest_version: string
+  update_available: boolean
+  release?: SystemUpdateRelease
+}
+
+export type SystemUpdateTaskPayload = {
+  version: string
+}
+
+export type SystemUpdateTaskState = {
+  step: string
+  progress: number
+  message?: string
+}
+
+export type SystemUpdateTaskResult = {
+  previous_version: string
+  requested_version: string
+  image: string
+  job_id: string
+  status: string
+}
+
+export type SystemUpdateTask = SystemTask<
+  SystemUpdateTaskPayload,
+  SystemUpdateTaskState,
+  SystemUpdateTaskResult
+>
+
+export type SystemUpdateCheckResponse = {
+  success: boolean
+  message: string
+  data?: SystemUpdateCheck
+}
+
+export type SystemUpdateJobStatus = {
+  job_id: string
+  status: string
+  step: string
+  image?: string
+  error?: string
+  message?: string
+}
+
+export type SystemUpdateJobStatusResponse = {
+  success: boolean
+  message: string
+  data?: SystemUpdateJobStatus
+}
+
 export type SystemTaskResponse<TTask = SystemTask | null> = {
   success: boolean
   message: string

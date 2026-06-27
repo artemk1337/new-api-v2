@@ -20,6 +20,7 @@ import (
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
+	service.RegisterSystemTaskHandler(systemUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 }
@@ -109,6 +110,16 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 	}
 	summary := runChannelUpstreamModelUpdateTaskOnce(ctx, payload.Manual, !payload.Manual, service.NewSystemTaskProgressReporter(task, runnerID))
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+type systemUpdateHandler struct{}
+
+func (systemUpdateHandler) Type() string { return model.SystemTaskTypeSystemUpdate }
+
+func (systemUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	if err := service.RunSystemUpdateTask(ctx, task, runnerID); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+	}
 }
 
 // midjourneyPollHandler runs one Midjourney polling pass per scheduled run.
