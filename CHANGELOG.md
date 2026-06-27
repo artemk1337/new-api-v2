@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.1
+
+- Switched system update checks from GitHub releases to stable GitHub tags and ignore pre-release tags for latest-version detection.
+- Made the updater sidecar opt-in, disabled self-updates by default, and protected updater endpoints with a shared token.
+- Added manual installation of a specific tag in the admin UI so operators can roll back to an older tagged version.
+- Persisted updater environment settings during self-update so the update flow remains available after restart.
+- Changed saturated group 429 errors to English and recommend switching to another group.
+- Documented database migration rollback expectations for future schema changes.
+
 ## v1.0.0-rc.11
 
 - Added root-only system update checks and tag-based self-update task flow.

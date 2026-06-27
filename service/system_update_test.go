@@ -31,6 +31,7 @@ func withSystemUpdateHTTPClient(t *testing.T, fn roundTripFunc) {
 }
 
 func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
+	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"
@@ -40,8 +41,12 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
 		assert.Equal(t, "api.github.com", req.URL.Host)
-		assert.Equal(t, "/repos/artemk1337/new-api/releases/latest", req.URL.Path)
-		return jsonResponse(http.StatusOK, `{"tag_name":"v1.0.1","html_url":"https://github.com/artemk1337/new-api/releases/tag/v1.0.1"}`), nil
+		assert.Equal(t, "/repos/artemk1337/new-api/git/matching-refs/tags/", req.URL.Path)
+		return jsonResponse(http.StatusOK, `[
+			{"ref":"refs/tags/v1.0.1-rc.1"},
+			{"ref":"refs/tags/v1.0.1"},
+			{"ref":"refs/tags/v1.1.0"}
+		]`), nil
 	})
 
 	result, err := CheckSystemUpdate(t.Context())
@@ -50,10 +55,34 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	assert.True(t, result.Enabled)
 	assert.Equal(t, "artemk1337/new-api", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
-	assert.Equal(t, "v1.0.1", result.LatestVersion)
+	assert.Equal(t, "v1.1.0", result.LatestVersion)
 	assert.True(t, result.UpdateAvailable)
 	require.NotNil(t, result.Release)
-	assert.Equal(t, "v1.0.1", result.Release.TagName)
+	assert.Equal(t, "v1.1.0", result.Release.TagName)
+	assert.Equal(t, "https://github.com/artemk1337/new-api/tree/v1.1.0", result.Release.HTMLURL)
+}
+
+func TestCheckSystemUpdateIgnoresPrereleaseTags(t *testing.T) {
+	t.Setenv("UPDATE_ENABLED", "true")
+	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api")
+	savedVersion := common.Version
+	common.Version = "v1.0.0"
+	t.Cleanup(func() {
+		common.Version = savedVersion
+	})
+
+	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/repos/artemk1337/new-api/git/matching-refs/tags/", req.URL.Path)
+		return jsonResponse(http.StatusOK, `[
+			{"ref":"refs/tags/v2.0.0-rc.1"},
+			{"ref":"refs/tags/v1.9.0"}
+		]`), nil
+	})
+
+	result, err := CheckSystemUpdate(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "v1.9.0", result.LatestVersion)
 }
 
 func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
@@ -73,7 +102,9 @@ func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
 
 func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	truncate(t)
+	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api")
+	t.Setenv("UPDATE_SIDECAR_TOKEN", "secret")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"
 	t.Cleanup(func() {
@@ -85,9 +116,10 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Host {
 		case "api.github.com":
-			assert.Equal(t, "/repos/artemk1337/new-api/releases/tags/v1.0.1", req.URL.Path)
-			return jsonResponse(http.StatusOK, `{"tag_name":"v1.0.1"}`), nil
+			assert.Equal(t, "/repos/artemk1337/new-api/git/ref/tags/v1.0.1", req.URL.Path)
+			return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
 		case "new-api-updater:18090":
+			assert.Equal(t, "Bearer secret", req.Header.Get("Authorization"))
 			switch req.Method {
 			case http.MethodPost:
 				updaterCalled = true
@@ -124,4 +156,30 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	assert.Contains(t, reloaded.Result, `"image":"local/new-api:v1.0.1"`)
 	assert.Contains(t, reloaded.Result, `"job_id":"job-1"`)
 	assert.Contains(t, reloaded.Result, `"status":"deploying"`)
+}
+
+func TestRunSystemUpdateTaskRequiresSidecarToken(t *testing.T) {
+	truncate(t)
+	t.Setenv("UPDATE_ENABLED", "true")
+	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api")
+	savedVersion := common.Version
+	common.Version = "v1.0.0"
+	t.Cleanup(func() {
+		common.Version = savedVersion
+	})
+
+	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "api.github.com", req.URL.Host)
+		return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
+	})
+
+	task, err := model.CreateSystemTask(model.SystemTaskTypeSystemUpdate, SystemUpdatePayload{Version: "v1.0.1"}, nil)
+	require.NoError(t, err)
+	claimed, ok, err := model.ClaimSystemTask(task.ID, model.SystemTaskTypeSystemUpdate, "runner-a", common.GetTimestamp()+60)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	err = RunSystemUpdateTask(t.Context(), claimed, "runner-a")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "update sidecar token is required")
 }

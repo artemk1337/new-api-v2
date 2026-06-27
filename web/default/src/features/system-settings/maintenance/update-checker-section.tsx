@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { getStatus } from '@/lib/api'
 import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Markdown } from '@/components/ui/markdown'
 import { Dialog } from '@/components/dialog'
 import {
@@ -78,6 +79,7 @@ export function UpdateCheckerSection({
   const [updateTaskId, setUpdateTaskId] = useState<string | null>(null)
   const [updateJobId, setUpdateJobId] = useState<string | null>(null)
   const [updateJobLookupFailures, setUpdateJobLookupFailures] = useState(0)
+  const [targetVersion, setTargetVersion] = useState('')
 
   const uptime = startTime ? formatTimestamp(startTime) : t('Unknown')
   const version = currentVersion || t('Unknown')
@@ -121,12 +123,16 @@ export function UpdateCheckerSection({
     }
   }
 
-  const handleStartUpdate = async () => {
-    if (!release?.tag_name) return
+  const startUpdateForVersion = async (version: string) => {
+    const requestedVersion = version.trim()
+    if (!requestedVersion) {
+      toast.error(t('Version tag is required.'))
+      return
+    }
 
     setUpdating(true)
     try {
-      const res = await startSystemUpdate(release.tag_name)
+      const res = await startSystemUpdate(requestedVersion)
       if (!res.success || !res.data) {
         throw new Error(res.message || t('Failed to start system update'))
       }
@@ -134,9 +140,13 @@ export function UpdateCheckerSection({
       setUpdateTaskId(res.data.task_id)
       setUpdateJobId(null)
       setUpdateJobLookupFailures(0)
-      setExpectedUpdateVersion(release.tag_name)
+      setExpectedUpdateVersion(requestedVersion)
       setExpectedUpdateStartedAt(Date.now())
-      toast.success(t('System update started. The service may restart soon.'))
+      toast.success(
+        t('Installing {{version}}. The service may restart soon.', {
+          version: requestedVersion,
+        })
+      )
     } catch (error) {
       const message =
         error instanceof Error
@@ -146,6 +156,15 @@ export function UpdateCheckerSection({
     } finally {
       setUpdating(false)
     }
+  }
+
+  const handleStartUpdate = async () => {
+    if (!release?.tag_name) return
+    await startUpdateForVersion(release.tag_name)
+  }
+
+  const handleStartTargetVersion = async () => {
+    await startUpdateForVersion(targetVersion)
   }
 
   const goToRelease = () => {
@@ -321,6 +340,40 @@ export function UpdateCheckerSection({
             )}
           </Button>
 
+          <div className='space-y-2'>
+            <div>
+              <div className='text-sm font-medium'>
+                {t('Install or roll back to a specific tag')}
+              </div>
+              <div className='text-muted-foreground text-sm'>
+                {t(
+                  'Install any existing GitHub tag, including an older version for rollback.'
+                )}
+              </div>
+            </div>
+            <div className='flex flex-col gap-2 sm:flex-row'>
+              <Input
+                value={targetVersion}
+                onChange={(event) => setTargetVersion(event.target.value)}
+                placeholder='v1.1.0'
+                disabled={
+                  updating || updateActive || Boolean(expectedUpdateVersion)
+                }
+                aria-label={t('Target version or tag')}
+              />
+              <Button
+                type='button'
+                onClick={handleStartTargetVersion}
+                disabled={
+                  updating || updateActive || Boolean(expectedUpdateVersion)
+                }
+              >
+                <DownloadIcon className='me-2 h-4 w-4' />
+                {updating ? t('Starting update...') : t('Install selected tag')}
+              </Button>
+            </div>
+          </div>
+
           {updateTask && (
             <div className='rounded-lg border p-4'>
               <div className='flex items-center justify-between gap-3'>
@@ -378,7 +431,7 @@ export function UpdateCheckerSection({
             {release?.html_url && (
               <Button type='button' onClick={goToRelease}>
                 <ExternalLinkIcon className='me-2 h-4 w-4' />
-                {t('Open release')}
+                {t('Open tag')}
               </Button>
             )}
             {release?.tag_name && (

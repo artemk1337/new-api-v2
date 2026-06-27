@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,8 +77,13 @@ type SystemUpdaterJobStatus struct {
 	Message string `json:"message,omitempty"`
 }
 
+type githubTagRef struct {
+	Ref string `json:"ref"`
+}
+
 var (
 	systemUpdateHTTPClient = &http.Client{Timeout: 15 * time.Second}
+	stableVersionTagRe     = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 )
 
 func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
@@ -89,7 +96,7 @@ func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
 		return result, nil
 	}
 
-	release, err := fetchSystemUpdateRelease(ctx, "latest")
+	release, err := fetchLatestSystemUpdateTag(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -120,15 +127,15 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 		return errors.New("system update is disabled")
 	}
 
-	if err := updateSystemUpdateState(task, runnerID, "checking", 10, "validating release tag"); err != nil {
+	if err := updateSystemUpdateState(task, runnerID, "checking", 10, "validating update tag"); err != nil {
 		return err
 	}
-	release, err := fetchSystemUpdateRelease(ctx, payload.Version)
+	release, err := fetchSystemUpdateTag(ctx, payload.Version)
 	if err != nil {
 		return err
 	}
 	if release.TagName != payload.Version {
-		return fmt.Errorf("release tag mismatch: requested %s, got %s", payload.Version, release.TagName)
+		return fmt.Errorf("update tag mismatch: requested %s, got %s", payload.Version, release.TagName)
 	}
 	if payload.Version == common.Version {
 		return errors.New("requested version is already running")
@@ -170,20 +177,38 @@ func updateSystemUpdateState(task *model.SystemTask, runnerID string, step strin
 	})
 }
 
-func fetchSystemUpdateRelease(ctx context.Context, tag string) (*SystemUpdateRelease, error) {
+func fetchLatestSystemUpdateTag(ctx context.Context) (*SystemUpdateRelease, error) {
+	refs, err := fetchSystemUpdateTagRefs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	latest := ""
+	for _, ref := range refs {
+		tag := strings.TrimPrefix(ref.Ref, "refs/tags/")
+		if !isStableVersionTag(tag) {
+			continue
+		}
+		if latest == "" || compareStableVersionTags(tag, latest) > 0 {
+			latest = tag
+		}
+	}
+	if latest == "" {
+		return nil, errors.New("github tags payload has no stable version tags")
+	}
+	return buildSystemUpdateTagRelease(latest), nil
+}
+
+func fetchSystemUpdateTag(ctx context.Context, tag string) (*SystemUpdateRelease, error) {
 	repository := systemUpdateRepository()
 	if repository == "" || !strings.Contains(repository, "/") {
 		return nil, errors.New("update repository must be in owner/repo format")
 	}
 	tag = strings.TrimSpace(tag)
 	if tag == "" {
-		return nil, errors.New("release tag is required")
+		return nil, errors.New("update tag is required")
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/%s", repository, tag)
-	if tag != "latest" {
-		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repository, tag)
-	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/git/ref/tags/%s", repository, tag)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -197,20 +222,93 @@ func fetchSystemUpdateRelease(ctx context.Context, tag string) (*SystemUpdateRel
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github releases api returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("github tags api returned status %d", resp.StatusCode)
 	}
 
-	release := &SystemUpdateRelease{}
-	if err := common.DecodeJson(resp.Body, release); err != nil {
+	ref := githubTagRef{}
+	if err := common.DecodeJson(resp.Body, &ref); err != nil {
 		return nil, err
 	}
-	if release.TagName == "" {
-		return nil, errors.New("github release payload has no tag_name")
+	if strings.TrimPrefix(ref.Ref, "refs/tags/") != tag {
+		return nil, errors.New("github tag payload has unexpected ref")
 	}
-	return release, nil
+	return buildSystemUpdateTagRelease(tag), nil
+}
+
+func fetchSystemUpdateTagRefs(ctx context.Context) ([]githubTagRef, error) {
+	repository := systemUpdateRepository()
+	if repository == "" || !strings.Contains(repository, "/") {
+		return nil, errors.New("update repository must be in owner/repo format")
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/git/matching-refs/tags/", repository)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "new-api-system-update")
+
+	resp, err := systemUpdateHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github tags api returned status %d", resp.StatusCode)
+	}
+
+	refs := []githubTagRef{}
+	if err := common.DecodeJson(resp.Body, &refs); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+func buildSystemUpdateTagRelease(tag string) *SystemUpdateRelease {
+	repository := systemUpdateRepository()
+	return &SystemUpdateRelease{
+		TagName: tag,
+		Name:    tag,
+		HTMLURL: fmt.Sprintf("https://github.com/%s/tree/%s", repository, tag),
+	}
+}
+
+func isStableVersionTag(tag string) bool {
+	return stableVersionTagRe.MatchString(tag)
+}
+
+func compareStableVersionTags(left string, right string) int {
+	leftParts := stableVersionTagParts(left)
+	rightParts := stableVersionTagParts(right)
+	for i := range leftParts {
+		if leftParts[i] > rightParts[i] {
+			return 1
+		}
+		if leftParts[i] < rightParts[i] {
+			return -1
+		}
+	}
+	return 0
+}
+
+func stableVersionTagParts(tag string) [3]int {
+	match := stableVersionTagRe.FindStringSubmatch(tag)
+	if match == nil {
+		return [3]int{}
+	}
+	var parts [3]int
+	for i := range parts {
+		value, _ := strconv.Atoi(match[i+1])
+		parts[i] = value
+	}
+	return parts
 }
 
 func requestSystemUpdater(ctx context.Context, version string) (*systemUpdaterResponse, error) {
+	token := systemUpdateSidecarToken()
+	if token == "" {
+		return nil, errors.New("update sidecar token is required")
+	}
 	body, err := common.Marshal(systemUpdaterRequest{
 		Tag: version,
 	})
@@ -222,6 +320,7 @@ func requestSystemUpdater(ctx context.Context, version string) (*systemUpdaterRe
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := systemUpdateHTTPClient.Do(req)
 	if err != nil {
@@ -289,6 +388,10 @@ func waitSystemUpdaterJob(ctx context.Context, jobID string) (*SystemUpdaterJobS
 }
 
 func getSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdaterJobStatus, error) {
+	token := systemUpdateSidecarToken()
+	if token == "" {
+		return nil, errors.New("update sidecar token is required")
+	}
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
 		return nil, errors.New("updater sidecar job id is required")
@@ -297,6 +400,7 @@ func getSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := systemUpdateHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -320,7 +424,7 @@ func GetSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 }
 
 func systemUpdateEnabled() bool {
-	return common.GetEnvOrDefaultBool("UPDATE_ENABLED", true)
+	return common.GetEnvOrDefaultBool("UPDATE_ENABLED", false)
 }
 
 func systemUpdateRepository() string {
@@ -329,4 +433,8 @@ func systemUpdateRepository() string {
 
 func systemUpdateSidecarURL() string {
 	return common.GetEnvOrDefaultString("UPDATE_SIDECAR_URL", defaultUpdateSidecarURL)
+}
+
+func systemUpdateSidecarToken() string {
+	return strings.TrimSpace(common.GetEnvOrDefaultString("UPDATE_SIDECAR_TOKEN", ""))
 }

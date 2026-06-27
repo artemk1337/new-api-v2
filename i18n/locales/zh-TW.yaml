@@ -154,7 +154,7 @@ channel.get_key_failed: "獲取管道密鑰失敗"
 channel.get_ollama_failed: "獲取Ollama模型失敗"
 channel.query_failed: "查詢管道失敗"
 channel.no_valid_upstream: "無有效上游管道"
-channel.upstream_saturated: "當前分組上游負載已飽和，請稍後再試"
+channel.upstream_saturated: "The upstream load for the current group is saturated. Please try again later or switch to another group."
 channel.get_available_failed: "獲取分組 {{.Group}} 下模型 {{.Model}} 的可用管道失敗"
 
 # Model messages
