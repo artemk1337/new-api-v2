@@ -46,9 +46,12 @@ jobs:
           CI: ""
           NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
-          cd web/default
-          bun install
+          cd web
+          bun install --frozen-lockfile
+          cd default
           DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(git describe --tags) bun run build
+          cd ../classic
+          VITE_REACT_APP_VERSION=$(git describe --tags) bun run build
           cd ../..
 
       # - name: Build Go binary (macos/Linux)

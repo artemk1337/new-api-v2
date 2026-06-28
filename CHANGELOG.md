@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.7
+
+- Fixed the Electron build workflow to build both `web/default` and `web/classic` before compiling the embedded Windows binary.
+
 ## v1.1.6
 
 - Removed the legacy `UPDATE_REPOSITORY` compatibility alias from update checks.
