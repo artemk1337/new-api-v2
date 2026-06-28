@@ -428,7 +428,7 @@ func systemUpdateEnabled() bool {
 }
 
 func systemUpdateRepository() string {
-	return common.GetEnvOrDefaultString("UPDATE_CHECK_REPOSITORY", common.GetEnvOrDefaultString("UPDATE_REPOSITORY", defaultUpdateRepository))
+	return common.GetEnvOrDefaultString("UPDATE_CHECK_REPOSITORY", defaultUpdateRepository)
 }
 
 func systemUpdateSidecarURL() string {

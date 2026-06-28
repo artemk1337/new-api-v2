@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.6
+
+- Removed the legacy `UPDATE_REPOSITORY` compatibility alias from update checks.
+
 ## v1.1.5
 
 - Published the updater sidecar as a prebuilt GHCR image and switched Docker Compose to pull it instead of building it on the server.
