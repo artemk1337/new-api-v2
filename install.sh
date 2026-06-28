@@ -7,8 +7,7 @@ UPDATER_IMAGE="${UPDATER_SIDECAR_IMAGE:-ghcr.io/artemk1337/new-api-v2-updater}"
 ENV_FILE="${ENV_FILE:-.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 VERSION="${1:-${NEW_API_VERSION:-}}"
-UPDATE_ENABLED_VALUE="${UPDATE_ENABLED:-true}"
-START_UPDATER="${START_UPDATER:-$UPDATE_ENABLED_VALUE}"
+START_UPDATER="${START_UPDATER:-true}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -91,7 +90,6 @@ upsert_env NEW_API_VERSION "$VERSION"
 upsert_env UPDATER_SIDECAR_IMAGE "$UPDATER_IMAGE"
 upsert_env UPDATER_SIDECAR_VERSION "$VERSION"
 upsert_env UPDATE_CHECK_REPOSITORY "$REPOSITORY"
-upsert_env UPDATE_ENABLED "$UPDATE_ENABLED_VALUE"
 upsert_env UPDATE_SIDECAR_TOKEN "$token"
 
 if [ "$START_UPDATER" = "true" ]; then

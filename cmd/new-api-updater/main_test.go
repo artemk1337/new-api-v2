@@ -277,7 +277,7 @@ func TestDeployPreparedImagePersistsUpdaterEnv(t *testing.T) {
 
 	data, err := os.ReadFile(envFile)
 	require.NoError(t, err)
-	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\nNEW_API_VERSION=v1.2.3\nUPDATE_ENABLED=true\nUPDATE_SIDECAR_TOKEN=secret\n", string(data))
+	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\nNEW_API_VERSION=v1.2.3\nUPDATE_SIDECAR_TOKEN=secret\n", string(data))
 }
 
 func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {

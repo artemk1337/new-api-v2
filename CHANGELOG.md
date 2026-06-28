@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.12
+
+- Removed the redundant enable flag from the system update flow.
+- Made update checks always fetch stable tags and show changelog entries for each newer version, while update installation is gated by updater sidecar credentials.
+
 ## v1.1.11
 
 - Added production deployment guardrails requiring prebuilt Docker images by release tag and forbidding server-side builds.

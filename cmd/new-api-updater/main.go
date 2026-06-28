@@ -245,7 +245,6 @@ func deployPreparedImage(tag string) error {
 		"NEW_API_VERSION": tag,
 	}
 	if secret := env("UPDATER_SHARED_SECRET", ""); secret != "" {
-		envUpdates["UPDATE_ENABLED"] = "true"
 		envUpdates["UPDATE_SIDECAR_TOKEN"] = secret
 	}
 	if err := upsertEnvFile(envFile, envUpdates); err != nil {

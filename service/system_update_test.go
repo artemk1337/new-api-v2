@@ -31,7 +31,6 @@ func withSystemUpdateHTTPClient(t *testing.T, fn roundTripFunc) {
 }
 
 func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
-	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"
@@ -40,19 +39,28 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	})
 
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "api.github.com", req.URL.Host)
-		assert.Equal(t, "/repos/artemk1337/new-api-v2/git/matching-refs/tags/", req.URL.Path)
-		return jsonResponse(http.StatusOK, `[
-			{"ref":"refs/tags/v1.0.1-rc.1"},
-			{"ref":"refs/tags/v1.0.1"},
-			{"ref":"refs/tags/v1.1.0"}
-		]`), nil
+		switch req.URL.Host {
+		case "api.github.com":
+			assert.Equal(t, "/repos/artemk1337/new-api-v2/git/matching-refs/tags/", req.URL.Path)
+			return jsonResponse(http.StatusOK, `[
+				{"ref":"refs/tags/v1.0.1-rc.1"},
+				{"ref":"refs/tags/v1.0.1"},
+				{"ref":"refs/tags/v1.1.0"}
+			]`), nil
+		case "raw.githubusercontent.com":
+			assert.Equal(t, "/artemk1337/new-api-v2/v1.1.0/CHANGELOG.md", req.URL.Path)
+			return jsonResponse(http.StatusOK, "# Changelog\n\n## v1.1.0\n\n- New release\n\n## v1.0.1\n\n- Patch release\n"), nil
+		default:
+			t.Fatalf("unexpected request host: %s", req.URL.Host)
+		}
+		return nil, nil
 	})
 
 	result, err := CheckSystemUpdate(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Enabled)
+	assert.False(t, result.CanUpdate)
 	assert.Equal(t, "artemk1337/new-api-v2", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
 	assert.Equal(t, "v1.1.0", result.LatestVersion)
@@ -60,10 +68,14 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	require.NotNil(t, result.Release)
 	assert.Equal(t, "v1.1.0", result.Release.TagName)
 	assert.Equal(t, "https://github.com/artemk1337/new-api-v2/tree/v1.1.0", result.Release.HTMLURL)
+	require.Len(t, result.Releases, 2)
+	assert.Equal(t, "v1.0.1", result.Releases[0].TagName)
+	assert.Contains(t, result.Releases[0].Body, "Patch release")
+	assert.Equal(t, "v1.1.0", result.Releases[1].TagName)
+	assert.Contains(t, result.Releases[1].Body, "New release")
 }
 
 func TestCheckSystemUpdateIgnoresPrereleaseTags(t *testing.T) {
-	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"
@@ -72,11 +84,19 @@ func TestCheckSystemUpdateIgnoresPrereleaseTags(t *testing.T) {
 	})
 
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "/repos/artemk1337/new-api-v2/git/matching-refs/tags/", req.URL.Path)
-		return jsonResponse(http.StatusOK, `[
-			{"ref":"refs/tags/v2.0.0-rc.1"},
-			{"ref":"refs/tags/v1.9.0"}
-		]`), nil
+		switch req.URL.Host {
+		case "api.github.com":
+			assert.Equal(t, "/repos/artemk1337/new-api-v2/git/matching-refs/tags/", req.URL.Path)
+			return jsonResponse(http.StatusOK, `[
+				{"ref":"refs/tags/v2.0.0-rc.1"},
+				{"ref":"refs/tags/v1.9.0"}
+			]`), nil
+		case "raw.githubusercontent.com":
+			return jsonResponse(http.StatusOK, "# Changelog\n\n## v1.9.0\n\n- Stable\n"), nil
+		default:
+			t.Fatalf("unexpected request host: %s", req.URL.Host)
+		}
+		return nil, nil
 	})
 
 	result, err := CheckSystemUpdate(t.Context())
@@ -102,7 +122,6 @@ func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
 
 func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	truncate(t)
-	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	t.Setenv("UPDATE_SIDECAR_TOKEN", "secret")
 	savedVersion := common.Version
@@ -160,7 +179,6 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 
 func TestRunSystemUpdateTaskRequiresSidecarToken(t *testing.T) {
 	truncate(t)
-	t.Setenv("UPDATE_ENABLED", "true")
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"

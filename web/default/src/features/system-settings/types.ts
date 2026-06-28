@@ -104,11 +104,13 @@ export type SystemUpdateRelease = {
 
 export type SystemUpdateCheck = {
   enabled: boolean
+  can_update: boolean
   repository: string
   current_version: string
   latest_version: string
   update_available: boolean
   release?: SystemUpdateRelease
+  releases?: SystemUpdateRelease[]
 }
 
 export type SystemUpdateTaskPayload = {

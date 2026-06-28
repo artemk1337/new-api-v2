@@ -69,6 +69,8 @@ export function UpdateCheckerSection({
   const [updating, setUpdating] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [release, setRelease] = useState<SystemUpdateRelease | null>(null)
+  const [releases, setReleases] = useState<SystemUpdateRelease[]>([])
+  const [canUpdate, setCanUpdate] = useState(false)
   const [updateTask, setUpdateTask] = useState<SystemUpdateTask | null>(null)
   const [expectedUpdateVersion, setExpectedUpdateVersion] = useState<
     string | null
@@ -92,13 +94,14 @@ export function UpdateCheckerSection({
       if (!res.success || !res.data) {
         throw new Error(res.message || t('Failed to check for updates'))
       }
-      if (!res.data.enabled) {
-        toast.info(t('System updates are disabled.'))
-        return
-      }
       const data = res.data.release
       if (!data?.tag_name) {
-        throw new Error(t('Unexpected release payload'))
+        toast.success(
+          t('You are running the latest version ({{version}}).', {
+            version: res.data.current_version,
+          })
+        )
+        return
       }
 
       if (!res.data.update_available) {
@@ -111,6 +114,8 @@ export function UpdateCheckerSection({
       }
 
       setRelease(data)
+      setReleases(res.data.releases ?? [data])
+      setCanUpdate(res.data.can_update)
       setDialogOpen(true)
     } catch (error) {
       const message =
@@ -439,7 +444,10 @@ export function UpdateCheckerSection({
                 type='button'
                 onClick={handleStartUpdate}
                 disabled={
-                  updating || updateActive || Boolean(expectedUpdateVersion)
+                  !canUpdate ||
+                  updating ||
+                  updateActive ||
+                  Boolean(expectedUpdateVersion)
                 }
               >
                 <DownloadIcon className='me-2 h-4 w-4' />
@@ -450,8 +458,22 @@ export function UpdateCheckerSection({
         }
       >
         <div className='space-y-4'>
-          {release?.body ? (
-            <Markdown>{release.body}</Markdown>
+          {releases.length > 0 ? (
+            releases
+              .slice()
+              .reverse()
+              .map((item) => (
+                <div key={item.tag_name} className='space-y-2'>
+                  <h3 className='text-base font-semibold'>{item.tag_name}</h3>
+                  {item.body ? (
+                    <Markdown>{item.body}</Markdown>
+                  ) : (
+                    <p className='text-muted-foreground text-sm'>
+                      {t('No release notes provided.')}
+                    </p>
+                  )}
+                </div>
+              ))
           ) : (
             <p className='text-muted-foreground text-sm'>
               {t('No release notes provided.')}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,12 +32,14 @@ type SystemUpdateRelease struct {
 }
 
 type SystemUpdateCheckResult struct {
-	Enabled         bool                 `json:"enabled"`
-	Repository      string               `json:"repository"`
-	CurrentVersion  string               `json:"current_version"`
-	LatestVersion   string               `json:"latest_version"`
-	UpdateAvailable bool                 `json:"update_available"`
-	Release         *SystemUpdateRelease `json:"release,omitempty"`
+	Enabled         bool                  `json:"enabled"`
+	CanUpdate       bool                  `json:"can_update"`
+	Repository      string                `json:"repository"`
+	CurrentVersion  string                `json:"current_version"`
+	LatestVersion   string                `json:"latest_version"`
+	UpdateAvailable bool                  `json:"update_available"`
+	Release         *SystemUpdateRelease  `json:"release,omitempty"`
+	Releases        []SystemUpdateRelease `json:"releases,omitempty"`
 }
 
 type SystemUpdatePayload struct {
@@ -88,21 +91,23 @@ var (
 
 func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
 	result := &SystemUpdateCheckResult{
-		Enabled:        systemUpdateEnabled(),
+		Enabled:        true,
+		CanUpdate:      systemUpdateCanApply(),
 		Repository:     systemUpdateRepository(),
 		CurrentVersion: common.Version,
 	}
-	if !result.Enabled {
-		return result, nil
-	}
-
-	release, err := fetchLatestSystemUpdateTag(ctx)
+	latestTag, releases, err := fetchSystemUpdateReleases(ctx, common.Version)
 	if err != nil {
 		return nil, err
 	}
-	result.LatestVersion = release.TagName
-	result.UpdateAvailable = release.TagName != "" && release.TagName != common.Version
-	result.Release = release
+	result.LatestVersion = latestTag
+	if len(releases) == 0 {
+		return result, nil
+	}
+	latest := releases[len(releases)-1]
+	result.UpdateAvailable = latest.TagName != "" && latest.TagName != common.Version
+	result.Release = &latest
+	result.Releases = releases
 	return result, nil
 }
 
@@ -123,10 +128,6 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 	if payload.Version == "" {
 		return errors.New("version is required")
 	}
-	if !systemUpdateEnabled() {
-		return errors.New("system update is disabled")
-	}
-
 	if err := updateSystemUpdateState(task, runnerID, "checking", 10, "validating update tag"); err != nil {
 		return err
 	}
@@ -178,24 +179,62 @@ func updateSystemUpdateState(task *model.SystemTask, runnerID string, step strin
 }
 
 func fetchLatestSystemUpdateTag(ctx context.Context) (*SystemUpdateRelease, error) {
-	refs, err := fetchSystemUpdateTagRefs(ctx)
+	latestTag, releases, err := fetchSystemUpdateReleases(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	latest := ""
+	if latestTag == "" || len(releases) == 0 {
+		return nil, errors.New("github tags payload has no stable version tags")
+	}
+	latest := releases[len(releases)-1]
+	return &latest, nil
+}
+
+func fetchSystemUpdateReleases(ctx context.Context, currentVersion string) (string, []SystemUpdateRelease, error) {
+	refs, err := fetchSystemUpdateTagRefs(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	tags := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		tag := strings.TrimPrefix(ref.Ref, "refs/tags/")
 		if !isStableVersionTag(tag) {
 			continue
 		}
-		if latest == "" || compareStableVersionTags(tag, latest) > 0 {
-			latest = tag
+		tags = append(tags, tag)
+	}
+	if len(tags) == 0 {
+		return "", nil, nil
+	}
+	slices.SortFunc(tags, compareStableVersionTags)
+	latestTag := tags[len(tags)-1]
+
+	updateTags := tags
+	if currentVersion != "" && isStableVersionTag(currentVersion) {
+		updateTags = updateTags[:0]
+		for _, tag := range tags {
+			if compareStableVersionTags(tag, currentVersion) > 0 {
+				updateTags = append(updateTags, tag)
+			}
 		}
 	}
-	if latest == "" {
-		return nil, errors.New("github tags payload has no stable version tags")
+	if len(updateTags) == 0 {
+		return latestTag, nil, nil
 	}
-	return buildSystemUpdateTagRelease(latest), nil
+	changelogSections := map[string]string{}
+	if latestUpdate := updateTags[len(updateTags)-1]; latestUpdate != "" {
+		if sections, err := fetchSystemUpdateChangelogSections(ctx, latestUpdate); err == nil {
+			changelogSections = sections
+		}
+	}
+
+	releases := make([]SystemUpdateRelease, 0, len(updateTags))
+	for _, tag := range updateTags {
+		release := buildSystemUpdateTagRelease(tag)
+		release.Body = changelogSections[tag]
+		releases = append(releases, *release)
+	}
+	return latestTag, releases, nil
 }
 
 func fetchSystemUpdateTag(ctx context.Context, tag string) (*SystemUpdateRelease, error) {
@@ -271,6 +310,56 @@ func buildSystemUpdateTagRelease(tag string) *SystemUpdateRelease {
 		Name:    tag,
 		HTMLURL: fmt.Sprintf("https://github.com/%s/tree/%s", repository, tag),
 	}
+}
+
+func fetchSystemUpdateChangelogSections(ctx context.Context, tag string) (map[string]string, error) {
+	repository := systemUpdateRepository()
+	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/CHANGELOG.md", repository, tag)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "new-api-system-update")
+
+	resp, err := systemUpdateHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github changelog returned status %d", resp.StatusCode)
+	}
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return nil, err
+	}
+	return parseChangelogSections(buf.String()), nil
+}
+
+func parseChangelogSections(changelog string) map[string]string {
+	sections := map[string]string{}
+	lines := strings.Split(changelog, "\n")
+	currentTag := ""
+	currentLines := make([]string, 0)
+	flush := func() {
+		if currentTag == "" {
+			return
+		}
+		sections[currentTag] = strings.TrimSpace(strings.Join(currentLines, "\n"))
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			flush()
+			currentTag = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			currentLines = currentLines[:0]
+			continue
+		}
+		if currentTag != "" {
+			currentLines = append(currentLines, line)
+		}
+	}
+	flush()
+	return sections
 }
 
 func isStableVersionTag(tag string) bool {
@@ -423,8 +512,8 @@ func GetSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 	return getSystemUpdaterJobStatus(ctx, jobID)
 }
 
-func systemUpdateEnabled() bool {
-	return common.GetEnvOrDefaultBool("UPDATE_ENABLED", false)
+func systemUpdateCanApply() bool {
+	return systemUpdateSidecarToken() != ""
 }
 
 func systemUpdateRepository() string {
