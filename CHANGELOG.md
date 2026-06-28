@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.8
+
+- Fixed the Electron build workflow to install and build `web/classic` separately, matching the release workflow dependency layout.
+
 ## v1.1.7
 
 - Fixed the Electron build workflow to build both `web/default` and `web/classic` before compiling the embedded Windows binary.
