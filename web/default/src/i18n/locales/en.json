@@ -2341,6 +2341,7 @@
     "Leave empty to use account email": "Leave empty to use account email",
     "Leave empty to use default": "Leave empty to use default",
     "Leave empty to use system temp directory": "Leave empty to use system temp directory",
+    "Leave empty to use the lowest-priced available group for each requested model.": "Leave empty to use the lowest-priced available group for each requested model.",
     "Leave empty to use username": "Leave empty to use username",
     "Left to Right": "Left to Right",
     "Legacy Format (JSON Object)": "Legacy Format (JSON Object)",

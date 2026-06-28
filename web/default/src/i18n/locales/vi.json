@@ -2341,6 +2341,7 @@
     "Leave empty to use account email": "Để trống để sử dụng email tài khoản",
     "Leave empty to use default": "Để trống để sử dụng mặc định",
     "Leave empty to use system temp directory": "Để trống để sử dụng thư mục tạm của hệ thống",
+    "Leave empty to use the lowest-priced available group for each requested model.": "Để trống để dùng nhóm khả dụng có giá thấp nhất cho từng mô hình được yêu cầu.",
     "Leave empty to use username": "Để trống để sử dụng tên người dùng",
     "Left to Right": "Trái sang phải",
     "Legacy Format (JSON Object)": "Định dạng cũ (đối tượng JSON)",

@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import { ChevronDown, KeyRound, Settings2, WalletCards, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getUserModels, getUserGroups } from '@/lib/api'
@@ -54,6 +54,11 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { DateTimePicker } from '@/components/datetime-picker'
 import {
   SideDrawerSection,
@@ -304,13 +309,40 @@ export function ApiKeysMutateDrawer({
                   <FormItem>
                     <FormLabel>{t('Group')}</FormLabel>
                     <FormControl>
-                      <ApiKeyGroupCombobox
-                        options={groups}
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        placeholder={t('Select a group')}
-                      />
+                      <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
+                        <ApiKeyGroupCombobox
+                          options={groups}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder={t('Select a group')}
+                        />
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='icon'
+                                className='h-14 w-10 shrink-0 rounded-lg sm:h-20'
+                                disabled={!field.value}
+                                onClick={() => field.onChange('')}
+                                aria-label={t('Clear')}
+                              />
+                            }
+                          >
+                            <X className='size-4' />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('Clear')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                     </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Leave empty to use the lowest-priced available group for each requested model.'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

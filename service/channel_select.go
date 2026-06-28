@@ -2,12 +2,14 @@ package service
 
 import (
 	"errors"
+	"sort"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,6 +21,8 @@ type RetryParam struct {
 	Retry        *int
 	resetNextTry bool
 }
+
+type channelFetcher func(group string, model string, retry int, requestPath string) (*model.Channel, error)
 
 func (p *RetryParam) GetRetry() int {
 	if p.Retry == nil {
@@ -87,7 +91,12 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
-	if param.TokenGroup == "auto" {
+	if param.TokenGroup == "" {
+		channel, selectGroup, err = SelectCheapestAvailableGroup(param, userGroup)
+		if err != nil {
+			return nil, selectGroup, err
+		}
+	} else if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
 		}
@@ -160,4 +169,47 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	}
 	return channel, selectGroup, nil
+}
+
+func SelectCheapestAvailableGroup(param *RetryParam, userGroup string) (*model.Channel, string, error) {
+	return selectCheapestAvailableGroup(param, userGroup, model.GetRandomSatisfiedChannel)
+}
+
+func selectCheapestAvailableGroup(param *RetryParam, userGroup string, fetch channelFetcher) (*model.Channel, string, error) {
+	usableGroups := GetUserUsableGroups(userGroup)
+	groupRatios := ratio_setting.GetGroupRatioCopy()
+	groupNames := make([]string, 0, len(groupRatios))
+	for group := range groupRatios {
+		if _, ok := usableGroups[group]; ok {
+			groupNames = append(groupNames, group)
+		}
+	}
+	sort.Strings(groupNames)
+
+	var selectedChannel *model.Channel
+	selectedGroup := "auto"
+	selectedRatio := 0.0
+
+	for _, group := range groupNames {
+		channel, err := fetch(group, param.ModelName, param.GetRetry(), param.RequestPath)
+		if err != nil {
+			return nil, group, err
+		}
+		if channel == nil {
+			continue
+		}
+		ratio := GetUserGroupRatio(userGroup, group)
+		if selectedChannel == nil || ratio < selectedRatio {
+			selectedChannel = channel
+			selectedGroup = group
+			selectedRatio = ratio
+		}
+	}
+
+	if selectedChannel != nil {
+		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, selectedGroup)
+		logger.LogDebug(param.Ctx, "Auto selected cheapest group: %s", selectedGroup)
+	}
+
+	return selectedChannel, selectedGroup, nil
 }

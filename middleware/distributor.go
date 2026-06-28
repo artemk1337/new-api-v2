@@ -83,6 +83,8 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+				tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+				autoCheapestGroup := tokenGroup == ""
 				// check path is /pg/chat/completions
 				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
 					playgroundRequest := &dto.PlayGroundRequest{}
@@ -97,51 +99,81 @@ func Distribute() func(c *gin.Context) {
 							return
 						}
 						usingGroup = playgroundRequest.Group
+						autoCheapestGroup = false
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
+				selectTokenGroup := usingGroup
+				if autoCheapestGroup {
+					selectTokenGroup = ""
+				}
 
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
-					affinityUsable := false
-					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path) {
-						if usingGroup == "auto" {
-							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-							autoGroups := service.GetUserAutoGroup(userGroup)
-							for _, g := range autoGroups {
-								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									selectGroup = g
-									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-									channel = preferred
-									affinityUsable = true
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
-									break
-								}
-							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
-							channel = preferred
-							selectGroup = usingGroup
-							affinityUsable = true
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
-						}
+				if autoCheapestGroup {
+					channel, selectGroup, err = service.SelectCheapestAvailableGroup(&service.RetryParam{
+						Ctx:         c,
+						ModelName:   modelRequest.Model,
+						TokenGroup:  "",
+						RequestPath: c.Request.URL.Path,
+						Retry:       common.GetPointer(0),
+					}, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
+					if err != nil {
+						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": "auto", "Model": modelRequest.Model, "Error": err.Error()})
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+						return
 					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
-						service.ClearCurrentChannelAffinityCache(c)
+					if channel != nil {
+						selectTokenGroup = selectGroup
 					}
 				}
 
-				if channel == nil {
+				if selectTokenGroup != "" {
+					if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, selectTokenGroup); found {
+						affinityUsable := false
+						preferred, err := model.CacheGetChannel(preferredChannelID)
+						if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
+							channelSupportsRequestPath(preferred, c.Request.URL.Path) {
+							if selectTokenGroup == "auto" {
+								userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+								autoGroups := service.GetUserAutoGroup(userGroup)
+								for _, g := range autoGroups {
+									if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
+										selectGroup = g
+										common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+										channel = preferred
+										affinityUsable = true
+										service.MarkChannelAffinityUsed(c, g, preferred.Id)
+										break
+									}
+								}
+							} else if selectTokenGroup != "" && model.IsChannelEnabledForGroupModel(selectTokenGroup, modelRequest.Model, preferred.Id) {
+								channel = preferred
+								selectGroup = selectTokenGroup
+								affinityUsable = true
+								service.MarkChannelAffinityUsed(c, selectTokenGroup, preferred.Id)
+							}
+						}
+						if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+							service.ClearCurrentChannelAffinityCache(c)
+						}
+					}
+				}
+
+				if channel == nil && !autoCheapestGroup {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
-						TokenGroup:  usingGroup,
+						TokenGroup:  selectTokenGroup,
 						RequestPath: c.Request.URL.Path,
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
-						showGroup := usingGroup
-						if usingGroup == "auto" {
+						showGroup := selectTokenGroup
+						if selectTokenGroup == "" {
+							showGroup = "auto"
+							if selectGroup != "" && selectGroup != "auto" {
+								showGroup = fmt.Sprintf("auto(%s)", selectGroup)
+							}
+						} else if selectTokenGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 						}
 						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
@@ -154,9 +186,22 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						showGroup := selectTokenGroup
+						if selectTokenGroup == "" {
+							showGroup = "auto"
+							if selectGroup != "" && selectGroup != "auto" {
+								showGroup = fmt.Sprintf("auto(%s)", selectGroup)
+							}
+						} else if selectTokenGroup == "auto" {
+							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
+						}
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": showGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
 					}
+				}
+				if channel == nil {
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": "auto", "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					return
 				}
 			}
 		}

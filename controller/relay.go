@@ -150,6 +150,26 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	if relayInfo.TokenGroup == "" {
+		if _, ok := common.GetContextKey(c, constant.ContextKeyAutoGroup); !ok {
+			channel, selectGroup, selectErr := service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+				Ctx:         c,
+				TokenGroup:  relayInfo.TokenGroup,
+				ModelName:   relayInfo.OriginModelName,
+				RequestPath: c.Request.URL.Path,
+				Retry:       common.GetPointer(0),
+			})
+			if selectErr != nil {
+				newAPIError = types.NewError(selectErr, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+				return
+			}
+			if channel == nil {
+				newAPIError = types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在", selectGroup, relayInfo.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+				return
+			}
+		}
+	}
+
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))

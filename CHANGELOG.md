@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.10
+
+- Added automatic group selection for API keys without an explicit group, choosing the lowest-priced accessible group that supports the requested model.
+- Updated API key creation UI to leave the group empty by default, explain automatic selection, and allow clearing a selected group.
+
 ## v1.1.9
 
 - Added a safe one-command install script that pins the selected release tag in `.env`, starts the updater sidecar, and preserves existing Docker volumes.

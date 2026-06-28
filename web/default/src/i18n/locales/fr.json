@@ -2341,6 +2341,7 @@
     "Leave empty to use account email": "Laissez vide pour utiliser l'e-mail du compte",
     "Leave empty to use default": "Laisser vide pour utiliser la valeur par défaut",
     "Leave empty to use system temp directory": "Laisser vide pour utiliser le répertoire temporaire",
+    "Leave empty to use the lowest-priced available group for each requested model.": "Laissez vide pour utiliser le groupe disponible le moins cher pour chaque modèle demandé.",
     "Leave empty to use username": "Laissez vide pour utiliser le nom d'utilisateur",
     "Left to Right": "De gauche à droite",
     "Legacy Format (JSON Object)": "Ancien format (objet JSON)",

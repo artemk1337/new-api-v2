@@ -2341,6 +2341,7 @@
     "Leave empty to use account email": "Оставьте пустым, чтобы использовать электронную почту учетной записи",
     "Leave empty to use default": "Оставьте пустым для использования по умолчанию",
     "Leave empty to use system temp directory": "Оставьте пустым для системного временного каталога",
+    "Leave empty to use the lowest-priced available group for each requested model.": "Оставьте пустым, чтобы использовать самую дешевую доступную группу для каждой запрошенной модели.",
     "Leave empty to use username": "Оставьте пустым, чтобы использовать имя пользователя",
     "Left to Right": "Слева направо",
     "Legacy Format (JSON Object)": "Старый формат (JSON-объект)",

@@ -2341,6 +2341,7 @@
     "Leave empty to use account email": "留空以使用账户邮箱",
     "Leave empty to use default": "留空使用默认",
     "Leave empty to use system temp directory": "留空使用系统临时目录",
+    "Leave empty to use the lowest-priced available group for each requested model.": "留空时，将为每个请求的模型使用价格最低且可用的分组。",
     "Leave empty to use username": "留空以使用用户名",
     "Left to Right": "从左到右",
     "Legacy Format (JSON Object)": "旧格式（JSON 对象）",
