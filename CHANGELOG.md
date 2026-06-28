@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.11
+
+- Added production deployment guardrails requiring prebuilt Docker images by release tag and forbidding server-side builds.
+- Documented the image-only production deployment flow in README, AGENTS, and the local Codex deployment skill.
+
 ## v1.1.10
 
 - Added automatic group selection for API keys without an explicit group, choosing the lowest-priced accessible group that supports the requested model.
