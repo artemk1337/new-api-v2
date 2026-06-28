@@ -8,8 +8,6 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o new-api-updater ./cmd/new-api-upd
 
 FROM docker:28-cli
 
-RUN apk add --no-cache git
-
 COPY --from=builder /build/new-api-updater /usr/local/bin/new-api-updater
 EXPOSE 18090
 ENTRYPOINT ["new-api-updater"]

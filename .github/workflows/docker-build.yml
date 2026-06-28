@@ -90,11 +90,31 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Build & push updater
+        id: build-updater
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.updater
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ghcr.io/artemk1337/new-api-v2-updater:${{ env.TAG }}-${{ matrix.arch }}
+            ghcr.io/artemk1337/new-api-v2-updater:latest-${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
       - name: Sign image with cosign
         run: cosign sign --yes ghcr.io/artemk1337/new-api-v2@${{ steps.build.outputs.digest }}
+
+      - name: Sign updater image with cosign
+        run: cosign sign --yes ghcr.io/artemk1337/new-api-v2-updater@${{ steps.build-updater.outputs.digest }}
 
       - name: Image summary
         run: |
@@ -102,6 +122,8 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "ghcr.io/artemk1337/new-api-v2:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "ghcr.io/artemk1337/new-api-v2-updater:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.build-updater.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   create_manifests:
@@ -130,6 +152,10 @@ jobs:
             -t ghcr.io/artemk1337/new-api-v2:${TAG} \
             ghcr.io/artemk1337/new-api-v2:${TAG}-amd64 \
             ghcr.io/artemk1337/new-api-v2:${TAG}-arm64
+          docker buildx imagetools create \
+            -t ghcr.io/artemk1337/new-api-v2-updater:${TAG} \
+            ghcr.io/artemk1337/new-api-v2-updater:${TAG}-amd64 \
+            ghcr.io/artemk1337/new-api-v2-updater:${TAG}-arm64
 
       - name: Create & push manifest (latest)
         run: |
@@ -137,10 +163,15 @@ jobs:
             -t ghcr.io/artemk1337/new-api-v2:latest \
             ghcr.io/artemk1337/new-api-v2:latest-amd64 \
             ghcr.io/artemk1337/new-api-v2:latest-arm64
+          docker buildx imagetools create \
+            -t ghcr.io/artemk1337/new-api-v2-updater:latest \
+            ghcr.io/artemk1337/new-api-v2-updater:latest-amd64 \
+            ghcr.io/artemk1337/new-api-v2-updater:latest-arm64
 
       - name: Manifest summary
         run: |
           echo "### Multi-arch Manifest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/artemk1337/new-api-v2:${TAG} >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect ghcr.io/artemk1337/new-api-v2-updater:${TAG} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

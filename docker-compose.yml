@@ -64,9 +64,7 @@ services:
   new-api-updater:
     profiles:
       - updater
-    build:
-      context: .
-      dockerfile: Dockerfile.updater
+    image: ${UPDATER_SIDECAR_IMAGE:-ghcr.io/artemk1337/new-api-v2-updater}:${UPDATER_SIDECAR_VERSION:-latest}
     container_name: new-api-updater
     restart: always
     environment:

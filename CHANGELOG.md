@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.5
+
+- Published the updater sidecar as a prebuilt GHCR image and switched Docker Compose to pull it instead of building it on the server.
+- Removed the unused Git package from the updater image.
+- Fixed the Electron build workflow to run the frontend build from `web/default`.
+
 ## v1.1.4
 
 - Changed the updater sidecar to pull prebuilt GHCR images instead of cloning the repository and building Docker images on the server.
