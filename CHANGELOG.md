@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.3
+
+- Switched Docker image publishing and deployment defaults from the legacy Docker Hub image to `ghcr.io/artemk1337/new-api-v2`.
+- Updated system update defaults to check `artemk1337/new-api-v2`.
+
 ## v1.1.2
 
 - Updated the Bun lockfile so Docker production builds pass with the pinned Bun image and frozen lockfile checks.
