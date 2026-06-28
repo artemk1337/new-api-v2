@@ -114,6 +114,23 @@
 git clone https://github.com/QuantumNous/new-api.git
 cd new-api
 
+# Install the latest stable version with a persistent .env
+./install.sh
+```
+
+To install a specific version:
+
+```bash
+./install.sh v1.1.9
+```
+
+The install script writes the selected version to `.env`, starts the updater
+sidecar with a generated token, and keeps existing Docker volumes such as
+`pg_data` intact.
+
+Manual setup is also supported:
+
+```bash
 # Edit docker-compose.yml configuration
 nano docker-compose.yml
 

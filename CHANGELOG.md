@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.9
+
+- Added a safe one-command install script that pins the selected release tag in `.env`, starts the updater sidecar, and preserves existing Docker volumes.
+
 ## v1.1.8
 
 - Fixed the Electron build workflow to install and build `web/classic` separately, matching the release workflow dependency layout.
