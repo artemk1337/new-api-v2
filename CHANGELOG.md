@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.2
+
+- Updated the Bun lockfile so Docker production builds pass with the pinned Bun image and frozen lockfile checks.
+
 ## v1.1.1
 
 - Switched system update checks from GitHub releases to stable GitHub tags and ignore pre-release tags for latest-version detection.
