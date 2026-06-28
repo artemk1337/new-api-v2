@@ -128,6 +128,13 @@ The install script writes the selected version to `.env`, starts the updater
 sidecar with a generated token, and keeps existing Docker volumes such as
 `pg_data` intact.
 
+> [!WARNING]
+> Production servers must pull prebuilt images by explicit release tag. Do not
+> run `docker build`, `docker compose build`, or `docker compose up --build` on
+> production hosts. Before updating a production deployment, create and verify a
+> fresh database backup, then recreate only the application service without
+> removing Docker volumes.
+
 Manual setup is also supported:
 
 ```bash

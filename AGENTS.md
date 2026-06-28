@@ -54,6 +54,22 @@ web/             — Frontend themes container
 
 ## Rules
 
+### Production Deployment Safety
+
+For production hosts, including `vibecode-api.online`, deploy only already-built Docker images pulled from the configured registry by explicit release tag. Do not build images on production servers.
+
+Forbidden on production hosts:
+
+- `docker build`
+- `docker buildx build`
+- `docker compose build`
+- `docker compose up --build`
+- `bun install`, `bun run build`, `go build`, or any other source build step
+
+Before any production runtime change, create a fresh database backup and verify that it is readable. For PostgreSQL, use a custom-format dump such as `pg_dump -Fc` and verify it with `pg_restore -l`.
+
+Safe production updates must preserve data volumes and restart only the application service. Never run `docker compose down -v`, never remove database/Redis volumes, and never restart database services unless explicitly required and approved. If the target image tag is not available in the registry, stop and report the blocker instead of building locally.
+
 ### Common Code Quality
 
 - New code should stay direct and readable. Prefer early returns, clear branches, and well-named local variables to deep nesting or layered control flow.
