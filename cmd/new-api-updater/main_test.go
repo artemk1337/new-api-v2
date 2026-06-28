@@ -24,11 +24,6 @@ func TestValidateRequestAllowsOnlyConfiguredServiceAndSafeTag(t *testing.T) {
 	}))
 }
 
-func TestNormalizeRepositoryURL(t *testing.T) {
-	assert.Equal(t, "https://github.com/artemk1337/new-api-v2.git", normalizeRepositoryURL("artemk1337/new-api-v2"))
-	assert.Equal(t, "https://example.com/repo.git", normalizeRepositoryURL("https://example.com/repo.git"))
-}
-
 func TestUpsertEnvFileUpdatesImageAndVersion(t *testing.T) {
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, ".env")
@@ -69,7 +64,7 @@ func TestDeployPreparedImageRollsBackEnvOnComposeFailure(t *testing.T) {
 	t.Setenv("UPDATER_ENV_FILE", envFile)
 	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
 	t.Setenv("UPDATER_SERVICE", "new-api")
-	t.Setenv("UPDATER_IMAGE", "local/new-api")
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 
 	var calls int
 	saved := runCommandFn
@@ -81,7 +76,7 @@ func TestDeployPreparedImageRollsBackEnvOnComposeFailure(t *testing.T) {
 		if calls == 1 {
 			data, err := os.ReadFile(envFile)
 			require.NoError(t, err)
-			assert.Contains(t, string(data), "NEW_API_IMAGE=local/new-api\n")
+			assert.Contains(t, string(data), "NEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\n")
 			assert.Contains(t, string(data), "NEW_API_VERSION=v1.2.3\n")
 			return errors.New("compose failed")
 		}
@@ -129,7 +124,7 @@ func TestDeployPreparedImageRemovesInsertedEnvKeysOnRollback(t *testing.T) {
 	t.Setenv("UPDATER_ENV_FILE", envFile)
 	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
 	t.Setenv("UPDATER_SERVICE", "new-api")
-	t.Setenv("UPDATER_IMAGE", "local/new-api")
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 
 	var calls int
 	saved := runCommandFn
@@ -180,7 +175,7 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 	t.Setenv("UPDATER_ENV_FILE", envFile)
 	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
 	t.Setenv("UPDATER_SERVICE", "new-api")
-	t.Setenv("UPDATER_IMAGE", "local/new-api")
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 
 	var composeCalls int
 	var inspectCalls int
@@ -242,7 +237,7 @@ func TestDeployPreparedImagePersistsUpdaterEnv(t *testing.T) {
 	t.Setenv("UPDATER_ENV_FILE", envFile)
 	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
 	t.Setenv("UPDATER_SERVICE", "new-api")
-	t.Setenv("UPDATER_IMAGE", "local/new-api")
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 	t.Setenv("UPDATER_SHARED_SECRET", "secret")
 
 	saved := runCommandFn
@@ -282,32 +277,32 @@ func TestDeployPreparedImagePersistsUpdaterEnv(t *testing.T) {
 
 	data, err := os.ReadFile(envFile)
 	require.NoError(t, err)
-	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=local/new-api\nNEW_API_VERSION=v1.2.3\nUPDATE_ENABLED=true\nUPDATE_SIDECAR_TOKEN=secret\n", string(data))
+	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\nNEW_API_VERSION=v1.2.3\nUPDATE_ENABLED=true\nUPDATE_SIDECAR_TOKEN=secret\n", string(data))
 }
 
-func TestSyncRepositoryUpdatesExistingRemoteURL(t *testing.T) {
-	cacheDir := t.TempDir()
-	repoDir := filepath.Join(cacheDir, "repo")
-	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0755))
-	t.Setenv("UPDATER_CACHE_DIR", cacheDir)
-	t.Setenv("UPDATE_REPOSITORY", "artemk1337/new-api-v2")
+func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 
-	var commands []string
+	var gotDir string
+	var gotName string
+	var gotArgs []string
 	saved := runCommandFn
 	runCommandFn = func(dir string, name string, args ...string) error {
-		commands = append(commands, dir+" "+name+" "+strings.Join(args, " "))
+		gotDir = dir
+		gotName = name
+		gotArgs = append([]string(nil), args...)
 		return nil
 	}
 	t.Cleanup(func() {
 		runCommandFn = saved
 	})
 
-	got, err := syncRepository()
+	got, err := pullPreparedImage("v1.2.3")
 	require.NoError(t, err)
-	assert.Equal(t, repoDir, got)
-	require.Len(t, commands, 2)
-	assert.Contains(t, commands[0], "git remote set-url origin https://github.com/artemk1337/new-api-v2.git")
-	assert.Contains(t, commands[1], "git fetch --tags --force origin")
+	assert.Equal(t, "ghcr.io/artemk1337/new-api-v2:v1.2.3", got)
+	assert.Empty(t, gotDir)
+	assert.Equal(t, "docker", gotName)
+	assert.Equal(t, []string{"pull", "ghcr.io/artemk1337/new-api-v2:v1.2.3"}, gotArgs)
 }
 
 func TestExtractStatusVersion(t *testing.T) {
@@ -326,8 +321,8 @@ func TestHandleJobStatusWritesSnapshot(t *testing.T) {
 	jobs["update_1"] = &updateJob{
 		JobID:   "update_1",
 		Status:  "running",
-		Step:    "building",
-		Message: "building update image",
+		Step:    "pulling",
+		Message: "pulling update image",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/jobs/update_1", nil)
@@ -337,7 +332,7 @@ func TestHandleJobStatusWritesSnapshot(t *testing.T) {
 	handleJobStatus(recorder, req)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	assert.JSONEq(t, `{"job_id":"update_1","status":"running","step":"building","message":"building update image"}`, recorder.Body.String())
+	assert.JSONEq(t, `{"job_id":"update_1","status":"running","step":"pulling","message":"pulling update image"}`, recorder.Body.String())
 }
 
 func TestHandleJobStatusRejectsUnauthorizedRequest(t *testing.T) {

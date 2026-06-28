@@ -70,17 +70,14 @@ services:
     container_name: new-api-updater
     restart: always
     environment:
-      - UPDATE_REPOSITORY=${UPDATE_REPOSITORY:-artemk1337/new-api-v2}
       - UPDATER_SHARED_SECRET=${UPDATE_SIDECAR_TOKEN:-}
-      - UPDATER_IMAGE=${UPDATER_IMAGE:-local/new-api}
-      - UPDATER_CACHE_DIR=/cache
+      - UPDATER_IMAGE=${UPDATER_IMAGE:-ghcr.io/artemk1337/new-api-v2}
       - UPDATER_COMPOSE_DIR=/workspace
       - UPDATER_ENV_FILE=/workspace/.env
       - UPDATER_COMPOSE_FILE=/workspace/docker-compose.yml
       - UPDATER_SERVICE=new-api
     volumes:
       - .:/workspace
-      - new_api_updater_cache:/cache
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - new-api-network
@@ -140,7 +137,6 @@ services:
 #      - "9000:9000"  # Native interface used by the LOG_SQL_DSN example above
 
 volumes:
-  new_api_updater_cache:
   pg_data:
 #  mysql_data:
 #  clickhouse_data:

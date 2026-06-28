@@ -163,14 +163,14 @@ func authorizeRequest(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func runUpdateJob(jobID string, tag string) {
-	setJobStatus(jobID, "running", "building", "", "", "building update image")
-	imageTag, err := prepareImage(tag)
+	setJobStatus(jobID, "running", "pulling", "", "", "pulling update image")
+	imageTag, err := pullPreparedImage(tag)
 	if err != nil {
-		setJobStatus(jobID, "failed", "failed", "", err.Error(), "update build failed")
+		setJobStatus(jobID, "failed", "failed", "", err.Error(), "update image pull failed")
 		return
 	}
 
-	setJobStatus(jobID, "deploying", "deploying", imageTag, "", "update image built; deploying service")
+	setJobStatus(jobID, "deploying", "deploying", imageTag, "", "update image pulled; deploying service")
 	time.Sleep(deployHandoffDelay)
 	if err := deployPreparedImage(tag); err != nil {
 		log.Printf("update deploy failed: %v", err)
@@ -218,17 +218,9 @@ func validateRequest(request updateRequest) error {
 	return nil
 }
 
-func prepareImage(tag string) (string, error) {
-	repoDir, err := syncRepository()
-	if err != nil {
-		return "", err
-	}
-	if err := checkoutTag(repoDir, tag); err != nil {
-		return "", err
-	}
-
-	imageTag := env("UPDATER_IMAGE", "local/new-api") + ":" + tag
-	if err := runCommandFn(repoDir, "docker", "build", "-t", imageTag, "."); err != nil {
+func pullPreparedImage(tag string) (string, error) {
+	imageTag := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2") + ":" + tag
+	if err := runCommandFn("", "docker", "pull", imageTag); err != nil {
 		return "", err
 	}
 	return imageTag, nil
@@ -239,7 +231,7 @@ func deployPreparedImage(tag string) error {
 	envFile := env("UPDATER_ENV_FILE", filepath.Join(composeDir, ".env"))
 	composeFile := env("UPDATER_COMPOSE_FILE", filepath.Join(composeDir, "docker-compose.yml"))
 	service := env("UPDATER_SERVICE", "new-api")
-	image := env("UPDATER_IMAGE", "local/new-api")
+	image := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 	previousEnv, err := readDeployEnvSnapshot(envFile)
 	if err != nil {
 		return err
@@ -330,49 +322,6 @@ func extractStatusVersion(response string) string {
 		return ""
 	}
 	return status.Version
-}
-
-func syncRepository() (string, error) {
-	cacheDir := env("UPDATER_CACHE_DIR", "/cache")
-	repoURL := normalizeRepositoryURL(env("UPDATE_REPOSITORY", env("UPDATER_REPOSITORY", "artemk1337/new-api-v2")))
-	repoDir := filepath.Join(cacheDir, "repo")
-	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
-		if err := runCommandFn(repoDir, "git", "remote", "set-url", "origin", repoURL); err != nil {
-			return "", err
-		}
-		if err := runCommandFn(repoDir, "git", "fetch", "--tags", "--force", "origin"); err != nil {
-			return "", err
-		}
-		return repoDir, nil
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", err
-	}
-	if err := runCommandFn(cacheDir, "git", "clone", "--no-checkout", repoURL, repoDir); err != nil {
-		return "", err
-	}
-	if err := runCommandFn(repoDir, "git", "fetch", "--tags", "--force", "origin"); err != nil {
-		return "", err
-	}
-	return repoDir, nil
-}
-
-func normalizeRepositoryURL(repository string) string {
-	repository = strings.TrimSpace(repository)
-	if strings.HasPrefix(repository, "http://") || strings.HasPrefix(repository, "https://") || strings.HasPrefix(repository, "git@") {
-		return repository
-	}
-	return "https://github.com/" + strings.TrimSuffix(repository, ".git") + ".git"
-}
-
-func checkoutTag(repoDir string, tag string) error {
-	if err := runCommandFn(repoDir, "git", "rev-parse", "--verify", "refs/tags/"+tag+"^{commit}"); err != nil {
-		return err
-	}
-	return runCommandFn(repoDir, "git", "checkout", "--force", "tags/"+tag)
 }
 
 func readDeployEnvSnapshot(path string) (deployEnvSnapshot, error) {

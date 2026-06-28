@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.4
+
+- Changed the updater sidecar to pull prebuilt GHCR images instead of cloning the repository and building Docker images on the server.
+- Removed updater repository cache settings and compose volumes that were only needed for server-side builds.
+
 ## v1.1.3
 
 - Switched Docker image publishing and deployment defaults from the legacy Docker Hub image to `ghcr.io/artemk1337/new-api-v2`.

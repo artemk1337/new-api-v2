@@ -130,7 +130,7 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 			case http.MethodGet:
 				statusCalled = true
 				assert.Equal(t, "/jobs/job-1", req.URL.Path)
-				return jsonResponse(http.StatusOK, `{"job_id":"job-1","status":"deploying","step":"deploying","image":"local/new-api:v1.0.1","message":"update image built; deploying service"}`), nil
+				return jsonResponse(http.StatusOK, `{"job_id":"job-1","status":"deploying","step":"deploying","image":"ghcr.io/artemk1337/new-api-v2:v1.0.1","message":"update image pulled; deploying service"}`), nil
 			}
 		default:
 			t.Fatalf("unexpected request host: %s", req.URL.Host)
@@ -153,7 +153,7 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	require.NotNil(t, reloaded)
 	assert.Equal(t, model.SystemTaskStatusSucceeded, reloaded.Status)
 	assert.Contains(t, reloaded.Result, `"requested_version":"v1.0.1"`)
-	assert.Contains(t, reloaded.Result, `"image":"local/new-api:v1.0.1"`)
+	assert.Contains(t, reloaded.Result, `"image":"ghcr.io/artemk1337/new-api-v2:v1.0.1"`)
 	assert.Contains(t, reloaded.Result, `"job_id":"job-1"`)
 	assert.Contains(t, reloaded.Result, `"status":"deploying"`)
 }

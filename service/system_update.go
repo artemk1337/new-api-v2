@@ -148,7 +148,7 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 	if err != nil {
 		return err
 	}
-	if err := updateSystemUpdateState(task, runnerID, "building", 40, "building update image"); err != nil {
+	if err := updateSystemUpdateState(task, runnerID, "pulling", 40, "pulling update image"); err != nil {
 		return err
 	}
 	updaterStatus, err := waitSystemUpdaterJob(ctx, updaterJob.JobID)
@@ -367,7 +367,7 @@ func waitSystemUpdaterJob(ctx context.Context, jobID string) (*SystemUpdaterJobS
 			return status, nil
 		case "deploying":
 			if status.Message == "" {
-				status.Message = "update image built; deploying service"
+				status.Message = "update image pulled; deploying service"
 			}
 			return status, nil
 		case "failed":
