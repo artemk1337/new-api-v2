@@ -25,7 +25,7 @@ func TestValidateRequestAllowsOnlyConfiguredServiceAndSafeTag(t *testing.T) {
 }
 
 func TestNormalizeRepositoryURL(t *testing.T) {
-	assert.Equal(t, "https://github.com/artemk1337/new-api.git", normalizeRepositoryURL("artemk1337/new-api"))
+	assert.Equal(t, "https://github.com/artemk1337/new-api-v2.git", normalizeRepositoryURL("artemk1337/new-api-v2"))
 	assert.Equal(t, "https://example.com/repo.git", normalizeRepositoryURL("https://example.com/repo.git"))
 }
 
@@ -35,13 +35,13 @@ func TestUpsertEnvFileUpdatesImageAndVersion(t *testing.T) {
 	require.NoError(t, os.WriteFile(envFile, []byte("KEEP=value\nNEW_API_VERSION=old\n"), 0644))
 
 	require.NoError(t, upsertEnvFile(envFile, map[string]string{
-		"NEW_API_IMAGE":   "calciumion/new-api",
+		"NEW_API_IMAGE":   "ghcr.io/artemk1337/new-api-v2",
 		"NEW_API_VERSION": "v1.2.3",
 	}))
 
 	data, err := os.ReadFile(envFile)
 	require.NoError(t, err)
-	assert.Equal(t, "KEEP=value\nNEW_API_VERSION=v1.2.3\nNEW_API_IMAGE=calciumion/new-api\n", string(data))
+	assert.Equal(t, "KEEP=value\nNEW_API_VERSION=v1.2.3\nNEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\n", string(data))
 }
 
 func TestUpsertEnvFilePreservesComments(t *testing.T) {
@@ -290,7 +290,7 @@ func TestSyncRepositoryUpdatesExistingRemoteURL(t *testing.T) {
 	repoDir := filepath.Join(cacheDir, "repo")
 	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0755))
 	t.Setenv("UPDATER_CACHE_DIR", cacheDir)
-	t.Setenv("UPDATE_REPOSITORY", "artemk1337/new-api")
+	t.Setenv("UPDATE_REPOSITORY", "artemk1337/new-api-v2")
 
 	var commands []string
 	saved := runCommandFn
@@ -306,7 +306,7 @@ func TestSyncRepositoryUpdatesExistingRemoteURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, repoDir, got)
 	require.Len(t, commands, 2)
-	assert.Contains(t, commands[0], "git remote set-url origin https://github.com/artemk1337/new-api.git")
+	assert.Contains(t, commands[0], "git remote set-url origin https://github.com/artemk1337/new-api-v2.git")
 	assert.Contains(t, commands[1], "git fetch --tags --force origin")
 }
 

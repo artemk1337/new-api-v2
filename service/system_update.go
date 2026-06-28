@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultUpdateRepository  = "artemk1337/new-api"
+	defaultUpdateRepository  = "artemk1337/new-api-v2"
 	defaultUpdateSidecarURL  = "http://new-api-updater:18090"
 	systemUpdatePollInterval = 3 * time.Second
 	systemUpdateMaxWait      = 30 * time.Minute

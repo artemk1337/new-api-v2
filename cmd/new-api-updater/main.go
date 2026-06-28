@@ -334,7 +334,7 @@ func extractStatusVersion(response string) string {
 
 func syncRepository() (string, error) {
 	cacheDir := env("UPDATER_CACHE_DIR", "/cache")
-	repoURL := normalizeRepositoryURL(env("UPDATE_REPOSITORY", env("UPDATER_REPOSITORY", "artemk1337/new-api")))
+	repoURL := normalizeRepositoryURL(env("UPDATE_REPOSITORY", env("UPDATER_REPOSITORY", "artemk1337/new-api-v2")))
 	repoDir := filepath.Join(cacheDir, "repo")
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil {
 		if err := runCommandFn(repoDir, "git", "remote", "set-url", "origin", repoURL); err != nil {
