@@ -84,9 +84,6 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, updateResponse{Message: "method not allowed"})
 		return
 	}
-	if !authorizeRequest(w, r) {
-		return
-	}
 	var request updateRequest
 	if err := common.DecodeJson(r.Body, &request); err != nil {
 		writeJSON(w, http.StatusBadRequest, updateResponse{Message: "invalid request body"})
@@ -129,9 +126,6 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, updateResponse{Message: "method not allowed"})
 		return
 	}
-	if !authorizeRequest(w, r) {
-		return
-	}
 	jobID := strings.TrimPrefix(r.URL.Path, "/jobs/")
 	updateMu.Lock()
 	job := jobs[jobID]
@@ -143,23 +137,6 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request) {
 	jobCopy := *job
 	updateMu.Unlock()
 	writeAnyJSON(w, http.StatusOK, jobCopy)
-}
-
-func authorizeRequest(w http.ResponseWriter, r *http.Request) bool {
-	secret := env("UPDATER_SHARED_SECRET", "")
-	if secret == "" {
-		writeJSON(w, http.StatusServiceUnavailable, updateResponse{Message: "updater shared secret is not configured"})
-		return false
-	}
-	token := strings.TrimSpace(r.Header.Get("X-Updater-Token"))
-	if auth := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(auth, "Bearer ") {
-		token = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	}
-	if token != secret {
-		writeJSON(w, http.StatusUnauthorized, updateResponse{Message: "unauthorized"})
-		return false
-	}
-	return true
 }
 
 func runUpdateJob(jobID string, tag string) {
@@ -243,9 +220,6 @@ func deployPreparedImage(tag string) error {
 	envUpdates := map[string]string{
 		"NEW_API_IMAGE":   image,
 		"NEW_API_VERSION": tag,
-	}
-	if secret := env("UPDATER_SHARED_SECRET", ""); secret != "" {
-		envUpdates["UPDATE_SIDECAR_TOKEN"] = secret
 	}
 	if err := upsertEnvFile(envFile, envUpdates); err != nil {
 		return err

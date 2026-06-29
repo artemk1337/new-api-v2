@@ -394,10 +394,6 @@ func stableVersionTagParts(tag string) [3]int {
 }
 
 func requestSystemUpdater(ctx context.Context, version string) (*systemUpdaterResponse, error) {
-	token := systemUpdateSidecarToken()
-	if token == "" {
-		return nil, errors.New("update sidecar token is required")
-	}
 	body, err := common.Marshal(systemUpdaterRequest{
 		Tag: version,
 	})
@@ -409,7 +405,6 @@ func requestSystemUpdater(ctx context.Context, version string) (*systemUpdaterRe
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := systemUpdateHTTPClient.Do(req)
 	if err != nil {
@@ -477,10 +472,6 @@ func waitSystemUpdaterJob(ctx context.Context, jobID string) (*SystemUpdaterJobS
 }
 
 func getSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdaterJobStatus, error) {
-	token := systemUpdateSidecarToken()
-	if token == "" {
-		return nil, errors.New("update sidecar token is required")
-	}
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
 		return nil, errors.New("updater sidecar job id is required")
@@ -489,7 +480,6 @@ func getSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := systemUpdateHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -513,7 +503,7 @@ func GetSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 }
 
 func systemUpdateCanApply() bool {
-	return systemUpdateSidecarToken() != ""
+	return true
 }
 
 func systemUpdateRepository() string {
@@ -522,8 +512,4 @@ func systemUpdateRepository() string {
 
 func systemUpdateSidecarURL() string {
 	return common.GetEnvOrDefaultString("UPDATE_SIDECAR_URL", defaultUpdateSidecarURL)
-}
-
-func systemUpdateSidecarToken() string {
-	return strings.TrimSpace(common.GetEnvOrDefaultString("UPDATE_SIDECAR_TOKEN", ""))
 }

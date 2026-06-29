@@ -226,60 +226,6 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=old/image\nNEW_API_VERSION=v1.0.0\n", string(data))
 }
 
-func TestDeployPreparedImagePersistsUpdaterEnv(t *testing.T) {
-	dir := t.TempDir()
-	envFile := filepath.Join(dir, ".env")
-	composeFile := filepath.Join(dir, "docker-compose.yml")
-	require.NoError(t, os.WriteFile(envFile, []byte("KEEP=value\n"), 0644))
-	require.NoError(t, os.WriteFile(composeFile, []byte("services: {}\n"), 0644))
-
-	t.Setenv("UPDATER_COMPOSE_DIR", dir)
-	t.Setenv("UPDATER_ENV_FILE", envFile)
-	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
-	t.Setenv("UPDATER_SERVICE", "new-api")
-	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
-	t.Setenv("UPDATER_SHARED_SECRET", "secret")
-
-	saved := runCommandFn
-	savedOutput := runCommandOutputFn
-	runCommandFn = func(_ string, name string, args ...string) error {
-		require.Equal(t, "docker", name)
-		require.Contains(t, strings.Join(args, " "), "compose")
-		return nil
-	}
-	runCommandOutputFn = func(_ string, name string, args ...string) (string, error) {
-		require.Equal(t, "docker", name)
-		switch args[0] {
-		case "exec":
-			return `{"version":"v1.2.3"}`, nil
-		case "inspect":
-			return "healthy", nil
-		default:
-			t.Fatalf("unexpected docker command: %s", strings.Join(args, " "))
-		}
-		return "", nil
-	}
-	t.Cleanup(func() {
-		runCommandFn = saved
-		runCommandOutputFn = savedOutput
-	})
-
-	savedTimeout := deployHealthTimeout
-	savedInterval := deployHealthInterval
-	deployHealthTimeout = time.Millisecond
-	deployHealthInterval = time.Millisecond
-	t.Cleanup(func() {
-		deployHealthTimeout = savedTimeout
-		deployHealthInterval = savedInterval
-	})
-
-	require.NoError(t, deployPreparedImage("v1.2.3"))
-
-	data, err := os.ReadFile(envFile)
-	require.NoError(t, err)
-	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=ghcr.io/artemk1337/new-api-v2\nNEW_API_VERSION=v1.2.3\nUPDATE_SIDECAR_TOKEN=secret\n", string(data))
-}
-
 func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {
 	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
 
@@ -311,7 +257,6 @@ func TestExtractStatusVersion(t *testing.T) {
 }
 
 func TestHandleJobStatusWritesSnapshot(t *testing.T) {
-	t.Setenv("UPDATER_SHARED_SECRET", "secret")
 	savedJobs := jobs
 	jobs = map[string]*updateJob{}
 	t.Cleanup(func() {
@@ -326,37 +271,12 @@ func TestHandleJobStatusWritesSnapshot(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/jobs/update_1", nil)
-	req.Header.Set("Authorization", "Bearer secret")
 	recorder := httptest.NewRecorder()
 
 	handleJobStatus(recorder, req)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.JSONEq(t, `{"job_id":"update_1","status":"running","step":"pulling","message":"pulling update image"}`, recorder.Body.String())
-}
-
-func TestHandleJobStatusRejectsUnauthorizedRequest(t *testing.T) {
-	t.Setenv("UPDATER_SHARED_SECRET", "secret")
-
-	req := httptest.NewRequest(http.MethodGet, "/jobs/update_1", nil)
-	recorder := httptest.NewRecorder()
-
-	handleJobStatus(recorder, req)
-
-	require.Equal(t, http.StatusUnauthorized, recorder.Code)
-	assert.JSONEq(t, `{"accepted":false,"message":"unauthorized"}`, recorder.Body.String())
-}
-
-func TestHandleUpdateRejectsMissingSharedSecret(t *testing.T) {
-	t.Setenv("UPDATER_SHARED_SECRET", "")
-
-	req := httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"tag":"v1.2.3"}`))
-	recorder := httptest.NewRecorder()
-
-	handleUpdate(recorder, req)
-
-	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.JSONEq(t, `{"accepted":false,"message":"updater shared secret is not configured"}`, recorder.Body.String())
 }
 
 func TestCleanupOldJobsKeepsRecentTerminalJobs(t *testing.T) {

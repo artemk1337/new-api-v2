@@ -60,7 +60,7 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Enabled)
-	assert.False(t, result.CanUpdate)
+	assert.True(t, result.CanUpdate)
 	assert.Equal(t, "artemk1337/new-api-v2", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
 	assert.Equal(t, "v1.1.0", result.LatestVersion)
@@ -123,7 +123,6 @@ func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
 func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
-	t.Setenv("UPDATE_SIDECAR_TOKEN", "secret")
 	savedVersion := common.Version
 	common.Version = "v1.0.0"
 	t.Cleanup(func() {
@@ -138,7 +137,7 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 			assert.Equal(t, "/repos/artemk1337/new-api-v2/git/ref/tags/v1.0.1", req.URL.Path)
 			return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
 		case "new-api-updater:18090":
-			assert.Equal(t, "Bearer secret", req.Header.Get("Authorization"))
+			assert.Empty(t, req.Header.Get("Authorization"))
 			switch req.Method {
 			case http.MethodPost:
 				updaterCalled = true
@@ -175,29 +174,4 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	assert.Contains(t, reloaded.Result, `"image":"ghcr.io/artemk1337/new-api-v2:v1.0.1"`)
 	assert.Contains(t, reloaded.Result, `"job_id":"job-1"`)
 	assert.Contains(t, reloaded.Result, `"status":"deploying"`)
-}
-
-func TestRunSystemUpdateTaskRequiresSidecarToken(t *testing.T) {
-	truncate(t)
-	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
-	savedVersion := common.Version
-	common.Version = "v1.0.0"
-	t.Cleanup(func() {
-		common.Version = savedVersion
-	})
-
-	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "api.github.com", req.URL.Host)
-		return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
-	})
-
-	task, err := model.CreateSystemTask(model.SystemTaskTypeSystemUpdate, SystemUpdatePayload{Version: "v1.0.1"}, nil)
-	require.NoError(t, err)
-	claimed, ok, err := model.ClaimSystemTask(task.ID, model.SystemTaskTypeSystemUpdate, "runner-a", common.GetTimestamp()+60)
-	require.NoError(t, err)
-	require.True(t, ok)
-
-	err = RunSystemUpdateTask(t.Context(), claimed, "runner-a")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "update sidecar token is required")
 }
