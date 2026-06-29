@@ -25,6 +25,22 @@ import {
 } from '../constants'
 import type { PricingModel } from '../types'
 
+export type PricingFilterValues = {
+  search: string
+  vendor: string
+  group: string
+  quotaType: string
+  endpointType: string
+  tag: string
+}
+
+export type PricingFacet =
+  | 'vendor'
+  | 'group'
+  | 'quotaType'
+  | 'endpointType'
+  | 'tag'
+
 // ----------------------------------------------------------------------------
 // Filter Utilities
 // ----------------------------------------------------------------------------
@@ -136,24 +152,35 @@ export function sortModels(
  */
 export function filterAndSortModels(
   models: PricingModel[],
-  filters: {
-    search: string
-    vendor: string
-    group: string
-    quotaType: string
-    endpointType: string
-    tag: string
-    sortBy: string
-  }
+  filters: PricingFilterValues & { sortBy: string }
 ): PricingModel[] {
-  let result = filterBySearch(models, filters.search)
-  result = filterByVendor(result, filters.vendor)
-  result = filterByGroup(result, filters.group)
-  result = filterByQuotaType(result, filters.quotaType)
-  result = filterByEndpointType(result, filters.endpointType)
-  result = filterByTag(result, filters.tag)
+  let result = filterModelsForFacet(models, filters)
   result = sortModels(result, filters.sortBy)
 
+  return result
+}
+
+export function filterModelsForFacet(
+  models: PricingModel[],
+  filters: PricingFilterValues,
+  skipFacet?: PricingFacet
+): PricingModel[] {
+  let result = filterBySearch(models, filters.search)
+  if (skipFacet !== 'vendor') {
+    result = filterByVendor(result, filters.vendor)
+  }
+  if (skipFacet !== 'group') {
+    result = filterByGroup(result, filters.group)
+  }
+  if (skipFacet !== 'quotaType') {
+    result = filterByQuotaType(result, filters.quotaType)
+  }
+  if (skipFacet !== 'endpointType') {
+    result = filterByEndpointType(result, filters.endpointType)
+  }
+  if (skipFacet !== 'tag') {
+    result = filterByTag(result, filters.tag)
+  }
   return result
 }
 

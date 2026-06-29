@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { ChevronDown, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getLobeIcon } from '@/lib/lobe-icon'
@@ -35,7 +35,7 @@ import {
   getEndpointTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
-import { parseTags } from '../lib/filters'
+import { filterModelsForFacet, parseTags } from '../lib/filters'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -54,6 +54,7 @@ type FilterSectionProps = {
 }
 
 export interface PricingSidebarProps {
+  searchInput: string
   quotaTypeFilter: string
   endpointTypeFilter: string
   vendorFilter: string
@@ -158,78 +159,138 @@ export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
   const quotaTypeLabels = getQuotaTypeLabels(t)
   const endpointTypeLabels = getEndpointTypeLabels(t)
+  const filters = useMemo(
+    () => ({
+      search: props.searchInput,
+      vendor: props.vendorFilter,
+      group: props.groupFilter,
+      quotaType: props.quotaTypeFilter,
+      endpointType: props.endpointTypeFilter,
+      tag: props.tagFilter,
+    }),
+    [
+      props.searchInput,
+      props.vendorFilter,
+      props.groupFilter,
+      props.quotaTypeFilter,
+      props.endpointTypeFilter,
+      props.tagFilter,
+    ]
+  )
+
+  const vendorModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'vendor'),
+    [props.models, filters]
+  )
+  const groupModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'group'),
+    [props.models, filters]
+  )
+  const quotaModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'quotaType'),
+    [props.models, filters]
+  )
+  const endpointModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'endpointType'),
+    [props.models, filters]
+  )
+  const tagModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'tag'),
+    [props.models, filters]
+  )
 
   const vendorOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
       label: t('All Vendors'),
-      count: props.models.length,
+      count: vendorModels.length,
     },
     ...props.vendors
-      .map((vendor) => ({
-        value: vendor.name,
-        label: vendor.name,
-        count: countBy(
-          props.models,
+      .map((vendor) => {
+        const count = countBy(
+          vendorModels,
           (model) => model.vendor_name === vendor.name
-        ),
-        icon: vendor.icon ? getLobeIcon(vendor.icon, 14) : undefined,
-      }))
-      .filter((vendor) => vendor.count > 0),
+        )
+        return {
+          value: vendor.name,
+          label: vendor.name,
+          count,
+          icon: vendor.icon ? getLobeIcon(vendor.icon, 14) : undefined,
+        }
+      })
+      .filter(
+        (vendor) => vendor.count > 0 || vendor.value === props.vendorFilter
+      ),
   ]
 
   const groupOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
       label: t('All Groups'),
+      count: groupModels.length,
     },
-    ...props.groups.map((group) => ({
-      value: group,
-      label: group,
-      suffix: formatGroupRatio(props.groupRatios?.[group]),
-    })),
+    ...props.groups
+      .map((group) => {
+        const count = countBy(groupModels, (model) =>
+          model.enable_groups?.includes(group)
+        )
+        return {
+          value: group,
+          label: group,
+          count,
+          suffix: formatGroupRatio(props.groupRatios?.[group]),
+        }
+      })
+      .filter((group) => group.count > 0 || group.value === props.groupFilter),
   ]
 
   const quotaOptions: FilterOption[] = [
     {
       value: QUOTA_TYPES.ALL,
       label: quotaTypeLabels[QUOTA_TYPES.ALL],
-      count: props.models.length,
+      count: quotaModels.length,
     },
     {
       value: QUOTA_TYPES.TOKEN,
       label: quotaTypeLabels[QUOTA_TYPES.TOKEN],
-      count: countBy(props.models, (model) => model.quota_type === 0),
+      count: countBy(quotaModels, (model) => model.quota_type === 0),
     },
     {
       value: QUOTA_TYPES.REQUEST,
       label: quotaTypeLabels[QUOTA_TYPES.REQUEST],
-      count: countBy(props.models, (model) => model.quota_type === 1),
+      count: countBy(quotaModels, (model) => model.quota_type === 1),
     },
-  ]
+  ].filter(
+    (option) =>
+      option.value === QUOTA_TYPES.ALL ||
+      option.count > 0 ||
+      option.value === props.quotaTypeFilter
+  )
 
   const tagOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
       label: t('All Tags'),
-      count: props.models.length,
+      count: tagModels.length,
     },
-    ...props.tags.map((tag) => ({
-      value: tag,
-      label: tag,
-      count: countBy(props.models, (model) =>
-        parseTags(model.tags)
-          .map((item) => item.toLowerCase())
-          .includes(tag.toLowerCase())
-      ),
-    })),
+    ...props.tags
+      .map((tag) => ({
+        value: tag,
+        label: tag,
+        count: countBy(tagModels, (model) =>
+          parseTags(model.tags)
+            .map((item) => item.toLowerCase())
+            .includes(tag.toLowerCase())
+        ),
+      }))
+      .filter((tag) => tag.count > 0 || tag.value === props.tagFilter),
   ]
 
   const endpointOptions: FilterOption[] = [
     {
       value: ENDPOINT_TYPES.ALL,
       label: endpointTypeLabels[ENDPOINT_TYPES.ALL],
-      count: props.models.length,
+      count: endpointModels.length,
     },
     ...Object.entries(endpointTypeLabels)
       .filter(([value]) => value !== ENDPOINT_TYPES.ALL)
@@ -237,10 +298,14 @@ export function PricingSidebar(props: PricingSidebarProps) {
         value,
         label,
         count: countBy(
-          props.models,
+          endpointModels,
           (model) => model.supported_endpoint_types?.includes(value) ?? false
         ),
-      })),
+      }))
+      .filter(
+        (endpoint) =>
+          endpoint.count > 0 || endpoint.value === props.endpointTypeFilter
+      ),
   ]
 
   return (
@@ -273,16 +338,16 @@ export function PricingSidebar(props: PricingSidebarProps) {
 
       <div className='space-y-1'>
         <FilterSection
-          title={t('Groups')}
-          value={props.groupFilter}
-          options={groupOptions}
-          onChange={props.onGroupChange}
-        />
-        <FilterSection
           title={t('All Vendors')}
           value={props.vendorFilter}
           options={vendorOptions}
           onChange={props.onVendorChange}
+        />
+        <FilterSection
+          title={t('Groups')}
+          value={props.groupFilter}
+          options={groupOptions}
+          onChange={props.onGroupChange}
         />
         <FilterSection
           title={t('Model Tags')}

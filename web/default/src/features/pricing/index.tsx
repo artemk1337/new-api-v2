@@ -200,6 +200,7 @@ export function Pricing() {
 
           <div className='grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)]'>
             <PricingSidebar
+              searchInput={searchInput}
               quotaTypeFilter={quotaTypeFilter}
               endpointTypeFilter={endpointTypeFilter}
               vendorFilter={vendorFilter}
@@ -232,6 +233,7 @@ export function Pricing() {
                 onRechargePriceChange={setShowRechargePrice}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
+                searchInput={searchInput}
                 quotaTypeFilter={quotaTypeFilter}
                 endpointTypeFilter={endpointTypeFilter}
                 vendorFilter={vendorFilter}

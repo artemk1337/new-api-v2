@@ -72,6 +72,7 @@ export interface PricingToolbarProps {
   onRechargePriceChange: (value: boolean) => void
   viewMode: ViewMode
   onViewModeChange: (value: ViewMode) => void
+  searchInput: string
   quotaTypeFilter: string
   endpointTypeFilter: string
   vendorFilter: string
@@ -284,6 +285,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
           </SheetHeader>
           <div className={sideDrawerFormClassName('gap-0')}>
             <PricingSidebar
+              searchInput={props.searchInput}
               quotaTypeFilter={props.quotaTypeFilter}
               endpointTypeFilter={props.endpointTypeFilter}
               vendorFilter={props.vendorFilter}
