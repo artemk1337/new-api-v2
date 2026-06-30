@@ -209,6 +209,7 @@ func deployPreparedImage(tag string) error {
 	composeFile := env("UPDATER_COMPOSE_FILE", filepath.Join(composeDir, "docker-compose.yml"))
 	service := env("UPDATER_SERVICE", "new-api")
 	image := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
+	projectName := composeProjectName(envFile)
 	previousEnv, err := readDeployEnvSnapshot(envFile)
 	if err != nil {
 		return err
@@ -225,26 +226,44 @@ func deployPreparedImage(tag string) error {
 		return err
 	}
 
-	if err := runCommandFn(composeDir, "docker", "compose", "--env-file", envFile, "-f", composeFile, "up", "-d", "--no-deps", service); err != nil {
-		return rollbackPreparedDeploy(composeDir, envFile, composeFile, service, previousEnv, err)
+	if err := runCommandFn(composeDir, "docker", composeArgs(projectName, envFile, composeFile, "up", "-d", "--no-deps", service)...); err != nil {
+		return rollbackPreparedDeploy(composeDir, projectName, envFile, composeFile, service, previousEnv, err)
 	}
 	if err := waitServiceReady(composeDir, service, tag); err != nil {
-		return rollbackPreparedDeploy(composeDir, envFile, composeFile, service, previousEnv, err)
+		return rollbackPreparedDeploy(composeDir, projectName, envFile, composeFile, service, previousEnv, err)
 	}
 	return nil
 }
 
-func rollbackPreparedDeploy(composeDir string, envFile string, composeFile string, service string, previousEnv deployEnvSnapshot, deployErr error) error {
+func rollbackPreparedDeploy(composeDir string, projectName string, envFile string, composeFile string, service string, previousEnv deployEnvSnapshot, deployErr error) error {
 	if rollbackErr := restoreDeployEnvSnapshot(envFile, previousEnv); rollbackErr != nil {
 		return fmt.Errorf("%w; rollback env failed: %v", deployErr, rollbackErr)
 	}
-	if rollbackErr := runCommandFn(composeDir, "docker", "compose", "--env-file", envFile, "-f", composeFile, "up", "-d", "--no-deps", service); rollbackErr != nil {
+	if rollbackErr := runCommandFn(composeDir, "docker", composeArgs(projectName, envFile, composeFile, "up", "-d", "--no-deps", service)...); rollbackErr != nil {
 		return fmt.Errorf("%w; rollback deploy failed: %v", deployErr, rollbackErr)
 	}
 	if rollbackErr := waitServiceReady(composeDir, service, previousEnv.PreviousVersion); rollbackErr != nil {
 		return fmt.Errorf("%w; rollback health check failed: %v", deployErr, rollbackErr)
 	}
 	return deployErr
+}
+
+func composeArgs(projectName string, envFile string, composeFile string, command ...string) []string {
+	args := []string{"compose", "-p", projectName, "--env-file", envFile, "-f", composeFile}
+	return append(args, command...)
+}
+
+func composeProjectName(envFile string) string {
+	if projectName := env("UPDATER_COMPOSE_PROJECT_NAME", ""); projectName != "" {
+		return projectName
+	}
+	if projectName := env("COMPOSE_PROJECT_NAME", ""); projectName != "" {
+		return projectName
+	}
+	if projectName := readEnvValue(envFile, "COMPOSE_PROJECT_NAME"); projectName != "" {
+		return projectName
+	}
+	return "new-api"
 }
 
 func waitServiceReady(composeDir string, service string, expectedVersion string) error {
@@ -388,6 +407,27 @@ func upsertEnvFile(path string, updates map[string]string) error {
 	return os.Rename(tmp, path)
 }
 
+func readEnvValue(path string, targetKey string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		key, value, ok := strings.Cut(scanner.Text(), "=")
+		if !ok || strings.TrimSpace(key) != targetKey {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		return strings.Trim(value, `"'`)
+	}
+	return ""
+}
+
 func runCommand(dir string, name string, args ...string) error {
 	_, err := runCommandOutput(dir, name, args...)
 	return err
@@ -404,6 +444,9 @@ func runCommandOutput(dir string, name string, args ...string) (string, error) {
 		log.Print(text)
 	}
 	if err != nil {
+		if text != "" {
+			return text, fmt.Errorf("%s %s failed: %w: %s", name, strings.Join(args, " "), err, text)
+		}
 		return text, fmt.Errorf("%s %s failed: %w", name, strings.Join(args, " "), err)
 	}
 	return text, nil

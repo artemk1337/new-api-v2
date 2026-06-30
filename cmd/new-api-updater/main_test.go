@@ -72,6 +72,8 @@ func TestDeployPreparedImageRollsBackEnvOnComposeFailure(t *testing.T) {
 	runCommandFn = func(_ string, name string, args ...string) error {
 		require.Equal(t, "docker", name)
 		require.Contains(t, strings.Join(args, " "), "compose")
+		assert.Contains(t, args, "-p")
+		assert.Contains(t, args, "new-api")
 		calls++
 		if calls == 1 {
 			data, err := os.ReadFile(envFile)
@@ -125,6 +127,7 @@ func TestDeployPreparedImageRemovesInsertedEnvKeysOnRollback(t *testing.T) {
 	t.Setenv("UPDATER_COMPOSE_FILE", composeFile)
 	t.Setenv("UPDATER_SERVICE", "new-api")
 	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
+	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "production-api")
 
 	var calls int
 	saved := runCommandFn
@@ -132,6 +135,8 @@ func TestDeployPreparedImageRemovesInsertedEnvKeysOnRollback(t *testing.T) {
 	runCommandFn = func(_ string, name string, args ...string) error {
 		require.Equal(t, "docker", name)
 		require.Contains(t, strings.Join(args, " "), "compose")
+		assert.Contains(t, args, "-p")
+		assert.Contains(t, args, "production-api")
 		calls++
 		if calls == 1 {
 			return errors.New("compose failed")
@@ -184,6 +189,8 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 	runCommandFn = func(_ string, name string, args ...string) error {
 		require.Equal(t, "docker", name)
 		require.Contains(t, strings.Join(args, " "), "compose")
+		assert.Contains(t, args, "-p")
+		assert.Contains(t, args, "new-api")
 		composeCalls++
 		return nil
 	}
@@ -224,6 +231,29 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 	data, err := os.ReadFile(envFile)
 	require.NoError(t, err)
 	assert.Equal(t, "KEEP=value\nNEW_API_IMAGE=old/image\nNEW_API_VERSION=v1.0.0\n", string(data))
+}
+
+func TestComposeProjectNameUsesEnvFileValueBeforeFallback(t *testing.T) {
+	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "")
+	t.Setenv("COMPOSE_PROJECT_NAME", "")
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	require.NoError(t, os.WriteFile(envFile, []byte("COMPOSE_PROJECT_NAME=custom-api\n"), 0644))
+
+	assert.Equal(t, "custom-api", composeProjectName(envFile))
+}
+
+func TestComposeProjectNameDefaultsToNewAPI(t *testing.T) {
+	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "")
+	t.Setenv("COMPOSE_PROJECT_NAME", "")
+	assert.Equal(t, "new-api", composeProjectName(filepath.Join(t.TempDir(), ".env")))
+}
+
+func TestRunCommandIncludesCommandOutputInError(t *testing.T) {
+	_, err := runCommandOutput("", "sh", "-c", "echo compose conflict >&2; exit 1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "compose conflict")
 }
 
 func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {

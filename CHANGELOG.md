@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.16
+
+- Fixed updater deployments to use a stable Docker Compose project name when running from the sidecar workspace, avoiding container-name conflicts during update and rollback.
+- Included Docker command output in updater errors so failed Compose operations show the real stderr in the admin UI.
+
 ## v1.1.15
 
 - Switched default Chinese provider names in pricing facets to English names.
