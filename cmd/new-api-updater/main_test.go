@@ -73,7 +73,7 @@ func TestDeployPreparedImageRollsBackEnvOnComposeFailure(t *testing.T) {
 		require.Equal(t, "docker", name)
 		require.Contains(t, strings.Join(args, " "), "compose")
 		assert.Contains(t, args, "-p")
-		assert.Contains(t, args, "new-api")
+		assert.Contains(t, args, "folder-independent-project")
 		calls++
 		if calls == 1 {
 			data, err := os.ReadFile(envFile)
@@ -94,6 +94,9 @@ func TestDeployPreparedImageRollsBackEnvOnComposeFailure(t *testing.T) {
 		case "exec":
 			return `{"version":"v1.0.0"}`, nil
 		case "inspect":
+			if strings.Contains(strings.Join(args, " "), "com.docker.compose.project") {
+				return "folder-independent-project", nil
+			}
 			return "healthy", nil
 		default:
 			t.Fatalf("unexpected docker command: %s", strings.Join(args, " "))
@@ -149,6 +152,9 @@ func TestDeployPreparedImageRemovesInsertedEnvKeysOnRollback(t *testing.T) {
 		case "exec":
 			return `{"version":"v1.0.0"}`, nil
 		case "inspect":
+			if strings.Contains(strings.Join(args, " "), "com.docker.compose.project") {
+				return "ignored-by-explicit-env", nil
+			}
 			return "healthy", nil
 		default:
 			t.Fatalf("unexpected docker command: %s", strings.Join(args, " "))
@@ -190,7 +196,7 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 		require.Equal(t, "docker", name)
 		require.Contains(t, strings.Join(args, " "), "compose")
 		assert.Contains(t, args, "-p")
-		assert.Contains(t, args, "new-api")
+		assert.Contains(t, args, "folder-independent-project")
 		composeCalls++
 		return nil
 	}
@@ -198,6 +204,9 @@ func TestDeployPreparedImageRollsBackWhenNewServiceNeverGetsHealthy(t *testing.T
 		require.Equal(t, "docker", name)
 		switch args[0] {
 		case "inspect":
+			if strings.Contains(strings.Join(args, " "), "com.docker.compose.project") {
+				return "folder-independent-project", nil
+			}
 			inspectCalls++
 			if inspectCalls == 1 {
 				return "unhealthy", nil
@@ -240,13 +249,39 @@ func TestComposeProjectNameUsesEnvFileValueBeforeFallback(t *testing.T) {
 	envFile := filepath.Join(dir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte("COMPOSE_PROJECT_NAME=custom-api\n"), 0644))
 
-	assert.Equal(t, "custom-api", composeProjectName(envFile))
+	assert.Equal(t, "custom-api", composeProjectName(dir, envFile, "new-api"))
+}
+
+func TestComposeProjectNameUsesExistingContainerLabelBeforeFallback(t *testing.T) {
+	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "")
+	t.Setenv("COMPOSE_PROJECT_NAME", "")
+
+	savedOutput := runCommandOutputFn
+	runCommandOutputFn = func(_ string, name string, args ...string) (string, error) {
+		require.Equal(t, "docker", name)
+		assert.Equal(t, []string{"inspect", "-f", `{{ index .Config.Labels "com.docker.compose.project" }}`, "new-api"}, args)
+		return "real-install-project\n", nil
+	}
+	t.Cleanup(func() {
+		runCommandOutputFn = savedOutput
+	})
+
+	assert.Equal(t, "real-install-project", composeProjectName(t.TempDir(), filepath.Join(t.TempDir(), ".env"), "new-api"))
 }
 
 func TestComposeProjectNameDefaultsToNewAPI(t *testing.T) {
 	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "")
 	t.Setenv("COMPOSE_PROJECT_NAME", "")
-	assert.Equal(t, "new-api", composeProjectName(filepath.Join(t.TempDir(), ".env")))
+
+	savedOutput := runCommandOutputFn
+	runCommandOutputFn = func(_ string, _ string, _ ...string) (string, error) {
+		return "", errors.New("container not found")
+	}
+	t.Cleanup(func() {
+		runCommandOutputFn = savedOutput
+	})
+
+	assert.Equal(t, "new-api", composeProjectName(t.TempDir(), filepath.Join(t.TempDir(), ".env"), "new-api"))
 }
 
 func TestRunCommandIncludesCommandOutputInError(t *testing.T) {

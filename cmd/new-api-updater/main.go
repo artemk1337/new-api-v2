@@ -209,7 +209,7 @@ func deployPreparedImage(tag string) error {
 	composeFile := env("UPDATER_COMPOSE_FILE", filepath.Join(composeDir, "docker-compose.yml"))
 	service := env("UPDATER_SERVICE", "new-api")
 	image := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
-	projectName := composeProjectName(envFile)
+	projectName := composeProjectName(composeDir, envFile, service)
 	previousEnv, err := readDeployEnvSnapshot(envFile)
 	if err != nil {
 		return err
@@ -253,7 +253,7 @@ func composeArgs(projectName string, envFile string, composeFile string, command
 	return append(args, command...)
 }
 
-func composeProjectName(envFile string) string {
+func composeProjectName(composeDir string, envFile string, service string) string {
 	if projectName := env("UPDATER_COMPOSE_PROJECT_NAME", ""); projectName != "" {
 		return projectName
 	}
@@ -263,7 +263,22 @@ func composeProjectName(envFile string) string {
 	if projectName := readEnvValue(envFile, "COMPOSE_PROJECT_NAME"); projectName != "" {
 		return projectName
 	}
+	if projectName := existingComposeProjectName(composeDir, service); projectName != "" {
+		return projectName
+	}
 	return "new-api"
+}
+
+func existingComposeProjectName(composeDir string, service string) string {
+	output, err := runCommandOutputFn(composeDir, "docker", "inspect", "-f", `{{ index .Config.Labels "com.docker.compose.project" }}`, service)
+	if err != nil {
+		return ""
+	}
+	projectName := strings.TrimSpace(output)
+	if projectName == "" || projectName == "<no value>" {
+		return ""
+	}
+	return projectName
 }
 
 func waitServiceReady(composeDir string, service string, expectedVersion string) error {

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.18
+
+- Removed the updater's dependency on the installation directory name by reusing the Docker Compose project label from the running service.
+- Kept explicit compose project overrides via environment variables and `.env` for operators who set them intentionally.
+
 ## v1.1.17
 
 - Fixed fresh installs to pin the Docker Compose project name to `new-api`, keeping initial deployment, updater deployment, and rollback on the same Compose project regardless of install directory.
