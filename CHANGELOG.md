@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.15
+
+- Switched default Chinese provider names in pricing facets to English names.
+- Added compatibility mapping so existing legacy Chinese vendor records are displayed with English names without changing stored data.
+
 ## v1.1.12
 
 - Removed the redundant enable flag from the system update flow.

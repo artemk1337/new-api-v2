@@ -15,26 +15,38 @@ var defaultVendorRules = map[string]string{
 	"gemini":   "Google",
 	"moonshot": "Moonshot",
 	"kimi":     "Moonshot",
-	"chatglm":  "智谱",
-	"glm-":     "智谱",
-	"qwen":     "阿里巴巴",
+	"chatglm":  "Zhipu",
+	"glm-":     "Zhipu",
+	"qwen":     "Alibaba",
 	"deepseek": "DeepSeek",
 	"abab":     "MiniMax",
-	"ernie":    "百度",
-	"spark":    "讯飞",
-	"hunyuan":  "腾讯",
+	"ernie":    "Baidu",
+	"spark":    "iFLYTEK",
+	"hunyuan":  "Tencent",
 	"command":  "Cohere",
 	"@cf/":     "Cloudflare",
 	"360":      "360",
-	"yi":       "零一万物",
+	"yi":       "01.AI",
 	"jina":     "Jina",
 	"mistral":  "Mistral",
 	"grok":     "xAI",
 	"llama":    "Meta",
-	"doubao":   "字节跳动",
-	"kling":    "快手",
-	"jimeng":   "即梦",
+	"doubao":   "ByteDance",
+	"kling":    "Kuaishou",
+	"jimeng":   "Jimeng",
 	"vidu":     "Vidu",
+}
+
+var defaultVendorEnglishNames = map[string]string{
+	"智谱":   "Zhipu",
+	"阿里巴巴": "Alibaba",
+	"百度":   "Baidu",
+	"讯飞":   "iFLYTEK",
+	"腾讯":   "Tencent",
+	"零一万物": "01.AI",
+	"字节跳动": "ByteDance",
+	"快手":   "Kuaishou",
+	"即梦":   "Jimeng",
 }
 
 // 供应商默认图标映射
@@ -43,23 +55,32 @@ var defaultVendorIcons = map[string]string{
 	"Anthropic":  "Claude.Color",
 	"Google":     "Gemini.Color",
 	"Moonshot":   "Moonshot",
+	"Zhipu":      "Zhipu.Color",
 	"智谱":         "Zhipu.Color",
+	"Alibaba":    "Qwen.Color",
 	"阿里巴巴":       "Qwen.Color",
 	"DeepSeek":   "DeepSeek.Color",
 	"MiniMax":    "Minimax.Color",
+	"Baidu":      "Wenxin.Color",
 	"百度":         "Wenxin.Color",
+	"iFLYTEK":    "Spark.Color",
 	"讯飞":         "Spark.Color",
+	"Tencent":    "Hunyuan.Color",
 	"腾讯":         "Hunyuan.Color",
 	"Cohere":     "Cohere.Color",
 	"Cloudflare": "Cloudflare.Color",
 	"360":        "Ai360.Color",
+	"01.AI":      "Yi.Color",
 	"零一万物":       "Yi.Color",
 	"Jina":       "Jina",
 	"Mistral":    "Mistral.Color",
 	"xAI":        "XAI",
 	"Meta":       "Ollama",
+	"ByteDance":  "Doubao.Color",
 	"字节跳动":       "Doubao.Color",
+	"Kuaishou":   "Kling.Color",
 	"快手":         "Kling.Color",
+	"Jimeng":     "Jimeng.Color",
 	"即梦":         "Jimeng.Color",
 	"Vidu":       "Vidu",
 	"微软":         "AzureAI",
@@ -125,4 +146,11 @@ func getDefaultVendorIcon(vendorName string) string {
 		return icon
 	}
 	return ""
+}
+
+func getDefaultVendorDisplayName(vendorName string) string {
+	if englishName, exists := defaultVendorEnglishNames[vendorName]; exists {
+		return englishName
+	}
+	return vendorName
 }

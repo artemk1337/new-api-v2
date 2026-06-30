@@ -182,7 +182,7 @@ func updatePricing() {
 	for _, v := range vendorMap {
 		vendorsList = append(vendorsList, PricingVendor{
 			ID:          v.Id,
-			Name:        v.Name,
+			Name:        getDefaultVendorDisplayName(v.Name),
 			Description: v.Description,
 			Icon:        v.Icon,
 		})
