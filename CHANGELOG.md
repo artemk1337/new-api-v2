@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.17
+
+- Fixed fresh installs to pin the Docker Compose project name to `new-api`, keeping initial deployment, updater deployment, and rollback on the same Compose project regardless of install directory.
+
 ## v1.1.16
 
 - Fixed updater deployments to use a stable Docker Compose project name when running from the sidecar workspace, avoiding container-name conflicts during update and rollback.

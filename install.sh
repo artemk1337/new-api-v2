@@ -6,6 +6,7 @@ APP_IMAGE="${NEW_API_IMAGE:-ghcr.io/artemk1337/new-api-v2}"
 UPDATER_IMAGE="${UPDATER_SIDECAR_IMAGE:-ghcr.io/artemk1337/new-api-v2-updater}"
 ENV_FILE="${ENV_FILE:-.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-new-api}"
 VERSION="${1:-${NEW_API_VERSION:-}}"
 START_UPDATER="${START_UPDATER:-true}"
 
@@ -87,15 +88,16 @@ fi
 
 upsert_env NEW_API_IMAGE "$APP_IMAGE"
 upsert_env NEW_API_VERSION "$VERSION"
+upsert_env COMPOSE_PROJECT_NAME "$COMPOSE_PROJECT_NAME"
 upsert_env UPDATER_SIDECAR_IMAGE "$UPDATER_IMAGE"
 upsert_env UPDATER_SIDECAR_VERSION "$VERSION"
 upsert_env UPDATE_CHECK_REPOSITORY "$REPOSITORY"
 upsert_env UPDATE_SIDECAR_TOKEN "$token"
 
 if [ "$START_UPDATER" = "true" ]; then
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" --profile updater up -d
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" --profile updater up -d
 else
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 fi
 
 echo "Installed ${APP_IMAGE}:${VERSION}"
