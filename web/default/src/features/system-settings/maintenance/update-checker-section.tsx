@@ -36,6 +36,7 @@ import {
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
 import type { SystemUpdateRelease, SystemUpdateTask } from '../types'
+import { shouldResumeDeployingSystemUpdateTask } from './system-update-resume'
 
 type UpdateCheckerSectionProps = {
   currentVersion?: string | null
@@ -48,17 +49,6 @@ function isActiveSystemUpdateTask(task: SystemUpdateTask | null) {
 
 const updateVersionWaitTimeoutMs = 10 * 60 * 1000
 const updateJobLookupFailureLimit = 5
-
-function isDeployingSystemUpdateTask(
-  task: SystemUpdateTask | null | undefined
-) {
-  return (
-    task?.type === 'system_update' &&
-    task.result?.status === 'deploying' &&
-    Boolean(task.result?.job_id) &&
-    Boolean(task.result?.requested_version)
-  )
-}
 
 export function UpdateCheckerSection({
   currentVersion,
@@ -193,7 +183,10 @@ export function UpdateCheckerSection({
         const listRes = await listSystemTasks(10)
         if (listRes.success && listRes.data) {
           const deployingTask = listRes.data.find((task) =>
-            isDeployingSystemUpdateTask(task as SystemUpdateTask)
+            shouldResumeDeployingSystemUpdateTask(
+              task as SystemUpdateTask,
+              currentVersion
+            )
           ) as SystemUpdateTask | undefined
           if (deployingTask) {
             setUpdateTask(deployingTask)
@@ -212,7 +205,22 @@ export function UpdateCheckerSection({
     }
 
     fetchCurrentSystemUpdateTask()
-  }, [])
+  }, [currentVersion])
+
+  useEffect(() => {
+    if (
+      !expectedUpdateVersion ||
+      currentVersion?.trim() !== expectedUpdateVersion
+    ) {
+      return
+    }
+
+    setExpectedUpdateVersion(null)
+    setExpectedUpdateStartedAt(null)
+    setUpdateTaskId(null)
+    setUpdateJobId(null)
+    setUpdateJobLookupFailures(0)
+  }, [currentVersion, expectedUpdateVersion])
 
   useEffect(() => {
     if (!updateActive && !expectedUpdateVersion && !updateTaskId) return

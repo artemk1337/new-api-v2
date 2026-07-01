@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.20
+
+- Fixed the system update UI so a completed deploying task does not trigger repeated reloads after the target version is already running.
+
 ## v1.1.19
 
 - Fixed wallet top-up amount discounts so JSON map entries are treated as minimum amount thresholds, matching the admin visual editor and payment calculation behavior.
