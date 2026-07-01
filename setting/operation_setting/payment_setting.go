@@ -66,6 +66,16 @@ func (discounts AmountDiscountConfig) DiscountForAmount(amount int) float64 {
 			discount = threshold.Discount
 		}
 	}
+	if bestMinAmount >= 0 {
+		return discount
+	}
+
+	for thresholdAmount, thresholdDiscount := range discounts.Exact {
+		if thresholdAmount <= amount && thresholdAmount > bestMinAmount && thresholdDiscount > 0 {
+			bestMinAmount = thresholdAmount
+			discount = thresholdDiscount
+		}
+	}
 	return discount
 }
 

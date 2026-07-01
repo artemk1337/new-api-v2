@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.19
+
+- Fixed wallet top-up amount discounts so JSON map entries are treated as minimum amount thresholds, matching the admin visual editor and payment calculation behavior.
+- Updated the payment settings hint to describe amount discount maps as threshold-based discounts.
+
 ## v1.1.18
 
 - Removed the updater's dependency on the installation directory name by reusing the Docker Compose project label from the running service.

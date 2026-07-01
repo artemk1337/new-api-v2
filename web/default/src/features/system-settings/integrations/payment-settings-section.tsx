@@ -1194,7 +1194,7 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Discount map by exact amount or threshold array with min_amount'
+                            'Discount map or threshold array with min_amount; each amount is a minimum recharge amount'
                           )}
                         </FormDescription>
                         <FormMessage />

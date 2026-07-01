@@ -204,5 +204,20 @@ export function getDiscountForAmount(
     return discount
   }
 
-  return discounts[amount] || 1.0
+  let discount = 1.0
+  let bestMinAmount = -1
+  for (const [thresholdAmount, thresholdDiscount] of Object.entries(
+    discounts
+  )) {
+    const minAmount = Number(thresholdAmount)
+    if (
+      minAmount <= amount &&
+      minAmount > bestMinAmount &&
+      thresholdDiscount > 0
+    ) {
+      bestMinAmount = minAmount
+      discount = thresholdDiscount
+    }
+  }
+  return discount
 }

@@ -24,11 +24,15 @@ func TestAmountDiscountConfigThresholds(t *testing.T) {
 
 func TestAmountDiscountConfigExactAmountCompatibility(t *testing.T) {
 	var discounts AmountDiscountConfig
-	err := common.Unmarshal([]byte(`{"100":0.95}`), &discounts)
+	err := common.Unmarshal([]byte(`{"100":0.95,"150":0.94,"200":0.93}`), &discounts)
 	require.NoError(t, err)
 
 	require.Equal(t, 1.0, discounts.DiscountForAmount(99))
 	require.Equal(t, 0.95, discounts.DiscountForAmount(100))
+	require.Equal(t, 0.95, discounts.DiscountForAmount(149))
+	require.Equal(t, 0.94, discounts.DiscountForAmount(150))
+	require.Equal(t, 0.94, discounts.DiscountForAmount(199))
+	require.Equal(t, 0.93, discounts.DiscountForAmount(250))
 }
 
 func TestAmountDiscountConfigExactAmountPrecedence(t *testing.T) {
