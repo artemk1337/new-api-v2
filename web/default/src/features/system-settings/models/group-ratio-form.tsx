@@ -61,6 +61,7 @@ import { GroupSpecialUsableRulesEditor } from './group-special-usable-editor'
 
 type GroupFormValues = {
   GroupRatio: string
+  PricingGroups: string
   TopupGroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
@@ -137,8 +138,8 @@ export const GroupRatioForm = memo(function GroupRatioForm({
           <div className='space-y-6'>
             <GroupRatioVisualEditor
               groupRatio={form.watch('GroupRatio')}
+              pricingGroups={form.watch('PricingGroups')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
-              userUsableGroups={form.watch('UserUsableGroups')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
               autoGroups={form.watch('AutoGroups')}
               onChange={(field, value) =>

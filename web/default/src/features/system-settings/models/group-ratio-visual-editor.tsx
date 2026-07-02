@@ -44,11 +44,20 @@ import { safeJsonParse } from '../utils/json-parser'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
+  pricingGroups: string
   topupGroupRatio: string
-  userUsableGroups: string
   groupGroupRatio: string
   autoGroups: string
   onChange: (field: string, value: string) => void
+}
+
+type GroupPricingRow = {
+  _id: string
+  id: number
+  name: string
+  ratio: number
+  selectable: boolean
+  description: string
 }
 
 type SimpleGroup = {
@@ -56,12 +65,9 @@ type SimpleGroup = {
   value: string
 }
 
-type GroupPricingRow = {
-  _id: string
-  name: string
-  ratio: number
-  selectable: boolean
-  description: string
+function normalizeRatio(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 1
 }
 
 type GroupOverride = {
@@ -79,84 +85,98 @@ function createGroupPricingId() {
   return `gpr_${groupPricingIdCounter}`
 }
 
-function normalizeRatio(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 1
-}
-
-function buildGroupPricingRows(
-  groupRatio: string,
-  userUsableGroups: string
-): GroupPricingRow[] {
-  const ratioMap = safeJsonParse<Record<string, number>>(groupRatio, {
-    fallback: {},
-    context: 'group ratios',
+function parsePricingGroupRows(pricingGroups: string): GroupPricingRow[] {
+  const parsed = safeJsonParse<unknown>(pricingGroups, {
+    fallback: [],
+    silent: true,
+    context: 'pricing groups',
   })
-  const usableMap = safeJsonParse<Record<string, string>>(userUsableGroups, {
-    fallback: {},
-    context: 'user usable groups',
-  })
-  const names = new Set([...Object.keys(ratioMap), ...Object.keys(usableMap)])
 
-  return [...names].map((name) => ({
-    _id: createGroupPricingId(),
-    name,
-    ratio: normalizeRatio(ratioMap[name]),
-    selectable: Object.hasOwn(usableMap, name),
-    description: String(usableMap[name] ?? ''),
-  }))
-}
+  const rows: GroupPricingRow[] = []
 
-function serializeGroupPricingRows(rows: GroupPricingRow[]) {
-  const groupRatio: Record<string, number> = {}
-  const userUsableGroups: Record<string, string> = {}
-
-  for (const row of rows) {
-    const name = row.name.trim()
-    if (!name) continue
-    groupRatio[name] = normalizeRatio(row.ratio)
-    if (row.selectable) {
-      userUsableGroups[name] = row.description
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as Record<string, unknown>
+      const id = Number(row.id)
+      const name = typeof row.name === 'string' ? row.name.trim() : ''
+      if (!Number.isFinite(id) || id <= 0 || !name) continue
+      rows.push({
+        _id: createGroupPricingId(),
+        id,
+        name,
+        ratio: normalizeRatio(row.ratio),
+        selectable: row.selectable === true,
+        description:
+          typeof row.description === 'string' ? row.description.trim() : '',
+      })
     }
+    return rows.sort((a, b) => a.id - b.id)
   }
 
-  return {
-    GroupRatio: JSON.stringify(groupRatio, null, 2),
-    UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
+  if (parsed && typeof parsed === 'object') {
+    const entries = Object.entries(parsed as Record<string, unknown>).filter(
+      ([name]) => name.trim().length > 0
+    )
+    entries.sort(([a], [b]) => a.localeCompare(b))
+    return entries.map(([name, value], index) => ({
+      _id: createGroupPricingId(),
+      id: index + 1,
+      name,
+      ratio: normalizeRatio(value),
+      selectable: index === 0 || name === 'default',
+      description: '',
+    }))
   }
+
+  return rows
 }
 
-function groupPricingSignature(rows: GroupPricingRow[]): string {
-  const serialized = serializeGroupPricingRows(rows)
-  return JSON.stringify({
-    groupRatio: safeJsonParse(serialized.GroupRatio, {
-      fallback: {},
-      silent: true,
-    }),
-    userUsableGroups: safeJsonParse(serialized.UserUsableGroups, {
-      fallback: {},
-      silent: true,
-    }),
-  })
+function serializePricingGroupRows(rows: GroupPricingRow[]) {
+  const normalized = rows
+    .map((row) => ({
+      id: row.id,
+      name: row.name.trim(),
+      ratio: normalizeRatio(row.ratio),
+      selectable: row.selectable,
+      description: row.description.trim(),
+    }))
+    .filter((row) => row.name.length > 0)
+    .sort((a, b) => a.id - b.id)
+
+  return JSON.stringify(normalized, null, 2)
 }
 
-function sourceGroupPricingSignature(
-  groupRatio: string,
-  userUsableGroups: string
-): string {
-  return JSON.stringify({
-    groupRatio: safeJsonParse(groupRatio, { fallback: {}, silent: true }),
-    userUsableGroups: safeJsonParse(userUsableGroups, {
-      fallback: {},
-      silent: true,
-    }),
-  })
+function pricingGroupSignature(rows: GroupPricingRow[]): string {
+  return JSON.stringify(
+    rows
+      .map((row) => ({
+        id: row.id,
+        name: row.name.trim(),
+        ratio: normalizeRatio(row.ratio),
+        selectable: row.selectable,
+        description: row.description.trim(),
+      }))
+      .sort((a, b) => a.id - b.id)
+  )
+}
+
+function sourcePricingGroupSignature(pricingGroups: string): string {
+  return JSON.stringify(
+    parsePricingGroupRows(pricingGroups).map((row) => ({
+      id: row.id,
+      name: row.name.trim(),
+      ratio: normalizeRatio(row.ratio),
+      selectable: row.selectable,
+      description: row.description.trim(),
+    }))
+  )
 }
 
 export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   groupRatio,
+  pricingGroups,
   topupGroupRatio,
-  userUsableGroups,
   groupGroupRatio,
   autoGroups,
   onChange,
@@ -400,8 +420,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   return (
     <div className='space-y-4'>
       <GroupPricingTable
-        groupRatio={groupRatio}
-        userUsableGroups={userUsableGroups}
+        pricingGroups={pricingGroups}
         onChange={onChange}
       />
 
@@ -726,40 +745,33 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 })
 
 type GroupPricingTableProps = {
-  groupRatio: string
-  userUsableGroups: string
+  pricingGroups: string
   onChange: (field: string, value: string) => void
 }
 
 function GroupPricingTable({
-  groupRatio,
-  userUsableGroups,
+  pricingGroups,
   onChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups)
+    parsePricingGroupRows(pricingGroups)
   )
 
   useEffect(() => {
-    const incomingSignature = sourceGroupPricingSignature(
-      groupRatio,
-      userUsableGroups
-    )
+    const incomingSignature = sourcePricingGroupSignature(pricingGroups)
     setRows((currentRows) => {
-      if (groupPricingSignature(currentRows) === incomingSignature) {
+      if (pricingGroupSignature(currentRows) === incomingSignature) {
         return currentRows
       }
-      return buildGroupPricingRows(groupRatio, userUsableGroups)
+      return parsePricingGroupRows(pricingGroups)
     })
-  }, [groupRatio, userUsableGroups])
+  }, [pricingGroups])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
       setRows(nextRows)
-      const serialized = serializeGroupPricingRows(nextRows)
-      onChange('GroupRatio', serialized.GroupRatio)
-      onChange('UserUsableGroups', serialized.UserUsableGroups)
+      onChange('PricingGroups', serializePricingGroupRows(nextRows))
     },
     [onChange]
   )
@@ -778,18 +790,13 @@ function GroupPricingTable({
   )
 
   const addRow = useCallback(() => {
-    const existingNames = new Set(rows.map((row) => row.name))
-    let index = 1
-    let name = `group_${index}`
-    while (existingNames.has(name)) {
-      index += 1
-      name = `group_${index}`
-    }
+    const nextId = rows.reduce((max, row) => Math.max(max, row.id), 0) + 1
     emitRows([
       ...rows,
       {
         _id: createGroupPricingId(),
-        name,
+        id: nextId,
+        name: `group_${nextId}`,
         ratio: 1,
         selectable: true,
         description: '',
@@ -799,7 +806,11 @@ function GroupPricingTable({
 
   const removeRow = useCallback(
     (id: string) => {
-      emitRows(rows.filter((row) => row._id !== id))
+      const row = rows.find((item) => item._id === id)
+      if (row?.id === 1) {
+        return
+      }
+      emitRows(rows.filter((item) => item._id !== id))
     },
     [emitRows, rows]
   )
@@ -845,15 +856,27 @@ function GroupPricingTable({
               {
                 id: 'group',
                 header: t('Group name'),
-                className: 'min-w-40',
+                className: 'min-w-52',
                 cell: (row) => (
-                  <Input
-                    value={row.name}
-                    onChange={(event) =>
-                      updateRow(row._id, 'name', event.target.value)
-                    }
-                    aria-invalid={duplicateNames.includes(row.name.trim())}
-                  />
+                  <div className='space-y-2'>
+                    <div className='flex flex-wrap items-center gap-2'>
+                      <Input
+                        value={row.name}
+                        onChange={(event) =>
+                          updateRow(row._id, 'name', event.target.value)
+                        }
+                        aria-invalid={duplicateNames.includes(row.name.trim())}
+                      />
+                      <span className='text-muted-foreground text-xs font-mono'>
+                        #{row.id}
+                      </span>
+                    </div>
+                    <div className='text-muted-foreground text-xs'>
+                      {row.id === 1
+                        ? t('Reserved default group')
+                        : t('Stable identifier')}
+                    </div>
+                  </div>
                 ),
               },
               {
@@ -920,6 +943,7 @@ function GroupPricingTable({
                   <Button
                     variant='ghost'
                     size='sm'
+                    disabled={row.id === 1}
                     onClick={() => removeRow(row._id)}
                     aria-label={t('Delete')}
                   >
@@ -937,6 +961,10 @@ function GroupPricingTable({
               })}
             </p>
           )}
+
+          <p className='text-muted-foreground text-xs'>
+            {t('Group IDs are stable and used by channels and pricing rules.')}
+          </p>
         </div>
       </CardContent>
     </Card>

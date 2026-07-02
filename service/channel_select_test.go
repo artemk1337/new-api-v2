@@ -24,9 +24,9 @@ func TestSelectCheapestAvailableGroupChoosesLowestRatioWithChannel(t *testing.T)
 	}
 	fetch := func(group string, modelName string, retry int, requestPath string) (*model.Channel, error) {
 		return &model.Channel{Id: map[string]int{
-			"default": 1,
-			"vip":     2,
-			"budget":  3,
+			"1": 1,
+			"2": 2,
+			"3": 3,
 		}[group]}, nil
 	}
 
@@ -34,7 +34,7 @@ func TestSelectCheapestAvailableGroupChoosesLowestRatioWithChannel(t *testing.T)
 
 	require.NoError(t, err)
 	require.NotNil(t, channel)
-	assert.Equal(t, "budget", group)
+	assert.Equal(t, "3", group)
 	assert.Equal(t, 3, channel.Id)
 }
 
@@ -49,7 +49,7 @@ func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
 		ModelName: "gpt-test",
 	}
 	fetch := func(group string, modelName string, retry int, requestPath string) (*model.Channel, error) {
-		if group == "budget" {
+		if group == "2" {
 			return nil, nil
 		}
 		return &model.Channel{Id: 1}, nil
@@ -59,7 +59,7 @@ func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, channel)
-	assert.Equal(t, "default", group)
+	assert.Equal(t, "1", group)
 	assert.Equal(t, 1, channel.Id)
 }
 

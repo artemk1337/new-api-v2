@@ -29,6 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog } from '@/components/dialog'
 import { MultiSelect } from '@/components/multi-select'
+import type { PricingGroupRecord } from '@/features/users/api'
 import {
   getTagModels,
   editTagChannels,
@@ -70,10 +71,24 @@ export function TagBatchEditDialog({
   // Transform groups to multi-select options
   const groupOptions = useMemo(() => {
     if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...groups])
-    return Array.from(allGroups).map((group) => ({
-      value: group,
-      label: group,
+    const allGroups = new Map<string, PricingGroupRecord>()
+    for (const group of groupsData.data) {
+      allGroups.set(String(group.id), group)
+    }
+    for (const group of groups) {
+      if (!allGroups.has(group)) {
+        allGroups.set(group, {
+          id: Number.parseInt(group, 10) || 0,
+          name: group,
+          ratio: 1,
+          selectable: true,
+          description: '',
+        })
+      }
+    }
+    return Array.from(allGroups.values()).map((group) => ({
+      value: String(group.id || group.name),
+      label: group.id > 0 ? `${group.name} #${group.id}` : group.name,
     }))
   }, [groupsData, groups])
 

@@ -171,7 +171,6 @@ export type SystemTaskListResponse = {
 }
 
 export type SiteSettings = {
-  'theme.frontend': string
   Notice: string
   SystemName: string
   Logo: string
@@ -337,6 +336,7 @@ export type BillingSettings = {
   'tool_price_setting.prices': string
   TopupGroupRatio: string
   GroupRatio: string
+  PricingGroups: string
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string

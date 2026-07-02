@@ -53,6 +53,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import type { PricingGroupRecord } from '@/features/users/api'
 
 import {
   sideDrawerContentClassName,
@@ -815,14 +816,51 @@ export function ChannelMutateDrawer({
   )
 
   // Transform groups to multi-select options
+  const pricingGroupLookup = useMemo(() => {
+    const lookup = new Map<string, PricingGroupRecord>()
+    for (const group of groupsData?.data || []) {
+      lookup.set(String(group.id), group)
+      lookup.set(group.name, group)
+    }
+    return lookup
+  }, [groupsData])
+
+  const normalizeGroupValue = useCallback(
+    (group: string) => {
+      const trimmed = group.trim()
+      if (!trimmed) return trimmed
+      return String(pricingGroupLookup.get(trimmed)?.id ?? trimmed)
+    },
+    [pricingGroupLookup]
+  )
+
   const groupOptions = useMemo(() => {
-    if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...(currentGroups || [])])
-    return [...allGroups].map((group) => ({
-      value: group,
-      label: group,
-    }))
-  }, [groupsData, currentGroups])
+    const options = new Map<string, { value: string; label: string }>()
+    for (const group of groupsData?.data || []) {
+      options.set(String(group.id), {
+        value: String(group.id),
+        label: `${group.name} #${group.id}`,
+      })
+    }
+    for (const group of currentGroups || []) {
+      const normalized = normalizeGroupValue(group)
+      if (!options.has(normalized)) {
+        options.set(normalized, {
+          value: normalized,
+          label:
+            pricingGroupLookup.get(normalized)?.name != null
+              ? `${pricingGroupLookup.get(normalized)?.name} #${normalized}`
+              : group,
+        })
+      }
+    }
+    return [...options.values()]
+  }, [currentGroups, groupsData, normalizeGroupValue, pricingGroupLookup])
+
+  const selectedGroupValues = useMemo(
+    () => (currentGroups || []).map(normalizeGroupValue),
+    [currentGroups, normalizeGroupValue]
+  )
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -3440,8 +3478,12 @@ export function ChannelMutateDrawer({
                                     ) : (
                                       <MultiSelect
                                         options={groupOptions}
-                                        selected={field.value}
-                                        onChange={field.onChange}
+                                        selected={selectedGroupValues}
+                                        onChange={(values) =>
+                                          field.onChange(
+                                            values.map(normalizeGroupValue)
+                                          )
+                                        }
                                         placeholder={t(
                                           FIELD_PLACEHOLDERS.GROUP
                                         )}

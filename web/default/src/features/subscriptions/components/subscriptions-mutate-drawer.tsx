@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import type { PricingGroupRecord } from '@/features/users/api'
 import {
   Form,
   FormControl,
@@ -96,7 +97,7 @@ export function SubscriptionsMutateDrawer({
   const tokensOnly = currencyMeta.kind === 'tokens'
   const currencyLabel = getCurrencyLabel()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [groupOptions, setGroupOptions] = useState<string[]>([])
+  const [groupOptions, setGroupOptions] = useState<PricingGroupRecord[]>([])
   const [creatingPancakeProduct, setCreatingPancakeProduct] = useState(false)
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
@@ -139,6 +140,9 @@ export function SubscriptionsMutateDrawer({
         .catch(() => setPancakeProducts([]))
     }
   }, [open, currentRow, form])
+
+  const formatGroupLabel = (group: PricingGroupRecord) =>
+    `${group.name} #${group.id}`
 
   const durationUnit = form.watch('duration_unit')
   const resetPeriod = form.watch('quota_reset_period')
@@ -244,6 +248,20 @@ export function SubscriptionsMutateDrawer({
 
   const durationUnitOpts = getDurationUnitOptions(t)
   const resetPeriodOpts = getResetPeriodOptions(t)
+  const groupLookup = useMemo(() => {
+    const lookup = new Map<string, PricingGroupRecord>()
+    for (const group of groupOptions) {
+      lookup.set(String(group.id), group)
+      lookup.set(group.name, group)
+    }
+    return lookup
+  }, [groupOptions])
+
+  const normalizeGroupValue = (group: string) => {
+    const trimmed = group.trim()
+    if (!trimmed) return trimmed
+    return String(groupLookup.get(trimmed)?.id ?? trimmed)
+  }
 
   return (
     <Sheet
@@ -384,15 +402,18 @@ export function SubscriptionsMutateDrawer({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('Upgrade Group')}</FormLabel>
-                      <Select
-                        items={[
-                          { value: '__none__', label: t('No Upgrade') },
-                          ...groupOptions.map((g) => ({ value: g, label: g })),
-                        ]}
-                        onValueChange={(v) =>
-                          field.onChange(v === '__none__' ? '' : v)
-                        }
-                        value={field.value || ''}
+                        <Select
+                          items={[
+                            { value: '__none__', label: t('No Upgrade') },
+                            ...groupOptions.map((g) => ({
+                              value: String(g.id),
+                              label: formatGroupLabel(g),
+                            })),
+                          ]}
+                          onValueChange={(v) =>
+                            field.onChange(v === '__none__' ? '' : v)
+                          }
+                          value={normalizeGroupValue(field.value || '')}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -405,8 +426,8 @@ export function SubscriptionsMutateDrawer({
                               {t('No Upgrade')}
                             </SelectItem>
                             {groupOptions.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
+                              <SelectItem key={g.id} value={String(g.id)}>
+                                {formatGroupLabel(g)}
                               </SelectItem>
                             ))}
                           </SelectGroup>
@@ -423,18 +444,21 @@ export function SubscriptionsMutateDrawer({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('Downgrade Group')}</FormLabel>
-                      <Select
-                        items={[
-                          {
-                            value: '__none__',
-                            label: t('Downgrade to pre-purchase group'),
-                          },
-                          ...groupOptions.map((g) => ({ value: g, label: g })),
-                        ]}
-                        onValueChange={(v) =>
-                          field.onChange(v === '__none__' ? '' : v)
-                        }
-                        value={field.value || ''}
+                        <Select
+                          items={[
+                            {
+                              value: '__none__',
+                              label: t('Downgrade to pre-purchase group'),
+                            },
+                            ...groupOptions.map((g) => ({
+                              value: String(g.id),
+                              label: formatGroupLabel(g),
+                            })),
+                          ]}
+                          onValueChange={(v) =>
+                            field.onChange(v === '__none__' ? '' : v)
+                          }
+                          value={normalizeGroupValue(field.value || '')}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -449,8 +473,8 @@ export function SubscriptionsMutateDrawer({
                               {t('Downgrade to pre-purchase group')}
                             </SelectItem>
                             {groupOptions.map((g) => (
-                              <SelectItem key={g} value={g}>
-                                {g}
+                              <SelectItem key={g.id} value={String(g.id)}>
+                                {formatGroupLabel(g)}
                               </SelectItem>
                             ))}
                           </SelectGroup>

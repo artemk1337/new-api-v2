@@ -38,6 +38,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog } from '@/components/dialog'
 import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
+import type { PricingGroupRecord } from '@/features/users/api'
 import {
   editTagChannels,
   getTagModels,
@@ -138,6 +139,9 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
       prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group]
     )
   }
+
+  const getGroupLabel = (group: PricingGroupRecord) =>
+    `${group.name} #${group.id}`
 
   const validateForm = () => {
     // Validate model mapping if provided
@@ -425,12 +429,15 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
             <div className='flex min-h-[60px] flex-wrap gap-2 rounded-md border p-3'>
               {availableGroups.map((group) => (
                 <GroupBadge
-                  key={group}
-                  group={group}
+                  key={group.id}
+                  group={String(group.id)}
+                  label={getGroupLabel(group)}
                   className={`cursor-pointer rounded-sm transition-opacity hover:opacity-70 ${
-                    selectedGroups.includes(group) ? 'bg-muted/70 px-1' : ''
+                    selectedGroups.includes(String(group.id))
+                      ? 'bg-muted/70 px-1'
+                      : ''
                   }`}
-                  onClick={() => handleToggleGroup(group)}
+                  onClick={() => handleToggleGroup(String(group.id))}
                 />
               ))}
             </div>

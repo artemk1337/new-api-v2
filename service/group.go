@@ -9,6 +9,11 @@ import (
 
 func GetUserUsableGroups(userGroup string) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
+	normalizedGroups := make(map[string]string, len(groupsCopy))
+	for groupName, desc := range groupsCopy {
+		normalizedGroups[ratio_setting.PricingGroupKey(groupName)] = desc
+	}
+	groupsCopy = normalizedGroups
 	if userGroup != "" {
 		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
 		if b {
@@ -16,15 +21,15 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 			for specialGroup, desc := range specialSettings {
 				if strings.HasPrefix(specialGroup, "-:") {
 					// 移除分组
-					groupToRemove := strings.TrimPrefix(specialGroup, "-:")
+					groupToRemove := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "-:"))
 					delete(groupsCopy, groupToRemove)
 				} else if strings.HasPrefix(specialGroup, "+:") {
 					// 添加分组
-					groupToAdd := strings.TrimPrefix(specialGroup, "+:")
+					groupToAdd := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "+:"))
 					groupsCopy[groupToAdd] = desc
 				} else {
 					// 直接添加分组
-					groupsCopy[specialGroup] = desc
+					groupsCopy[ratio_setting.PricingGroupKey(specialGroup)] = desc
 				}
 			}
 		}
@@ -46,8 +51,9 @@ func GetUserAutoGroup(userGroup string) []string {
 	groups := GetUserUsableGroups(userGroup)
 	autoGroups := make([]string, 0)
 	for _, group := range setting.GetAutoGroups() {
-		if _, ok := groups[group]; ok {
-			autoGroups = append(autoGroups, group)
+		normalizedGroup := ratio_setting.PricingGroupKey(group)
+		if _, ok := groups[normalizedGroup]; ok {
+			autoGroups = append(autoGroups, normalizedGroup)
 		}
 	}
 	return autoGroups

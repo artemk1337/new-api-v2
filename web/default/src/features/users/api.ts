@@ -145,7 +145,7 @@ export async function resetUserTwoFA(id: number): Promise<ApiResponse> {
 /**
  * Get all available groups
  */
-export async function getGroups(): Promise<ApiResponse<string[]>> {
+export async function getGroups(): Promise<ApiResponse<PricingGroupRecord[]>> {
   const res = await api.get('/api/group/')
   return res.data
 }
@@ -205,4 +205,11 @@ export async function adminUnbindCustomOAuth(
     `/api/user/${userId}/oauth/bindings/${providerId}`
   )
   return res.data
+}
+export type PricingGroupRecord = {
+  id: number
+  name: string
+  ratio: number
+  selectable: boolean
+  description: string
 }

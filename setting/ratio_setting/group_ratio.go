@@ -1,8 +1,8 @@
 package ratio_setting
 
 import (
-	"encoding/json"
 	"errors"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -65,25 +65,37 @@ func GetGroupRatioSetting() *GroupRatioSetting {
 }
 
 func GetGroupRatioCopy() map[string]float64 {
+	groups := GetPricingGroupsCopy()
+	groupRatios := make(map[string]float64, len(groups))
+	for _, group := range groups {
+		groupRatios[normalizePricingGroupKey(group.Name)] = group.Ratio
+	}
+	return groupRatios
+}
+
+func GetLegacyGroupRatioCopy() map[string]float64 {
 	return groupRatioMap.ReadAll()
 }
 
 func ContainsGroupRatio(name string) bool {
-	_, ok := groupRatioMap.Get(name)
-	return ok
+	return ContainsPricingGroup(name)
 }
 
 func GroupRatio2JSONString() string {
-	return groupRatioMap.MarshalJSONString()
+	return PricingGroups2JSONString()
 }
 
 func UpdateGroupRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(groupRatioMap, jsonStr)
+	return UpdatePricingGroupsByJSONString(jsonStr)
 }
 
 func GetGroupRatio(name string) float64 {
-	ratio, ok := groupRatioMap.Get(name)
+	key := normalizePricingGroupKey(name)
+	ratio, ok := groupRatioMap.Get(key)
 	if !ok {
+		if group, groupOk := ResolvePricingGroupKey(name); groupOk {
+			return group.Ratio
+		}
 		common.SysLog("group ratio not found: " + name)
 		return 1
 	}
@@ -94,6 +106,12 @@ func GetGroupGroupRatio(userGroup, usingGroup string) (float64, bool) {
 	gp, ok := groupGroupRatioMap.Get(userGroup)
 	if !ok {
 		return -1, false
+	}
+	usingGroup = normalizePricingGroupKey(usingGroup)
+	if groupName := PricingGroupNameByKey(usingGroup); groupName != "" {
+		if ratio, ok := gp[groupName]; ok {
+			return ratio, true
+		}
 	}
 	ratio, ok := gp[usingGroup]
 	if !ok {
@@ -112,7 +130,7 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 
 func CheckGroupRatio(jsonStr string) error {
 	checkGroupRatio := make(map[string]float64)
-	err := json.Unmarshal([]byte(jsonStr), &checkGroupRatio)
+	err := common.Unmarshal([]byte(jsonStr), &checkGroupRatio)
 	if err != nil {
 		return err
 	}
@@ -122,4 +140,12 @@ func CheckGroupRatio(jsonStr string) error {
 		}
 	}
 	return nil
+}
+
+func normalizePricingGroupKey(key string) string {
+	trimmed := key
+	if group, ok := ResolvePricingGroupKey(trimmed); ok {
+		return strconv.Itoa(group.Id)
+	}
+	return trimmed
 }

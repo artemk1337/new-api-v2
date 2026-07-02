@@ -122,6 +122,7 @@ func InitOptionMap() {
 	common.OptionMap["YooKassaReturnURL"] = setting.YooKassaReturnURL
 	common.OptionMap["YooKassaPaymentMethods"] = setting.YooKassaPaymentMethods
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
+	common.OptionMap["PricingGroups"] = ratio_setting.PricingGroups2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
@@ -189,6 +190,8 @@ func InitOptionMap() {
 
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
+	_ = ratio_setting.GetPricingGroupsCopy()
+	_ = ReplaceChannelGroupNamesWithIDs()
 }
 
 func loadOptionsFromDatabase() {
@@ -543,6 +546,8 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
+	case "PricingGroups":
+		err = ratio_setting.UpdatePricingGroupsByJSONString(value)
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
 	case "UserUsableGroups":

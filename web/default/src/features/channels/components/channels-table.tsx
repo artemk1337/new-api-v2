@@ -40,6 +40,7 @@ import {
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { getLobeIcon } from '@/lib/lobe-icon'
+import type { PricingGroupRecord } from '@/features/users/api'
 
 import { getChannels, searchChannels, getGroups } from '../api'
 import {
@@ -176,9 +177,9 @@ export function ChannelsTable() {
 
   const groupOptions = useMemo(
     () =>
-      (groupsData?.data || []).map((g) => ({
-        label: g,
-        value: g,
+      (groupsData?.data || []).map((g: PricingGroupRecord) => ({
+        label: `${g.name} #${g.id}`,
+        value: String(g.id),
       })),
     [groupsData]
   )
