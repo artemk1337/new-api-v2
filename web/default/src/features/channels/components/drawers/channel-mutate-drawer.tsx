@@ -839,7 +839,7 @@ export function ChannelMutateDrawer({
     for (const group of groupsData?.data || []) {
       options.set(String(group.id), {
         value: String(group.id),
-        label: `${group.name} #${group.id}`,
+        label: group.name,
       })
     }
     for (const group of currentGroups || []) {
@@ -849,7 +849,7 @@ export function ChannelMutateDrawer({
           value: normalized,
           label:
             pricingGroupLookup.get(normalized)?.name != null
-              ? `${pricingGroupLookup.get(normalized)?.name} #${normalized}`
+              ? (pricingGroupLookup.get(normalized)?.name ?? normalized)
               : group,
         })
       }

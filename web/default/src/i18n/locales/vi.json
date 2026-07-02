@@ -2299,6 +2299,7 @@
     "Jina": "Jina",
     "JSON": "JSON",
     "JSON array of group identifiers. When enabled below, new tokens rotate through this list.": "Mảng JSON của các định danh nhóm. Khi được bật bên dưới, các token mới sẽ luân phiên qua danh sách này.",
+    "JSON array of pricing groups with id, name, ratio, selectable, and description.": "Mảng JSON của các nhóm giá gồm id, tên, hệ số, trạng thái chọn được và mô tả.",
     "JSON Editor": "Trình chỉnh sửa JSON",
     "JSON format error": "Lỗi định dạng JSON",
     "JSON format supports service account JSON files": "Định dạng JSON hỗ trợ các tệp JSON tài khoản dịch vụ",

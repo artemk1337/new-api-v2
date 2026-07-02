@@ -87,6 +87,7 @@ var channelReadOnlyFields = map[string]struct{}{
 	"response_time":        {},
 	"balance":              {},
 	"balance_updated_time": {},
+	"group_refs":           {},
 	"used_quota":           {},
 }
 

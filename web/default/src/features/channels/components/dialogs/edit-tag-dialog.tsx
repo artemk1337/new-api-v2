@@ -140,8 +140,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
     )
   }
 
-  const getGroupLabel = (group: PricingGroupRecord) =>
-    `${group.name} #${group.id}`
+  const getGroupLabel = (group: PricingGroupRecord) => group.name
 
   const validateForm = () => {
     // Validate model mapping if provided

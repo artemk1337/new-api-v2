@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"gorm.io/gorm"
 )
@@ -35,10 +36,11 @@ type Model struct {
 	UpdatedTime  int64          `json:"updated_time" gorm:"bigint"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
 
-	BoundChannels []BoundChannel `json:"bound_channels,omitempty" gorm:"-"`
-	EnableGroups  []string       `json:"enable_groups,omitempty" gorm:"-"`
-	QuotaTypes    []int          `json:"quota_types,omitempty" gorm:"-"`
-	NameRule      int            `json:"name_rule" gorm:"default:0"`
+	BoundChannels   []BoundChannel                  `json:"bound_channels,omitempty" gorm:"-"`
+	EnableGroups    []string                        `json:"enable_groups,omitempty" gorm:"-"`
+	EnableGroupRefs []ratio_setting.PricingGroupRef `json:"enable_group_refs,omitempty" gorm:"-"`
+	QuotaTypes      []int                           `json:"quota_types,omitempty" gorm:"-"`
+	NameRule        int                             `json:"name_rule" gorm:"default:0"`
 
 	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
 	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`

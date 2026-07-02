@@ -30,6 +30,11 @@ export interface BoundChannel {
   type: number
 }
 
+export interface PricingGroupRef {
+  id: number
+  name: string
+}
+
 /**
  * Model entity from API
  */
@@ -49,6 +54,7 @@ export interface Model {
   // Runtime fields
   bound_channels?: BoundChannel[]
   enable_groups?: string[]
+  enable_group_refs?: PricingGroupRef[]
   quota_types?: number[]
   matched_models?: string[]
   matched_count?: number

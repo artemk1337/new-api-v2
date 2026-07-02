@@ -34,6 +34,11 @@ export const channelInfoSchema = z.object({
 
 export type ChannelInfo = z.infer<typeof channelInfoSchema>
 
+export const pricingGroupRefSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+})
+
 export const channelSchema = z.object({
   id: z.number(),
   type: z.number(),
@@ -52,6 +57,7 @@ export const channelSchema = z.object({
   balance_updated_time: z.number(),
   models: z.string().default(''),
   group: z.string().default('default'),
+  group_refs: z.array(pricingGroupRefSchema).optional(),
   used_quota: z.number().default(0),
   model_mapping: z.string().nullish(),
   status_code_mapping: z.string().nullish(),

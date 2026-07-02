@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -198,6 +199,7 @@ func enrichModels(models []*model.Model) {
 			}
 			mm.BoundChannels = chs
 			mm.EnableGroups = model.GetModelEnableGroups(mm.ModelName)
+			mm.EnableGroupRefs = ratio_setting.PricingGroupRefsByKeys(mm.EnableGroups)
 			mm.QuotaTypes = model.GetModelQuotaTypes(mm.ModelName)
 		}
 	}
@@ -294,6 +296,7 @@ func enrichModels(models []*model.Model) {
 				groups = append(groups, g)
 			}
 			mm.EnableGroups = groups
+			mm.EnableGroupRefs = ratio_setting.PricingGroupRefsByKeys(mm.EnableGroups)
 		}
 
 		// 配额类型集合（保持去重并排序）

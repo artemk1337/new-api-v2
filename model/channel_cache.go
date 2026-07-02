@@ -43,7 +43,7 @@ func InitChannelCache() {
 	DB.Find(&abilities)
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
-		groups[ability.Group] = true
+		groups[ratio_setting.PricingGroupKey(ability.Group)] = true
 	}
 	newGroup2model2channels := make(map[string]map[string][]int)
 	for group := range groups {
@@ -53,7 +53,7 @@ func InitChannelCache() {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
-		groups := strings.Split(channel.Group, ",")
+		groups := ratio_setting.NormalizePricingGroupKeys(strings.Split(channel.Group, ","))
 		for _, group := range groups {
 			models := strings.Split(channel.Models, ",")
 			for _, model := range models {
@@ -106,6 +106,7 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	group = ratio_setting.PricingGroupKey(group)
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, requestPath)

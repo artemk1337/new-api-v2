@@ -357,10 +357,16 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
       meta: { mobileHidden: true },
       cell: ({ row }) => {
         const groups = row.getValue('enable_groups') as string[]
+        const groupNames = new Map(
+          (row.original.enable_group_refs ?? []).map((ref) => [
+            String(ref.id),
+            ref.name,
+          ])
+        )
         return (
           <BadgeListCell
             items={(groups ?? []).map((g) => (
-              <GroupBadge key={g} group={g} size='sm' />
+              <GroupBadge key={g} group={groupNames.get(g) ?? g} size='sm' />
             ))}
           />
         )

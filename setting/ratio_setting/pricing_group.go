@@ -19,6 +19,11 @@ type PricingGroup struct {
 	Description string  `json:"description,omitempty"`
 }
 
+type PricingGroupRef struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 var pricingGroupsMutex sync.RWMutex
 var pricingGroups []*PricingGroup
 
@@ -55,9 +60,10 @@ func preferredPricingGroupOrder(name string) int {
 	}
 }
 
-func normalizePricingGroups(groups []*PricingGroup) []*PricingGroup {
+func normalizePricingGroups(groups []*PricingGroup) ([]*PricingGroup, error) {
 	cleaned := make([]*PricingGroup, 0, len(groups))
 	seenIDs := make(map[int]struct{})
+	seenNames := make(map[string]struct{})
 	nextID := 1
 
 	for _, group := range groups {
@@ -68,6 +74,10 @@ func normalizePricingGroups(groups []*PricingGroup) []*PricingGroup {
 		if name == "" {
 			continue
 		}
+		if _, exists := seenNames[name]; exists {
+			return nil, errors.New("pricing group name must be unique: " + name)
+		}
+		seenNames[name] = struct{}{}
 		item := &PricingGroup{
 			Id:          group.Id,
 			Name:        name,
@@ -77,7 +87,7 @@ func normalizePricingGroups(groups []*PricingGroup) []*PricingGroup {
 		}
 		if item.Id > 0 {
 			if _, exists := seenIDs[item.Id]; exists {
-				item.Id = 0
+				return nil, errors.New("pricing group id must be unique: " + strconv.Itoa(item.Id))
 			} else {
 				seenIDs[item.Id] = struct{}{}
 				if item.Id >= nextID {
@@ -86,6 +96,10 @@ func normalizePricingGroups(groups []*PricingGroup) []*PricingGroup {
 			}
 		}
 		cleaned = append(cleaned, item)
+	}
+
+	if len(cleaned) == 0 {
+		return nil, errors.New("pricing groups cannot be empty")
 	}
 
 	sort.SliceStable(cleaned, func(i, j int) bool {
@@ -113,25 +127,41 @@ func normalizePricingGroups(groups []*PricingGroup) []*PricingGroup {
 	}
 
 	for _, group := range cleaned {
-		if group.Id > 0 {
-			continue
-		}
-		if group.Name == "default" && nextID <= 1 {
-			group.Id = 1
-			seenIDs[1] = struct{}{}
-			if nextID <= 1 {
-				nextID = 2
+		if group.Name == "default" {
+			if group.Id != 0 && group.Id != 1 {
+				return nil, errors.New("default pricing group must keep id 1")
 			}
-			continue
+			if _, exists := seenIDs[1]; exists && group.Id != 1 {
+				return nil, errors.New("default pricing group id 1 is already used")
+			}
+			if group.Id == 0 {
+				group.Id = 1
+				seenIDs[1] = struct{}{}
+				if nextID <= 1 {
+					nextID = 2
+				}
+			}
 		}
-		group.Id = assignID()
+	}
+
+	hasDefault := false
+	for _, group := range cleaned {
+		if group.Id == 1 {
+			hasDefault = true
+		}
+		if group.Id == 0 {
+			group.Id = assignID()
+		}
+	}
+	if !hasDefault {
+		return nil, errors.New("default pricing group cannot be deleted")
 	}
 
 	sort.SliceStable(cleaned, func(i, j int) bool {
 		return cleaned[i].Id < cleaned[j].Id
 	})
 
-	return cleaned
+	return cleaned, nil
 }
 
 func defaultPricingGroupsCopy() []*PricingGroup {
@@ -193,7 +223,10 @@ func buildPricingGroupsFromLegacy() []*PricingGroup {
 	for _, name := range names {
 		id := nextID
 		nextID++
-		ratio := legacyRatios[name]
+		ratio, ok := legacyRatios[name]
+		if !ok {
+			ratio = 1
+		}
 		selectable := false
 		if desc, ok := legacyUsable[name]; ok {
 			selectable = true
@@ -207,7 +240,11 @@ func buildPricingGroupsFromLegacy() []*PricingGroup {
 			Description: legacyUsable[name],
 		})
 	}
-	return normalizePricingGroups(groups)
+	normalized, err := normalizePricingGroups(groups)
+	if err != nil {
+		return defaultPricingGroupsCopy()
+	}
+	return normalized
 }
 
 func ensurePricingGroupsInitialized() {
@@ -229,6 +266,7 @@ func ensurePricingGroupsInitialized() {
 		return
 	}
 	pricingGroups = legacyGroups
+	syncGroupRatioMapLocked(pricingGroups)
 }
 
 func GetPricingGroupsCopy() []*PricingGroup {
@@ -241,10 +279,26 @@ func GetPricingGroupsCopy() []*PricingGroup {
 	return clonePricingGroups(pricingGroups)
 }
 
-func setPricingGroups(groups []*PricingGroup) {
+func setPricingGroups(groups []*PricingGroup) error {
+	normalized, err := normalizePricingGroups(groups)
+	if err != nil {
+		return err
+	}
 	pricingGroupsMutex.Lock()
 	defer pricingGroupsMutex.Unlock()
-	pricingGroups = normalizePricingGroups(groups)
+	pricingGroups = normalized
+	syncGroupRatioMapLocked(pricingGroups)
+	return nil
+}
+
+func syncGroupRatioMapLocked(groups []*PricingGroup) {
+	groupRatioMap.Clear()
+	for _, group := range groups {
+		if group == nil {
+			continue
+		}
+		groupRatioMap.Set(strconv.Itoa(group.Id), group.Ratio)
+	}
 }
 
 func PricingGroups2JSONString() string {
@@ -276,28 +330,20 @@ func UpdatePricingGroupsByJSONString(jsonStr string) error {
 			})
 		}
 	}
-	normalized := normalizePricingGroups(groups)
-	hasDefault := false
-	for _, group := range normalized {
-		if group == nil {
-			continue
-		}
-		if group.Id == 1 {
-			hasDefault = true
-			break
-		}
+	normalized, err := normalizePricingGroups(groups)
+	if err != nil {
+		return err
 	}
-	if !hasDefault {
-		return errors.New("default pricing group cannot be deleted")
-	}
-	setPricingGroups(normalized)
-	return nil
+	return setPricingGroups(normalized)
 }
 
 func ResolvePricingGroupKey(key string) (PricingGroup, bool) {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
 		return PricingGroup{}, false
+	}
+	if trimmed == "default" {
+		return GetPricingGroupByID(1)
 	}
 	if id, err := strconv.Atoi(trimmed); err == nil {
 		return GetPricingGroupByID(id)
@@ -335,10 +381,33 @@ func PricingGroupKey(name string) string {
 	return strconv.Itoa(group.Id)
 }
 
+func PricingGroupKeysCSV(value string) string {
+	parts := strings.Split(strings.Trim(value, ","), ",")
+	normalized := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		key := PricingGroupKey(part)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, key)
+	}
+	return strings.Join(normalized, ",")
+}
+
 func NormalizePricingGroupKeys(groups []string) []string {
 	normalized := make([]string, 0, len(groups))
 	for _, group := range groups {
-		normalized = append(normalized, PricingGroupKey(group))
+		key := PricingGroupKey(group)
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		normalized = append(normalized, key)
 	}
 	return normalized
 }
@@ -362,4 +431,46 @@ func PricingGroupIDByName(name string) (int, bool) {
 		return 0, false
 	}
 	return group.Id, true
+}
+
+func PricingGroupRefByKey(key string) (PricingGroupRef, bool) {
+	group, ok := ResolvePricingGroupKey(key)
+	if !ok {
+		return PricingGroupRef{}, false
+	}
+	return PricingGroupRef{Id: group.Id, Name: group.Name}, true
+}
+
+func PricingGroupRefsByKeys(keys []string) []PricingGroupRef {
+	refs := make([]PricingGroupRef, 0, len(keys))
+	seen := make(map[int]struct{}, len(keys))
+	for _, key := range keys {
+		ref, ok := PricingGroupRefByKey(key)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[ref.Id]; exists {
+			continue
+		}
+		seen[ref.Id] = struct{}{}
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func PricingGroupNameMap() map[string]string {
+	groups := GetPricingGroupsCopy()
+	names := make(map[string]string, len(groups))
+	for _, group := range groups {
+		names[strconv.Itoa(group.Id)] = group.Name
+	}
+	return names
+}
+
+func ResetPricingGroupsForTest() {
+	pricingGroupsMutex.Lock()
+	defer pricingGroupsMutex.Unlock()
+	pricingGroups = nil
+	groupRatioMap.Clear()
+	groupRatioMap.AddAll(defaultGroupRatio)
 }

@@ -33,16 +33,18 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 				}
 			}
 		}
-		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup
-		if _, ok := groupsCopy[userGroup]; !ok {
-			groupsCopy[userGroup] = "用户分组"
+		// userGroup is a user-domain group. Add it only when it also exists as
+		// a pricing group for legacy installations that intentionally overlap.
+		userPricingGroup := ratio_setting.PricingGroupKey(userGroup)
+		if _, ok := groupsCopy[userPricingGroup]; !ok && ratio_setting.ContainsPricingGroup(userGroup) {
+			groupsCopy[userPricingGroup] = "用户分组"
 		}
 	}
 	return groupsCopy
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
-	_, ok := GetUserUsableGroups(userGroup)[groupName]
+	_, ok := GetUserUsableGroups(userGroup)[ratio_setting.PricingGroupKey(groupName)]
 	return ok
 }
 

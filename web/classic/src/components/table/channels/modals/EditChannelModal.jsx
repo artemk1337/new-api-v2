@@ -1178,8 +1178,8 @@ const EditChannelModal = (props) => {
       }
       setGroupOptions(
         res.data.data.map((group) => ({
-          label: group,
-          value: group,
+          label: group.name || group,
+          value: String(group.id ?? group.name ?? group),
         })),
       );
     } catch (error) {

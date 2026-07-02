@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
@@ -30,7 +30,7 @@ import {
   ModelCardGrid,
   ModelDetailsDrawer,
 } from './components'
-import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
+import { EXCLUDED_GROUPS, FILTER_ALL, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
 
@@ -45,6 +45,8 @@ export function Pricing() {
     vendors,
     groupRatio,
     usableGroup,
+    pricingGroups,
+    groupNames,
     endpointMap,
     autoGroups,
     isLoading,
@@ -102,6 +104,16 @@ export function Pricing() {
       ),
     [usableGroup]
   )
+
+  useEffect(() => {
+    if (groupFilter === FILTER_ALL || availableGroups.includes(groupFilter)) {
+      return
+    }
+    const match = pricingGroups.find((group) => group.name === groupFilter)
+    if (match) {
+      setGroupFilter(String(match.id))
+    }
+  }, [availableGroups, groupFilter, pricingGroups, setGroupFilter])
 
   const handleClearAll = useCallback(() => {
     clearFilters()
@@ -214,6 +226,7 @@ export function Pricing() {
               vendors={vendors || []}
               groups={availableGroups}
               groupRatios={groupRatio}
+              groupNames={groupNames}
               tags={availableTags}
               models={models || []}
               hasActiveFilters={hasActiveFilters}
@@ -247,6 +260,7 @@ export function Pricing() {
                 vendors={vendors || []}
                 groups={availableGroups}
                 groupRatios={groupRatio}
+                groupNames={groupNames}
                 tags={availableTags}
                 models={models || []}
                 hasActiveFilters={hasActiveFilters}
@@ -274,6 +288,7 @@ export function Pricing() {
                 >) || {}
               }
               autoGroups={autoGroups || []}
+              groupNames={groupNames || {}}
               priceRate={priceRate ?? 1}
               usdExchangeRate={usdExchangeRate ?? 1}
               tokenUnit={tokenUnit}

@@ -60,11 +60,21 @@ export function usePricingData() {
     })
   }, [data])
 
+  const groupNames = useMemo(() => {
+    const names: Record<string, string> = {}
+    for (const group of data?.pricing_groups ?? []) {
+      names[String(group.id)] = group.name
+    }
+    return names
+  }, [data?.pricing_groups])
+
   return {
     models,
     vendors: data?.vendors ?? [],
     groupRatio: data?.group_ratio ?? {},
     usableGroup: data?.usable_group ?? {},
+    pricingGroups: data?.pricing_groups ?? [],
+    groupNames,
     endpointMap: data?.supported_endpoint ?? {},
     autoGroups: data?.auto_groups ?? [],
     isLoading,

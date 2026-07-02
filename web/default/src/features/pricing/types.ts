@@ -27,6 +27,17 @@ export type PricingVendor = {
   description?: string
 }
 
+export type PricingGroupRef = {
+  id: number
+  name: string
+}
+
+export type PricingGroupRecord = PricingGroupRef & {
+  ratio: number
+  selectable: boolean
+  description: string
+}
+
 export type PricingModel = {
   id: number
   model_name: string
@@ -46,6 +57,7 @@ export type PricingModel = {
   audio_ratio?: number | null
   audio_completion_ratio?: number | null
   enable_groups: string[]
+  enable_group_refs?: PricingGroupRef[]
   tags?: string
   supported_endpoint_types?: string[]
   key?: string
@@ -95,6 +107,7 @@ export type PricingData = {
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
   usable_group: Record<string, { desc: string; ratio: number }>
+  pricing_groups?: PricingGroupRecord[]
   supported_endpoint: Record<string, string>
   auto_groups: string[]
 }

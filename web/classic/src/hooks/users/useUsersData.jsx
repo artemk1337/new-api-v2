@@ -243,8 +243,8 @@ export const useUsersData = () => {
       }
       setGroupOptions(
         res.data.data.map((group) => ({
-          label: group,
-          value: group,
+          label: group.name || group,
+          value: group.name || group,
         })),
       );
     } catch (error) {

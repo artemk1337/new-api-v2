@@ -33,6 +33,7 @@ const ModelPricingTable = ({
   displayPrice,
   showRatio,
   usableGroup,
+  groupNameMap = {},
   autoGroups = [],
   t,
 }) => {
@@ -89,7 +90,7 @@ const ModelPricingTable = ({
         dataIndex: 'group',
         render: (text) => (
           <Tag color='white' size='small' shape='circle'>
-            {text}
+            {groupNameMap[text] || text}
             {t('分组')}
           </Tag>
         ),

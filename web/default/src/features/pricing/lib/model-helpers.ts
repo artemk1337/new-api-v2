@@ -39,6 +39,16 @@ export function getAvailableGroups(
     .filter((g) => modelEnableGroups.includes(g))
 }
 
+export function getPricingGroupDisplayName(
+  model: PricingModel,
+  group: string
+): string {
+  const match = model.enable_group_refs?.find(
+    (ref) => String(ref.id) === String(group)
+  )
+  return match?.name ?? group
+}
+
 /**
  * Replace model placeholder in endpoint path
  */

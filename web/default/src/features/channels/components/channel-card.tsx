@@ -66,6 +66,9 @@ function ChannelCardComponent({
   }
 
   const groups = parseGroupsList(row.original.group ?? '')
+  const groupNames = new Map(
+    (row.original.group_refs ?? []).map((ref) => [String(ref.id), ref.name])
+  )
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
@@ -163,7 +166,7 @@ function ChannelCardComponent({
               {groups.map((g) => (
                 <GroupBadge
                   key={g}
-                  group={g}
+                  group={groupNames.get(g) ?? g}
                   label={sensitiveVisible ? undefined : SENSITIVE_MASK}
                   size='sm'
                 />

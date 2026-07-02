@@ -986,12 +986,18 @@ export function useChannelsColumns(
         cell: ({ row }) => {
           const group = row.getValue('group') as string
           const groupArray = parseGroupsList(group)
+          const groupNames = new Map(
+            (row.original.group_refs ?? []).map((ref) => [
+              String(ref.id),
+              ref.name,
+            ])
+          )
           return (
             <BadgeListCell
               items={groupArray.map((g) => (
                 <GroupBadge
                   key={g}
-                  group={g}
+                  group={groupNames.get(g) ?? g}
                   label={sensitiveVisible ? undefined : SENSITIVE_MASK}
                   size='sm'
                 />

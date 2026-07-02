@@ -178,7 +178,7 @@ export function ChannelsTable() {
   const groupOptions = useMemo(
     () =>
       (groupsData?.data || []).map((g: PricingGroupRecord) => ({
-        label: `${g.name} #${g.id}`,
+        label: g.name,
         value: String(g.id),
       })),
     [groupsData]

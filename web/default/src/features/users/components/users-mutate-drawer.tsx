@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
@@ -65,7 +65,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import type { PricingGroupRecord } from '@/features/users/api'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -118,20 +117,6 @@ export function UsersMutateDrawer({
   })
 
   const groups = groupsData?.data || []
-  const groupLookup = useMemo(() => {
-    const lookup = new Map<string, PricingGroupRecord>()
-    for (const group of groups) {
-      lookup.set(String(group.id), group)
-      lookup.set(group.name, group)
-    }
-    return lookup
-  }, [groups])
-
-  const normalizeGroupValue = (group: string) => {
-    const trimmed = group.trim()
-    if (!trimmed) return trimmed
-    return String(groupLookup.get(trimmed)?.id ?? trimmed)
-  }
 
   // Permission catalog is owned by the backend; fetched once and reused.
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({
@@ -375,12 +360,12 @@ export function UsersMutateDrawer({
                         <Select
                           items={[
                             ...groups.map((group) => ({
-                              value: String(group.id),
-                              label: `${group.name} #${group.id}`,
+                              value: group.name,
+                              label: group.name,
                             })),
                           ]}
                           onValueChange={field.onChange}
-                          value={normalizeGroupValue(field.value || '')}
+                          value={field.value || ''}
                         >
                           <FormControl>
                             <SelectTrigger>
@@ -392,9 +377,9 @@ export function UsersMutateDrawer({
                               {groups.map((group) => (
                                 <SelectItem
                                   key={group.id}
-                                  value={String(group.id)}
+                                  value={group.name}
                                 >
-                                  {`${group.name} #${group.id}`}
+                                  {group.name}
                                 </SelectItem>
                               ))}
                             </SelectGroup>

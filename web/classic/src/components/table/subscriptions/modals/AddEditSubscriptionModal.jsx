@@ -132,7 +132,12 @@ const AddEditSubscriptionModal = ({
     API.get('/api/group')
       .then((res) => {
         if (res.data?.success) {
-          setGroupOptions(res.data?.data || []);
+          setGroupOptions(
+            (res.data?.data || []).map((group) => ({
+              label: group.name || group,
+              value: group.name || group,
+            })),
+          );
         } else {
           setGroupOptions([]);
         }
@@ -335,8 +340,8 @@ const AddEditSubscriptionModal = ({
                       >
                         <Select.Option value=''>{t('不升级')}</Select.Option>
                         {(groupOptions || []).map((g) => (
-                          <Select.Option key={g} value={g}>
-                            {g}
+                          <Select.Option key={g.value} value={g.value}>
+                            {g.label}
                           </Select.Option>
                         ))}
                       </Form.Select>

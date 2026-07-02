@@ -854,6 +854,16 @@ function GroupPricingTable({
             emptyContent={t('No groups yet. Add a group to get started.')}
             columns={[
               {
+                id: 'id',
+                header: 'ID',
+                className: 'w-20',
+                cell: (row) => (
+                  <span className='text-muted-foreground font-mono text-sm'>
+                    {row.id}
+                  </span>
+                ),
+              },
+              {
                 id: 'group',
                 header: t('Group name'),
                 className: 'min-w-52',
@@ -867,9 +877,6 @@ function GroupPricingTable({
                         }
                         aria-invalid={duplicateNames.includes(row.name.trim())}
                       />
-                      <span className='text-muted-foreground text-xs font-mono'>
-                        #{row.id}
-                      </span>
                     </div>
                     <div className='text-muted-foreground text-xs'>
                       {row.id === 1

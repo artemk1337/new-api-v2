@@ -190,7 +190,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   </FormControl>
                   <FormDescription>
                     {t(
-                      'JSON map of group → ratio applied when the user selects the group explicitly.'
+                      'JSON array of pricing groups with id, name, ratio, selectable, and description.'
                     )}
                   </FormDescription>
                   <FormMessage />

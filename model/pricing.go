@@ -16,26 +16,27 @@ import (
 )
 
 type Pricing struct {
-	ModelName              string                  `json:"model_name"`
-	Description            string                  `json:"description,omitempty"`
-	Icon                   string                  `json:"icon,omitempty"`
-	Tags                   string                  `json:"tags,omitempty"`
-	VendorID               int                     `json:"vendor_id,omitempty"`
-	QuotaType              int                     `json:"quota_type"`
-	ModelRatio             float64                 `json:"model_ratio"`
-	ModelPrice             float64                 `json:"model_price"`
-	OwnerBy                string                  `json:"owner_by"`
-	CompletionRatio        float64                 `json:"completion_ratio"`
-	CacheRatio             *float64                `json:"cache_ratio,omitempty"`
-	CreateCacheRatio       *float64                `json:"create_cache_ratio,omitempty"`
-	ImageRatio             *float64                `json:"image_ratio,omitempty"`
-	AudioRatio             *float64                `json:"audio_ratio,omitempty"`
-	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
-	EnableGroup            []string                `json:"enable_groups"`
-	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
-	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	ModelName              string                          `json:"model_name"`
+	Description            string                          `json:"description,omitempty"`
+	Icon                   string                          `json:"icon,omitempty"`
+	Tags                   string                          `json:"tags,omitempty"`
+	VendorID               int                             `json:"vendor_id,omitempty"`
+	QuotaType              int                             `json:"quota_type"`
+	ModelRatio             float64                         `json:"model_ratio"`
+	ModelPrice             float64                         `json:"model_price"`
+	OwnerBy                string                          `json:"owner_by"`
+	CompletionRatio        float64                         `json:"completion_ratio"`
+	CacheRatio             *float64                        `json:"cache_ratio,omitempty"`
+	CreateCacheRatio       *float64                        `json:"create_cache_ratio,omitempty"`
+	ImageRatio             *float64                        `json:"image_ratio,omitempty"`
+	AudioRatio             *float64                        `json:"audio_ratio,omitempty"`
+	AudioCompletionRatio   *float64                        `json:"audio_completion_ratio,omitempty"`
+	EnableGroup            []string                        `json:"enable_groups"`
+	EnableGroupRefs        []ratio_setting.PricingGroupRef `json:"enable_group_refs,omitempty"`
+	SupportedEndpointTypes []constant.EndpointType         `json:"supported_endpoint_types"`
+	BillingMode            string                          `json:"billing_mode,omitempty"`
+	BillingExpr            string                          `json:"billing_expr,omitempty"`
+	PricingVersion         string                          `json:"pricing_version,omitempty"`
 }
 
 type PricingVendor struct {
@@ -196,7 +197,7 @@ func updatePricing() {
 			groups = types.NewSet[string]()
 			modelGroupsMap[ability.Model] = groups
 		}
-		groups.Add(ability.Group)
+		groups.Add(ratio_setting.PricingGroupKey(ability.Group))
 	}
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
@@ -292,6 +293,8 @@ func updatePricing() {
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
 		}
+		pricing.EnableGroup = ratio_setting.NormalizePricingGroupKeys(pricing.EnableGroup)
+		pricing.EnableGroupRefs = ratio_setting.PricingGroupRefsByKeys(pricing.EnableGroup)
 
 		// 补充模型元数据（描述、标签、供应商、状态）
 		if meta, ok := metaMap[model]; ok {

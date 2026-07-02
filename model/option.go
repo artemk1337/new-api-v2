@@ -122,7 +122,7 @@ func InitOptionMap() {
 	common.OptionMap["YooKassaReturnURL"] = setting.YooKassaReturnURL
 	common.OptionMap["YooKassaPaymentMethods"] = setting.YooKassaPaymentMethods
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
-	common.OptionMap["PricingGroups"] = ratio_setting.PricingGroups2JSONString()
+	common.OptionMap["PricingGroups"] = "[]"
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
@@ -149,7 +149,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
-	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
+	common.OptionMap["GroupRatio"] = "{}"
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
@@ -191,7 +191,12 @@ func InitOptionMap() {
 	common.OptionMapRWMutex.Unlock()
 	loadOptionsFromDatabase()
 	_ = ratio_setting.GetPricingGroupsCopy()
-	_ = ReplaceChannelGroupNamesWithIDs()
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["PricingGroups"] = ratio_setting.PricingGroups2JSONString()
+	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
+	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
+	common.OptionMapRWMutex.Unlock()
+	_ = NormalizeChannelPricingGroups()
 }
 
 func loadOptionsFromDatabase() {
@@ -546,8 +551,14 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
+		if err == nil {
+			err = NormalizeChannelPricingGroups()
+		}
 	case "PricingGroups":
 		err = ratio_setting.UpdatePricingGroupsByJSONString(value)
+		if err == nil {
+			err = NormalizeChannelPricingGroups()
+		}
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
 	case "UserUsableGroups":

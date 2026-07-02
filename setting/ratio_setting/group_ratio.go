@@ -3,6 +3,7 @@ package ratio_setting
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -125,10 +126,45 @@ func GroupGroupRatio2JSONString() string {
 }
 
 func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
-	return types.LoadFromJsonString(groupGroupRatioMap, jsonStr)
+	parsed := make(map[string]map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return err
+	}
+	normalized := make(map[string]map[string]float64, len(parsed))
+	for userGroup, ratios := range parsed {
+		userGroup = strings.TrimSpace(userGroup)
+		if userGroup == "" {
+			continue
+		}
+		normalizedRatios := make(map[string]float64, len(ratios))
+		for pricingGroup, ratio := range ratios {
+			key := normalizePricingGroupKey(pricingGroup)
+			if key == "" {
+				continue
+			}
+			normalizedRatios[key] = ratio
+		}
+		normalized[userGroup] = normalizedRatios
+	}
+	groupGroupRatioMap.Clear()
+	groupGroupRatioMap.AddAll(normalized)
+	return nil
 }
 
 func CheckGroupRatio(jsonStr string) error {
+	var groups []*PricingGroup
+	if err := common.Unmarshal([]byte(jsonStr), &groups); err == nil {
+		for _, group := range groups {
+			if group == nil {
+				continue
+			}
+			if group.Ratio < 0 {
+				return errors.New("group ratio must be not less than 0: " + group.Name)
+			}
+		}
+		return nil
+	}
+
 	checkGroupRatio := make(map[string]float64)
 	err := common.Unmarshal([]byte(jsonStr), &checkGroupRatio)
 	if err != nil {

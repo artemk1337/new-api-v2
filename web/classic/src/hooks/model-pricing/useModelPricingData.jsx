@@ -49,6 +49,7 @@ export const useModelPricingData = () => {
   const [loading, setLoading] = useState(true);
   const [groupRatio, setGroupRatio] = useState({});
   const [usableGroup, setUsableGroup] = useState({});
+  const [groupNameMap, setGroupNameMap] = useState({});
   const [endpointMap, setEndpointMap] = useState({});
   const [autoGroups, setAutoGroups] = useState([]);
 
@@ -236,6 +237,7 @@ export const useModelPricingData = () => {
       vendors,
       group_ratio,
       usable_group,
+      pricing_groups,
       supported_endpoint,
       auto_groups,
     } = res.data;
@@ -250,7 +252,14 @@ export const useModelPricingData = () => {
           vendorMap[v.id] = v;
         });
       }
+      const nextGroupNameMap = {};
+      if (Array.isArray(pricing_groups)) {
+        pricing_groups.forEach((group) => {
+          nextGroupNameMap[String(group.id)] = group.name;
+        });
+      }
       setVendorsMap(vendorMap);
+      setGroupNameMap(nextGroupNameMap);
       setEndpointMap(supported_endpoint || {});
       setAutoGroups(auto_groups || []);
       setModelsFormat(data, group_ratio, vendorMap);
@@ -296,7 +305,7 @@ export const useModelPricingData = () => {
     } else {
       showInfo(
         t('当前查看的分组为：{{group}}，倍率为：{{ratio}}', {
-          group: group,
+          group: groupNameMap[group] || group,
           ratio: groupRatio[group] ?? 1,
         }),
       );
@@ -372,6 +381,7 @@ export const useModelPricingData = () => {
     loading,
     groupRatio,
     usableGroup,
+    groupNameMap,
     endpointMap,
     autoGroups,
 

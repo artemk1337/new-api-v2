@@ -2299,6 +2299,7 @@
     "Jina": "Jina",
     "JSON": "JSON",
     "JSON array of group identifiers. When enabled below, new tokens rotate through this list.": "JSON array of group identifiers. When enabled below, new tokens rotate through this list.",
+    "JSON array of pricing groups with id, name, ratio, selectable, and description.": "JSON array of pricing groups with id, name, ratio, selectable, and description.",
     "JSON Editor": "JSON Editor",
     "JSON format error": "JSON format error",
     "JSON format supports service account JSON files": "JSON format supports service account JSON files",

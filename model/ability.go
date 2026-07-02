@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -42,8 +43,9 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 
 func GetGroupEnabledModels(group string) []string {
 	var models []string
+	groupKeys := pricingGroupAbilityKeys(group)
 	// Find distinct models
-	DB.Table("abilities").Where(commonGroupCol+" = ? and enabled = ?", group, true).Distinct("model").Pluck("model", &models)
+	DB.Table("abilities").Where(commonGroupCol+" IN ? and enabled = ?", groupKeys, true).Distinct("model").Pluck("model", &models)
 	return models
 }
 
@@ -61,11 +63,12 @@ func GetAllEnableAbilities() []Ability {
 }
 
 func getPriority(group string, model string, retry int) (int, error) {
+	groupKeys := pricingGroupAbilityKeys(group)
 
 	var priorities []int
 	err := DB.Model(&Ability{}).
 		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Where(commonGroupCol+" IN ? and model = ? and enabled = ?", groupKeys, model, true).
 		Order("priority DESC").              // 按优先级降序排序
 		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
 
@@ -91,18 +94,43 @@ func getPriority(group string, model string, retry int) (int, error) {
 }
 
 func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+	groupKeys := pricingGroupAbilityKeys(group)
+	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" IN ? and model = ? and enabled = ?", groupKeys, model, true)
+	channelQuery := DB.Where(commonGroupCol+" IN ? and model = ? and enabled = ? and priority = (?)", groupKeys, model, true, maxPrioritySubQuery)
 	if retry != 0 {
 		priority, err := getPriority(group, model, retry)
 		if err != nil {
 			return nil, err
 		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+			channelQuery = DB.Where(commonGroupCol+" IN ? and model = ? and enabled = ? and priority = ?", groupKeys, model, true, priority)
 		}
 	}
 
 	return channelQuery, nil
+}
+
+func pricingGroupAbilityKeys(group string) []string {
+	key := ratio_setting.PricingGroupKey(group)
+	keys := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		keys = append(keys, value)
+	}
+
+	add(key)
+	if groupName := ratio_setting.PricingGroupNameByKey(key); groupName != key {
+		add(groupName)
+	}
+	add(group)
+	return keys
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
@@ -194,7 +222,7 @@ func filterAbilitiesByRequestPath(abilities []Ability, requestPath string) []Abi
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	groups_ := ratio_setting.NormalizePricingGroupKeys(strings.Split(channel.Group, ","))
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {
@@ -266,7 +294,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 
 	// Then add new abilities
 	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	groups_ := ratio_setting.NormalizePricingGroupKeys(strings.Split(channel.Group, ","))
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {

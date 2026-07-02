@@ -2299,6 +2299,7 @@
     "Jina": "Jina",
     "JSON": "JSON",
     "JSON array of group identifiers. When enabled below, new tokens rotate through this list.": "Tableau JSON d'identifiants de groupe. Lorsqu'il est activé ci-dessous, les nouveaux jetons alternent dans cette liste.",
+    "JSON array of pricing groups with id, name, ratio, selectable, and description.": "Tableau JSON des groupes tarifaires avec id, nom, ratio, sélection et description.",
     "JSON Editor": "Édition JSON",
     "JSON format error": "Erreur de format JSON",
     "JSON format supports service account JSON files": "Le format JSON prend en charge les fichiers JSON de compte de service",

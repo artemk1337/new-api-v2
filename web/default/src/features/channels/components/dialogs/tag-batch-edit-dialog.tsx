@@ -88,7 +88,7 @@ export function TagBatchEditDialog({
     }
     return Array.from(allGroups.values()).map((group) => ({
       value: String(group.id || group.name),
-      label: group.id > 0 ? `${group.name} #${group.id}` : group.name,
+      label: group.name,
     }))
   }, [groupsData, groups])
 

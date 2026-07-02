@@ -54,8 +54,11 @@ func (discounts *AmountDiscountConfig) UnmarshalJSON(data []byte) error {
 }
 
 func (discounts AmountDiscountConfig) DiscountForAmount(amount int) float64 {
-	if exactDiscount, ok := discounts.Exact[amount]; ok && exactDiscount > 0 {
-		return exactDiscount
+	if exactDiscount, ok := discounts.Exact[amount]; ok {
+		if exactDiscount > 0 {
+			return exactDiscount
+		}
+		return 1
 	}
 
 	discount := 1.0

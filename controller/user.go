@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -589,7 +590,7 @@ func GetUserModels(c *gin.Context) {
 		return
 	}
 	groups := service.GetUserUsableGroups(user.Group)
-	group := c.Query("group")
+	group := ratio_setting.PricingGroupKey(c.Query("group"))
 	if group != "" {
 		if _, ok := groups[group]; !ok {
 			c.JSON(http.StatusOK, gin.H{

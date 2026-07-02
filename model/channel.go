@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -23,25 +22,26 @@ import (
 )
 
 type Channel struct {
-	Id                 int     `json:"id"`
-	Type               int     `json:"type" gorm:"default:0"`
-	Key                string  `json:"key" gorm:"not null"`
-	OpenAIOrganization *string `json:"openai_organization"`
-	TestModel          *string `json:"test_model"`
-	Status             int     `json:"status" gorm:"default:1"`
-	Name               string  `json:"name" gorm:"index"`
-	Weight             *uint   `json:"weight" gorm:"default:0"`
-	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
-	TestTime           int64   `json:"test_time" gorm:"bigint"`
-	ResponseTime       int     `json:"response_time"` // in milliseconds
-	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
-	Other              string  `json:"other"`
-	Balance            float64 `json:"balance"` // in USD
-	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
-	Models             string  `json:"models"`
-	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
-	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
-	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
+	Id                 int                             `json:"id"`
+	Type               int                             `json:"type" gorm:"default:0"`
+	Key                string                          `json:"key" gorm:"not null"`
+	OpenAIOrganization *string                         `json:"openai_organization"`
+	TestModel          *string                         `json:"test_model"`
+	Status             int                             `json:"status" gorm:"default:1"`
+	Name               string                          `json:"name" gorm:"index"`
+	Weight             *uint                           `json:"weight" gorm:"default:0"`
+	CreatedTime        int64                           `json:"created_time" gorm:"bigint"`
+	TestTime           int64                           `json:"test_time" gorm:"bigint"`
+	ResponseTime       int                             `json:"response_time"` // in milliseconds
+	BaseURL            *string                         `json:"base_url" gorm:"column:base_url;default:''"`
+	Other              string                          `json:"other"`
+	Balance            float64                         `json:"balance"` // in USD
+	BalanceUpdatedTime int64                           `json:"balance_updated_time" gorm:"bigint"`
+	Models             string                          `json:"models"`
+	Group              string                          `json:"group" gorm:"type:varchar(64);default:'default'"`
+	GroupRefs          []ratio_setting.PricingGroupRef `json:"group_refs,omitempty" gorm:"-"`
+	UsedQuota          int64                           `json:"used_quota" gorm:"bigint;default:0"`
+	ModelMapping       *string                         `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
@@ -136,7 +136,7 @@ func NormalizeChannelGroupFilter(group string) string {
 	if group == "" || strings.EqualFold(group, "all") || strings.EqualFold(group, "null") {
 		return ""
 	}
-	return group
+	return ratio_setting.PricingGroupKey(group)
 }
 
 func channelGroupFilterCondition() string {
@@ -306,41 +306,55 @@ func (channel *Channel) GetGroups() []string {
 	return groups
 }
 
+func (channel *Channel) AttachPricingGroupRefs() {
+	if channel == nil {
+		return
+	}
+	channel.GroupRefs = ratio_setting.PricingGroupRefsByKeys(channel.GetGroups())
+}
+
 func ReplaceChannelGroupNamesWithIDs() error {
-	groups := ratio_setting.GetPricingGroupsCopy()
-	if len(groups) == 0 {
-		return nil
-	}
+	return NormalizeChannelPricingGroups()
+}
 
-	nameToID := make(map[string]string, len(groups))
-	for _, group := range groups {
-		nameToID[group.Name] = strconv.Itoa(group.Id)
-	}
-
-	var channels []*Channel
-	if err := DB.Find(&channels).Error; err != nil {
-		return err
-	}
-
-	for _, channel := range channels {
-		groupNames := channel.GetGroups()
-		changed := false
-		for i, groupName := range groupNames {
-			if id, ok := nameToID[groupName]; ok {
-				groupNames[i] = id
-				changed = true
-			}
-		}
-		if !changed {
-			continue
-		}
-		channel.Group = strings.Join(groupNames, ",")
-		if err := DB.Model(&Channel{}).Where("id = ?", channel.Id).Update("group", channel.Group).Error; err != nil {
+func NormalizeChannelPricingGroups() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var channels []*Channel
+		if err := tx.Find(&channels).Error; err != nil {
 			return err
 		}
-	}
 
-	return nil
+		for _, channel := range channels {
+			normalizedGroup := ratio_setting.PricingGroupKeysCSV(channel.Group)
+			if normalizedGroup == "" {
+				normalizedGroup = ratio_setting.PricingGroupKey("default")
+			}
+			needsRebuild := normalizedGroup != channel.Group
+			if !needsRebuild {
+				var abilityGroups []string
+				if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck(commonGroupCol, &abilityGroups).Error; err != nil {
+					return err
+				}
+				for _, abilityGroup := range abilityGroups {
+					if ratio_setting.PricingGroupKey(abilityGroup) != abilityGroup {
+						needsRebuild = true
+						break
+					}
+				}
+			}
+			if !needsRebuild {
+				continue
+			}
+			channel.Group = normalizedGroup
+			if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("group", channel.Group).Error; err != nil {
+				return err
+			}
+			if err := channel.UpdateAbilities(tx); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (channel *Channel) GetOtherInfo() map[string]interface{} {
@@ -476,6 +490,13 @@ func BatchInsertChannels(channels []Channel) error {
 		}
 	}()
 
+	for i := range channels {
+		channels[i].Group = ratio_setting.PricingGroupKeysCSV(channels[i].Group)
+		if channels[i].Group == "" {
+			channels[i].Group = ratio_setting.PricingGroupKey("default")
+		}
+	}
+
 	for _, chunk := range lo.Chunk(channels, 50) {
 		if err := tx.Create(&chunk).Error; err != nil {
 			tx.Rollback()
@@ -553,6 +574,10 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
+	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
+	if channel.Group == "" {
+		channel.Group = ratio_setting.PricingGroupKey("default")
+	}
 	var err error
 	err = DB.Create(channel).Error
 	if err != nil {
@@ -563,6 +588,10 @@ func (channel *Channel) Insert() error {
 }
 
 func (channel *Channel) Update() error {
+	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
+	if channel.Group == "" {
+		channel.Group = ratio_setting.PricingGroupKey("default")
+	}
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string

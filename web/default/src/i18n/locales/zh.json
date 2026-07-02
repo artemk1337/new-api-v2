@@ -2299,6 +2299,7 @@
     "Jina": "Jina",
     "JSON": "JSON",
     "JSON array of group identifiers. When enabled below, new tokens rotate through this list.": "分组标识符的 JSON 数组。在下方启用时，新令牌将在此列表中轮换。",
+    "JSON array of pricing groups with id, name, ratio, selectable, and description.": "定价分组的 JSON 数组，包含 id、名称、倍率、是否可选和描述。",
     "JSON Editor": "JSON 编辑",
     "JSON format error": "JSON 格式错误",
     "JSON format supports service account JSON files": "JSON 格式支持服务账户 JSON 文件",
