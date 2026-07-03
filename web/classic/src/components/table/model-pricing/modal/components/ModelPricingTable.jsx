@@ -186,7 +186,7 @@ const ModelPricingTable = ({
           {autoChain.map((g, idx) => (
             <React.Fragment key={g}>
               <Tag color='white' size='small' shape='circle'>
-                {g}
+                {groupNameMap[g] || g}
                 {t('分组')}
               </Tag>
               {idx < autoChain.length - 1 && <span className='text-sm'>→</span>}

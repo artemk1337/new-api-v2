@@ -84,6 +84,7 @@ func Distribute() func(c *gin.Context) {
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+				lockedTokenGroup := tokenGroup
 				autoCheapestGroup := tokenGroup == ""
 				// check path is /pg/chat/completions
 				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
@@ -94,11 +95,13 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+						playgroundGroup := ratio_setting.PricingGroupKey(playgroundRequest.Group)
+						userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+						if !canUsePlaygroundPricingGroup(userGroup, lockedTokenGroup, usingGroup, playgroundGroup) {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}
-						usingGroup = playgroundRequest.Group
+						usingGroup = playgroundGroup
 						autoCheapestGroup = false
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
@@ -212,6 +215,13 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func canUsePlaygroundPricingGroup(userGroup, lockedTokenGroup, usingGroup, playgroundGroup string) bool {
+	if lockedTokenGroup != "" {
+		return playgroundGroup == lockedTokenGroup || playgroundGroup == usingGroup
+	}
+	return service.GroupInUserUsableGroups(userGroup, playgroundGroup) || playgroundGroup == usingGroup
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.
@@ -450,8 +460,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			return nil, false, err
 		}
 		modelRequest.Model = req.Model
-		modelRequest.Group = req.Group
-		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
+		modelRequest.Group = ratio_setting.PricingGroupKey(req.Group)
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {

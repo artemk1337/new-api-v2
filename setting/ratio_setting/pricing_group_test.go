@@ -83,7 +83,7 @@ func TestPricingGroupsRejectDuplicateNames(t *testing.T) {
 	err := UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
 		{"id":2,"name":"vip","ratio":1,"selectable":true,"description":"vip"},
-		{"id":3,"name":"vip","ratio":1,"selectable":true,"description":"duplicate"}
+		{"id":3,"name":" vip ","ratio":1,"selectable":true,"description":"duplicate"}
 	]`)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pricing group name must be unique")
@@ -138,6 +138,27 @@ func TestLegacyUsableOnlyGroupDefaultsRatioToOne(t *testing.T) {
 	assert.InDelta(t, 1, GetGroupRatio("usable_only"), 1e-9)
 }
 
+func TestLegacyGroupRatioKeepsUsableOnlyGroups(t *testing.T) {
+	originalGroups := PricingGroups2JSONString()
+	originalUsable := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
+		require.NoError(t, UpdatePricingGroupsByJSONString(originalGroups))
+	})
+
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{
+		"default": "default",
+		"vip": "vip",
+		"usable_only": "usable only"
+	}`))
+	ResetPricingGroupsForTest()
+	require.NoError(t, UpdateGroupRatioByJSONString(`{"default":1,"vip":1.2}`))
+
+	assert.NotEqual(t, "usable_only", PricingGroupKey("usable_only"))
+	assert.InDelta(t, 1, GetGroupRatio("usable_only"), 1e-9)
+	assert.InDelta(t, 1.2, GetGroupRatio("vip"), 1e-9)
+}
+
 func TestCheckGroupRatioAcceptsPricingGroupsArray(t *testing.T) {
 	require.NoError(t, CheckGroupRatio(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
@@ -149,4 +170,16 @@ func TestCheckGroupRatioAcceptsPricingGroupsArray(t *testing.T) {
 	]`)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "group ratio must be not less than 0")
+}
+
+func TestCheckGroupRatioRejectsDefaultDeletion(t *testing.T) {
+	err := CheckGroupRatio(`[
+		{"id":2,"name":"vip","ratio":1,"selectable":true}
+	]`)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "default pricing group cannot be deleted")
+
+	err = CheckGroupRatio(`{"vip":1}`)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "default pricing group cannot be deleted")
 }

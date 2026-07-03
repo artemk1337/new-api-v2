@@ -19,6 +19,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -539,6 +540,11 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	groupRef, hasGroupRef := ratio_setting.PricingGroupRefByKey(task.Group)
+	var groupRefPtr *ratio_setting.PricingGroupRef
+	if hasGroupRef {
+		groupRefPtr = &groupRef
+	}
 	return &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
@@ -547,6 +553,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Platform:   string(task.Platform),
 		UserId:     task.UserId,
 		Group:      task.Group,
+		GroupRef:   groupRefPtr,
 		ChannelId:  task.ChannelId,
 		Quota:      task.Quota,
 		Action:     task.Action,

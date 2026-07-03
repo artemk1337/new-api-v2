@@ -54,7 +54,7 @@ func GetPerfMetrics(c *gin.Context) {
 
 	result, err := perfmetrics.Query(perfmetrics.QueryParams{
 		Model: modelName,
-		Group: c.Query("group"),
+		Group: ratio_setting.PricingGroupKey(c.Query("group")),
 		Hours: hours,
 	})
 	if err != nil {
@@ -69,7 +69,11 @@ func GetPerfMetrics(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    result,
+		"data": gin.H{
+			"model_name":    result.ModelName,
+			"series_schema": result.SeriesSchema,
+			"groups":        perfMetricGroupsWithRefs(result.Groups),
+		},
 	})
 }
 
@@ -79,4 +83,23 @@ func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupRes
 		_, ok := activeRatios[g.Group]
 		return ok || g.Group == "auto"
 	})
+}
+
+func perfMetricGroupsWithRefs(groups []perfmetrics.GroupResult) []gin.H {
+	result := make([]gin.H, 0, len(groups))
+	for _, group := range groups {
+		item := gin.H{
+			"group":          group.Group,
+			"avg_ttft_ms":    group.AvgTtftMs,
+			"avg_latency_ms": group.AvgLatencyMs,
+			"success_rate":   group.SuccessRate,
+			"avg_tps":        group.AvgTps,
+			"series":         group.Series,
+		}
+		if ref, ok := ratio_setting.PricingGroupRefByKey(group.Group); ok {
+			item["group_ref"] = ref
+		}
+		result = append(result, item)
+	}
+	return result
 }

@@ -51,7 +51,10 @@ export default function AutoGroupList({ value, groupNames = [], onChange }) {
   );
 
   const groupOptions = useMemo(
-    () => groupNames.map((n) => ({ value: n, label: n })),
+    () =>
+      groupNames.map((group) =>
+        typeof group === 'string' ? { value: group, label: group } : group,
+      ),
     [groupNames],
   );
 

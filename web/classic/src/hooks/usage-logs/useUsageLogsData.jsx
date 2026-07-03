@@ -169,6 +169,7 @@ export const useLogsData = () => {
   const [billingDisplayMode, setBillingDisplayMode] = useState(
     getInitialBillingDisplayMode,
   );
+  const [groupNameMap, setGroupNameMap] = useState({});
 
   // Compact mode
   const [compactMode, setCompactMode] = useTableCompactMode('logs');
@@ -231,6 +232,25 @@ export const useLogsData = () => {
   useEffect(() => {
     localStorage.setItem(BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode);
   }, [BILLING_DISPLAY_MODE_STORAGE_KEY, billingDisplayMode]);
+
+  useEffect(() => {
+    const loadPricingGroups = async () => {
+      try {
+        const res = await API.get('/api/pricing');
+        const groups = res.data?.pricing_groups || [];
+        const nextGroupNameMap = {};
+        if (Array.isArray(groups)) {
+          groups.forEach((group) => {
+            nextGroupNameMap[String(group.id)] = group.name;
+          });
+        }
+        setGroupNameMap(nextGroupNameMap);
+      } catch (error) {
+        console.error('Failed to load pricing groups', error);
+      }
+    };
+    loadPricingGroups();
+  }, []);
 
   // 获取表单值的辅助函数，确保所有值都是字符串
   const getFormValues = () => {
@@ -858,6 +878,7 @@ export const useLogsData = () => {
     setShowColumnSelector,
     billingDisplayMode,
     setBillingDisplayMode,
+    groupNameMap,
     handleColumnVisibilityChange,
     handleSelectAll,
     initDefaultColumns,

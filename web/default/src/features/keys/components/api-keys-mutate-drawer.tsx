@@ -123,8 +123,8 @@ export function ApiKeysMutateDrawer({
   const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
     ([key, info]) => ({
       value: key,
-      label: key,
-      desc: info.desc || key,
+      label: info.name || key,
+      desc: info.desc || info.name || key,
       ratio: info.ratio,
     })
   )
@@ -154,7 +154,7 @@ export function ApiKeysMutateDrawer({
     const currentGroup = form.getValues('group')
     if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
       const fallback =
-        groups.find((g) => g.value === 'default')?.value ??
+        groups.find((g) => g.value === '1' || g.label === 'default')?.value ??
         groups[0]?.value ??
         ''
       form.setValue('group', fallback)

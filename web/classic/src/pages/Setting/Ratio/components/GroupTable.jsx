@@ -29,6 +29,21 @@ function buildRows(groupRatioStr, userUsableGroupsStr) {
   const ratioMap = parseJSON(groupRatioStr, {});
   const usableMap = parseJSON(userUsableGroupsStr, {});
 
+  if (Array.isArray(ratioMap)) {
+    return ratioMap.map((group) => {
+      const id = group.id == null ? '' : String(group.id);
+      const usableValue = usableMap[id] ?? usableMap[group.name];
+      return {
+        _id: uid(),
+        id,
+        name: group.name || id,
+        ratio: group.ratio ?? 1,
+        selectable: group.selectable ?? usableValue !== undefined,
+        description: group.description ?? usableValue ?? '',
+      };
+    });
+  }
+
   const allNames = new Set([
     ...Object.keys(ratioMap),
     ...Object.keys(usableMap),
@@ -44,19 +59,29 @@ function buildRows(groupRatioStr, userUsableGroupsStr) {
 }
 
 export function serializeGroupTable(rows) {
-  const groupRatio = {};
   const userUsableGroups = {};
 
   rows.forEach((row) => {
     if (!row.name) return;
-    groupRatio[row.name] = row.ratio;
     if (row.selectable) {
-      userUsableGroups[row.name] = row.description;
+      userUsableGroups[row.id || row.name] = row.description;
     }
   });
 
   return {
-    GroupRatio: JSON.stringify(groupRatio, null, 2),
+    GroupRatio: JSON.stringify(
+      rows
+        .filter((row) => row.name)
+        .map((row) => ({
+          ...(row.id ? { id: Number(row.id) } : {}),
+          name: row.name,
+          ratio: row.ratio,
+          selectable: row.selectable,
+          description: row.description,
+        })),
+      null,
+      2,
+    ),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
   };
 }
@@ -138,6 +163,13 @@ export default function GroupTable({ groupRatio, userUsableGroups, onChange }) {
   const columns = useMemo(
     () => [
       {
+        title: 'ID',
+        dataIndex: 'id',
+        key: 'id',
+        width: 80,
+        render: (text) => <Text type='tertiary'>{text || '-'}</Text>,
+      },
+      {
         title: t('分组名称'),
         dataIndex: 'name',
         key: 'name',
@@ -206,20 +238,35 @@ export default function GroupTable({ groupRatio, userUsableGroups, onChange }) {
         title: '',
         key: 'actions',
         width: 50,
-        render: (_, record) => (
-          <Popconfirm
-            title={t('确认删除该分组？')}
-            onConfirm={() => removeRow(record._id)}
-            position='left'
-          >
-            <Button
-              icon={<IconDelete />}
-              type='danger'
-              theme='borderless'
-              size='small'
-            />
-          </Popconfirm>
-        ),
+        render: (_, record) => {
+          const isDefaultGroup =
+            String(record.id) === '1' || record.name === 'default';
+          if (isDefaultGroup) {
+            return (
+              <Button
+                icon={<IconDelete />}
+                type='tertiary'
+                theme='borderless'
+                size='small'
+                disabled
+              />
+            );
+          }
+          return (
+            <Popconfirm
+              title={t('确认删除该分组？')}
+              onConfirm={() => removeRow(record._id)}
+              position='left'
+            >
+              <Button
+                icon={<IconDelete />}
+                type='danger'
+                theme='borderless'
+                size='small'
+              />
+            </Popconfirm>
+          );
+        },
       },
     ],
     [t, updateRow, removeRow],

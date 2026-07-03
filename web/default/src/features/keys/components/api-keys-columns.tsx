@@ -194,6 +194,8 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         const apiKey = row.original
         const group = row.getValue('group') as string
         const ratio = group && group !== 'auto' ? groupRatios[group] : undefined
+        const displayGroup =
+          group === 'auto' ? 'auto' : apiKey.group_ref?.name || group
 
         if (group === 'auto') {
           return (
@@ -223,10 +225,10 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         return (
           <TruncatedCell
             className='-ml-1.5'
-            tooltipContent={group || '-'}
+            tooltipContent={displayGroup || '-'}
             tooltipClassName='break-all'
           >
-            <GroupBadge group={group} ratio={ratio} />
+            <GroupBadge group={displayGroup} ratio={ratio} />
           </TruncatedCell>
         )
       },

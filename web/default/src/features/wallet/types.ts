@@ -231,6 +231,14 @@ export interface YooKassaPaymentRequest {
 }
 
 /**
+ * YooKassa payment status sync request
+ */
+export interface YooKassaSyncRequest {
+  /** Trade/order number */
+  trade_no: string
+}
+
+/**
  * Amount calculation request
  */
 export interface AmountRequest {

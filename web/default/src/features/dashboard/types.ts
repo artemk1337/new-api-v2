@@ -38,6 +38,7 @@ export interface FlowQuotaDataItem {
   username?: string
   node_name?: string
   use_group?: string
+  use_group_ref?: { id: number; name: string }
   token_id?: number
   token_name?: string
   channel_id?: number

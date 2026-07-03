@@ -41,6 +41,8 @@ func GetUserGroups(c *gin.Context) {
 		usableGroups["auto"] = map[string]interface{}{
 			"ratio": "自动",
 			"desc":  setting.GetUsableGroupDescription("auto"),
+			"id":    "auto",
+			"name":  "auto",
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{

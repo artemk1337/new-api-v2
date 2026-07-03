@@ -53,7 +53,8 @@ export function getGroupFallback(
   }
 
   return (
-    groups.find((group) => group.value === 'default')?.value ?? groups[0].value
+    groups.find((group) => group.value === '1' || group.label === 'default')
+      ?.value ?? groups[0].value
   )
 }
 

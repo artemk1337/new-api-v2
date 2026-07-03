@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.24
+
+- Finished pricing group id hardening across backend and default/classic UI: pricing requests now keep id values while display surfaces resolve names through group refs/catalogs.
+- Fixed playground, API key, channel, usage log, performance, flow, and task billing group handling so legacy names are normalized at boundaries without overwriting user-group domains.
+- Kept users, top-up ratios, and subscription upgrade/downgrade groups in the user-group domain instead of reading pricing groups.
+- Added admin visibility for pricing group ids, blocked reserved default pricing group deletion, and preserved duplicate-name validation.
+- Added/updated regression coverage for legacy pricing-group migration, channel/ability normalization, playground locked token groups, task/log/flow refs, and user-group boundaries.
+- Added YooKassa payment return synchronization so users can refresh a pending payment by trade number after returning to the wallet page.
+
 ## v1.1.20
 
 - Fixed the system update UI so a completed deploying task does not trigger repeated reloads after the target version is already running.

@@ -75,6 +75,7 @@ const UsersPage = () => {
         visible={showEditUser}
         handleClose={closeEditUser}
         editingUser={editingUser}
+        groupOptions={groupOptions}
       />
 
       <CardPro

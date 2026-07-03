@@ -23,7 +23,6 @@ import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import type { PricingGroupRecord } from '@/features/users/api'
 import {
   Form,
   FormControl,
@@ -63,7 +62,6 @@ import {
 import {
   createPlan,
   updatePlan,
-  getGroups,
   createWaffoPancakeSubscriptionProduct,
   listWaffoPancakeSubscriptionProductOptions,
 } from '../api'
@@ -97,7 +95,6 @@ export function SubscriptionsMutateDrawer({
   const tokensOnly = currencyMeta.kind === 'tokens'
   const currencyLabel = getCurrencyLabel()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [groupOptions, setGroupOptions] = useState<PricingGroupRecord[]>([])
   const [creatingPancakeProduct, setCreatingPancakeProduct] = useState(false)
   const [pancakeProducts, setPancakeProducts] = useState<
     { id: string; name: string; status: string }[]
@@ -116,11 +113,6 @@ export function SubscriptionsMutateDrawer({
       } else {
         form.reset(PLAN_FORM_DEFAULTS)
       }
-      getGroups()
-        .then((res) => {
-          if (res.success) setGroupOptions(res.data || [])
-        })
-        .catch(() => {})
       // Best-effort — empty list still lets the operator use "+ Create".
       listWaffoPancakeSubscriptionProductOptions()
         .then((res) => {
@@ -140,8 +132,6 @@ export function SubscriptionsMutateDrawer({
         .catch(() => setPancakeProducts([]))
     }
   }, [open, currentRow, form])
-
-  const formatGroupLabel = (group: PricingGroupRecord) => group.name
 
   const durationUnit = form.watch('duration_unit')
   const resetPeriod = form.watch('quota_reset_period')
@@ -387,37 +377,16 @@ export function SubscriptionsMutateDrawer({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('Upgrade Group')}</FormLabel>
-                        <Select
-                          items={[
-                            { value: '__none__', label: t('No Upgrade') },
-                            ...groupOptions.map((g) => ({
-                              value: g.name,
-                              label: formatGroupLabel(g),
-                            })),
-                          ]}
-                          onValueChange={(v) =>
-                            field.onChange(v === '__none__' ? '' : v)
-                          }
-                          value={field.value || ''}
-                      >
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t('No Upgrade')} />
-                          </SelectTrigger>
+                          <Input
+                            placeholder={t('No Upgrade')}
+                            {...field}
+                            value={field.value || ''}
+                          />
                         </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            <SelectItem value='__none__'>
-                              {t('No Upgrade')}
-                            </SelectItem>
-                            {groupOptions.map((g) => (
-                              <SelectItem key={g.id} value={g.name}>
-                                {formatGroupLabel(g)}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
+                      <FormDescription>
+                        {t('User group name assigned after purchase')}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -429,42 +398,13 @@ export function SubscriptionsMutateDrawer({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('Downgrade Group')}</FormLabel>
-                        <Select
-                          items={[
-                            {
-                              value: '__none__',
-                              label: t('Downgrade to pre-purchase group'),
-                            },
-                            ...groupOptions.map((g) => ({
-                              value: g.name,
-                              label: formatGroupLabel(g),
-                            })),
-                          ]}
-                          onValueChange={(v) =>
-                            field.onChange(v === '__none__' ? '' : v)
-                          }
-                          value={field.value || ''}
-                      >
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue
-                              placeholder={t('Downgrade to pre-purchase group')}
-                            />
-                          </SelectTrigger>
+                          <Input
+                            placeholder={t('Downgrade to pre-purchase group')}
+                            {...field}
+                            value={field.value || ''}
+                          />
                         </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            <SelectItem value='__none__'>
-                              {t('Downgrade to pre-purchase group')}
-                            </SelectItem>
-                            {groupOptions.map((g) => (
-                              <SelectItem key={g.id} value={g.name}>
-                                {formatGroupLabel(g)}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
                       <FormDescription>
                         {t('Downgrade to this group after the subscription expires')}
                       </FormDescription>

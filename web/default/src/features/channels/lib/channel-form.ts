@@ -304,7 +304,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   key: '',
   openai_organization: '',
   models: '',
-  group: ['default'],
+  group: ['1'],
   model_mapping: '',
   priority: 0,
   weight: 0,
@@ -445,7 +445,7 @@ export function transformChannelToFormDefaults(
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
-    group: parseGroups(channel.group || 'default'),
+    group: parseGroups(channel.group || '1'),
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,

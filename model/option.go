@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -201,11 +202,27 @@ func InitOptionMap() {
 
 func loadOptionsFromDatabase() {
 	options, _ := AllOption()
+	sort.SliceStable(options, func(i, j int) bool {
+		return optionLoadPriority(options[i].Key) < optionLoadPriority(options[j].Key)
+	})
 	for _, option := range options {
 		err := updateOptionMap(option.Key, option.Value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
+	}
+}
+
+func optionLoadPriority(key string) int {
+	switch key {
+	case "UserUsableGroups", "AutoGroups", "GroupGroupRatio", "group_ratio_setting.group_special_usable_group":
+		return 0
+	case "GroupRatio":
+		return 1
+	case "PricingGroups":
+		return 2
+	default:
+		return 1
 	}
 }
 
@@ -218,19 +235,35 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	if err := validateOptionValue(key, value); err != nil {
+		return err
+	}
 	// Save to database first
 	option := Option{
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
 	option.Value = value
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
 	// Update OptionMap
 	return updateOptionMap(key, value)
+}
+
+func validateOptionValue(key string, value string) error {
+	switch key {
+	case "GroupRatio", "PricingGroups":
+		return ratio_setting.ValidatePricingGroupsJSONString(value)
+	default:
+		return nil
+	}
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
@@ -241,6 +274,11 @@ func UpdateOption(key string, value string) error {
 func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
+	}
+	for k, v := range values {
+		if err := validateOptionValue(k, v); err != nil {
+			return err
+		}
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		for k, v := range values {

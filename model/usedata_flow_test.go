@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +31,7 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 		Username:  "alice",
 		NodeName:  "node-a",
 		TokenID:   11,
-		UseGroup:  "vip",
+		UseGroup:  "2",
 		ModelName: "gpt-a",
 		ChannelID: 1,
 		CreatedAt: 1000,
@@ -43,7 +44,7 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 		Username:  "alice",
 		NodeName:  "node-a",
 		TokenID:   11,
-		UseGroup:  "vip",
+		UseGroup:  "2",
 		ModelName: "gpt-a",
 		ChannelID: 1,
 		CreatedAt: 1100,
@@ -56,7 +57,7 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 		Username:  "alice",
 		NodeName:  "node-a",
 		TokenID:   11,
-		UseGroup:  "vip",
+		UseGroup:  "2",
 		ModelName: "gpt-a",
 		ChannelID: 2,
 		CreatedAt: 1200,
@@ -69,7 +70,7 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 		Username:  "bob",
 		NodeName:  "node-b",
 		TokenID:   22,
-		UseGroup:  "default",
+		UseGroup:  "1",
 		ModelName: "gpt-b",
 		ChannelID: 1,
 		CreatedAt: 1300,
@@ -92,20 +93,19 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 	require.Len(t, rootRows, 3)
 	// Token 11 was soft-deleted, so its name is intentionally left empty for the
 	// frontend to render a localized "deleted (id)" label instead.
-	require.Equal(t, FlowQuotaData{
-		UserID:      1,
-		Username:    "alice",
-		NodeName:    "node-a",
-		TokenID:     11,
-		TokenName:   "",
-		UseGroup:    "vip",
-		ChannelID:   1,
-		ChannelName: "east",
-		ModelName:   "gpt-a",
-		TokenUsed:   60,
-		Count:       3,
-		Quota:       150,
-	}, *rootRows[0])
+	require.Equal(t, 1, rootRows[0].UserID)
+	require.Equal(t, "alice", rootRows[0].Username)
+	require.Equal(t, "node-a", rootRows[0].NodeName)
+	require.Equal(t, 11, rootRows[0].TokenID)
+	require.Empty(t, rootRows[0].TokenName)
+	require.Equal(t, "2", rootRows[0].UseGroup)
+	require.Equal(t, &ratio_setting.PricingGroupRef{Id: 2, Name: "vip"}, rootRows[0].UseGroupRef)
+	require.Equal(t, 1, rootRows[0].ChannelID)
+	require.Equal(t, "east", rootRows[0].ChannelName)
+	require.Equal(t, "gpt-a", rootRows[0].ModelName)
+	require.Equal(t, 60, rootRows[0].TokenUsed)
+	require.Equal(t, 3, rootRows[0].Count)
+	require.Equal(t, 150, rootRows[0].Quota)
 	// A token that still exists resolves to its current name.
 	require.Equal(t, 22, rootRows[1].TokenID)
 	require.Equal(t, "backup", rootRows[1].TokenName)
@@ -117,7 +117,8 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 	require.Empty(t, adminRows[0].TokenName)
 	require.Empty(t, adminRows[0].NodeName)
 	require.Equal(t, "alice", adminRows[0].Username)
-	require.Equal(t, "vip", adminRows[0].UseGroup)
+	require.Equal(t, "2", adminRows[0].UseGroup)
+	require.Equal(t, &ratio_setting.PricingGroupRef{Id: 2, Name: "vip"}, adminRows[0].UseGroupRef)
 	require.Equal(t, "east", adminRows[0].ChannelName)
 	require.Equal(t, 150, adminRows[0].Quota)
 
@@ -128,7 +129,8 @@ func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 	require.Equal(t, 0, selfRows[0].ChannelID)
 	require.Empty(t, selfRows[0].ChannelName)
 	require.Empty(t, selfRows[0].TokenName)
-	require.Equal(t, "vip", selfRows[0].UseGroup)
+	require.Equal(t, "2", selfRows[0].UseGroup)
+	require.Equal(t, &ratio_setting.PricingGroupRef{Id: 2, Name: "vip"}, selfRows[0].UseGroupRef)
 	require.Equal(t, 175, selfRows[0].Quota)
 }
 

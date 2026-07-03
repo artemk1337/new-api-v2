@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +20,7 @@ func GetAllLogs(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
-	group := c.Query("group")
+	group := normalizeLogPricingGroupQuery(c.Query("group"))
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
 	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, upstreamRequestId)
@@ -41,7 +42,7 @@ func GetUserLogs(c *gin.Context) {
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
-	group := c.Query("group")
+	group := normalizeLogPricingGroupQuery(c.Query("group"))
 	requestId := c.Query("request_id")
 	upstreamRequestId := c.Query("upstream_request_id")
 	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, upstreamRequestId)
@@ -103,7 +104,7 @@ func GetLogsStat(c *gin.Context) {
 	username := c.Query("username")
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
-	group := c.Query("group")
+	group := normalizeLogPricingGroupQuery(c.Query("group"))
 	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
 	if err != nil {
 		common.ApiError(c, err)
@@ -130,7 +131,7 @@ func GetLogsSelfStat(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
-	group := c.Query("group")
+	group := normalizeLogPricingGroupQuery(c.Query("group"))
 	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
 	if err != nil {
 		common.ApiError(c, err)
@@ -148,6 +149,13 @@ func GetLogsSelfStat(c *gin.Context) {
 		},
 	})
 	return
+}
+
+func normalizeLogPricingGroupQuery(group string) string {
+	if group == "" {
+		return ""
+	}
+	return ratio_setting.PricingGroupKey(group)
 }
 
 // DeleteHistoryLogs is the legacy synchronous log cleanup endpoint (DELETE /api/log/).

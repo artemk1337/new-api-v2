@@ -147,6 +147,12 @@ function serializePricingGroupRows(rows: GroupPricingRow[]) {
   return JSON.stringify(normalized, null, 2)
 }
 
+function formatPricingGroupLabel(group: string, groupNames: Map<string, string>) {
+  const name = groupNames.get(group)
+  if (!name) return group
+  return `${name} (ID ${group})`
+}
+
 function pricingGroupSignature(rows: GroupPricingRow[]): string {
   return JSON.stringify(
     rows
@@ -200,6 +206,14 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
   const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false)
   const [userGroupInput, setUserGroupInput] = useState('')
+  const pricingGroupNames = useMemo(() => {
+    return new Map(
+      parsePricingGroupRows(pricingGroups).map((group) => [
+        String(group.id),
+        group.name,
+      ])
+    )
+  }, [pricingGroups])
 
   // Parse topup group ratios
   const topupRatioList = useMemo(() => {
@@ -553,7 +567,11 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
                                   id: 'target-group',
                                   header: t('Target group'),
                                   cellClassName: 'font-medium',
-                                  cell: (override) => override.targetGroup,
+                                  cell: (override) =>
+                                    formatPricingGroupLabel(
+                                      override.targetGroup,
+                                      pricingGroupNames
+                                    ),
                                 },
                                 {
                                   id: 'ratio',
@@ -623,7 +641,9 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
                     className='flex items-center gap-2 rounded-md border p-3'
                   >
                     <GripVertical className='text-muted-foreground h-4 w-4' />
-                    <span className='flex-1 font-medium'>{group}</span>
+                    <span className='flex-1 font-medium'>
+                      {formatPricingGroupLabel(group, pricingGroupNames)}
+                    </span>
                     <div className='flex gap-1'>
                       <Button
                         variant='ghost'
@@ -739,6 +759,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         onSave={handleOverrideSave}
         editData={groupOverrideEditData}
         userGroup={groupOverrideUserGroup}
+        groupNames={pricingGroupNames}
       />
     </div>
   )
@@ -1076,6 +1097,7 @@ type GroupOverrideDialogProps = {
   onSave: (targetGroup: string, ratio: number, oldTargetGroup?: string) => void
   editData: GroupOverride | null
   userGroup: string | null
+  groupNames: Map<string, string>
 }
 
 function GroupOverrideDialog({
@@ -1084,6 +1106,7 @@ function GroupOverrideDialog({
   onSave,
   editData,
   userGroup,
+  groupNames,
 }: GroupOverrideDialogProps) {
   const { t } = useTranslation()
   const [targetGroup, setTargetGroup] = useState('')
@@ -1148,7 +1171,9 @@ function GroupOverrideDialog({
             disabled={!!editData}
           />
           <p className='text-muted-foreground text-xs'>
-            {t('The token group that will have a custom ratio')}
+            {targetGroup.trim()
+              ? formatPricingGroupLabel(targetGroup.trim(), groupNames)
+              : t('The token group that will have a custom ratio')}
           </p>
         </div>
         <div className='space-y-2'>

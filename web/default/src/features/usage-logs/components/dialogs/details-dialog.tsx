@@ -60,6 +60,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
+import { useUsageLogsContext } from '../usage-logs-provider'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -406,6 +407,7 @@ interface DetailsDialogProps {
 
 export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
+  const { formatPricingGroupName } = useUsageLogsContext()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
@@ -607,7 +609,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
           {(props.log.group || other?.group) && (
             <DetailRow
               label={t('Group')}
-              value={props.log.group || other?.group || ''}
+              value={
+                props.log.group_ref?.name ||
+                formatPricingGroupName(props.log.group || other?.group || '')
+              }
               mono
             />
           )}

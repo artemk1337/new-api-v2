@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,11 +47,24 @@ func getYooKassaQuotaToAdd(amount int64) int {
 	return int(decimal.NewFromInt(amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
 }
 
-func getYooKassaReturnURL() string {
+func getYooKassaReturnURL(tradeNo string) string {
+	rawURL := paymentReturnPath("/console/topup?show_history=true")
 	if strings.TrimSpace(setting.YooKassaReturnURL) != "" {
-		return setting.YooKassaReturnURL
+		rawURL = setting.YooKassaReturnURL
 	}
-	return paymentReturnPath("/console/topup?show_history=true")
+	if tradeNo == "" {
+		return rawURL
+	}
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	query := parsedURL.Query()
+	query.Set("show_history", "true")
+	query.Set("payment_provider", model.PaymentProviderYooKassa)
+	query.Set("trade_no", tradeNo)
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String()
 }
 
 func isYooKassaPaymentMethodEnabled(paymentMethod string) bool {
@@ -149,7 +164,7 @@ func RequestYooKassaPay(c *gin.Context) {
 
 	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
 	defer cancel()
-	request := service.NewYooKassaPaymentRequest(tradeNo, id, topUp.Id, formatYooKassaAmount(payMoney), getYooKassaReturnURL(), "sbp")
+	request := service.NewYooKassaPaymentRequest(tradeNo, id, topUp.Id, formatYooKassaAmount(payMoney), getYooKassaReturnURL(tradeNo), "sbp")
 	payment, err := service.NewYooKassaClient(nil).CreatePayment(ctx, tradeNo, request)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa 创建支付失败 user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
@@ -195,6 +210,42 @@ func RequestYooKassaPay(c *gin.Context) {
 	})
 }
 
+type YooKassaSyncRequest struct {
+	TradeNo string `json:"trade_no"`
+}
+
+func SyncYooKassaTopUp(c *gin.Context) {
+	var req YooKassaSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.TradeNo) == "" {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	tradeNo := strings.TrimSpace(req.TradeNo)
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.PaymentProvider != model.PaymentProviderYooKassa {
+		common.ApiErrorMsg(c, "订单不存在")
+		return
+	}
+	if topUp.UserId != c.GetInt("id") && c.GetInt("role") < common.RoleAdminUser {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	metadata := model.GetPaymentMetadataByTradeNo(tradeNo)
+	if metadata == nil || strings.TrimSpace(metadata.ExternalPaymentID) == "" {
+		common.ApiErrorMsg(c, "订单支付信息不存在")
+		return
+	}
+
+	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
+	defer cancel()
+	if _, err := completeYooKassaPayment(ctx, metadata.ExternalPaymentID, tradeNo, c.ClientIP()); err != nil {
+		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa 同步充值失败 trade_no=%s payment_id=%s user_id=%d error=%q", tradeNo, metadata.ExternalPaymentID, c.GetInt("id"), err.Error()))
+		common.ApiErrorMsg(c, "同步支付状态失败")
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
 func YooKassaNotify(c *gin.Context) {
 	if !isYooKassaWebhookEnabled() {
 		logger.LogWarn(c.Request.Context(), fmt.Sprintf("YooKassa webhook 被拒绝 reason=webhook_disabled path=%q client_ip=%s", c.Request.RequestURI, c.ClientIP()))
@@ -216,13 +267,20 @@ func YooKassaNotify(c *gin.Context) {
 
 	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
 	defer cancel()
-	payment, err := service.NewYooKassaClient(nil).GetPayment(ctx, payload.Object.ID)
+	statusCode, err := completeYooKassaPayment(ctx, payload.Object.ID, "", c.ClientIP())
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa 查询支付失败 payment_id=%s client_ip=%s error=%q", payload.Object.ID, c.ClientIP(), err.Error()))
-		c.AbortWithStatus(http.StatusBadGateway)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa 充值失败 payment_id=%s client_ip=%s error=%q", payload.Object.ID, c.ClientIP(), err.Error()))
+		c.AbortWithStatus(statusCode)
 		return
 	}
+	c.Status(http.StatusOK)
+}
 
+func completeYooKassaPayment(ctx context.Context, paymentID string, expectedTradeNo string, callerIP string) (int, error) {
+	payment, err := service.NewYooKassaClient(nil).GetPayment(ctx, paymentID)
+	if err != nil {
+		return http.StatusBadGateway, err
+	}
 	tradeNo := payment.Metadata["trade_no"]
 	if tradeNo == "" {
 		metadata := model.GetPaymentMetadataByExternalPaymentID(model.PaymentProviderYooKassa, payment.ID)
@@ -231,31 +289,25 @@ func YooKassaNotify(c *gin.Context) {
 		}
 	}
 	if tradeNo == "" {
-		logger.LogWarn(c.Request.Context(), fmt.Sprintf("YooKassa webhook 缺少 trade_no payment_id=%s client_ip=%s", payment.ID, c.ClientIP()))
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
+		return http.StatusBadRequest, fmt.Errorf("missing trade_no for payment %s", payment.ID)
 	}
-
+	if expectedTradeNo != "" && tradeNo != expectedTradeNo {
+		return http.StatusBadRequest, fmt.Errorf("trade_no mismatch")
+	}
 	topUp := model.GetTopUpByTradeNo(tradeNo)
 	if topUp == nil || topUp.PaymentProvider != model.PaymentProviderYooKassa {
-		logger.LogWarn(c.Request.Context(), fmt.Sprintf("YooKassa webhook 订单不存在或网关不匹配 trade_no=%s payment_id=%s client_ip=%s", tradeNo, payment.ID, c.ClientIP()))
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
+		return http.StatusBadRequest, fmt.Errorf("topup not found or provider mismatch")
 	}
 	if err := validateYooKassaPayment(payment, topUp); err != nil {
-		logger.LogWarn(c.Request.Context(), fmt.Sprintf("YooKassa webhook 支付校验失败 trade_no=%s payment_id=%s client_ip=%s error=%q", tradeNo, payment.ID, c.ClientIP(), err.Error()))
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
+		return http.StatusBadRequest, err
 	}
 
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
-	if err := model.RechargeYooKassa(tradeNo, c.ClientIP()); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa 充值失败 trade_no=%s payment_id=%s client_ip=%s error=%q", tradeNo, payment.ID, c.ClientIP(), err.Error()))
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+	if err := model.RechargeYooKassa(tradeNo, callerIP); err != nil {
+		return http.StatusInternalServerError, err
 	}
-	c.Status(http.StatusOK)
+	return http.StatusOK, nil
 }
 
 func validateYooKassaPayment(payment *service.YooKassaPayment, topUp *model.TopUp) error {

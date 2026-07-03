@@ -59,6 +59,7 @@ const ChannelAffinityUsageCacheModal = ({
   showChannelAffinityUsageCacheModal,
   setShowChannelAffinityUsageCacheModal,
   channelAffinityUsageCacheTarget,
+  groupNameMap = {},
 }) => {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
@@ -142,6 +143,7 @@ const ChannelAffinityUsageCacheModal = ({
     const data = [];
     const ruleName = String(s.rule_name || params.rule_name || '').trim();
     const usingGroup = String(s.using_group || params.using_group || '').trim();
+    const usingGroupName = groupNameMap[String(usingGroup)] || usingGroup;
     const keyHint = String(params.key_hint || '').trim();
     const keyFp = String(s.key_fp || params.key_fp || '').trim();
 
@@ -149,7 +151,7 @@ const ChannelAffinityUsageCacheModal = ({
       data.push({ key: t('规则'), value: ruleName });
     }
     if (hasTextValue(usingGroup)) {
-      data.push({ key: t('分组'), value: usingGroup });
+      data.push({ key: t('分组'), value: usingGroupName });
     }
     if (hasTextValue(keyHint)) {
       data.push({ key: t('Key 摘要'), value: keyHint });
@@ -189,7 +191,7 @@ const ChannelAffinityUsageCacheModal = ({
     }
 
     return { rows: data, supportsTokenStats };
-  }, [stats, params, t]);
+  }, [stats, params, t, groupNameMap]);
 
   return (
     <Modal

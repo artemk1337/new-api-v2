@@ -90,6 +90,7 @@ export interface ChannelAffinityInfo {
   key_hint?: string
   key_fp?: string
   using_group?: string
+  using_group_name?: string
 }
 
 export interface LogOtherData {

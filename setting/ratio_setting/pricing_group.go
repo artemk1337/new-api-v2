@@ -309,12 +309,12 @@ func PricingGroups2JSONString() string {
 	return string(bytes)
 }
 
-func UpdatePricingGroupsByJSONString(jsonStr string) error {
+func parsePricingGroupsJSONString(jsonStr string) ([]*PricingGroup, error) {
 	var groups []*PricingGroup
 	if err := common.Unmarshal([]byte(jsonStr), &groups); err != nil {
 		var legacy map[string]float64
 		if legacyErr := common.Unmarshal([]byte(jsonStr), &legacy); legacyErr != nil {
-			return err
+			return nil, err
 		}
 		names := make([]string, 0, len(legacy))
 		for name := range legacy {
@@ -330,7 +330,39 @@ func UpdatePricingGroupsByJSONString(jsonStr string) error {
 			})
 		}
 	}
-	normalized, err := normalizePricingGroups(groups)
+	return normalizePricingGroups(groups)
+}
+
+func ValidatePricingGroupsJSONString(jsonStr string) error {
+	groups, err := parsePricingGroupsJSONString(jsonStr)
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if group.Ratio < 0 {
+			return errors.New("group ratio must be not less than 0: " + group.Name)
+		}
+	}
+	return nil
+}
+
+func updatePricingGroupsFromLegacyRatioJSON(jsonStr string) error {
+	legacy := make(map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &legacy); err != nil {
+		return err
+	}
+	for name, ratio := range legacy {
+		if ratio < 0 {
+			return errors.New("group ratio must be not less than 0: " + name)
+		}
+	}
+	groupRatioMap.Clear()
+	groupRatioMap.AddAll(legacy)
+	return setPricingGroups(buildPricingGroupsFromLegacy())
+}
+
+func UpdatePricingGroupsByJSONString(jsonStr string) error {
+	normalized, err := parsePricingGroupsJSONString(jsonStr)
 	if err != nil {
 		return err
 	}

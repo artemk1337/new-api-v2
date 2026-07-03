@@ -72,6 +72,7 @@ function StatCard(props: {
 
 type PerformanceRow = {
   group: string
+  display_group: string
   avg_ttft_ms: number
   avg_latency_ms: number
   success_rate: number
@@ -174,6 +175,7 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
     () =>
       groups.map((group) => ({
         group: group.group,
+        display_group: group.group_ref?.name ?? group.group,
         avg_ttft_ms: group.avg_ttft_ms,
         avg_latency_ms: group.avg_latency_ms,
         success_rate: group.success_rate,
@@ -264,7 +266,9 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
               header: t('Group'),
               className: tableStyles.compactHeaderCell,
               cellClassName: tableStyles.compactCell,
-              cell: (perf) => <GroupBadge group={perf.group} size='sm' />,
+              cell: (perf) => (
+                <GroupBadge group={perf.display_group} size='sm' />
+              ),
             },
             {
               id: 'tps',

@@ -49,6 +49,16 @@ export const useUsersData = () => {
     searchGroup: '',
   };
 
+  const toUserGroupOptions = (items) => {
+    const groups = Array.from(
+      new Set((items || []).map((user) => user.group).filter(Boolean)),
+    );
+    return groups.map((group) => ({
+      label: group,
+      value: group,
+    }));
+  };
+
   // Form API reference
   const [formApi, setFormApi] = useState(null);
 
@@ -67,6 +77,17 @@ export const useUsersData = () => {
       users[i].key = users[i].id;
     }
     setUsers(users);
+    setGroupOptions((prev) => {
+      const next = [...prev];
+      let changed = false;
+      for (const option of toUserGroupOptions(users)) {
+        if (!next.some((item) => item.value === option.value)) {
+          next.push(option);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   };
 
   // Load users data
@@ -234,24 +255,6 @@ export const useUsersData = () => {
     }
   };
 
-  // Fetch groups data
-  const fetchGroups = async () => {
-    try {
-      let res = await API.get(`/api/group/`);
-      if (res === undefined) {
-        return;
-      }
-      setGroupOptions(
-        res.data.data.map((group) => ({
-          label: group.name || group,
-          value: group.name || group,
-        })),
-      );
-    } catch (error) {
-      showError(error.message);
-    }
-  };
-
   // Modal control functions
   const closeAddUser = () => {
     setShowAddUser(false);
@@ -271,7 +274,6 @@ export const useUsersData = () => {
       .catch((reason) => {
         showError(reason);
       });
-    fetchGroups().then();
   }, []);
 
   return {

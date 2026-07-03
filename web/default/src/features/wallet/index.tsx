@@ -30,6 +30,7 @@ import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
+import { syncYooKassaPayment, isApiSuccess } from './api'
 import {
   useTopupInfo,
   usePayment,
@@ -129,6 +130,37 @@ export function Wallet(props: WalletProps) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [props.initialShowHistory])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tradeNoParam = params.get('trade_no')?.trim()
+    if (params.get('payment_provider') !== 'yookassa' || !tradeNoParam) {
+      return
+    }
+    const tradeNo = tradeNoParam
+
+    let cancelled = false
+    async function syncPayment() {
+      try {
+        const response = await syncYooKassaPayment({ trade_no: tradeNo })
+        if (cancelled) {
+          return
+        }
+        if (isApiSuccess(response)) {
+          await fetchUser()
+        }
+      } finally {
+        if (!cancelled) {
+          setBillingDialogOpen(true)
+          window.history.replaceState({}, '', window.location.pathname)
+        }
+      }
+    }
+    syncPayment()
+    return () => {
+      cancelled = true
+    }
+  }, [fetchUser])
 
   // Initialize topup amount when topup info is loaded
   useEffect(() => {

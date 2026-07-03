@@ -96,19 +96,29 @@ const EditUserModal = (props) => {
     remark: '',
   });
 
-  const fetchGroups = async () => {
-    try {
-      let res = await API.get(`/api/group/`);
-      setGroupOptions(
-        res.data.data.map((g) => ({
-          label: g.name || g,
-          value: g.name || g,
-        })),
-      );
-    } catch (e) {
-      showError(e.message);
-    }
-  };
+  useEffect(() => {
+    setGroupOptions((prev) => {
+      const next = [...(props.groupOptions || [])];
+      let changed = next.length !== prev.length;
+      for (const option of prev) {
+        if (!next.some((item) => item.value === option.value)) {
+          next.push(option);
+          changed = true;
+        }
+      }
+      if (
+        inputs?.group &&
+        !next.some((option) => option.value === inputs.group)
+      ) {
+        next.push({
+          label: inputs.group,
+          value: inputs.group,
+        });
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [props.groupOptions, inputs?.group]);
 
   const handleCancel = () => props.handleClose();
 
@@ -137,7 +147,6 @@ const EditUserModal = (props) => {
 
   useEffect(() => {
     loadUser();
-    if (userId) fetchGroups();
     setBindingModalVisible(false);
   }, [props.editingUser.id]);
 

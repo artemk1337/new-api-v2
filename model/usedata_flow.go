@@ -4,22 +4,24 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 )
 
 type FlowQuotaData struct {
-	UserID      int    `json:"user_id,omitempty" gorm:"column:user_id"`
-	Username    string `json:"username,omitempty" gorm:"column:username"`
-	NodeName    string `json:"node_name,omitempty" gorm:"column:node_name"`
-	TokenID     int    `json:"token_id,omitempty" gorm:"column:token_id"`
-	TokenName   string `json:"token_name,omitempty" gorm:"-"`
-	UseGroup    string `json:"use_group" gorm:"column:use_group"`
-	ChannelID   int    `json:"channel_id,omitempty" gorm:"column:channel_id"`
-	ChannelName string `json:"channel_name,omitempty" gorm:"-"`
-	ModelName   string `json:"model_name" gorm:"column:model_name"`
-	TokenUsed   int    `json:"token_used" gorm:"column:token_used"`
-	Count       int    `json:"count" gorm:"column:count"`
-	Quota       int    `json:"quota" gorm:"column:quota"`
+	UserID      int                            `json:"user_id,omitempty" gorm:"column:user_id"`
+	Username    string                         `json:"username,omitempty" gorm:"column:username"`
+	NodeName    string                         `json:"node_name,omitempty" gorm:"column:node_name"`
+	TokenID     int                            `json:"token_id,omitempty" gorm:"column:token_id"`
+	TokenName   string                         `json:"token_name,omitempty" gorm:"-"`
+	UseGroup    string                         `json:"use_group" gorm:"column:use_group"`
+	UseGroupRef *ratio_setting.PricingGroupRef `json:"use_group_ref,omitempty" gorm:"-"`
+	ChannelID   int                            `json:"channel_id,omitempty" gorm:"column:channel_id"`
+	ChannelName string                         `json:"channel_name,omitempty" gorm:"-"`
+	ModelName   string                         `json:"model_name" gorm:"column:model_name"`
+	TokenUsed   int                            `json:"token_used" gorm:"column:token_used"`
+	Count       int                            `json:"count" gorm:"column:count"`
+	Quota       int                            `json:"quota" gorm:"column:quota"`
 }
 
 func GetFlowQuotaData(startTime int64, endTime int64, username string, userID int, role int) ([]*FlowQuotaData, error) {
@@ -51,7 +53,11 @@ func getSelfFlowQuotaData(startTime int64, endTime int64, userID int) ([]*FlowQu
 	if err != nil {
 		return nil, err
 	}
-	return rows, fillFlowTokenNames(rows)
+	if err := fillFlowTokenNames(rows); err != nil {
+		return rows, err
+	}
+	fillFlowPricingGroupRefs(rows)
+	return rows, nil
 }
 
 func getAdminFlowQuotaData(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
@@ -68,7 +74,11 @@ func getAdminFlowQuotaData(startTime int64, endTime int64, username string) ([]*
 	if err != nil {
 		return nil, err
 	}
-	return rows, fillFlowChannelNames(rows)
+	if err := fillFlowChannelNames(rows); err != nil {
+		return rows, err
+	}
+	fillFlowPricingGroupRefs(rows)
+	return rows, nil
 }
 
 func getRootFlowQuotaData(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
@@ -88,7 +98,21 @@ func getRootFlowQuotaData(startTime int64, endTime int64, username string) ([]*F
 	if err := fillFlowTokenNames(rows); err != nil {
 		return rows, err
 	}
-	return rows, fillFlowChannelNames(rows)
+	if err := fillFlowChannelNames(rows); err != nil {
+		return rows, err
+	}
+	fillFlowPricingGroupRefs(rows)
+	return rows, nil
+}
+
+func fillFlowPricingGroupRefs(rows []*FlowQuotaData) {
+	for _, row := range rows {
+		ref, ok := ratio_setting.PricingGroupRefByKey(row.UseGroup)
+		if !ok {
+			continue
+		}
+		row.UseGroupRef = &ref
+	}
 }
 
 func fillFlowTokenNames(rows []*FlowQuotaData) error {

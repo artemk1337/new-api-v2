@@ -66,6 +66,7 @@ function UsageLogsContent() {
     affinityTarget,
     affinityDialogOpen,
     setAffinityDialogOpen,
+    formatPricingGroupName,
   } = useUsageLogsContext()
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
@@ -151,6 +152,11 @@ function UsageLogsContent() {
                   affinityTarget.using_group ||
                   affinityTarget.selected_group ||
                   '',
+                using_group_name: formatPricingGroupName(
+                  affinityTarget.using_group ||
+                    affinityTarget.selected_group ||
+                    ''
+                ),
                 key_hint: affinityTarget.key_hint || '',
                 key_fp: affinityTarget.key_fp || '',
               }

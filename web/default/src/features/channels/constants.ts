@@ -273,7 +273,7 @@ export const DEFAULT_CHANNEL_VALUES = {
   base_url: '',
   key: '',
   models: '',
-  group: 'default',
+  group: '1',
   status: CHANNEL_STATUS.ENABLED,
   priority: 0,
   weight: 0,

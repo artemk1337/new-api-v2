@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { PricingGroupRecord } from '@/features/users/api'
 import type {
   ApiResponse,
   PlanRecord,
@@ -205,10 +204,5 @@ export async function updateBillingPreference(
   const res = await api.put('/api/subscription/self/preference', {
     billing_preference: preference,
   })
-  return res.data
-}
-
-export async function getGroups(): Promise<ApiResponse<PricingGroupRecord[]>> {
-  const res = await api.get('/api/group')
   return res.data
 }

@@ -177,7 +177,8 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
         header: t('Upgrade Group'),
         meta: { mobileHidden: true },
         cell: ({ row }) => {
-          const group = row.original.plan.upgrade_group
+          const plan = row.original.plan
+          const group = plan.upgrade_group
           if (!group) {
             return (
               <span className='text-muted-foreground'>{t('No Upgrade')}</span>

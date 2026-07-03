@@ -212,8 +212,7 @@ export const processModelsData = (data, currentModel) => {
 // 处理分组数据
 export const processGroupsData = (data, userGroup) => {
   let groupOptions = Object.entries(data).map(([group, info]) => ({
-    label:
-      info.desc.length > 20 ? info.desc.substring(0, 20) + '...' : info.desc,
+    label: info.name || group,
     value: group,
     ratio: info.ratio,
     fullLabel: info.desc,
@@ -228,7 +227,9 @@ export const processGroupsData = (data, userGroup) => {
       },
     ];
   } else if (userGroup) {
-    const userGroupIndex = groupOptions.findIndex((g) => g.value === userGroup);
+    const userGroupIndex = groupOptions.findIndex(
+      (g) => g.value === userGroup || g.label === userGroup,
+    );
     if (userGroupIndex > -1) {
       const userGroupOption = groupOptions.splice(userGroupIndex, 1)[0];
       groupOptions.unshift(userGroupOption);

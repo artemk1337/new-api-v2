@@ -315,8 +315,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         header: t('Channel'),
         accessorFn: (row) => row.channel,
         cell: function ChannelCell({ row }) {
-          const { sensitiveVisible, setAffinityTarget, setAffinityDialogOpen } =
-            useUsageLogsContext()
+          const {
+            sensitiveVisible,
+            setAffinityTarget,
+            setAffinityDialogOpen,
+            formatPricingGroupName,
+          } = useUsageLogsContext()
           const log = row.original
 
           if (!isDisplayableLogType(log.type)) return null
@@ -412,6 +416,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                               affinity.using_group ||
                               affinity.selected_group ||
                               '',
+                            using_group_name: formatPricingGroupName(
+                              affinity.using_group ||
+                                affinity.selected_group ||
+                                ''
+                            ),
                             key_hint: affinity.key_hint || '',
                             key_fp: affinity.key_fp || '',
                           })
@@ -452,9 +461,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                         <p>
                           {t('Group')}:{' '}
                           {sensitiveVisible
-                            ? affinity.using_group ||
-                              affinity.selected_group ||
-                              '-'
+                            ? formatPricingGroupName(
+                                affinity.using_group ||
+                                  affinity.selected_group ||
+                                  '-'
+                              )
                             : '••••'}
                         </p>
                       </div>
@@ -527,7 +538,8 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     accessorKey: 'token_name',
     header: t('Token'),
     cell: function TokenNameCell({ row }) {
-      const { sensitiveVisible } = useUsageLogsContext()
+      const { sensitiveVisible, formatPricingGroupName } =
+        useUsageLogsContext()
       const log = row.original
       if (!isDisplayableLogType(log.type)) return null
 
@@ -542,7 +554,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const metaParts: string[] = []
       const groupRatioText = getGroupRatioText(other)
       if (group) {
-        metaParts.push(sensitiveVisible ? group : '••••')
+        metaParts.push(
+          sensitiveVisible
+            ? log.group_ref?.name || formatPricingGroupName(group)
+            : '••••'
+        )
       }
       if (groupRatioText) metaParts.push(groupRatioText)
 

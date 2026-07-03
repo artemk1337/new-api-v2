@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { useMediaQuery } from '@/hooks'
@@ -49,7 +50,7 @@ function isDisabledUserRow(user: User) {
 export function UsersTable() {
   const { t } = useTranslation()
   const columns = useUsersColumns()
-  const { refreshTrigger } = useUsers()
+  const { refreshTrigger, addUserGroupOptions } = useUsers()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
   const {
@@ -131,6 +132,10 @@ export function UsersTable() {
   })
 
   const users = data?.items || []
+
+  useEffect(() => {
+    addUserGroupOptions(users.map((user) => user.group))
+  }, [addUserGroupOptions, users])
 
   const { table } = useDataTable({
     data: users,

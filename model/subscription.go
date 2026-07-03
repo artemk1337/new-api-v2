@@ -208,6 +208,8 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 	if p.AllowWalletOverflow == nil {
 		p.AllowWalletOverflow = common.GetPointer(true)
 	}
+	p.UpgradeGroup = strings.TrimSpace(p.UpgradeGroup)
+	p.DowngradeGroup = strings.TrimSpace(p.DowngradeGroup)
 }
 
 // Subscription order (payment -> webhook -> create UserSubscription)

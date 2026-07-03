@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultVendorRulesUseEnglishNames(t *testing.T) {
@@ -69,4 +70,39 @@ func TestDefaultVendorDisplayNameTranslatesLegacyChineseNames(t *testing.T) {
 	for vendorName, displayName := range cases {
 		assert.Equal(t, displayName, getDefaultVendorDisplayName(vendorName))
 	}
+}
+
+func TestBuildPricingVendorsListDeduplicatesDisplayNames(t *testing.T) {
+	vendors := buildPricingVendorsList(map[int]*Vendor{
+		1: {
+			Id:          1,
+			Name:        "阿里巴巴",
+			Description: "legacy",
+			Icon:        "Qwen.Color",
+		},
+		2: {
+			Id:          2,
+			Name:        "Alibaba",
+			Description: "canonical",
+			Icon:        "Qwen.Color",
+		},
+		3: {
+			Id:   3,
+			Name: "DeepSeek",
+			Icon: "DeepSeek.Color",
+		},
+	})
+
+	require.Len(t, vendors, 2)
+	assert.Equal(t, PricingVendor{
+		ID:          2,
+		Name:        "Alibaba",
+		Description: "canonical",
+		Icon:        "Qwen.Color",
+	}, vendors[0])
+	assert.Equal(t, PricingVendor{
+		ID:   3,
+		Name: "DeepSeek",
+		Icon: "DeepSeek.Color",
+	}, vendors[1])
 }

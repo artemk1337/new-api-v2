@@ -126,6 +126,21 @@ func postYooKassaWebhook(t *testing.T, router *gin.Engine) *httptest.ResponseRec
 	return recorder
 }
 
+func postYooKassaSync(t *testing.T, userID int, role int) *httptest.ResponseRecorder {
+	t.Helper()
+	router := gin.New()
+	router.POST("/api/user/yookassa/sync", func(c *gin.Context) {
+		c.Set("id", userID)
+		c.Set("role", role)
+		SyncYooKassaTopUp(c)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/user/yookassa/sync", strings.NewReader(`{"trade_no":"trade-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+	return recorder
+}
+
 func yookassaPaymentResponse(status string, paid bool, amount string) string {
 	return `{
 		"id":"pay_1",
@@ -204,6 +219,36 @@ func TestYooKassaWebhookUsesPaymentMetadataWhenProviderMetadataMissingTradeNo(t 
 	var user model.User
 	require.NoError(t, model.DB.First(&user, 1).Error)
 	assert.Equal(t, 123456, user.Quota)
+}
+
+func TestYooKassaSyncPaymentSucceeded(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+
+	recorder := postYooKassaSync(t, 1, common.RoleCommonUser)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Equal(t, 500000, user.Quota)
+}
+
+func TestYooKassaSyncRejectsOtherUserOrder(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+
+	recorder := postYooKassaSync(t, 2, common.RoleCommonUser)
+	assert.Equal(t, http.StatusForbidden, recorder.Code)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusPending, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Equal(t, 0, user.Quota)
 }
 
 func TestYooKassaPaymentMethodIsSBPOnly(t *testing.T) {

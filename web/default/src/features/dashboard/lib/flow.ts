@@ -200,7 +200,7 @@ function groupNode(row: FlowQuotaDataItem): FlowPathNode {
   const useGroup = row.use_group || 'unknown'
   return {
     id: `group:${useGroup}`,
-    label: useGroup,
+    label: row.use_group_ref?.name || useGroup,
     kind: 'group',
   }
 }

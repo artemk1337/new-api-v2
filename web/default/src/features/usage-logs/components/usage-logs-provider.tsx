@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
+import { useQuery } from '@tanstack/react-query'
 import { createContext, useContext, useState, type ReactNode } from 'react'
+import { getPricing } from '@/features/pricing/api'
 import type { ChannelAffinityInfo } from '../types'
 
 interface UsageLogsContextValue {
@@ -31,6 +33,7 @@ interface UsageLogsContextValue {
   setAffinityDialogOpen: (open: boolean) => void
   sensitiveVisible: boolean
   setSensitiveVisible: (visible: boolean) => void
+  formatPricingGroupName: (group: string) => string
 }
 
 const UsageLogsContext = createContext<UsageLogsContextValue | undefined>(
@@ -44,6 +47,19 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
     useState<ChannelAffinityInfo | null>(null)
   const [affinityDialogOpen, setAffinityDialogOpen] = useState(false)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
+  const { data: pricingData } = useQuery({
+    queryKey: ['pricing'],
+    queryFn: getPricing,
+    staleTime: 5 * 60 * 1000,
+  })
+  const pricingGroupNames = new Map(
+    (pricingData?.pricing_groups ?? []).map((group) => [
+      String(group.id),
+      group.name,
+    ])
+  )
+  const formatPricingGroupName = (group: string) =>
+    pricingGroupNames.get(String(group)) ?? group
 
   return (
     <UsageLogsContext.Provider
@@ -58,6 +74,7 @@ export function UsageLogsProvider({ children }: { children: ReactNode }) {
         setAffinityDialogOpen,
         sensitiveVisible,
         setSensitiveVisible,
+        formatPricingGroupName,
       }}
     >
       {children}

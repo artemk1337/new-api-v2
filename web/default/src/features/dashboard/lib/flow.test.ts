@@ -111,6 +111,26 @@ describe('dashboard flow data', () => {
     )
   })
 
+  test('uses pricing group refs as group display labels', () => {
+    const result = buildDashboardFlowData(
+      [
+        {
+          use_group: '2',
+          use_group_ref: { id: 2, name: 'Renamed VIP' },
+          model_name: 'gpt-4.1',
+          quota: 10,
+          token_used: 1,
+          count: 1,
+        },
+      ],
+      'quota',
+      { role: 'user' }
+    )
+
+    const group = result.flow.nodes.find((node) => node.id === 'group:2')
+    assert.equal(group?.label, 'Renamed VIP')
+  })
+
   test('builds admin user-group-model-channel flow', () => {
     const result = buildDashboardFlowData(rows, 'quota', {
       role: 'admin',

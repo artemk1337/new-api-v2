@@ -1,7 +1,6 @@
 package ratio_setting
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 
@@ -87,7 +86,11 @@ func GroupRatio2JSONString() string {
 }
 
 func UpdateGroupRatioByJSONString(jsonStr string) error {
-	return UpdatePricingGroupsByJSONString(jsonStr)
+	var groups []*PricingGroup
+	if err := common.Unmarshal([]byte(jsonStr), &groups); err == nil {
+		return UpdatePricingGroupsByJSONString(jsonStr)
+	}
+	return updatePricingGroupsFromLegacyRatioJSON(jsonStr)
 }
 
 func GetGroupRatio(name string) float64 {
@@ -152,30 +155,7 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 }
 
 func CheckGroupRatio(jsonStr string) error {
-	var groups []*PricingGroup
-	if err := common.Unmarshal([]byte(jsonStr), &groups); err == nil {
-		for _, group := range groups {
-			if group == nil {
-				continue
-			}
-			if group.Ratio < 0 {
-				return errors.New("group ratio must be not less than 0: " + group.Name)
-			}
-		}
-		return nil
-	}
-
-	checkGroupRatio := make(map[string]float64)
-	err := common.Unmarshal([]byte(jsonStr), &checkGroupRatio)
-	if err != nil {
-		return err
-	}
-	for name, ratio := range checkGroupRatio {
-		if ratio < 0 {
-			return errors.New("group ratio must be not less than 0: " + name)
-		}
-	}
-	return nil
+	return ValidatePricingGroupsJSONString(jsonStr)
 }
 
 func normalizePricingGroupKey(key string) string {

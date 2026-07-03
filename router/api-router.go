@@ -108,6 +108,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/yookassa/amount", controller.RequestYooKassaAmount)
 				selfRoute.POST("/yookassa/pay", middleware.CriticalRateLimit(), controller.RequestYooKassaPay)
+				selfRoute.POST("/yookassa/sync", controller.SyncYooKassaTopUp)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
@@ -287,11 +288,11 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		systemUpdateRoute := apiRouter.Group("/system-update")
 		systemUpdateRoute.Use(middleware.RootAuth())
-			{
-				systemUpdateRoute.GET("/check", controller.CheckSystemUpdate)
-				systemUpdateRoute.POST("/apply", controller.ApplySystemUpdate)
-				systemUpdateRoute.GET("/job/:job_id", controller.GetSystemUpdateJob)
-			}
+		{
+			systemUpdateRoute.GET("/check", controller.CheckSystemUpdate)
+			systemUpdateRoute.POST("/apply", controller.ApplySystemUpdate)
+			systemUpdateRoute.GET("/job/:job_id", controller.GetSystemUpdateJob)
+		}
 		systemInfoRoute := apiRouter.Group("/system-info")
 		systemInfoRoute.Use(middleware.RootAuth())
 		{

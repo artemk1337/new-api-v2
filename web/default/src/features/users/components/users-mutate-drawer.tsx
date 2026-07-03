@@ -76,7 +76,6 @@ import {
   createUser,
   updateUser,
   getUser,
-  getGroups,
   getPermissionCatalog,
 } from '../api'
 import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
@@ -104,19 +103,10 @@ export function UsersMutateDrawer({
 }: UsersMutateDrawerProps) {
   const { t } = useTranslation()
   const isUpdate = !!currentRow
-  const { triggerRefresh } = useUsers()
+  const { triggerRefresh, userGroupOptions, addUserGroupOptions } = useUsers()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
-
-  // Fetch groups
-  const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
-    queryFn: getGroups,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const groups = groupsData?.data || []
 
   // Permission catalog is owned by the backend; fetched once and reused.
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({
@@ -136,6 +126,7 @@ export function UsersMutateDrawer({
       // For update, fetch fresh data
       getUser(currentRow.id).then((result) => {
         if (result.success && result.data) {
+          addUserGroupOptions([result.data.group])
           form.reset(transformUserToFormDefaults(result.data))
         }
       })
@@ -143,7 +134,7 @@ export function UsersMutateDrawer({
       // For create, reset to defaults
       form.reset(USER_FORM_DEFAULT_VALUES)
     }
-  }, [open, isUpdate, currentRow, form])
+  }, [open, isUpdate, currentRow, form, addUserGroupOptions])
 
   const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
@@ -358,12 +349,10 @@ export function UsersMutateDrawer({
                       <FormItem>
                         <FormLabel>{t('Group')}</FormLabel>
                         <Select
-                          items={[
-                            ...groups.map((group) => ({
-                              value: group.name,
-                              label: group.name,
-                            })),
-                          ]}
+                          items={userGroupOptions.map((group) => ({
+                            value: group,
+                            label: group,
+                          }))}
                           onValueChange={field.onChange}
                           value={field.value || ''}
                         >
@@ -374,12 +363,9 @@ export function UsersMutateDrawer({
                           </FormControl>
                           <SelectContent alignItemWithTrigger={false}>
                             <SelectGroup>
-                              {groups.map((group) => (
-                                <SelectItem
-                                  key={group.id}
-                                  value={group.name}
-                                >
-                                  {group.name}
+                              {userGroupOptions.map((group) => (
+                                <SelectItem key={group} value={group}>
+                                  {group}
                                 </SelectItem>
                               ))}
                             </SelectGroup>

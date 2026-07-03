@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -153,4 +154,55 @@ func getDefaultVendorDisplayName(vendorName string) string {
 		return englishName
 	}
 	return vendorName
+}
+
+func buildPricingVendorsList(vendorMap map[int]*Vendor) []PricingVendor {
+	ids := make([]int, 0, len(vendorMap))
+	for id := range vendorMap {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	vendorsByName := make(map[string]PricingVendor, len(vendorMap))
+	names := make([]string, 0, len(vendorMap))
+	for _, id := range ids {
+		vendor := vendorMap[id]
+		displayName := getDefaultVendorDisplayName(vendor.Name)
+		pricingVendor := PricingVendor{
+			ID:          vendor.Id,
+			Name:        displayName,
+			Description: vendor.Description,
+			Icon:        vendor.Icon,
+		}
+
+		existing, ok := vendorsByName[displayName]
+		if !ok {
+			vendorsByName[displayName] = pricingVendor
+			names = append(names, displayName)
+			continue
+		}
+
+		if vendor.Name == displayName {
+			existing.ID = pricingVendor.ID
+			if pricingVendor.Description != "" {
+				existing.Description = pricingVendor.Description
+			}
+			if pricingVendor.Icon != "" {
+				existing.Icon = pricingVendor.Icon
+			}
+		}
+		if existing.Description == "" {
+			existing.Description = pricingVendor.Description
+		}
+		if existing.Icon == "" {
+			existing.Icon = pricingVendor.Icon
+		}
+		vendorsByName[displayName] = existing
+	}
+
+	vendors := make([]PricingVendor, 0, len(names))
+	for _, name := range names {
+		vendors = append(vendors, vendorsByName[name])
+	}
+	return vendors
 }

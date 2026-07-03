@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -39,7 +40,7 @@ func TestTokenAuthReturnsEnglishForUnavailableTokenGroup(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"claude":1}`))
 	createTokenAuthUserAndToken(t, "default", "claude")
 
-	body := performTokenAuthRequest(t)
+	body := performTokenAuthRequest(t, http.StatusForbidden)
 
 	assert.Equal(t, "No permission to access claude group (request id: test-request-id)", body.Get("error.message").String())
 	assert.Equal(t, "new_api_error", body.Get("error.type").String())
@@ -47,14 +48,24 @@ func TestTokenAuthReturnsEnglishForUnavailableTokenGroup(t *testing.T) {
 
 func TestTokenAuthReturnsEnglishForDeprecatedTokenGroup(t *testing.T) {
 	resetTokenAuthTestState(t)
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","claude":"Claude"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","claude":"Claude"}`))
 	createTokenAuthUserAndToken(t, "default", "claude")
 
-	body := performTokenAuthRequest(t)
+	body := performTokenAuthRequest(t, http.StatusForbidden)
 
 	assert.Equal(t, "Group claude has been deprecated (request id: test-request-id)", body.Get("error.message").String())
 	assert.Equal(t, "new_api_error", body.Get("error.type").String())
+}
+
+func TestTokenAuthAllowsAutoTokenGroup(t *testing.T) {
+	resetTokenAuthTestState(t)
+	createTokenAuthUserAndToken(t, "default", "auto")
+
+	body := performTokenAuthRequest(t, http.StatusOK)
+
+	assert.Equal(t, "auto", body.Get("using_group").String())
+	assert.Equal(t, "auto", body.Get("token_group").String())
 }
 
 func resetTokenAuthTestState(t *testing.T) {
@@ -93,7 +104,7 @@ func createTokenAuthUserAndToken(t *testing.T, userGroup, tokenGroup string) {
 	require.NoError(t, model.DB.Create(&token).Error)
 }
 
-func performTokenAuthRequest(t *testing.T) gjson.Result {
+func performTokenAuthRequest(t *testing.T, expectedStatus int) gjson.Result {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -104,15 +115,18 @@ func performTokenAuthRequest(t *testing.T) gjson.Result {
 	})
 	router.Use(TokenAuth())
 	router.GET("/test", func(c *gin.Context) {
-		c.Status(http.StatusOK)
+		c.JSON(http.StatusOK, gin.H{
+			"token_group": common.GetContextKeyString(c, constant.ContextKeyTokenGroup),
+			"using_group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
+		})
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Header.Set("Authorization", "Bearer sk-test-token")
+	req.Header.Set("Authorization", "Bearer sk-test")
 	resp := httptest.NewRecorder()
 
 	router.ServeHTTP(resp, req)
 
-	require.Equal(t, http.StatusForbidden, resp.Code)
+	require.Equal(t, expectedStatus, resp.Code)
 	return gjson.Parse(resp.Body.String())
 }

@@ -143,7 +143,9 @@ export async function resetUserTwoFA(id: number): Promise<ApiResponse> {
 }
 
 /**
- * Get all available groups
+ * Get pricing groups catalog.
+ *
+ * Kept here for existing channel components; user group forms must not use it.
  */
 export async function getGroups(): Promise<ApiResponse<PricingGroupRecord[]>> {
   const res = await api.get('/api/group/')
@@ -206,6 +208,7 @@ export async function adminUnbindCustomOAuth(
   )
   return res.data
 }
+
 export type PricingGroupRecord = {
   id: number
   name: string

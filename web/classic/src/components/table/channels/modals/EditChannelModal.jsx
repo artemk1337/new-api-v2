@@ -182,7 +182,7 @@ const EditChannelModal = (props) => {
     models: [],
     auto_ban: 1,
     test_model: '',
-    groups: ['default'],
+    groups: ['1'],
     priority: 0,
     weight: 0,
     tag: '',

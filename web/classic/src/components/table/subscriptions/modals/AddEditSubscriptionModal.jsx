@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Avatar,
   Button,
@@ -73,8 +73,6 @@ const AddEditSubscriptionModal = ({
   t,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [groupOptions, setGroupOptions] = useState([]);
-  const [groupLoading, setGroupLoading] = useState(false);
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
   const isEdit = editingPlan?.plan?.id !== undefined;
@@ -125,26 +123,6 @@ const AddEditSubscriptionModal = ({
       creem_product_id: p.creem_product_id || '',
     };
   };
-
-  useEffect(() => {
-    if (!visible) return;
-    setGroupLoading(true);
-    API.get('/api/group')
-      .then((res) => {
-        if (res.data?.success) {
-          setGroupOptions(
-            (res.data?.data || []).map((group) => ({
-              label: group.name || group,
-              value: group.name || group,
-            })),
-          );
-        } else {
-          setGroupOptions([]);
-        }
-      })
-      .catch(() => setGroupOptions([]))
-      .finally(() => setGroupLoading(false));
-  }, [visible]);
 
   const submit = async (values) => {
     if (!values.title || values.title.trim() === '') {
@@ -328,23 +306,14 @@ const AddEditSubscriptionModal = ({
                     </Col>
 
                     <Col span={12}>
-                      <Form.Select
+                      <Form.Input
                         field='upgrade_group'
                         label={t('升级分组')}
-                        showClear
-                        loading={groupLoading}
                         placeholder={t('不升级')}
                         extraText={t(
                           '购买或手动新增订阅会升级到该分组；当套餐失效/过期或手动作废/删除后，将回退到升级前分组。回退不会立即生效，通常会有几分钟延迟。',
                         )}
-                      >
-                        <Select.Option value=''>{t('不升级')}</Select.Option>
-                        {(groupOptions || []).map((g) => (
-                          <Select.Option key={g.value} value={g.value}>
-                            {g.label}
-                          </Select.Option>
-                        ))}
-                      </Form.Select>
+                      />
                     </Col>
 
                     <Col span={12}>

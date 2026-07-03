@@ -86,9 +86,18 @@ export default function GroupRatioSettings(props) {
   const [inputsRow, setInputsRow] = useState(inputs);
   const dataVersionRef = useRef(0);
 
-  const groupNames = useMemo(() => {
-    const ratioMap = parseJSONSafe(inputs.GroupRatio, {});
-    return Object.keys(ratioMap);
+  const groupOptions = useMemo(() => {
+    const ratioValue = parseJSONSafe(inputs.GroupRatio, {});
+    if (Array.isArray(ratioValue)) {
+      return ratioValue.map((group) => ({
+        value: String(group.id ?? group.name),
+        label: group.name,
+      }));
+    }
+    return Object.keys(ratioValue).map((name) => ({
+      value: name,
+      label: name,
+    }));
   }, [inputs.GroupRatio]);
 
   async function onSubmit() {
@@ -222,7 +231,7 @@ export default function GroupRatioSettings(props) {
         <AutoGroupList
           key={`ag_${dv}`}
           value={inputs.AutoGroups}
-          groupNames={groupNames}
+          groupNames={groupOptions}
           onChange={handleAutoGroupsChange}
         />
       </Form.Section>
@@ -234,7 +243,7 @@ export default function GroupRatioSettings(props) {
         <GroupGroupRatioRules
           key={`ggr_${dv}`}
           value={inputs.GroupGroupRatio}
-          groupNames={groupNames}
+          groupNames={groupOptions}
           onChange={handleGroupGroupRatioChange}
         />
       </Form.Section>
@@ -246,7 +255,7 @@ export default function GroupRatioSettings(props) {
         <GroupSpecialUsableRules
           key={`gsu_${dv}`}
           value={inputs['group_ratio_setting.group_special_usable_group']}
-          groupNames={groupNames}
+          groupNames={groupOptions}
           onChange={handleSpecialUsableChange}
         />
       </Form.Section>

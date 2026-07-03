@@ -105,9 +105,10 @@ const renderGroupColumn = (text, record, t, groupRatios = {}) => {
     );
   }
   const ratio = groupRatios[text];
+  const displayGroup = record?.group_ref?.name || text;
   return (
     <span className='flex items-center gap-1'>
-      {renderGroup(text)}
+      {renderGroup(displayGroup)}
       {ratio !== undefined && (
         <Tag size='small' color='green' shape='circle'>
           {ratio}x

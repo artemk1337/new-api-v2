@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -23,19 +24,18 @@ func TestSelectCheapestAvailableGroupChoosesLowestRatioWithChannel(t *testing.T)
 		ModelName: "gpt-test",
 	}
 	fetch := func(group string, modelName string, retry int, requestPath string) (*model.Channel, error) {
-		return &model.Channel{Id: map[string]int{
-			"1": 1,
-			"2": 2,
-			"3": 3,
-		}[group]}, nil
+		id, _ := strconv.Atoi(group)
+		return &model.Channel{Id: id}, nil
 	}
 
 	channel, group, err := selectCheapestAvailableGroup(param, "default", fetch)
+	budgetKey := ratio_setting.PricingGroupKey("budget")
+	budgetID, _ := strconv.Atoi(budgetKey)
 
 	require.NoError(t, err)
 	require.NotNil(t, channel)
-	assert.Equal(t, "3", group)
-	assert.Equal(t, 3, channel.Id)
+	assert.Equal(t, budgetKey, group)
+	assert.Equal(t, budgetID, channel.Id)
 }
 
 func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
@@ -48,18 +48,20 @@ func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
 		Ctx:       ctx,
 		ModelName: "gpt-test",
 	}
+	budgetKey := ratio_setting.PricingGroupKey("budget")
 	fetch := func(group string, modelName string, retry int, requestPath string) (*model.Channel, error) {
-		if group == "2" {
+		if group == budgetKey {
 			return nil, nil
 		}
 		return &model.Channel{Id: 1}, nil
 	}
 
 	channel, group, err := selectCheapestAvailableGroup(param, "default", fetch)
+	defaultKey := ratio_setting.PricingGroupKey("default")
 
 	require.NoError(t, err)
 	require.NotNil(t, channel)
-	assert.Equal(t, "1", group)
+	assert.Equal(t, defaultKey, group)
 	assert.Equal(t, 1, channel.Id)
 }
 

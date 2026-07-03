@@ -147,6 +147,20 @@ func taskModelName(task *model.Task) string {
 	return task.Properties.OriginModelName
 }
 
+func ResolveTaskPricingGroupKey(task *model.Task) string {
+	if task.Group != "" {
+		return ratio_setting.PricingGroupKey(task.Group)
+	}
+	return ratio_setting.PricingGroupKey("default")
+}
+
+func ResolveTaskGroupRatio(task *model.Task) float64 {
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.GroupRatio > 0 {
+		return bc.GroupRatio
+	}
+	return ratio_setting.GetGroupRatio(ResolveTaskPricingGroupKey(task))
+}
+
 // RefundTaskQuota 统一的任务失败退款逻辑。
 // 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
@@ -262,27 +276,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return
 	}
 
-	// 获取用户和组的倍率信息
-	group := task.Group
-	if group == "" {
-		user, err := model.GetUserById(task.UserId, false)
-		if err == nil {
-			group = user.Group
-		}
-	}
+	// task.Group stores the pricing group id. Do not fall back to user.Group:
+	// user groups live in a different domain.
+	group := ResolveTaskPricingGroupKey(task)
 	if group == "" {
 		return
 	}
 
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
-	} else {
-		finalGroupRatio = groupRatio
-	}
+	finalGroupRatio := ResolveTaskGroupRatio(task)
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0

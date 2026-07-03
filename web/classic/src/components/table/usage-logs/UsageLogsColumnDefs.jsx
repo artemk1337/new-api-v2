@@ -66,7 +66,7 @@ function formatRatio(ratio) {
   return String(ratio);
 }
 
-function buildChannelAffinityTooltip(affinity, t) {
+function buildChannelAffinityTooltip(affinity, t, groupNameMap = {}) {
   if (!affinity) {
     return null;
   }
@@ -76,11 +76,13 @@ function buildChannelAffinityTooltip(affinity, t) {
   const keyHint = affinity.key_hint || '';
   const keyFp = affinity.key_fp ? `#${affinity.key_fp}` : '';
   const keyText = `${keySource}:${keyPath}${keyFp}`;
+  const group = affinity.using_group || affinity.selected_group || '';
+  const groupName = groupNameMap[String(group)] || group || '-';
 
   const lines = [
     t('渠道亲和性'),
     `${t('规则')}：${affinity.rule_name || '-'}`,
-    `${t('分组')}：${affinity.selected_group || '-'}`,
+    `${t('分组')}：${groupName}`,
     `${t('Key')}：${keyText}`,
     ...(keyHint ? [`${t('Key 摘要')}：${keyHint}`] : []),
   ];
@@ -482,7 +484,11 @@ export const getLogsColumns = ({
   openChannelAffinityUsageCacheModal,
   isAdminUser,
   billingDisplayMode = 'price',
+  groupNameMap = {},
 }) => {
+  const formatPricingGroupName = (group) =>
+    groupNameMap[String(group)] || group;
+
   return [
     {
       key: COLUMN_KEYS.TIME,
@@ -542,7 +548,7 @@ export const getLogsColumns = ({
                       <div>{content}</div>
                       {affinity ? (
                         <div style={{ marginTop: 6 }}>
-                          {buildChannelAffinityTooltip(affinity, t)}
+                          {buildChannelAffinityTooltip(affinity, t, groupNameMap)}
                         </div>
                       ) : null}
                     </div>
@@ -646,7 +652,13 @@ export const getLogsColumns = ({
           record.type === 6
         ) {
           if (record.group) {
-            return <>{renderGroup(record.group)}</>;
+            return (
+              <>
+                {renderGroup(
+                  record.group_ref?.name || formatPricingGroupName(record.group),
+                )}
+              </>
+            );
           } else {
             let other = null;
             try {
@@ -661,7 +673,7 @@ export const getLogsColumns = ({
               return <></>;
             }
             if (other.group !== undefined) {
-              return <>{renderGroup(other.group)}</>;
+              return <>{renderGroup(formatPricingGroupName(other.group))}</>;
             } else {
               return <></>;
             }

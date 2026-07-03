@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -137,6 +138,29 @@ func makeTask(userId, channelId, quota, tokenId int, billingSource string, subsc
 			},
 		},
 	}
+}
+
+func TestResolveTaskPricingGroupKeyDoesNotUseUserGroup(t *testing.T) {
+	original := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(original))
+	})
+
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
+		{"id":2,"name":"Renamed VIP","ratio":1.2,"selectable":true,"description":"vip"}
+	]`))
+
+	assert.Equal(t, "1", ResolveTaskPricingGroupKey(&model.Task{}))
+	assert.Equal(t, "2", ResolveTaskPricingGroupKey(&model.Task{Group: "Renamed VIP"}))
+	assert.Equal(t, "2", ResolveTaskPricingGroupKey(&model.Task{Group: "2"}))
+	assert.InDelta(t, 1.2, ResolveTaskGroupRatio(&model.Task{Group: "2"}), 1e-9)
+	assert.InDelta(t, 0.75, ResolveTaskGroupRatio(&model.Task{
+		Group: "2",
+		PrivateData: model.TaskPrivateData{
+			BillingContext: &model.TaskBillingContext{GroupRatio: 0.75},
+		},
+	}), 1e-9)
 }
 
 // ---------------------------------------------------------------------------
