@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getStatus } from '@/lib/api'
 import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Markdown } from '@/components/ui/markdown'
@@ -43,12 +44,68 @@ type UpdateCheckerSectionProps = {
   startTime?: number | null
 }
 
+type UpdateStepState = 'idle' | 'running' | 'done' | 'error'
+
+type UpdateStep = {
+  step: string
+}
+
 function isActiveSystemUpdateTask(task: SystemUpdateTask | null) {
   return task?.status === 'pending' || task?.status === 'running'
 }
 
 const updateVersionWaitTimeoutMs = 10 * 60 * 1000
 const updateJobLookupFailureLimit = 5
+const signInRedirectPath = '/sign-in?redirect=%2Fdashboard'
+const systemUpdateSteps: UpdateStep[] = [
+  { step: 'checking' },
+  { step: 'requesting_updater' },
+  { step: 'pulling' },
+  { step: 'deploying' },
+  { step: 'succeeded' },
+]
+
+function getSystemUpdateStepIndex(step: string | undefined) {
+  const index = systemUpdateSteps.findIndex((item) => item.step === step)
+  return index >= 0 ? index : 0
+}
+
+function getSystemUpdateStepState(
+  task: SystemUpdateTask,
+  index: number
+): UpdateStepState {
+  if (task.status === 'failed') {
+    const failedIndex = getSystemUpdateStepIndex(task.state?.step)
+    if (index < failedIndex) return 'done'
+    if (index === failedIndex) return 'error'
+    return 'idle'
+  }
+  if (task.status === 'succeeded' && task.state?.step === 'succeeded') {
+    return 'done'
+  }
+
+  const currentIndex = getSystemUpdateStepIndex(task.state?.step)
+  if (index < currentIndex) return 'done'
+  if (index === currentIndex) return 'running'
+  return 'idle'
+}
+
+function getSystemUpdateStepLabel(t: (key: string) => string, step: string) {
+  switch (step) {
+    case 'checking':
+      return t('Validate update tag')
+    case 'requesting_updater':
+      return t('Request updater sidecar')
+    case 'pulling':
+      return t('Pull update image')
+    case 'deploying':
+      return t('Deploy service')
+    case 'succeeded':
+      return t('Confirm new version')
+    default:
+      return step
+  }
+}
 
 export function UpdateCheckerSection({
   currentVersion,
@@ -76,6 +133,7 @@ export function UpdateCheckerSection({
   const uptime = startTime ? formatTimestamp(startTime) : t('Unknown')
   const version = currentVersion || t('Unknown')
   const updateActive = isActiveSystemUpdateTask(updateTask)
+  const showUpdateTask = Boolean(updateTask && expectedUpdateVersion)
 
   const handleCheckUpdates = async () => {
     setChecking(true)
@@ -220,6 +278,8 @@ export function UpdateCheckerSection({
     setUpdateTaskId(null)
     setUpdateJobId(null)
     setUpdateJobLookupFailures(0)
+    setUpdateTask(null)
+    window.setTimeout(() => window.location.assign(signInRedirectPath), 1200)
   }, [currentVersion, expectedUpdateVersion])
 
   useEffect(() => {
@@ -293,7 +353,11 @@ export function UpdateCheckerSection({
           setUpdateTaskId(null)
           setUpdateJobId(null)
           setUpdateJobLookupFailures(0)
-          window.setTimeout(() => window.location.reload(), 1200)
+          setUpdateTask(null)
+          window.setTimeout(
+            () => window.location.assign(signInRedirectPath),
+            1200
+          )
         }
       } catch {
         // The service may be restarting during self-update; keep polling.
@@ -387,25 +451,42 @@ export function UpdateCheckerSection({
             </div>
           </div>
 
-          {updateTask && (
-            <div className='rounded-lg border p-4'>
-              <div className='flex items-center justify-between gap-3'>
-                <div>
+          {showUpdateTask && updateTask && (
+            <div className='rounded-lg border p-4 md:w-1/2'>
+              <div className='mb-4 flex items-start justify-between gap-3'>
+                <div className='min-w-0'>
                   <div className='font-medium'>{t('System update')}</div>
-                  <div className='text-muted-foreground text-sm'>
+                  <div className='text-muted-foreground truncate text-sm'>
                     {updateTask.state?.message ||
-                      (expectedUpdateVersion
-                        ? t('Waiting for the service to restart...')
-                        : '') ||
-                      updateTask.result?.requested_version ||
-                      updateTask.payload?.version ||
-                      updateTask.status}
+                      t('Waiting for the service to restart...')}
                   </div>
                 </div>
                 <div className='text-muted-foreground text-sm'>
                   {updateTask.state?.progress ?? 0}%
                 </div>
               </div>
+              <ol className='space-y-3'>
+                {systemUpdateSteps.map((item, index) => {
+                  const state = getSystemUpdateStepState(updateTask, index)
+                  return (
+                    <li key={item.step} className='flex items-start gap-3'>
+                      <span
+                        className={cn(
+                          'mt-1 h-2.5 w-2.5 shrink-0 rounded-full',
+                          state === 'idle' && 'bg-muted-foreground/40',
+                          state === 'running' && 'bg-yellow-500',
+                          state === 'done' && 'bg-green-500',
+                          state === 'error' && 'bg-red-500'
+                        )}
+                        aria-hidden='true'
+                      />
+                      <span className='text-sm'>
+                        {getSystemUpdateStepLabel(t, item.step)}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ol>
             </div>
           )}
         </div>
@@ -467,8 +548,7 @@ export function UpdateCheckerSection({
       >
         <div className='space-y-4'>
           {releases.length > 0 ? (
-            releases
-              .slice()
+            [...releases]
               .reverse()
               .map((item) => (
                 <div key={item.tag_name} className='space-y-2'>

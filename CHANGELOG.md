@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.33
+
+- Redesigned the system update progress block with vertical stage indicators and localized stage labels.
+- Redirected users to the dashboard sign-in route after a completed system update and hid the completed update block.
+
 ## v1.1.32
 
 - Fixed pricing-group renames so storefront-usable groups and channel abilities are normalized to stable group ids before display names change.

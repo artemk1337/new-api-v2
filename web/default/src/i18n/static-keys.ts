@@ -52,6 +52,13 @@ export const STATIC_I18N_KEYS = [
   'Worker instances do not run master-only background tasks.',
   'Drawing task polling',
 
+  // System update stages
+  'Validate update tag',
+  'Request updater sidecar',
+  'Pull update image',
+  'Deploy service',
+  'Confirm new version',
+
   // Pricing constants
   'Name',
   'Price: Low to High',
