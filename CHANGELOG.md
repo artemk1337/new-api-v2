@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.29
+
+- Renamed the billing settings group and model pricing sections to Groups and Models in the default frontend.
+
 ## v1.1.28
 
 - Renamed the top navigation Console tab to Dashboard in the default frontend.
