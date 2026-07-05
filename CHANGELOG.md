@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.28
+
+- Renamed the top navigation Console tab to Dashboard in the default frontend.
+
 ## v1.1.27
 
 - Changed the platform default interface language to Russian while preserving saved user language preferences.
