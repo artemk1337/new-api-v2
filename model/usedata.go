@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"gorm.io/gorm"
 )
 
@@ -83,7 +84,7 @@ func LogQuotaData(params QuotaDataLogParams) {
 		Username:  params.Username,
 		ModelName: params.ModelName,
 		CreatedAt: createdAt,
-		UseGroup:  params.UseGroup,
+		UseGroup:  ratio_setting.PricingGroupKeyOrDefault(params.UseGroup),
 		TokenID:   params.TokenID,
 		ChannelID: params.ChannelID,
 		NodeName:  params.NodeName,

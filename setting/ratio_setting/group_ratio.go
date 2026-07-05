@@ -1,6 +1,7 @@
 package ratio_setting
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -93,6 +94,43 @@ func UpdateGroupRatioByJSONString(jsonStr string) error {
 	return updatePricingGroupsFromLegacyRatioJSON(jsonStr)
 }
 
+func NormalizeGroupRatioJSONStringForSave(jsonStr string) (string, error) {
+	var groups []*PricingGroup
+	if err := common.Unmarshal([]byte(jsonStr), &groups); err == nil {
+		return NormalizePricingGroupsJSONString(jsonStr)
+	}
+
+	legacy := make(map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &legacy); err != nil {
+		return "", err
+	}
+	normalizedRatios := make(map[string]float64, len(legacy))
+	for name, ratio := range legacy {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, exists := normalizedRatios[name]; exists {
+			return "", errors.New("pricing group name must be unique: " + name)
+		}
+		if ratio < 0 {
+			return "", errors.New("group ratio must be not less than 0: " + name)
+		}
+		normalizedRatios[name] = ratio
+	}
+
+	groups = buildPricingGroupsFromLegacyRatioWithIDs(normalizedRatios, existingPricingGroupIDsByName())
+	return pricingGroupsToJSONString(groups)
+}
+
+func NormalizeGroupRatioJSONStringForSaveIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeGroupRatioJSONStringForSave(jsonStr)
+	return value, true, err
+}
+
 func GetGroupRatio(name string) float64 {
 	key := normalizePricingGroupKey(name)
 	ratio, ok := groupRatioMap.Get(key)
@@ -128,11 +166,7 @@ func GroupGroupRatio2JSONString() string {
 	return groupGroupRatioMap.MarshalJSONString()
 }
 
-func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
-	parsed := make(map[string]map[string]float64)
-	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
-		return err
-	}
+func normalizeGroupGroupRatioMap(parsed map[string]map[string]float64) map[string]map[string]float64 {
 	normalized := make(map[string]map[string]float64, len(parsed))
 	for userGroup, ratios := range parsed {
 		userGroup = strings.TrimSpace(userGroup)
@@ -149,9 +183,171 @@ func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
 		}
 		normalized[userGroup] = normalizedRatios
 	}
+	return normalized
+}
+
+func trimGroupGroupRatioMap(parsed map[string]map[string]float64) map[string]map[string]float64 {
+	trimmed := make(map[string]map[string]float64, len(parsed))
+	for userGroup, ratios := range parsed {
+		userGroup = strings.TrimSpace(userGroup)
+		if userGroup == "" {
+			continue
+		}
+		trimmedRatios := make(map[string]float64, len(ratios))
+		for pricingGroup, ratio := range ratios {
+			key := strings.TrimSpace(pricingGroup)
+			if key == "" {
+				continue
+			}
+			trimmedRatios[key] = ratio
+		}
+		trimmed[userGroup] = trimmedRatios
+	}
+	return trimmed
+}
+
+func NormalizeGroupGroupRatioJSONString(jsonStr string) (string, error) {
+	parsed := make(map[string]map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return "", err
+	}
+	bytes, err := common.Marshal(normalizeGroupGroupRatioMap(parsed))
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func UpdateGroupGroupRatioByJSONString(jsonStr string) error {
+	parsed := make(map[string]map[string]float64)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return err
+	}
+	normalized := trimGroupGroupRatioMap(parsed)
+	if pricingGroupsInitialized() {
+		normalized = normalizeGroupGroupRatioMap(parsed)
+	}
 	groupGroupRatioMap.Clear()
 	groupGroupRatioMap.AddAll(normalized)
 	return nil
+}
+
+func NormalizeGroupGroupRatio() (string, error) {
+	value, err := NormalizeGroupGroupRatioJSONString(GroupGroupRatio2JSONString())
+	if err != nil {
+		return "", err
+	}
+	if err := UpdateGroupGroupRatioByJSONString(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func NormalizeGroupGroupRatioJSONStringIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeGroupGroupRatioJSONString(jsonStr)
+	return value, true, err
+}
+
+func normalizeSpecialUsablePricingGroupKey(rawKey string) string {
+	rawKey = strings.TrimSpace(rawKey)
+	if rawKey == "" {
+		return ""
+	}
+	if strings.HasPrefix(rawKey, "-:") {
+		key := normalizePricingGroupKey(strings.TrimPrefix(rawKey, "-:"))
+		if key == "" {
+			return ""
+		}
+		return "-:" + key
+	}
+	if strings.HasPrefix(rawKey, "+:") {
+		key := normalizePricingGroupKey(strings.TrimPrefix(rawKey, "+:"))
+		if key == "" {
+			return ""
+		}
+		return "+:" + key
+	}
+	return normalizePricingGroupKey(rawKey)
+}
+
+func NormalizeGroupSpecialUsableGroupJSONString(jsonStr string) (string, error) {
+	parsed := make(map[string]map[string]string)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return "", err
+	}
+	normalized := make(map[string]map[string]string, len(parsed))
+	for userGroup, rules := range parsed {
+		userGroup = strings.TrimSpace(userGroup)
+		if userGroup == "" {
+			continue
+		}
+		normalizedRules := make(map[string]string, len(rules))
+		for pricingGroup, desc := range rules {
+			key := normalizeSpecialUsablePricingGroupKey(pricingGroup)
+			if key == "" {
+				continue
+			}
+			normalizedRules[key] = desc
+		}
+		normalized[userGroup] = normalizedRules
+	}
+	bytes, err := common.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func UpdateGroupSpecialUsableGroupByJSONString(jsonStr string) error {
+	parsed := make(map[string]map[string]string)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return err
+	}
+	normalized := parsed
+	if pricingGroupsInitialized() {
+		normalizedJSON, err := NormalizeGroupSpecialUsableGroupJSONString(jsonStr)
+		if err != nil {
+			return err
+		}
+		normalized = make(map[string]map[string]string)
+		if err := common.Unmarshal([]byte(normalizedJSON), &normalized); err != nil {
+			return err
+		}
+	}
+	setting := GetGroupRatioSetting()
+	setting.GroupSpecialUsableGroup.Clear()
+	setting.GroupSpecialUsableGroup.AddAll(normalized)
+	return nil
+}
+
+func GroupSpecialUsableGroup2JSONString() string {
+	bytes, err := common.Marshal(GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll())
+	if err != nil {
+		return "{}"
+	}
+	return string(bytes)
+}
+
+func NormalizeGroupSpecialUsableGroup() (string, error) {
+	value, err := NormalizeGroupSpecialUsableGroupJSONString(GroupSpecialUsableGroup2JSONString())
+	if err != nil {
+		return "", err
+	}
+	if err := UpdateGroupSpecialUsableGroupByJSONString(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func NormalizeGroupSpecialUsableGroupJSONStringIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeGroupSpecialUsableGroupJSONString(jsonStr)
+	return value, true, err
 }
 
 func CheckGroupRatio(jsonStr string) error {
@@ -159,7 +355,7 @@ func CheckGroupRatio(jsonStr string) error {
 }
 
 func normalizePricingGroupKey(key string) string {
-	trimmed := key
+	trimmed := strings.TrimSpace(key)
 	if group, ok := ResolvePricingGroupKey(trimmed); ok {
 		return strconv.Itoa(group.Id)
 	}

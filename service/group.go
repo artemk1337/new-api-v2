@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/setting"
@@ -35,9 +36,11 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 		}
 		// userGroup is a user-domain group. Add it only when it also exists as
 		// a pricing group for legacy installations that intentionally overlap.
-		userPricingGroup := ratio_setting.PricingGroupKey(userGroup)
-		if _, ok := groupsCopy[userPricingGroup]; !ok && ratio_setting.ContainsPricingGroup(userGroup) {
-			groupsCopy[userPricingGroup] = "用户分组"
+		if pricingGroup, ok := ratio_setting.GetPricingGroupByName(userGroup); ok {
+			userPricingGroup := strconv.Itoa(pricingGroup.Id)
+			if _, ok := groupsCopy[userPricingGroup]; !ok {
+				groupsCopy[userPricingGroup] = "用户分组"
+			}
 		}
 	}
 	return groupsCopy

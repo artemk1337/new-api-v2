@@ -12,8 +12,10 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -29,6 +31,13 @@ type listModelsResponse struct {
 type userModelsResponse struct {
 	Success bool     `json:"success"`
 	Data    []string `json:"data"`
+}
+
+type anthropicModelsResponse struct {
+	Data    []dto.AnthropicModel `json:"data"`
+	FirstID string               `json:"first_id"`
+	LastID  string               `json:"last_id"`
+	HasMore bool                 `json:"has_more"`
 }
 
 func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
@@ -160,6 +169,38 @@ func decodeUserModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
 	require.True(t, payload.Success)
 	return payload.Data
+}
+
+func TestListModelsAnthropicAllowsEmptyModelList(t *testing.T) {
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true}
+	]`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "paid-users")
+
+	require.NotPanics(t, func() {
+		ListModels(ctx, constant.ChannelTypeAnthropic)
+	})
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload anthropicModelsResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Empty(t, payload.Data)
+	require.Empty(t, payload.FirstID)
+	require.Empty(t, payload.LastID)
+	require.False(t, payload.HasMore)
 }
 
 func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {

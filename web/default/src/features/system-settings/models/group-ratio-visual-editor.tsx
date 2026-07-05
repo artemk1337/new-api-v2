@@ -39,6 +39,14 @@ import {
 } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 import { safeJsonParse } from '../utils/json-parser'
 
@@ -63,6 +71,11 @@ type GroupPricingRow = {
 type SimpleGroup = {
   name: string
   value: string
+}
+
+type PricingGroupOption = {
+  id: string
+  name: string
 }
 
 function normalizeRatio(value: unknown): number {
@@ -214,6 +227,14 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       ])
     )
   }, [pricingGroups])
+  const pricingGroupOptions = useMemo(
+    () =>
+      parsePricingGroupRows(pricingGroups).map((group) => ({
+        id: String(group.id),
+        name: group.name,
+      })),
+    [pricingGroups]
+  )
 
   // Parse topup group ratios
   const topupRatioList = useMemo(() => {
@@ -709,11 +730,32 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         <div className='space-y-4 py-4'>
           <div className='space-y-2'>
             <Label>{t('Group identifier')}</Label>
-            <Input
-              value={autoGroupInput}
-              onChange={(e) => setAutoGroupInput(e.target.value)}
-              placeholder={t('default')}
-            />
+            <Select
+              value={autoGroupInput || null}
+              onValueChange={(value) =>
+                value !== null && setAutoGroupInput(value)
+              }
+            >
+              <SelectTrigger className='w-full'>
+                <SelectValue>
+                  {autoGroupInput
+                    ? formatPricingGroupLabel(
+                        autoGroupInput,
+                        pricingGroupNames
+                      )
+                    : t('Group name')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {pricingGroupOptions.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {formatPricingGroupLabel(group.id, pricingGroupNames)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </Dialog>
@@ -760,6 +802,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         editData={groupOverrideEditData}
         userGroup={groupOverrideUserGroup}
         groupNames={pricingGroupNames}
+        groupOptions={pricingGroupOptions}
       />
     </div>
   )
@@ -1098,6 +1141,7 @@ type GroupOverrideDialogProps = {
   editData: GroupOverride | null
   userGroup: string | null
   groupNames: Map<string, string>
+  groupOptions: PricingGroupOption[]
 }
 
 function GroupOverrideDialog({
@@ -1107,6 +1151,7 @@ function GroupOverrideDialog({
   editData,
   userGroup,
   groupNames,
+  groupOptions,
 }: GroupOverrideDialogProps) {
   const { t } = useTranslation()
   const [targetGroup, setTargetGroup] = useState('')
@@ -1164,12 +1209,35 @@ function GroupOverrideDialog({
       <div className='space-y-4 py-4'>
         <div className='space-y-2'>
           <Label>{t('Target group')}</Label>
-          <Input
-            value={targetGroup}
-            onChange={(e) => setTargetGroup(e.target.value)}
-            placeholder={t('edit_this')}
+          <Select
+            value={targetGroup || null}
+            onValueChange={(value) =>
+              value !== null && setTargetGroup(value)
+            }
             disabled={!!editData}
-          />
+          >
+            <SelectTrigger className='w-full'>
+              <SelectValue>
+                {targetGroup.trim()
+                  ? formatPricingGroupLabel(targetGroup.trim(), groupNames)
+                  : t('Group name')}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {targetGroup.trim() && !groupNames.has(targetGroup.trim()) && (
+                  <SelectItem value={targetGroup.trim()}>
+                    {targetGroup.trim()}
+                  </SelectItem>
+                )}
+                {groupOptions.map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {formatPricingGroupLabel(group.id, groupNames)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <p className='text-muted-foreground text-xs'>
             {targetGroup.trim()
               ? formatPricingGroupLabel(targetGroup.trim(), groupNames)

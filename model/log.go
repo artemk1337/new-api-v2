@@ -300,6 +300,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := common.MapToJsonStr(other)
+	group = ratio_setting.PricingGroupKeyOrDefault(group)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -359,6 +360,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		return
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	group := ratio_setting.PricingGroupKeyOrDefault(params.Group)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
@@ -386,7 +388,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		TokenId:          params.TokenId,
 		UseTime:          params.UseTimeSeconds,
 		IsStream:         params.IsStream,
-		Group:            params.Group,
+		Group:            group,
 		Ip: func() string {
 			if needRecordIp {
 				return c.ClientIP()
@@ -410,7 +412,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				Quota:     params.Quota,
 				CreatedAt: createdAt,
 				TokenUsed: params.PromptTokens + params.CompletionTokens,
-				UseGroup:  params.Group,
+				UseGroup:  group,
 				TokenID:   params.TokenId,
 				ChannelID: params.ChannelId,
 				NodeName:  common.NodeName,
@@ -444,6 +446,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		}
 	}
 	createdAt := common.GetTimestamp()
+	group := ratio_setting.PricingGroupKeyOrDefault(params.Group)
 	log := &Log{
 		UserId:    params.UserId,
 		Username:  username,
@@ -455,7 +458,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Quota:     params.Quota,
 		ChannelId: params.ChannelId,
 		TokenId:   params.TokenId,
-		Group:     params.Group,
+		Group:     group,
 		Other:     common.MapToJsonStr(params.Other),
 	}
 	err := createLog(log)
@@ -474,7 +477,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 				ModelName: params.ModelName,
 				Quota:     params.Quota,
 				CreatedAt: createdAt,
-				UseGroup:  params.Group,
+				UseGroup:  group,
 				TokenID:   params.TokenId,
 				ChannelID: params.ChannelId,
 				NodeName:  nodeName,

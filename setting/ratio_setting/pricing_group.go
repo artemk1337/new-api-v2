@@ -74,6 +74,12 @@ func normalizePricingGroups(groups []*PricingGroup) ([]*PricingGroup, error) {
 		if name == "" {
 			continue
 		}
+		if name == "auto" {
+			return nil, errors.New("pricing group name is reserved: " + name)
+		}
+		if _, err := strconv.Atoi(name); err == nil {
+			return nil, errors.New("pricing group name must not be numeric: " + name)
+		}
 		if _, exists := seenNames[name]; exists {
 			return nil, errors.New("pricing group name must be unique: " + name)
 		}
@@ -169,19 +175,81 @@ func defaultPricingGroupsCopy() []*PricingGroup {
 }
 
 func buildPricingGroupsFromLegacy() []*PricingGroup {
-	legacyRatios := GetLegacyGroupRatioCopy()
+	return buildPricingGroupsFromLegacyWithIDs(existingPricingGroupIDsByName())
+}
+
+func buildPricingGroupsFromLegacyWithIDs(existingIDs map[string]int) []*PricingGroup {
+	return buildPricingGroupsFromLegacyRatioWithIDs(GetLegacyGroupRatioCopy(), existingIDs)
+}
+
+func buildPricingGroupsFromLegacyRatioWithIDs(legacyRatios map[string]float64, existingIDs map[string]int) []*PricingGroup {
 	legacyUsable := setting.GetUserUsableGroupsCopy()
 	legacyAuto := setting.GetAutoGroups()
 	legacyGroupRatios := groupGroupRatioMap.ReadAll()
 	legacySpecial := GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll()
 
-	nameSet := make(map[string]struct{})
-	addName := func(name string) {
-		trimmed := strings.TrimSpace(name)
-		if trimmed == "" {
+	existingNameByKey := make(map[string]string, len(defaultPricingGroups)*2+len(existingIDs)*2)
+	addExistingName := func(name string, id int) {
+		name = strings.TrimSpace(name)
+		if name == "" || id <= 0 {
 			return
 		}
-		nameSet[trimmed] = struct{}{}
+		existingNameByKey[name] = name
+		existingNameByKey[strconv.Itoa(id)] = name
+	}
+	for _, group := range defaultPricingGroups {
+		if group == nil {
+			continue
+		}
+		addExistingName(group.Name, group.Id)
+	}
+	for name, id := range existingIDs {
+		addExistingName(name, id)
+	}
+	normalizeLegacyName := func(name string) string {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return ""
+		}
+		if existingName, ok := existingNameByKey[trimmed]; ok {
+			return existingName
+		}
+		if trimmed == "auto" {
+			return ""
+		}
+		if _, err := strconv.Atoi(trimmed); err == nil {
+			return ""
+		}
+		return trimmed
+	}
+
+	normalizedLegacyRatios := make(map[string]float64, len(legacyRatios))
+	for name, ratio := range legacyRatios {
+		name = normalizeLegacyName(name)
+		if name == "" {
+			continue
+		}
+		normalizedLegacyRatios[name] = ratio
+	}
+	legacyRatios = normalizedLegacyRatios
+
+	normalizedLegacyUsable := make(map[string]string, len(legacyUsable))
+	for name, desc := range legacyUsable {
+		name = normalizeLegacyName(name)
+		if name == "" {
+			continue
+		}
+		normalizedLegacyUsable[name] = desc
+	}
+	legacyUsable = normalizedLegacyUsable
+
+	nameSet := make(map[string]struct{})
+	addName := func(name string) {
+		name = normalizeLegacyName(name)
+		if name == "" {
+			return
+		}
+		nameSet[name] = struct{}{}
 	}
 
 	for name := range legacyRatios {
@@ -219,10 +287,11 @@ func buildPricingGroupsFromLegacy() []*PricingGroup {
 	})
 
 	groups := make([]*PricingGroup, 0, len(names))
-	nextID := 1
 	for _, name := range names {
-		id := nextID
-		nextID++
+		id := 0
+		if existingID, ok := existingIDs[name]; ok {
+			id = existingID
+		}
 		ratio, ok := legacyRatios[name]
 		if !ok {
 			ratio = 1
@@ -247,6 +316,37 @@ func buildPricingGroupsFromLegacy() []*PricingGroup {
 	return normalized
 }
 
+func existingPricingGroupIDsByName() map[string]int {
+	pricingGroupsMutex.RLock()
+	defer pricingGroupsMutex.RUnlock()
+	ids := make(map[string]int, len(pricingGroups))
+	for _, group := range pricingGroups {
+		if group == nil {
+			continue
+		}
+		ids[group.Name] = group.Id
+	}
+	return ids
+}
+
+func existingPricingGroupIDByName(name string) (int, bool) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return 0, false
+	}
+	pricingGroupsMutex.RLock()
+	defer pricingGroupsMutex.RUnlock()
+	for _, group := range pricingGroups {
+		if group == nil {
+			continue
+		}
+		if group.Name == trimmed {
+			return group.Id, true
+		}
+	}
+	return 0, false
+}
+
 func ensurePricingGroupsInitialized() {
 	pricingGroupsMutex.RLock()
 	initialized := len(pricingGroups) > 0
@@ -260,7 +360,7 @@ func ensurePricingGroupsInitialized() {
 	if len(pricingGroups) > 0 {
 		return
 	}
-	legacyGroups := buildPricingGroupsFromLegacy()
+	legacyGroups := buildPricingGroupsFromLegacyWithIDs(nil)
 	if len(legacyGroups) == 0 {
 		pricingGroups = defaultPricingGroupsCopy()
 		return
@@ -302,11 +402,19 @@ func syncGroupRatioMapLocked(groups []*PricingGroup) {
 }
 
 func PricingGroups2JSONString() string {
-	bytes, err := common.Marshal(GetPricingGroupsCopy())
+	value, err := pricingGroupsToJSONString(GetPricingGroupsCopy())
 	if err != nil {
 		return "[]"
 	}
-	return string(bytes)
+	return value
+}
+
+func pricingGroupsToJSONString(groups []*PricingGroup) (string, error) {
+	bytes, err := common.Marshal(groups)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 func parsePricingGroupsJSONString(jsonStr string) ([]*PricingGroup, error) {
@@ -324,10 +432,24 @@ func parsePricingGroupsJSONString(jsonStr string) ([]*PricingGroup, error) {
 		groups = make([]*PricingGroup, 0, len(legacy))
 		for _, name := range names {
 			ratio := legacy[name]
+			id := 0
+			if existingID, ok := existingPricingGroupIDByName(name); ok {
+				id = existingID
+			}
 			groups = append(groups, &PricingGroup{
+				Id:    id,
 				Name:  strings.TrimSpace(name),
 				Ratio: ratio,
 			})
+		}
+	} else {
+		for _, group := range groups {
+			if group == nil || group.Id != 0 {
+				continue
+			}
+			if existingID, ok := existingPricingGroupIDByName(group.Name); ok {
+				group.Id = existingID
+			}
 		}
 	}
 	return normalizePricingGroups(groups)
@@ -341,6 +463,75 @@ func ValidatePricingGroupsJSONString(jsonStr string) error {
 	for _, group := range groups {
 		if group.Ratio < 0 {
 			return errors.New("group ratio must be not less than 0: " + group.Name)
+		}
+	}
+	return nil
+}
+
+func NormalizePricingGroupsJSONString(jsonStr string) (string, error) {
+	groups, err := parsePricingGroupsJSONString(jsonStr)
+	if err != nil {
+		return "", err
+	}
+	for _, group := range groups {
+		if group.Ratio < 0 {
+			return "", errors.New("group ratio must be not less than 0: " + group.Name)
+		}
+	}
+	return pricingGroupsToJSONString(groups)
+}
+
+func NormalizePricingGroupsJSONStringIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizePricingGroupsJSONString(jsonStr)
+	return value, true, err
+}
+
+func ValidatePricingGroupIDStabilityJSONString(jsonStr string) error {
+	var groups []*PricingGroup
+	if err := common.Unmarshal([]byte(jsonStr), &groups); err != nil {
+		return nil
+	}
+	normalized, err := parsePricingGroupsJSONString(jsonStr)
+	if err != nil {
+		return err
+	}
+	current := GetPricingGroupsCopy()
+	idsByName := make(map[string]int, len(current))
+	ids := make(map[int]struct{}, len(current))
+	for _, group := range current {
+		if group == nil {
+			continue
+		}
+		idsByName[group.Name] = group.Id
+		ids[group.Id] = struct{}{}
+	}
+	seenExistingIDs := make(map[int]struct{}, len(normalized))
+	newIDCount := 0
+	for _, group := range normalized {
+		if group == nil {
+			continue
+		}
+		if id, ok := idsByName[group.Name]; ok && group.Id != id {
+			return errors.New("pricing group id cannot be changed for name: " + group.Name)
+		}
+		if _, ok := ids[group.Id]; ok {
+			seenExistingIDs[group.Id] = struct{}{}
+		} else if group.Id > 0 {
+			newIDCount++
+		}
+	}
+	if newIDCount == 0 {
+		return nil
+	}
+	for _, group := range current {
+		if group == nil {
+			continue
+		}
+		if _, ok := seenExistingIDs[group.Id]; !ok {
+			return errors.New("pricing group id cannot be changed for name: " + group.Name)
 		}
 	}
 	return nil
@@ -413,6 +604,30 @@ func PricingGroupKey(name string) string {
 	return strconv.Itoa(group.Id)
 }
 
+func PricingGroupKeyOrDefault(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "auto" {
+		return trimmed
+	}
+	if group, ok := ResolvePricingGroupKey(trimmed); ok {
+		return strconv.Itoa(group.Id)
+	}
+	if group, ok := GetPricingGroupByID(1); ok {
+		return strconv.Itoa(group.Id)
+	}
+	return "1"
+}
+
+func PricingGroupKeyByNameOrDefault(name string) string {
+	if group, ok := GetPricingGroupByName(name); ok {
+		return strconv.Itoa(group.Id)
+	}
+	if group, ok := GetPricingGroupByID(1); ok {
+		return strconv.Itoa(group.Id)
+	}
+	return "1"
+}
+
 func PricingGroupKeysCSV(value string) string {
 	parts := strings.Split(strings.Trim(value, ","), ",")
 	normalized := make([]string, 0, len(parts))
@@ -442,6 +657,95 @@ func NormalizePricingGroupKeys(groups []string) []string {
 		normalized = append(normalized, key)
 	}
 	return normalized
+}
+
+func NormalizeUserUsableGroupsJSONString(jsonStr string) (string, error) {
+	parsed := make(map[string]string)
+	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return "", err
+	}
+	normalized := make(map[string]string, len(parsed))
+	for group, desc := range parsed {
+		key := PricingGroupKey(group)
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		normalized[key] = desc
+	}
+	bytes, err := common.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func NormalizeUserUsableGroups() (string, error) {
+	value, err := NormalizeUserUsableGroupsJSONString(setting.UserUsableGroups2JSONString())
+	if err != nil {
+		return "", err
+	}
+	if err := setting.UpdateUserUsableGroupsByJSONString(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func NormalizeUserUsableGroupsJSONStringIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeUserUsableGroupsJSONString(jsonStr)
+	return value, true, err
+}
+
+func pricingGroupsInitialized() bool {
+	pricingGroupsMutex.RLock()
+	defer pricingGroupsMutex.RUnlock()
+	return len(pricingGroups) > 0
+}
+
+func normalizeAutoGroupValues(groups []string) (string, error) {
+	normalized := NormalizePricingGroupKeys(groups)
+	bytes, err := common.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func NormalizeAutoGroupsJSONString(jsonStr string) (string, error) {
+	var groups []string
+	if err := common.Unmarshal([]byte(jsonStr), &groups); err != nil {
+		return "", err
+	}
+	return normalizeAutoGroupValues(groups)
+}
+
+func NormalizeAutoGroupsJSONStringIfInitialized(jsonStr string) (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeAutoGroupsJSONString(jsonStr)
+	return value, true, err
+}
+
+func NormalizeAutoGroups() (string, error) {
+	value, err := normalizeAutoGroupValues(setting.GetAutoGroups())
+	if err != nil {
+		return "", err
+	}
+	if err := setting.UpdateAutoGroupsByJsonString(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func NormalizeAutoGroupsIfInitialized() (string, bool, error) {
+	if !pricingGroupsInitialized() {
+		return "", false, nil
+	}
+	value, err := NormalizeAutoGroups()
+	return value, true, err
 }
 
 func ContainsPricingGroup(name string) bool {

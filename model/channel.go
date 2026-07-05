@@ -317,44 +317,100 @@ func ReplaceChannelGroupNamesWithIDs() error {
 	return NormalizeChannelPricingGroups()
 }
 
-func NormalizeChannelPricingGroups() error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		var channels []*Channel
-		if err := tx.Find(&channels).Error; err != nil {
+func NormalizePricingGroupReferences() error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := normalizeChannelPricingGroupsTx(tx); err != nil {
 			return err
 		}
+		if err := normalizeTokenPricingGroupsTx(tx); err != nil {
+			return err
+		}
+		return normalizeTaskPricingGroupsTx(tx)
+	})
+	if err == nil {
+		InvalidatePricingCache()
+	}
+	return err
+}
 
-		for _, channel := range channels {
-			normalizedGroup := ratio_setting.PricingGroupKeysCSV(channel.Group)
-			if normalizedGroup == "" {
-				normalizedGroup = ratio_setting.PricingGroupKey("default")
-			}
-			needsRebuild := normalizedGroup != channel.Group
-			if !needsRebuild {
-				var abilityGroups []string
-				if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck(commonGroupCol, &abilityGroups).Error; err != nil {
-					return err
-				}
-				for _, abilityGroup := range abilityGroups {
-					if ratio_setting.PricingGroupKey(abilityGroup) != abilityGroup {
-						needsRebuild = true
-						break
-					}
-				}
-			}
-			if !needsRebuild {
-				continue
-			}
-			channel.Group = normalizedGroup
-			if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("group", channel.Group).Error; err != nil {
+func NormalizeChannelPricingGroups() error {
+	err := DB.Transaction(normalizeChannelPricingGroupsTx)
+	if err == nil {
+		InvalidatePricingCache()
+	}
+	return err
+}
+
+func normalizeChannelPricingGroupsTx(tx *gorm.DB) error {
+	var channels []*Channel
+	if err := tx.Find(&channels).Error; err != nil {
+		return err
+	}
+
+	for _, channel := range channels {
+		normalizedGroup := ratio_setting.PricingGroupKeysCSV(channel.Group)
+		if normalizedGroup == "" {
+			normalizedGroup = ratio_setting.PricingGroupKey("default")
+		}
+		needsRebuild := normalizedGroup != channel.Group
+		if !needsRebuild {
+			var abilityGroups []string
+			if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck("group", &abilityGroups).Error; err != nil {
 				return err
 			}
-			if err := channel.UpdateAbilities(tx); err != nil {
-				return err
+			for _, abilityGroup := range abilityGroups {
+				if ratio_setting.PricingGroupKey(abilityGroup) != abilityGroup {
+					needsRebuild = true
+					break
+				}
 			}
 		}
-		return nil
-	})
+		if !needsRebuild {
+			continue
+		}
+		channel.Group = normalizedGroup
+		if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("group", channel.Group).Error; err != nil {
+			return err
+		}
+		if err := channel.UpdateAbilities(tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeTokenPricingGroupsTx(tx *gorm.DB) error {
+	var tokens []*Token
+	if err := tx.Where(commonGroupCol+" <> ?", "").Find(&tokens).Error; err != nil {
+		return err
+	}
+	for _, token := range tokens {
+		normalizedGroup := ratio_setting.PricingGroupKey(token.Group)
+		if normalizedGroup == "" || normalizedGroup == token.Group {
+			continue
+		}
+		if err := tx.Model(&Token{}).Where("id = ?", token.Id).Update("group", normalizedGroup).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeTaskPricingGroupsTx(tx *gorm.DB) error {
+	var tasks []*Task
+	if err := tx.Where(commonGroupCol+" <> ?", "").Find(&tasks).Error; err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		normalizedGroup := ratio_setting.PricingGroupKeyOrDefault(task.Group)
+		if normalizedGroup == task.Group {
+			continue
+		}
+		if err := tx.Model(&Task{}).Where("id = ?", task.ID).Update("group", normalizedGroup).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (channel *Channel) GetOtherInfo() map[string]interface{} {
@@ -882,7 +938,10 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 	}
 	if group != nil && *group != "" {
 		shouldReCreateAbilities = true
-		updateData.Group = *group
+		updateData.Group = ratio_setting.PricingGroupKeysCSV(*group)
+		if updateData.Group == "" {
+			updateData.Group = ratio_setting.PricingGroupKey("default")
+		}
 	}
 	if priority != nil {
 		updateData.Priority = priority

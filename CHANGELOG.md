@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.26
+
+- Completed pricing group migration to stable internal ids while keeping names as UI display labels across channels, tokens, pricing, logs, flow data, tasks, performance metrics, and model listings.
+- Added id/name companion refs and catalog responses for pricing-group API surfaces, with legacy name input normalized to id values at backend boundaries.
+- Preserved user-group domains for users, subscriptions, top-up ratios, and rate-limit settings so they are not rewritten as pricing-group ids.
+- Hardened pricing group settings: duplicate trimmed names are rejected, `default` keeps reserved id `1`, and default deletion is blocked.
+- Fixed pricing group edge cases for model storefront visibility, auto-group/error logs, legacy channel/ability/token/task migration, and model request rate-limit updates.
+
 ## v1.1.24
 
 - Finished pricing group id hardening across backend and default/classic UI: pricing requests now keep id values while display surfaces resolve names through group refs/catalogs.

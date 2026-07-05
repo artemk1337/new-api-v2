@@ -155,6 +155,24 @@ func normalizeLookupValues(values []string) []string {
 	return normalized
 }
 
+func normalizePricingGroupLookupValues(groups []string) []string {
+	seen := make(map[string]struct{}, len(groups))
+	normalized := make([]string, 0, len(groups))
+	for _, group := range groups {
+		key := ratio_setting.PricingGroupKey(group)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, key)
+	}
+	return normalized
+}
+
 func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (map[string]int, error) {
 	result := make(map[string]int)
 	modelNames = normalizeLookupValues(modelNames)
@@ -176,7 +194,7 @@ func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (m
 		Order("abilities.weight DESC").
 		Order("abilities.channel_id ASC")
 
-	groups = normalizeLookupValues(groups)
+	groups = normalizePricingGroupLookupValues(groups)
 	if len(groups) > 0 {
 		query = query.Where("abilities."+commonGroupCol+" IN ?", groups)
 	}

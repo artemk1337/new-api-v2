@@ -99,7 +99,7 @@ const OP_TAG_MAP = {
   [OP_APPEND]: { color: 'blue', label: '追加' },
 };
 
-function UsableGroupSection({ groupName, items, opOptions, onUpdate, onRemove, onAdd, t }) {
+function UsableGroupSection({ groupName, items, groupOptions, opOptions, onUpdate, onRemove, onAdd, t }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -163,12 +163,15 @@ function UsableGroupSection({ groupName, items, opOptions, onUpdate, onRemove, o
                   return <Tag size='small' color={info.color}>{optionNode.label}</Tag>;
                 }}
               />
-              <Input
+              <Select
                 size='small'
+                filter
                 value={rule.targetGroup}
                 placeholder={t('分组名称')}
+                optionList={groupOptions}
                 onChange={(v) => onUpdate(rule._id, 'targetGroup', v)}
                 style={{ flex: 1 }}
+                position='bottomLeft'
               />
               {rule.op !== OP_REMOVE ? (
                 <Input
@@ -300,16 +303,12 @@ export default function GroupSpecialUsableRules({
           {t('暂无规则，点击下方按钮添加')}
         </Text>
         <div className='mt-2 flex justify-center gap-2'>
-          <Select
+          <Input
             size='small'
-            filter
-            allowCreate
             placeholder={t('选择用户分组')}
-            optionList={groupOptions}
-            value={newGroupName || undefined}
+            value={newGroupName}
             onChange={setNewGroupName}
             style={{ width: 200 }}
-            position='bottomLeft'
           />
           <Button icon={<IconPlus />} theme='outline' onClick={addNewGroup}>
             {t('添加分组规则')}
@@ -326,6 +325,7 @@ export default function GroupSpecialUsableRules({
           key={group.name}
           groupName={group.name}
           items={group.items}
+          groupOptions={groupOptions}
           opOptions={opOptions}
           onUpdate={updateRule}
           onRemove={removeRule}
@@ -334,16 +334,12 @@ export default function GroupSpecialUsableRules({
         />
       ))}
       <div className='mt-3 flex justify-center gap-2'>
-        <Select
+        <Input
           size='small'
-          filter
-          allowCreate
           placeholder={t('选择用户分组')}
-          optionList={groupOptions}
-          value={newGroupName || undefined}
+          value={newGroupName}
           onChange={setNewGroupName}
           style={{ width: 200 }}
-          position='bottomLeft'
         />
         <Button icon={<IconPlus />} theme='outline' onClick={addNewGroup}>
           {t('添加分组规则')}

@@ -390,7 +390,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		tokenName := c.GetString("token_name")
 		modelName := c.GetString("original_model")
 		tokenId := c.GetInt("token_id")
-		userGroup := c.GetString("group")
+		pricingGroup := errorLogPricingGroup(c)
 		channelId := c.GetInt("channel_id")
 		other := make(map[string]interface{})
 		if c.Request != nil && c.Request.URL != nil {
@@ -416,9 +416,21 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), pricingGroup, other)
 	}
 
+}
+
+func errorLogPricingGroup(c *gin.Context) string {
+	if value, ok := common.GetContextKey(c, constant.ContextKeyAutoGroup); ok {
+		if group, ok := value.(string); ok && strings.TrimSpace(group) != "" {
+			return group
+		}
+	}
+	if group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup); strings.TrimSpace(group) != "" {
+		return group
+	}
+	return c.GetString("group")
 }
 
 func RelayMidjourney(c *gin.Context) {

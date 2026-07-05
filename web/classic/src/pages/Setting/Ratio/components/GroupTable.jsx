@@ -140,12 +140,20 @@ export default function GroupTable({ groupRatio, userUsableGroups, onChange }) {
 
   const removeRow = useCallback(
     (id) => {
-      emitAndSet((prev) => prev.filter((r) => r._id !== id));
+      emitAndSet((prev) =>
+        prev.filter((r) => {
+          if (r._id !== id) return true;
+          return !(String(r.id) === '1' || r.name === 'default');
+        }),
+      );
     },
     [emitAndSet],
   );
 
-  const groupNames = useMemo(() => rows.map((r) => r.name), [rows]);
+  const groupNames = useMemo(
+    () => rows.map((r) => r.name.trim()).filter(Boolean),
+    [rows],
+  );
 
   const duplicateNames = useMemo(() => {
     const counts = {};
@@ -179,7 +187,9 @@ export default function GroupTable({ groupRatio, userUsableGroups, onChange }) {
             size='small'
             value={record.name}
             status={
-              duplicateNamesRef.current.has(record.name) ? 'warning' : undefined
+              duplicateNamesRef.current.has(record.name.trim())
+                ? 'warning'
+                : undefined
             }
             onChange={(v) => updateRow(record._id, 'name', v)}
           />

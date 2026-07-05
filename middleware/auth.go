@@ -408,6 +408,7 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
+		usingGroup := ratio_setting.PricingGroupKeyByNameOrDefault(userGroup)
 		if tokenGroup != "" {
 			tokenGroupKey := ratio_setting.PricingGroupKey(tokenGroup)
 			displayGroup := ratio_setting.PricingGroupNameByKey(tokenGroupKey)
@@ -423,9 +424,9 @@ func TokenAuth() func(c *gin.Context) {
 					return
 				}
 			}
-			userGroup = tokenGroupKey
+			usingGroup = tokenGroupKey
 		}
-		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {

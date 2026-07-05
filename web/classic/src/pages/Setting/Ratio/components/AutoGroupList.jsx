@@ -130,7 +130,6 @@ export default function AutoGroupList({ value, groupNames = [], onChange }) {
               optionList={groupOptions}
               onChange={(v) => updateItem(item._id, v)}
               style={{ flex: 1 }}
-              allowCreate
               position='bottomLeft'
             />
             <Button

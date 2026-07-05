@@ -68,6 +68,21 @@ func TestTokenAuthAllowsAutoTokenGroup(t *testing.T) {
 	assert.Equal(t, "auto", body.Get("token_group").String())
 }
 
+func TestTokenAuthDoesNotTreatNumericUserGroupAsPricingID(t *testing.T) {
+	resetTokenAuthTestState(t)
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1,"selectable":true}
+	]`))
+	createTokenAuthUserAndToken(t, "2", "")
+
+	body := performTokenAuthRequest(t, http.StatusOK)
+
+	assert.Equal(t, "1", body.Get("using_group").String())
+	assert.Empty(t, body.Get("token_group").String())
+}
+
 func resetTokenAuthTestState(t *testing.T) {
 	t.Helper()
 	require.NoError(t, model.DB.Exec("DELETE FROM tokens").Error)

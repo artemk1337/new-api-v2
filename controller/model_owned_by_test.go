@@ -6,6 +6,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -57,29 +59,44 @@ func TestBuildOpenAIModelFallsBackToCustomForUnknownModels(t *testing.T) {
 	require.Equal(t, "custom", modelItem.OwnedBy)
 }
 
-func TestGetModelListGroupsUsesUserGroupWhenTokenGroupIsEmpty(t *testing.T) {
+func TestGetModelListGroupsUsesUserUsablePricingGroupsWhenTokenGroupIsEmpty(t *testing.T) {
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1,"selectable":true}
+	]`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
+
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "paid-users")
 
 	groups, err := getModelListGroups(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, "default", groups.userGroup)
+	require.Equal(t, "paid-users", groups.userGroup)
 	require.Empty(t, groups.tokenGroup)
-	require.Equal(t, []string{"default"}, groups.ownerGroups)
+	require.Equal(t, []string{"1", "2"}, groups.ownerGroups)
 }
 
 func TestGetModelListGroupsUsesExplicitTokenGroup(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
-	common.SetContextKey(ctx, constant.ContextKeyTokenGroup, "vip")
+	common.SetContextKey(ctx, constant.ContextKeyTokenGroup, "2")
 
 	groups, err := getModelListGroups(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, "default", groups.userGroup)
-	require.Equal(t, "vip", groups.tokenGroup)
-	require.Equal(t, []string{"vip"}, groups.ownerGroups)
+	require.Equal(t, "2", groups.tokenGroup)
+	require.Equal(t, []string{"2"}, groups.ownerGroups)
 }

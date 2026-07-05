@@ -733,10 +733,6 @@ const EditTagModal = (props) => {
                     label={t('分组')}
                     placeholder={t('请选择可以使用该渠道的分组，留空则不更改')}
                     multiple
-                    allowAdditions
-                    additionLabel={t(
-                      '请在系统设置页面编辑分组倍率以添加新的分组：',
-                    )}
                     optionList={groupOptions}
                     style={{ width: '100%' }}
                     onChange={(value) => handleInputChange('groups', value)}

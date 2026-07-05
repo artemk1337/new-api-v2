@@ -72,14 +72,18 @@ export function TagBatchEditDialog({
   const groupOptions = useMemo(() => {
     if (!groupsData?.data) return []
     const allGroups = new Map<string, PricingGroupRecord>()
+    const groupLookup = new Map<string, PricingGroupRecord>()
     for (const group of groupsData.data) {
       allGroups.set(String(group.id), group)
+      groupLookup.set(String(group.id), group)
+      groupLookup.set(group.name, group)
     }
     for (const group of groups) {
-      if (!allGroups.has(group)) {
-        allGroups.set(group, {
-          id: Number.parseInt(group, 10) || 0,
-          name: group,
+      const normalized = String(groupLookup.get(group)?.id ?? group)
+      if (!allGroups.has(normalized)) {
+        allGroups.set(normalized, {
+          id: Number.parseInt(normalized, 10) || 0,
+          name: groupLookup.get(normalized)?.name ?? group,
           ratio: 1,
           selectable: true,
           description: '',
@@ -91,6 +95,16 @@ export function TagBatchEditDialog({
       label: group.name,
     }))
   }, [groupsData, groups])
+
+  const selectedGroupValues = useMemo(() => {
+    if (!groupsData?.data) return groups
+    const groupLookup = new Map<string, PricingGroupRecord>()
+    for (const group of groupsData.data) {
+      groupLookup.set(String(group.id), group)
+      groupLookup.set(group.name, group)
+    }
+    return groups.map((group) => String(groupLookup.get(group)?.id ?? group))
+  }, [groups, groupsData])
 
   useEffect(() => {
     if (open && currentTag) {
@@ -158,8 +172,8 @@ export function TagBatchEditDialog({
         params.model_mapping = modelMapping
       }
 
-      if (groups.length > 0) {
-        params.groups = groups.join(',')
+      if (selectedGroupValues.length > 0) {
+        params.groups = selectedGroupValues.join(',')
       }
 
       // Check if there are any changes
@@ -298,7 +312,7 @@ export function TagBatchEditDialog({
               ) : (
                 <MultiSelect
                   options={groupOptions}
-                  selected={groups}
+                  selected={selectedGroupValues}
                   onChange={setGroups}
                   placeholder={t('Select groups (leave empty to keep current)')}
                 />

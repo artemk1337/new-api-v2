@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +36,7 @@ func insertPreferredOwnerCandidate(
 		Name:   fmt.Sprintf("channel-%d", channelID),
 	}).Error)
 	require.NoError(t, DB.Create(&Ability{
-		Group:     group,
+		Group:     ratio_setting.PricingGroupKey(group),
 		Model:     modelName,
 		ChannelId: channelID,
 		Enabled:   abilityEnabled,
@@ -138,4 +139,25 @@ func TestGetPreferredModelOwnerChannelTypes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetPreferredModelOwnerChannelTypesAcceptsRenamedPricingGroup(t *testing.T) {
+	const modelName = "gpt-5.4"
+	clearPreferredOwnerTables(t)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		clearPreferredOwnerTables(t)
+	})
+
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
+		{"id":2,"name":"renamed-vip","ratio":1,"selectable":true,"description":"vip"}
+	]`))
+	insertPreferredOwnerCandidate(t, 1, modelName, "2", constant.ChannelTypeCodex, 1, 10, common.ChannelStatusEnabled, true)
+
+	owners, err := GetPreferredModelOwnerChannelTypes([]string{modelName}, []string{"renamed-vip"})
+	require.NoError(t, err)
+	require.Equal(t, constant.ChannelTypeCodex, owners[modelName])
 }

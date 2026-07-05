@@ -125,7 +125,6 @@ function GroupSection({ groupName, items, groupOptions, onUpdate, onRemove, onAd
                 optionList={groupOptions}
                 onChange={(v) => onUpdate(rule._id, 'usingGroup', v)}
                 style={{ flex: 1 }}
-                allowCreate
                 position='bottomLeft'
               />
               <InputNumber
@@ -236,16 +235,12 @@ export default function GroupGroupRatioRules({
           {t('暂无规则，点击下方按钮添加')}
         </Text>
         <div className='mt-2 flex justify-center gap-2'>
-          <Select
+          <Input
             size='small'
-            filter
-            allowCreate
             placeholder={t('选择用户分组')}
-            optionList={groupOptions}
-            value={newGroupName || undefined}
+            value={newGroupName}
             onChange={setNewGroupName}
             style={{ width: 200 }}
-            position='bottomLeft'
           />
           <Button icon={<IconPlus />} theme='outline' onClick={addNewGroup}>
             {t('添加分组规则')}
@@ -270,16 +265,12 @@ export default function GroupGroupRatioRules({
         />
       ))}
       <div className='mt-3 flex justify-center gap-2'>
-        <Select
+        <Input
           size='small'
-          filter
-          allowCreate
           placeholder={t('选择用户分组')}
-          optionList={groupOptions}
-          value={newGroupName || undefined}
+          value={newGroupName}
           onChange={setNewGroupName}
           style={{ width: 200 }}
-          position='bottomLeft'
         />
         <Button icon={<IconPlus />} theme='outline' onClick={addNewGroup}>
           {t('添加分组规则')}

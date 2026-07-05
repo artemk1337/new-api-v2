@@ -69,9 +69,11 @@ func restoreGroupSettings(t *testing.T) {
 	t.Helper()
 
 	oldGroupRatio := ratio_setting.GroupRatio2JSONString()
+	oldGroupSpecialUsableGroup := ratio_setting.GroupSpecialUsableGroup2JSONString()
 	oldUserUsableGroups := setting.UserUsableGroups2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(oldGroupRatio))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(oldGroupSpecialUsableGroup))
 		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(oldUserUsableGroups))
 	})
 }

@@ -60,6 +60,11 @@ type Rule = {
   description: string
 }
 
+type PricingGroupOption = {
+  id: string
+  name: string
+}
+
 let _idCounter = 0
 function uid() {
   return `gsu_${++_idCounter}`
@@ -84,6 +89,26 @@ function safeParseJson(str: string): Record<string, Record<string, string>> {
     return JSON.parse(str) as Record<string, Record<string, string>>
   } catch {
     return {}
+  }
+}
+
+function parsePricingGroupOptions(str: string): PricingGroupOption[] {
+  if (!str || !str.trim()) return []
+  try {
+    const parsed = JSON.parse(str) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const group = item as Record<string, unknown>
+        const id = group.id == null ? '' : String(group.id)
+        const name = typeof group.name === 'string' ? group.name.trim() : ''
+        if (!id || !name) return null
+        return { id, name }
+      })
+      .filter((item): item is PricingGroupOption => item !== null)
+  } catch {
+    return []
   }
 }
 
@@ -134,12 +159,14 @@ const OP_BADGE_MAP: Record<
 
 type GroupSpecialUsableRulesEditorProps = {
   value: string
+  pricingGroups: string
   onChange: (value: string) => void
 }
 
 type GroupSectionProps = {
   groupName: string
   items: Rule[]
+  pricingGroupOptions: PricingGroupOption[]
   onUpdate: (id: string, field: keyof Rule, val: string) => void
   onRemove: (id: string) => void
   onAdd: (groupName: string) => void
@@ -149,6 +176,13 @@ type GroupSectionProps = {
 function GroupSection(props: GroupSectionProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const pricingGroupNames = useMemo(
+    () =>
+      new Map(
+        props.pricingGroupOptions.map((group) => [group.id, group.name])
+      ),
+    [props.pricingGroupOptions]
+  )
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -267,14 +301,36 @@ function GroupSection(props: GroupSectionProps) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <Input
-                  className='flex-1'
-                  value={rule.targetGroup}
-                  placeholder={t('Group name')}
-                  onChange={(e) =>
-                    props.onUpdate(rule._id, 'targetGroup', e.target.value)
+                <Select
+                  value={rule.targetGroup || null}
+                  onValueChange={(v) =>
+                    v !== null && props.onUpdate(rule._id, 'targetGroup', v)
                   }
-                />
+                >
+                  <SelectTrigger className='flex-1'>
+                    <SelectValue>
+                      {rule.targetGroup
+                        ? pricingGroupNames.get(rule.targetGroup) ??
+                          rule.targetGroup
+                        : t('Group name')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {rule.targetGroup &&
+                        !pricingGroupNames.has(rule.targetGroup) && (
+                          <SelectItem value={rule.targetGroup}>
+                            {rule.targetGroup}
+                          </SelectItem>
+                        )}
+                      {props.pricingGroupOptions.map((group) => (
+                        <SelectItem key={group.id} value={group.id}>
+                          {group.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
                 {rule.op !== OP_REMOVE ? (
                   <Input
                     className='flex-1'
@@ -314,6 +370,10 @@ export function GroupSpecialUsableRulesEditor(
     flattenRules(safeParseJson(props.value))
   )
   const [newGroupName, setNewGroupName] = useState('')
+  const pricingGroupOptions = useMemo(
+    () => parsePricingGroupOptions(props.pricingGroups),
+    [props.pricingGroups]
+  )
 
   const { onChange } = props
   const emitChange = useCallback(
@@ -421,6 +481,7 @@ export function GroupSpecialUsableRulesEditor(
                 key={group.name}
                 groupName={group.name}
                 items={group.items}
+                pricingGroupOptions={pricingGroupOptions}
                 onUpdate={updateRule}
                 onRemove={removeRule}
                 onAdd={addRuleToGroup}

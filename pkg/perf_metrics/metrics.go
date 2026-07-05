@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 var hotBuckets sync.Map
@@ -59,9 +60,7 @@ func Record(sample Sample) {
 	if !setting.Enabled || sample.Model == "" {
 		return
 	}
-	if sample.Group == "" {
-		sample.Group = "default"
-	}
+	sample.Group = ratio_setting.PricingGroupKeyOrDefault(sample.Group)
 	if sample.LatencyMs < 0 {
 		sample.LatencyMs = 0
 	}
