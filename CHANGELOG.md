@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.31
+
+- Fixed stale system update notifications after a newer version is already running.
+
 ## v1.1.30
 
 - Fixed updater readiness checks to recognize the current `/api/status` response shape and avoid rolling back a healthy updated service.

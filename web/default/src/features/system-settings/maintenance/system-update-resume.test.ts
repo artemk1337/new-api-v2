@@ -60,4 +60,11 @@ describe('system update resume guard', () => {
       true
     )
   })
+
+  test('does not resume stale deployment polling after a newer version is running', () => {
+    assert.equal(
+      shouldResumeDeployingSystemUpdateTask(deployingTask, 'v1.1.20'),
+      false
+    )
+  })
 })

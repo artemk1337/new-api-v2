@@ -18,6 +18,26 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { SystemUpdateTask } from '../types'
 
+function parseStableVersion(version: string | null | undefined) {
+  const match = version?.trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/)
+  if (!match) return null
+  return match.slice(1).map(Number)
+}
+
+function isNewerStableVersion(
+  requestedVersion: string,
+  currentVersion: string | null | undefined
+) {
+  const requested = parseStableVersion(requestedVersion)
+  const current = parseStableVersion(currentVersion)
+  if (!requested || !current) return currentVersion?.trim() !== requestedVersion
+
+  for (let i = 0; i < requested.length; i++) {
+    if (requested[i] !== current[i]) return requested[i] > current[i]
+  }
+  return false
+}
+
 export function shouldResumeDeployingSystemUpdateTask(
   task: SystemUpdateTask | null | undefined,
   currentVersion: string | null | undefined
@@ -28,6 +48,6 @@ export function shouldResumeDeployingSystemUpdateTask(
     task.result?.status === 'deploying' &&
     Boolean(task.result?.job_id) &&
     Boolean(requestedVersion) &&
-    currentVersion?.trim() !== requestedVersion
+    isNewerStableVersion(requestedVersion, currentVersion)
   )
 }
