@@ -37,18 +37,22 @@ i18n
     load: 'currentOnly',
     supportedLngs: supportedLanguages,
     resources: {
+      ru: ruTranslation,
       en: enTranslation,
       'zh-CN': zhCNTranslation,
       'zh-TW': zhTWTranslation,
       fr: frTranslation,
-      ru: ruTranslation,
       ja: jaTranslation,
       vi: viTranslation,
     },
-    fallbackLng: 'zh-CN',
+    fallbackLng: 'ru',
     nsSeparator: false,
     interpolation: {
       escapeValue: false,
+    },
+    detection: {
+      order: ['localStorage'],
+      caches: ['localStorage'],
     },
   });
 

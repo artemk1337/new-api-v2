@@ -27,10 +27,10 @@ import vi from './locales/vi.json'
 import zh from './locales/zh.json'
 
 export const resources = {
+  ru,
   en,
   zh,
   fr,
-  ru,
   ja,
   vi,
 } as const
@@ -40,8 +40,8 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en',
-    supportedLngs: ['en', 'zh', 'fr', 'ru', 'ja', 'vi'],
+    fallbackLng: 'ru',
+    supportedLngs: ['ru', 'en', 'zh', 'fr', 'ja', 'vi'],
     load: 'languageOnly', // Convert zh-CN -> zh
     nsSeparator: false, // Allow literal colons in keys (e.g., URLs, labels)
     debug: import.meta.env.DEV,
@@ -49,7 +49,7 @@ i18n
       escapeValue: false, // not needed for react as it escapes by default
     },
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['localStorage'],
       caches: ['localStorage'],
     },
   })

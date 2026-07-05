@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.27
+
+- Changed the platform default interface language to Russian while preserving saved user language preferences.
+- Reordered language selectors so Russian is first, English is second, and the remaining languages follow after them.
+
 ## v1.1.26
 
 - Completed pricing group migration to stable internal ids while keeping names as UI display labels across channels, tokens, pricing, logs, flow data, tasks, performance metrics, and model listings.
