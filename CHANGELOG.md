@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.30
+
+- Fixed updater readiness checks to recognize the current `/api/status` response shape and avoid rolling back a healthy updated service.
+
 ## v1.1.29
 
 - Renamed the billing settings group and model pricing sections to Groups and Models in the default frontend.

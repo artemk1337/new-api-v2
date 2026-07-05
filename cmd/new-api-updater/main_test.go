@@ -318,6 +318,7 @@ func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {
 
 func TestExtractStatusVersion(t *testing.T) {
 	assert.Equal(t, "v1.2.3", extractStatusVersion(`{"success":true,"version":"v1.2.3"}`))
+	assert.Equal(t, "v1.2.4", extractStatusVersion(`{"success":true,"data":{"version":"v1.2.4"}}`))
 	assert.Empty(t, extractStatusVersion(`{"success":true}`))
 }
 

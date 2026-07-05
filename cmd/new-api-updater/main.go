@@ -42,6 +42,9 @@ type updateJob struct {
 
 type serviceStatusResponse struct {
 	Version string `json:"version"`
+	Data    struct {
+		Version string `json:"version"`
+	} `json:"data"`
 }
 
 type deployEnvSnapshot struct {
@@ -327,6 +330,9 @@ func extractStatusVersion(response string) string {
 	status := serviceStatusResponse{}
 	if err := common.UnmarshalJsonStr(response, &status); err != nil {
 		return ""
+	}
+	if status.Data.Version != "" {
+		return status.Data.Version
 	}
 	return status.Version
 }
