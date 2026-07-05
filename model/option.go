@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -301,10 +302,46 @@ func UpdateOption(key string, value string) error {
 func normalizePricingGroupReferencesBeforeOptionUpdate(key string) error {
 	switch key {
 	case "GroupRatio", "PricingGroups":
+		if err := normalizePricingGroupOptionReferencesBeforeRename(); err != nil {
+			return err
+		}
 		return NormalizePricingGroupReferences()
 	default:
 		return nil
 	}
+}
+
+func normalizePricingGroupOptionReferencesBeforeRename() error {
+	normalizers := map[string]func(string) (string, error){
+		"UserUsableGroups": ratio_setting.NormalizeUserUsableGroupsJSONString,
+		"AutoGroups":       ratio_setting.NormalizeAutoGroupsJSONString,
+		"GroupGroupRatio":  ratio_setting.NormalizeGroupGroupRatioJSONString,
+		"group_ratio_setting.group_special_usable_group": ratio_setting.NormalizeGroupSpecialUsableGroupJSONString,
+	}
+	for key, normalize := range normalizers {
+		var option Option
+		err := DB.First(&option, "key = ?", key).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		normalized, err := normalize(option.Value)
+		if err != nil {
+			return err
+		}
+		if normalized == option.Value {
+			continue
+		}
+		if err := DB.Model(&Option{}).Where("key = ?", key).Update("value", normalized).Error; err != nil {
+			return err
+		}
+		if err := updateOptionMap(key, normalized); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateOptionValue(key string, value string) error {

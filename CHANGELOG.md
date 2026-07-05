@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.32
+
+- Fixed pricing-group renames so storefront-usable groups and channel abilities are normalized to stable group ids before display names change.
+- Restored model storefront visibility for channels bound to renamed pricing groups.
+
 ## v1.1.31
 
 - Fixed stale system update notifications after a newer version is already running.

@@ -225,6 +225,40 @@ func TestLoadOptionsNormalizesDBRefsAfterCanonicalPricingGroups(t *testing.T) {
 	assert.Equal(t, "7", reloadedToken.Group)
 }
 
+func TestUpdatePricingGroupsPersistsUsableGroupsByIDBeforeRename(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key IN ?", []string{"PricingGroups", "UserUsableGroups"}).Delete(&Option{}).Error)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, DB.Where("key IN ?", []string{"PricingGroups", "UserUsableGroups"}).Delete(&Option{}).Error)
+	})
+
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":4,"name":"claude code x3","ratio":2.8,"selectable":true}
+	]`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","claude code x3":"Stable Claude"}`))
+	require.NoError(t, DB.Create(&Option{
+		Key:   "UserUsableGroups",
+		Value: `{"default":"Default","claude code x3":"Stable Claude"}`,
+	}).Error)
+
+	require.NoError(t, UpdateOption("PricingGroups", `[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":4,"name":"claude code x2.8","ratio":2.8,"selectable":true}
+	]`))
+
+	var option Option
+	require.NoError(t, DB.First(&option, "key = ?", "UserUsableGroups").Error)
+	assert.JSONEq(t, `{"1":"Default","4":"Stable Claude"}`, option.Value)
+	assert.Equal(t, "Stable Claude", setting.GetUserUsableGroupsCopy()["4"])
+	assert.Equal(t, "4", ratio_setting.PricingGroupKey("claude code x2.8"))
+}
+
 func TestUpdateOptionPersistsCanonicalPricingGroupsForLegacyGroupRatio(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 	require.NoError(t, DB.Where("key = ?", "GroupRatio").Delete(&Option{}).Error)

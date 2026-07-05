@@ -169,6 +169,43 @@ func TestUpdatePricingGroupsNormalizesLegacyChannelGroupsBeforeRename(t *testing
 	assert.True(t, IsChannelEnabledForGroupModel("renamed-vip", "gpt-test", channel.Id))
 }
 
+func TestNormalizeChannelPricingGroupsRebuildsStaleAbilityNamesAfterRename(t *testing.T) {
+	truncateTables(t)
+
+	original := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(original))
+	})
+
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
+		{"id":2,"name":"renamed-vip","ratio":1,"selectable":true,"description":"vip"}
+	]`))
+
+	channel := &Channel{
+		Name:   "stale-ability-group",
+		Key:    "test-key",
+		Models: "gpt-test",
+		Group:  "2",
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	require.NoError(t, DB.Create(&Ability{
+		Group:     "vip",
+		Model:     "gpt-test",
+		ChannelId: channel.Id,
+		Enabled:   true,
+	}).Error)
+
+	require.NoError(t, NormalizeChannelPricingGroups())
+
+	var abilityGroups []string
+	require.NoError(t, DB.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck("group", &abilityGroups).Error)
+	assert.ElementsMatch(t, []string{"2"}, abilityGroups)
+	assert.ElementsMatch(t, []string{"gpt-test"}, GetGroupEnabledModels("renamed-vip"))
+	assert.True(t, IsChannelEnabledForGroupModel("renamed-vip", "gpt-test", channel.Id))
+}
+
 func TestUpdatePricingGroupsInvalidatesPricingCacheRefs(t *testing.T) {
 	truncateTables(t)
 

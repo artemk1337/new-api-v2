@@ -353,13 +353,25 @@ func normalizeChannelPricingGroupsTx(tx *gorm.DB) error {
 			normalizedGroup = ratio_setting.PricingGroupKey("default")
 		}
 		needsRebuild := normalizedGroup != channel.Group
+		desiredGroups := make(map[string]struct{})
+		for _, group := range strings.Split(normalizedGroup, ",") {
+			group = strings.TrimSpace(group)
+			if group != "" {
+				desiredGroups[group] = struct{}{}
+			}
+		}
 		if !needsRebuild {
 			var abilityGroups []string
 			if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck("group", &abilityGroups).Error; err != nil {
 				return err
 			}
 			for _, abilityGroup := range abilityGroups {
+				abilityGroup = strings.TrimSpace(abilityGroup)
 				if ratio_setting.PricingGroupKey(abilityGroup) != abilityGroup {
+					needsRebuild = true
+					break
+				}
+				if _, ok := desiredGroups[abilityGroup]; !ok {
 					needsRebuild = true
 					break
 				}
