@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.34
+
+- Normalized relay/admin error logs for known upstream Chinese errors while preserving raw diagnostics in structured log metadata.
+
 ## v1.1.33
 
 - Redesigned the system update progress block with vertical stage indicators and localized stage labels.

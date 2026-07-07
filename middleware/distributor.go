@@ -120,8 +120,7 @@ func Distribute() func(c *gin.Context) {
 						Retry:       common.GetPointer(0),
 					}, common.GetContextKeyString(c, constant.ContextKeyUserGroup))
 					if err != nil {
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": "auto", "Model": modelRequest.Model, "Error": err.Error()})
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, distributorGetChannelFailedMessage("auto", modelRequest.Model), types.ErrorCodeModelNotFound)
 						return
 					}
 					if channel != nil {
@@ -179,13 +178,8 @@ func Distribute() func(c *gin.Context) {
 						} else if selectTokenGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 						}
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
 						// 如果错误，但是渠道不为空，说明是数据库一致性问题
-						//if channel != nil {
-						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
-						//	message = "数据库一致性已被破坏，请联系管理员"
-						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, distributorGetChannelFailedMessage(showGroup, modelRequest.Model), types.ErrorCodeModelNotFound)
 						return
 					}
 					if channel == nil {
@@ -198,12 +192,12 @@ func Distribute() func(c *gin.Context) {
 						} else if selectTokenGroup == "auto" {
 							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
 						}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": showGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, distributorNoAvailableChannelMessage(showGroup, modelRequest.Model), types.ErrorCodeModelNotFound)
 						return
 					}
 				}
 				if channel == nil {
-					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": "auto", "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, distributorNoAvailableChannelMessage("auto", modelRequest.Model), types.ErrorCodeModelNotFound)
 					return
 				}
 			}
@@ -215,6 +209,14 @@ func Distribute() func(c *gin.Context) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func distributorGetChannelFailedMessage(group, model string) string {
+	return fmt.Sprintf("Failed to get available channel for model %s under group %s (distributor)", model, group)
+}
+
+func distributorNoAvailableChannelMessage(group, model string) string {
+	return fmt.Sprintf("No available channel for model %s under group %s (distributor)", model, group)
 }
 
 func canUsePlaygroundPricingGroup(userGroup, lockedTokenGroup, usingGroup, playgroundGroup string) bool {

@@ -88,8 +88,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			prepareRelayResponseError(newAPIError, requestId)
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
-			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -411,12 +411,16 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
+		errorLogContent, rawError, normalized := relayErrorLogContent(err)
+		if normalized {
+			other["raw_error"] = rawError
+		}
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {
 			startTime = time.Now()
 		}
 		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), pricingGroup, other)
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, errorLogContent, tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), pricingGroup, other)
 	}
 
 }
@@ -640,7 +644,7 @@ func RelayTask(c *gin.Context) {
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
 func respondTaskError(c *gin.Context, taskErr *dto.TaskError) {
 	if taskErr.StatusCode == http.StatusTooManyRequests {
-		taskErr.Message = "The upstream load for the current group is saturated. Please try again later or switch to another group."
+		taskErr.Message = relayGroupUpstreamSaturatedMessage
 	}
 	c.JSON(taskErr.StatusCode, taskErr)
 }
