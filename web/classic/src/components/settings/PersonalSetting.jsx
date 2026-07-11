@@ -30,6 +30,8 @@ import {
   buildRegistrationResult,
   isPasskeySupported,
   setUserData,
+  getCurrencyConfig,
+  getQuotaPerUnit,
 } from '../../helpers';
 import { UserContext } from '../../context/User';
 import { Modal } from '@douyinfe/semi-ui';
@@ -53,6 +55,18 @@ const PersonalSetting = () => {
   let navigate = useNavigate();
   const { t } = useTranslation();
 
+  const quotaThresholdToDisplayAmount = (quota) => {
+    const { type, rate } = getCurrencyConfig();
+    if (type === 'TOKENS') return quota;
+    return (quota / (getQuotaPerUnit() || 500000)) * rate;
+  };
+
+  const quotaThresholdToUnits = (amount) => {
+    const { type, rate } = getCurrencyConfig();
+    if (type === 'TOKENS') return amount;
+    return Math.round((amount / rate) * (getQuotaPerUnit() || 500000));
+  };
+
   const [inputs, setInputs] = useState({
     wechat_verification_code: '',
     email_verification_code: '',
@@ -63,6 +77,12 @@ const PersonalSetting = () => {
     set_new_password_confirmation: '',
   });
   const [status, setStatus] = useState({});
+  const currencyConfigKey = [
+    status.quota_display_type,
+    status.quota_per_unit,
+    status.usd_exchange_rate,
+    status.custom_currency_exchange_rate,
+  ].join(':');
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showWeChatBindModal, setShowWeChatBindModal] = useState(false);
   const [showEmailBindModal, setShowEmailBindModal] = useState(false);
@@ -185,7 +205,9 @@ const PersonalSetting = () => {
       const settings = JSON.parse(userState.user.setting);
       setNotificationSettings({
         warningType: settings.notify_type || 'email',
-        warningThreshold: settings.quota_warning_threshold || 500000,
+        warningThreshold: quotaThresholdToDisplayAmount(
+          settings.quota_warning_threshold || 500000,
+        ),
         webhookUrl: settings.webhook_url || '',
         webhookSecret: settings.webhook_secret || '',
         notificationEmail: settings.notification_email || '',
@@ -202,7 +224,7 @@ const PersonalSetting = () => {
         recordIpLog: settings.record_ip_log || false,
       });
     }
-  }, [userState?.user?.setting]);
+  }, [userState?.user?.setting, currencyConfigKey]);
 
   const handleInputChange = (name, value) => {
     setInputs((inputs) => ({ ...inputs, [name]: value }));
@@ -512,8 +534,8 @@ const PersonalSetting = () => {
     try {
       const res = await API.put('/api/user/setting', {
         notify_type: notificationSettings.warningType,
-        quota_warning_threshold: parseFloat(
-          notificationSettings.warningThreshold,
+        quota_warning_threshold: quotaThresholdToUnits(
+          parseFloat(notificationSettings.warningThreshold),
         ),
         webhook_url: notificationSettings.webhookUrl,
         webhook_secret: notificationSettings.webhookSecret,

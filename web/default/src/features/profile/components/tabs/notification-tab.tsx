@@ -16,11 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Bell, Loader2, Mail, Send, Server, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ROLE } from '@/lib/roles'
+import { getCurrencyLabel } from '@/lib/currency'
+import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -65,6 +68,15 @@ interface NotificationTabProps {
 
 export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   const { t } = useTranslation()
+  const currency = useSystemConfigStore((state) => state.config.currency)
+  const currencyLabel = useMemo(() => getCurrencyLabel(), [currency])
+  const currencyDisplayKey = [
+    currency.quotaDisplayType,
+    currency.quotaPerUnit,
+    currency.usdExchangeRate,
+    currency.customCurrencyExchangeRate,
+  ].join(':')
+  const previousCurrencyDisplayKey = useRef(currencyDisplayKey)
   const isAdmin = (profile?.role ?? 0) >= ROLE.ADMIN
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<UserSettings>({
@@ -82,6 +94,9 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
     record_ip_log: false,
     upstream_model_update_notify_enabled: false,
   })
+  const [quotaWarningThresholdInput, setQuotaWarningThresholdInput] = useState(
+    () => String(quotaUnitsToDollars(DEFAULT_QUOTA_WARNING_THRESHOLD))
+  )
 
   // Update form field helper
   const updateField = useCallback(
@@ -94,10 +109,11 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   useEffect(() => {
     if (profile?.setting) {
       const parsed = parseUserSettings(profile.setting)
+      const quotaWarningThreshold =
+        parsed.quota_warning_threshold ?? DEFAULT_QUOTA_WARNING_THRESHOLD
       setSettings({
         notify_type: normalizeNotifyType(parsed.notify_type),
-        quota_warning_threshold:
-          parsed.quota_warning_threshold ?? DEFAULT_QUOTA_WARNING_THRESHOLD,
+        quota_warning_threshold: quotaWarningThreshold,
         notification_email: parsed.notification_email ?? '',
         webhook_url: parsed.webhook_url ?? '',
         webhook_secret: parsed.webhook_secret ?? '',
@@ -112,8 +128,20 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
         upstream_model_update_notify_enabled:
           parsed.upstream_model_update_notify_enabled || false,
       })
+      setQuotaWarningThresholdInput(
+        String(quotaUnitsToDollars(quotaWarningThreshold))
+      )
     }
   }, [profile])
+
+  useEffect(() => {
+    if (previousCurrencyDisplayKey.current === currencyDisplayKey) return
+
+    previousCurrencyDisplayKey.current = currencyDisplayKey
+    setQuotaWarningThresholdInput(
+      String(quotaUnitsToDollars(settings.quota_warning_threshold ?? 0))
+    )
+  }, [currencyDisplayKey, settings.quota_warning_threshold])
 
   const handleSave = async () => {
     try {
@@ -173,19 +201,31 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
 
       {/* Warning Threshold */}
       <div className='space-y-1.5'>
-        <Label htmlFor='threshold'>{t('Remaining Quota Threshold')}</Label>
+        <Label htmlFor='threshold'>
+          {t('Remaining Quota Threshold ({{currency}})', {
+            currency: currencyLabel,
+          })}
+        </Label>
         <Input
           id='threshold'
-          type='number'
+          type='text'
+          inputMode='decimal'
           className='h-9'
-          value={settings.quota_warning_threshold}
-          onChange={(e) =>
-            updateField('quota_warning_threshold', Number(e.target.value))
-          }
+          value={quotaWarningThresholdInput}
+          onChange={(e) => {
+            const value = e.target.value
+            setQuotaWarningThresholdInput(value)
+            updateField(
+              'quota_warning_threshold',
+              value === '' ? 0 : parseQuotaFromDollars(Number(value))
+            )
+          }}
           placeholder={t('Enter threshold')}
         />
         <p className='text-muted-foreground text-xs'>
-          {t('Get notified when the remaining platform quota falls below this value')}
+          {t(
+            'Enter an amount in the platform currency. You will be notified when the remaining quota falls below it.'
+          )}
         </p>
       </div>
 

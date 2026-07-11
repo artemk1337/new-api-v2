@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.37
+
+- Display quota-warning thresholds in the configured platform currency in both interfaces, including decimal input and correct conversion back to internal quota units.
+- Keep quota-warning threshold values synchronized when the platform currency configuration changes.
+
 ## v1.1.36
 
 - Added Telegram notifications for quota warnings, channel events, and upstream model updates, with per-user Chat ID settings and Worker support.

@@ -35,7 +35,9 @@ import {
 import { IconMail, IconKey, IconBell, IconLink } from '@douyinfe/semi-icons';
 import { ShieldCheck, Bell, DollarSign, Settings } from 'lucide-react';
 import {
-  renderQuotaWithPrompt,
+  getCurrencyConfig,
+  getQuotaPerUnit,
+  renderQuota,
   API,
   showSuccess,
   showError,
@@ -59,6 +61,16 @@ const NotificationSettings = ({
   const [statusState] = useContext(StatusContext);
   const [userState] = useContext(UserContext);
   const isAdminOrRoot = (userState?.user?.role || 0) >= 10;
+  const currencyConfig = getCurrencyConfig();
+  const quotaThresholdOptions = [100000, 500000, 1000000, 5000000].map(
+    (quota) => ({
+      value:
+        currencyConfig.type === 'TOKENS'
+          ? quota
+          : (quota / (getQuotaPerUnit() || 500000)) * currencyConfig.rate,
+      label: renderQuota(quota),
+    }),
+  );
 
   // 左侧边栏设置相关状态
   const [sidebarLoading, setSidebarLoading] = useState(false);
@@ -440,18 +452,12 @@ const NotificationSettings = ({
                   label={
                     <span>
                       {t('剩余额度阈值')}{' '}
-                      {renderQuotaWithPrompt(
-                        notificationSettings.warningThreshold,
-                      )}
+                      {currencyConfig.type !== 'TOKENS' &&
+                        `(${currencyConfig.symbol})`}
                     </span>
                   }
                   placeholder={t('请输入预警额度')}
-                  data={[
-                    { value: 100000, label: '0.2$' },
-                    { value: 500000, label: '1$' },
-                    { value: 1000000, label: '2$' },
-                    { value: 5000000, label: '10$' },
-                  ]}
+                  data={quotaThresholdOptions}
                   onChange={(val) => handleFormChange('warningThreshold', val)}
                   prefix={<IconBell />}
                   extraText={t(
