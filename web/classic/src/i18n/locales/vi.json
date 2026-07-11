@@ -4214,6 +4214,12 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "Telegram Chat ID": "Chat ID Telegram",
+    "Telegram Chat ID 必须是数字": "Chat ID Telegram phải là số",
+    "剩余额度阈值": "Ngưỡng hạn mức còn lại",
+    "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知": "Phương thức đã chọn sẽ gửi thông báo khi hạn mức còn lại của ví hoặc gói đăng ký thấp hơn giá trị này",
+    "请输入 Telegram Chat ID": "Nhập Chat ID Telegram",
+    "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID": "Mở bot của nền tảng trong Telegram và nhấn Start trước khi nhập Chat ID"
   }
 }

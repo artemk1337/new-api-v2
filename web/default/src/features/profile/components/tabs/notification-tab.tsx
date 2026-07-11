@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback } from 'react'
-import { Bell, Loader2, Mail, Server, Webhook } from 'lucide-react'
+import { Bell, Loader2, Mail, Send, Server, Webhook } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ROLE } from '@/lib/roles'
@@ -40,6 +40,7 @@ const NOTIFICATION_ICONS: Record<NotifyType, typeof Mail> = {
   webhook: Webhook,
   bark: Bell,
   gotify: Server,
+  telegram: Send,
 }
 
 const NOTIFICATION_VALUES = new Set<NotifyType>(
@@ -76,6 +77,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
     gotify_url: '',
     gotify_token: '',
     gotify_priority: 5,
+    telegram_chat_id: '',
     accept_unset_model_ratio_model: false,
     record_ip_log: false,
     upstream_model_update_notify_enabled: false,
@@ -103,6 +105,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
         gotify_url: parsed.gotify_url ?? '',
         gotify_token: parsed.gotify_token ?? '',
         gotify_priority: parsed.gotify_priority ?? 5,
+        telegram_chat_id: parsed.telegram_chat_id ?? '',
         accept_unset_model_ratio_model:
           parsed.accept_unset_model_ratio_model || false,
         record_ip_log: parsed.record_ip_log || false,
@@ -170,7 +173,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
 
       {/* Warning Threshold */}
       <div className='space-y-1.5'>
-        <Label htmlFor='threshold'>{t('Quota Warning Threshold')}</Label>
+        <Label htmlFor='threshold'>{t('Remaining Quota Threshold')}</Label>
         <Input
           id='threshold'
           type='number'
@@ -182,7 +185,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
           placeholder={t('Enter threshold')}
         />
         <p className='text-muted-foreground text-xs'>
-          {t('Get notified when balance falls below this value')}
+          {t('Get notified when the remaining platform quota falls below this value')}
         </p>
       </div>
 
@@ -198,6 +201,23 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
             onChange={(e) => updateField('notification_email', e.target.value)}
             placeholder={t('Leave empty to use account email')}
           />
+        </div>
+      )}
+
+      {notifyType === 'telegram' && (
+        <div className='space-y-1.5'>
+          <Label htmlFor='telegramChatId'>{t('Telegram Chat ID')}</Label>
+          <Input
+            id='telegramChatId'
+            inputMode='numeric'
+            className='h-9'
+            value={settings.telegram_chat_id}
+            onChange={(e) => updateField('telegram_chat_id', e.target.value)}
+            placeholder={t('Enter your Telegram Chat ID')}
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t('Open the platform bot in Telegram and press Start before saving your Chat ID.')}
+          </p>
         </div>
       )}
 

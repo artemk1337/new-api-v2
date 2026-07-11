@@ -2,8 +2,8 @@ package service
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +13,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
+
+var telegramAPIBaseURL = "https://api.telegram.org"
 
 func NotifyRootUser(t string, subject string, content string) {
 	user := model.GetRootUser().ToBaseUser()
@@ -101,6 +103,15 @@ func NotifyUser(userId int, userEmail string, userSetting dto.UserSetting, data 
 			return nil
 		}
 		return sendGotifyNotify(gotifyUrl, gotifyToken, userSetting.GotifyPriority, data)
+	case dto.NotifyTypeTelegram:
+		if userSetting.TelegramChatId == "" {
+			common.SysLog(fmt.Sprintf("user %d has no telegram chat id, skip sending telegram notification", userId))
+			return nil
+		}
+		if common.TelegramBotToken == "" {
+			return fmt.Errorf("telegram bot token is not configured")
+		}
+		return sendTelegramNotify(userSetting.TelegramChatId, data)
 	}
 	return nil
 }
@@ -215,7 +226,7 @@ func sendGotifyNotify(gotifyUrl string, gotifyToken string, priority int, data d
 	}
 
 	// 序列化为 JSON
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := common.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal gotify payload: %v", err)
 	}
@@ -277,5 +288,77 @@ func sendGotifyNotify(gotifyUrl string, gotifyToken string, priority int, data d
 		}
 	}
 
+	return nil
+}
+
+func sendTelegramNotify(chatID string, data dto.Notify) error {
+	content := data.Content
+	for _, value := range data.Values {
+		content = strings.Replace(content, dto.ContentValueParam, fmt.Sprintf("%v", value), 1)
+	}
+
+	payload := struct {
+		ChatID string `json:"chat_id"`
+		Text   string `json:"text"`
+	}{
+		ChatID: chatID,
+		Text:   data.Title + "\n\n" + content,
+	}
+	payloadBytes, err := common.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal telegram payload: %w", err)
+	}
+
+	telegramURL := telegramAPIBaseURL + "/bot" + common.TelegramBotToken + "/sendMessage"
+	var resp *http.Response
+	if system_setting.EnableWorker() {
+		resp, err = DoWorkerRequest(&WorkerRequest{
+			URL:    telegramURL,
+			Key:    system_setting.WorkerValidKey,
+			Method: http.MethodPost,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: payloadBytes,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to send telegram request through worker: %w", err)
+		}
+	} else {
+		req, err := http.NewRequest(http.MethodPost, telegramURL, bytes.NewReader(payloadBytes))
+		if err != nil {
+			return fmt.Errorf("failed to create telegram request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := GetHttpClient()
+		if client == nil {
+			client = http.DefaultClient
+		}
+		resp, err = client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send telegram request: %w", err)
+		}
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read telegram response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("telegram request failed with status code: %d", resp.StatusCode)
+	}
+
+	response := struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}{}
+	if err := common.Unmarshal(responseBody, &response); err != nil {
+		return fmt.Errorf("failed to parse telegram response: %w", err)
+	}
+	if !response.OK {
+		return fmt.Errorf("telegram request failed: %s", response.Description)
+	}
 	return nil
 }

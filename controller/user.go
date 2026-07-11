@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+var telegramChatIDPattern = regexp.MustCompile(`^-?[0-9]+$`)
 
 type LoginRequest struct {
 	Username string `json:"username"`
@@ -1297,6 +1300,7 @@ type UpdateUserSettingRequest struct {
 	GotifyUrl                        string  `json:"gotify_url,omitempty"`
 	GotifyToken                      string  `json:"gotify_token,omitempty"`
 	GotifyPriority                   int     `json:"gotify_priority,omitempty"`
+	TelegramChatId                   string  `json:"telegram_chat_id,omitempty"`
 	UpstreamModelUpdateNotifyEnabled *bool   `json:"upstream_model_update_notify_enabled,omitempty"`
 	AcceptUnsetModelRatioModel       bool    `json:"accept_unset_model_ratio_model"`
 	RecordIpLog                      bool    `json:"record_ip_log"`
@@ -1310,7 +1314,7 @@ func UpdateUserSetting(c *gin.Context) {
 	}
 
 	// 验证预警类型
-	if req.QuotaWarningType != dto.NotifyTypeEmail && req.QuotaWarningType != dto.NotifyTypeWebhook && req.QuotaWarningType != dto.NotifyTypeBark && req.QuotaWarningType != dto.NotifyTypeGotify {
+	if req.QuotaWarningType != dto.NotifyTypeEmail && req.QuotaWarningType != dto.NotifyTypeWebhook && req.QuotaWarningType != dto.NotifyTypeBark && req.QuotaWarningType != dto.NotifyTypeGotify && req.QuotaWarningType != dto.NotifyTypeTelegram {
 		common.ApiErrorI18n(c, i18n.MsgSettingInvalidType)
 		return
 	}
@@ -1383,6 +1387,22 @@ func UpdateUserSetting(c *gin.Context) {
 		}
 	}
 
+	if req.QuotaWarningType == dto.NotifyTypeTelegram {
+		if common.TelegramBotToken == "" {
+			common.ApiErrorI18n(c, i18n.MsgSettingTelegramBotTokenEmpty)
+			return
+		}
+		if req.TelegramChatId == "" {
+			common.ApiErrorI18n(c, i18n.MsgSettingTelegramChatIdEmpty)
+			return
+		}
+		chatID, err := strconv.ParseInt(req.TelegramChatId, 10, 64)
+		if !telegramChatIDPattern.MatchString(req.TelegramChatId) || err != nil || chatID == 0 {
+			common.ApiErrorI18n(c, i18n.MsgSettingTelegramChatIdInvalid)
+			return
+		}
+	}
+
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, true)
 	if err != nil {
@@ -1432,6 +1452,10 @@ func UpdateUserSetting(c *gin.Context) {
 		} else {
 			settings.GotifyPriority = req.GotifyPriority
 		}
+	}
+
+	if req.QuotaWarningType == dto.NotifyTypeTelegram {
+		settings.TelegramChatId = req.TelegramChatId
 	}
 
 	// 更新用户设置

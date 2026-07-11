@@ -92,6 +92,7 @@ const PersonalSetting = () => {
     gotifyUrl: '',
     gotifyToken: '',
     gotifyPriority: 5,
+    telegramChatId: '',
     upstreamModelUpdateNotifyEnabled: false,
     acceptUnsetModelRatioModel: false,
     recordIpLog: false,
@@ -193,6 +194,7 @@ const PersonalSetting = () => {
         gotifyToken: settings.gotify_token || '',
         gotifyPriority:
           settings.gotify_priority !== undefined ? settings.gotify_priority : 5,
+        telegramChatId: settings.telegram_chat_id || '',
         upstreamModelUpdateNotifyEnabled:
           settings.upstream_model_update_notify_enabled === true,
         acceptUnsetModelRatioModel:
@@ -519,6 +521,7 @@ const PersonalSetting = () => {
         bark_url: notificationSettings.barkUrl,
         gotify_url: notificationSettings.gotifyUrl,
         gotify_token: notificationSettings.gotifyToken,
+        telegram_chat_id: notificationSettings.telegramChatId,
         gotify_priority: (() => {
           const parsed = parseInt(notificationSettings.gotifyPriority);
           return isNaN(parsed) ? 5 : parsed;

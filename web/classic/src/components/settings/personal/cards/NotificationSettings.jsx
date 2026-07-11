@@ -432,13 +432,14 @@ const NotificationSettings = ({
                   <Radio value='webhook'>{t('Webhook通知')}</Radio>
                   <Radio value='bark'>{t('Bark通知')}</Radio>
                   <Radio value='gotify'>{t('Gotify通知')}</Radio>
+                  <Radio value='telegram'>{t('Telegram')}</Radio>
                 </Form.RadioGroup>
 
                 <Form.AutoComplete
                   field='warningThreshold'
                   label={
                     <span>
-                      {t('额度预警阈值')}{' '}
+                      {t('剩余额度阈值')}{' '}
                       {renderQuotaWithPrompt(
                         notificationSettings.warningThreshold,
                       )}
@@ -454,7 +455,7 @@ const NotificationSettings = ({
                   onChange={(val) => handleFormChange('warningThreshold', val)}
                   prefix={<IconBell />}
                   extraText={t(
-                    '当钱包或订阅剩余额度低于此数值时，系统将通过选择的方式发送通知',
+                    '当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知',
                   )}
                   style={{ width: '100%', maxWidth: '300px' }}
                   rules={[
@@ -500,6 +501,32 @@ const NotificationSettings = ({
                       '设置用于接收额度预警的邮箱地址，不填则使用账号绑定的邮箱',
                     )}
                     showClear
+                  />
+                )}
+
+                {notificationSettings.warningType === 'telegram' && (
+                  <Form.Input
+                    field='telegramChatId'
+                    label={t('Telegram Chat ID')}
+                    placeholder={t('请输入 Telegram Chat ID')}
+                    onChange={(val) =>
+                      handleFormChange('telegramChatId', val)
+                    }
+                    prefix={<IconKey />}
+                    extraText={t(
+                      '请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID',
+                    )}
+                    showClear
+                    rules={[
+                      {
+                        required: notificationSettings.warningType === 'telegram',
+                        message: t('请输入 Telegram Chat ID'),
+                      },
+                      {
+                        pattern: /^-?\d+$/,
+                        message: t('Telegram Chat ID 必须是数字'),
+                      },
+                    ]}
                   />
                 )}
 

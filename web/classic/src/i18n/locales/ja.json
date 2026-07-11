@@ -3649,6 +3649,12 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "Telegram Chat ID": "Telegram Chat ID",
+    "Telegram Chat ID 必须是数字": "Telegram Chat ID は数字である必要があります",
+    "剩余额度阈值": "残りクォータのしきい値",
+    "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知": "ウォレットまたはサブスクリプションの残りクォータがこの値を下回ると、選択した方法で通知します",
+    "请输入 Telegram Chat ID": "Telegram Chat ID を入力",
+    "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID": "Chat ID を入力する前に、Telegram でプラットフォームボットを開いて Start を押してください"
   }
 }

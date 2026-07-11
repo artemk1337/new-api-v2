@@ -3673,6 +3673,12 @@
     "并确认自行承担部署": "並確認自行承擔部署",
     "运营和收费行为产生的法律责任": "營運和收費行為產生的法律責任",
     "，": "，",
-    "、": "、"
+    "、": "、",
+    "Telegram Chat ID": "Telegram Chat ID",
+    "Telegram Chat ID 必须是数字": "Telegram Chat ID 必須是數字",
+    "剩余额度阈值": "剩餘額度閾值",
+    "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知": "當錢包或訂閱的剩餘額度低於此數值時，系統將透過選擇的方式發送通知",
+    "请输入 Telegram Chat ID": "請輸入 Telegram Chat ID",
+    "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID": "請先在 Telegram 中開啟平台機器人並點擊 Start，再填寫 Chat ID"
   }
 }

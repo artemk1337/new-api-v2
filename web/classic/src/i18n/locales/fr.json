@@ -3680,6 +3680,12 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "Telegram Chat ID": "ID de chat Telegram",
+    "Telegram Chat ID 必须是数字": "L ID de chat Telegram doit être numérique",
+    "剩余额度阈值": "Seuil de quota restant",
+    "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知": "La méthode sélectionnée enverra une notification lorsque le quota restant du portefeuille ou de l abonnement passera sous cette valeur",
+    "请输入 Telegram Chat ID": "Saisissez l ID de chat Telegram",
+    "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID": "Ouvrez le bot de la plateforme dans Telegram et appuyez sur Start avant de saisir votre ID de chat"
   }
 }

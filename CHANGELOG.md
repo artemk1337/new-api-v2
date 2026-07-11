@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.36
+
+- Added Telegram notifications for quota warnings, channel events, and upstream model updates, with per-user Chat ID settings and Worker support.
+- Added localized Telegram notification settings in the Default and Classic interfaces.
+
 ## v1.1.34
 
 - Normalized relay/admin error logs for known upstream Chinese errors while preserving raw diagnostics in structured log metadata.

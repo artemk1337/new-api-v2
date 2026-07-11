@@ -3809,6 +3809,12 @@
     "并确认自行承担部署": "并确认自行承担部署",
     "运营和收费行为产生的法律责任": "运营和收费行为产生的法律责任",
     "，": "，",
-    "、": "、"
+    "、": "、",
+    "Telegram Chat ID": "Telegram Chat ID",
+    "Telegram Chat ID 必须是数字": "Telegram Chat ID 必须是数字",
+    "剩余额度阈值": "剩余额度阈值",
+    "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知": "当钱包或订阅的剩余额度低于此数值时，系统将通过选择的方式发送通知",
+    "请输入 Telegram Chat ID": "请输入 Telegram Chat ID",
+    "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID": "请先在 Telegram 中打开平台机器人并点击 Start，再填写 Chat ID"
   }
 }
