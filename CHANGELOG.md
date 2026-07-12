@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.38
+
+- Replaced hardcoded Chinese YooKassa top-up messages and logs with English text.
+
 ## v1.1.37
 
 - Display quota-warning thresholds in the configured platform currency in both interfaces, including decimal input and correct conversion back to internal quota units.

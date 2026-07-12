@@ -649,7 +649,7 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 			return quotaResult.Error
 		}
 		if quotaResult.RowsAffected == 0 {
-			return errors.New("充值用户不存在")
+			return errors.New("Top-up user does not exist")
 		}
 		quotaCredited = true
 
@@ -658,11 +658,11 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 
 	if err != nil {
 		common.SysError("yookassa topup failed: " + err.Error())
-		return errors.New("充值失败，请稍后重试")
+		return errors.New("Top-up failed, please try again later")
 	}
 
 	if quotaCredited {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("YooKassa充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderYooKassa)
+		RecordTopupLog(topUp.UserId, fmt.Sprintf("YooKassa top-up succeeded, quota: %v, payment amount: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderYooKassa)
 	}
 
 	return nil
