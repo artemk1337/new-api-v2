@@ -110,6 +110,20 @@ func isYooKassaWebhookEnabled() bool {
 	return isYooKassaWebhookConfigured()
 }
 
+func isNOWPaymentsTopUpEnabled() bool {
+	return isPaymentComplianceConfirmed() && isNOWPaymentsWebhookConfigured() &&
+		strings.TrimSpace(setting.NOWPaymentsAPIKey) != "" &&
+		strings.TrimSpace(setting.NOWPaymentsIPNCallbackURL) != ""
+}
+
+func isNOWPaymentsWebhookConfigured() bool {
+	return strings.TrimSpace(setting.NOWPaymentsAPIKey) != "" && strings.TrimSpace(setting.NOWPaymentsIPNSecret) != ""
+}
+
+func isNOWPaymentsWebhookEnabled() bool {
+	return isNOWPaymentsWebhookConfigured()
+}
+
 func isEpayTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false

@@ -115,6 +115,20 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	enableNOWPayments := isNOWPaymentsTopUpEnabled()
+	if enableNOWPayments {
+		hasNOWPayments := false
+		for _, method := range payMethods {
+			if method["type"] == model.PaymentMethodNOWPayments {
+				hasNOWPayments = true
+				break
+			}
+		}
+		if !hasNOWPayments {
+			payMethods = append(payMethods, map[string]string{"name": "Crypto / NOWPayments", "type": model.PaymentMethodNOWPayments, "color": "#F7931A", "min_topup": strconv.FormatInt(getMinTopup(), 10)})
+		}
+	}
+
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
@@ -122,6 +136,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"enable_waffo_topup":               enableWaffo,
 		"enable_waffo_pancake_topup":       enableWaffoPancake,
 		"enable_yookassa_topup":            enableYooKassa,
+		"enable_nowpayments_topup":         enableNOWPayments,
 		"enable_redemption":                complianceConfirmed,
 		"payment_compliance_confirmed":     complianceConfirmed,
 		"payment_compliance_terms_version": operation_setting.CurrentComplianceTermsVersion,

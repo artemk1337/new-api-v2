@@ -24,15 +24,18 @@ import {
   calculateStripeAmount,
   calculateWaffoPancakeAmount,
   calculateYooKassaAmount,
+  calculateNOWPaymentsAmount,
   requestPayment,
   requestStripePayment,
   requestYooKassaPayment,
+  requestNOWPaymentsPayment,
   isApiSuccess,
 } from '../api'
 import {
   isStripePayment,
   isWaffoPancakePayment,
   isYooKassaPayment,
+  isNOWPaymentsPayment,
   submitPaymentForm,
 } from '../lib'
 
@@ -71,6 +74,7 @@ export function usePayment() {
         const isStripe = isStripePayment(paymentType)
         const isPancake = isWaffoPancakePayment(paymentType)
         const isYooKassa = isYooKassaPayment(paymentType)
+        const isNOWPayments = isNOWPaymentsPayment(paymentType)
         let response
         if (isStripe) {
           response = await calculateStripeAmount({ amount: topupAmount })
@@ -78,6 +82,8 @@ export function usePayment() {
           response = await calculateWaffoPancakeAmount({ amount: topupAmount })
         } else if (isYooKassa) {
           response = await calculateYooKassaAmount({ amount: topupAmount })
+        } else if (isNOWPayments) {
+          response = await calculateNOWPaymentsAmount({ amount: topupAmount })
         } else {
           response = await calculateAmount({ amount: topupAmount })
         }
@@ -109,6 +115,7 @@ export function usePayment() {
 
         const isStripe = isStripePayment(paymentType)
         const isYooKassa = isYooKassaPayment(paymentType)
+        const isNOWPayments = isNOWPaymentsPayment(paymentType)
         let response
         if (isStripe) {
           response = await requestStripePayment({
@@ -119,6 +126,11 @@ export function usePayment() {
           response = await requestYooKassaPayment({
             amount: Math.floor(topupAmount),
             payment_method: 'yookassa_sbp',
+          })
+        } else if (isNOWPayments) {
+          response = await requestNOWPaymentsPayment({
+            amount: Math.floor(topupAmount),
+            payment_method: 'nowpayments',
           })
         } else {
           response = await requestPayment({
@@ -154,8 +166,19 @@ export function usePayment() {
           return true
         }
 
+        const paymentUrl = getStringField(response.data, 'payment_url')
+        if (isNOWPayments && paymentUrl) {
+          if (!isSafeHttpRedirectUrl(paymentUrl)) {
+            toast.error(i18next.t('Invalid payment redirect URL'))
+            return false
+          }
+          window.location.href = paymentUrl
+          toast.success(i18next.t('Redirecting to payment page...'))
+          return true
+        }
+
         // Handle non-Stripe payment
-        if (!isStripe && !isYooKassa && response.data) {
+        if (!isStripe && !isYooKassa && !isNOWPayments && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
             submitPaymentForm(url, response.data)

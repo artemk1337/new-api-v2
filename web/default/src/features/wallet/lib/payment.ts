@@ -93,6 +93,10 @@ export function isYooKassaPayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.YOOKASSA_SBP
 }
 
+export function isNOWPaymentsPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.NOWPAYMENTS
+}
+
 /**
  * Get default payment type from topup info
  */
@@ -120,6 +124,10 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
 
   if (topupInfo.enable_yookassa_topup) {
     return PAYMENT_TYPES.YOOKASSA_SBP
+  }
+
+  if (topupInfo.enable_nowpayments_topup) {
+    return PAYMENT_TYPES.NOWPAYMENTS
   }
 
   return DEFAULT_PAYMENT_TYPE
@@ -151,6 +159,10 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
 
   if (topupInfo.enable_yookassa_topup) {
     return topupInfo.yookassa_min_topup || DEFAULT_MIN_TOPUP
+  }
+
+  if (topupInfo.enable_nowpayments_topup) {
+    return DEFAULT_MIN_TOPUP
   }
 
   return DEFAULT_MIN_TOPUP

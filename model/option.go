@@ -123,6 +123,11 @@ func InitOptionMap() {
 	common.OptionMap["YooKassaSecretKey"] = setting.YooKassaSecretKey
 	common.OptionMap["YooKassaReturnURL"] = setting.YooKassaReturnURL
 	common.OptionMap["YooKassaPaymentMethods"] = setting.YooKassaPaymentMethods
+	common.OptionMap["NOWPaymentsAPIKey"] = setting.NOWPaymentsAPIKey
+	common.OptionMap["NOWPaymentsIPNSecret"] = setting.NOWPaymentsIPNSecret
+	common.OptionMap["NOWPaymentsPriceCurrency"] = setting.NOWPaymentsPriceCurrency
+	common.OptionMap["NOWPaymentsPayCurrency"] = setting.NOWPaymentsPayCurrency
+	common.OptionMap["NOWPaymentsIPNCallbackURL"] = setting.NOWPaymentsIPNCallbackURL
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["PricingGroups"] = "[]"
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
@@ -677,6 +682,16 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		setting.YooKassaReturnURL = value
 	case "YooKassaPaymentMethods":
 		setting.YooKassaPaymentMethods = value
+	case "NOWPaymentsAPIKey":
+		setting.NOWPaymentsAPIKey = value
+	case "NOWPaymentsIPNSecret":
+		setting.NOWPaymentsIPNSecret = value
+	case "NOWPaymentsPriceCurrency":
+		setting.NOWPaymentsPriceCurrency = value
+	case "NOWPaymentsPayCurrency":
+		setting.NOWPaymentsPayCurrency = value
+	case "NOWPaymentsIPNCallbackURL":
+		setting.NOWPaymentsIPNCallbackURL = value
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":

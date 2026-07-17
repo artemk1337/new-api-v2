@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -31,6 +32,7 @@ const (
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodYooKassaSBP  = "yookassa_sbp"
+	PaymentMethodNOWPayments  = "nowpayments"
 	PaymentMethodBalance      = "balance"
 )
 
@@ -41,6 +43,7 @@ const (
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderYooKassa     = "yookassa"
+	PaymentProviderNOWPayments  = "nowpayments"
 	PaymentProviderBalance      = "balance"
 )
 
@@ -592,6 +595,14 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 }
 
 func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
+	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderYooKassa, "YooKassa")
+}
+
+func RechargeNOWPayments(tradeNo string, callerIp string) (err error) {
+	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderNOWPayments, "NOWPayments")
+}
+
+func rechargeProviderTopUp(tradeNo string, callerIp, provider, providerName string) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -605,7 +616,7 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 			return errors.New("充值订单不存在")
 		}
 
-		if topUp.PaymentProvider != PaymentProviderYooKassa {
+		if topUp.PaymentProvider != provider {
 			return ErrPaymentMethodMismatch
 		}
 
@@ -617,7 +628,7 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 			return errors.New("充值订单状态错误")
 		}
 
-		quotaToAdd = getYooKassaTopUpQuota(topUp)
+		quotaToAdd = topUp.QuotaToAdd
 		if quotaToAdd <= 0 {
 			return errors.New("无效的充值额度")
 		}
@@ -625,7 +636,7 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 		topUp.CompleteTime = common.GetTimestamp()
 		topUp.Status = common.TopUpStatusSuccess
 		result := tx.Model(&TopUp{}).
-			Where("id = ? AND payment_provider = ? AND status = ?", topUp.Id, PaymentProviderYooKassa, common.TopUpStatusPending).
+			Where("id = ? AND payment_provider = ? AND status = ?", topUp.Id, provider, common.TopUpStatusPending).
 			Updates(map[string]interface{}{
 				"complete_time": topUp.CompleteTime,
 				"status":        common.TopUpStatusSuccess,
@@ -657,12 +668,12 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 	})
 
 	if err != nil {
-		common.SysError("yookassa topup failed: " + err.Error())
+		common.SysError(strings.ToLower(providerName) + " topup failed: " + err.Error())
 		return errors.New("Top-up failed, please try again later")
 	}
 
 	if quotaCredited {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("YooKassa top-up succeeded, quota: %v, payment amount: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderYooKassa)
+		RecordTopupLog(topUp.UserId, fmt.Sprintf("%s top-up succeeded, quota: %v, payment amount: %.2f", providerName, logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, provider)
 	}
 
 	return nil

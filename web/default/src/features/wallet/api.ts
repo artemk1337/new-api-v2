@@ -41,6 +41,8 @@ import type {
   YooKassaPaymentRequest,
   YooKassaPaymentResponse,
   YooKassaSyncRequest,
+  NOWPaymentsPaymentRequest,
+  NOWPaymentsPaymentResponse,
 } from './types'
 
 // ============================================================================
@@ -202,6 +204,24 @@ export async function syncYooKassaPayment(
   request: YooKassaSyncRequest
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/yookassa/sync', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function calculateNOWPaymentsAmount(
+  request: AmountRequest
+): Promise<AmountResponse> {
+  const res = await api.post('/api/user/nowpayments/amount', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function requestNOWPaymentsPayment(
+  request: NOWPaymentsPaymentRequest
+): Promise<NOWPaymentsPaymentResponse> {
+  const res = await api.post('/api/user/nowpayments/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data

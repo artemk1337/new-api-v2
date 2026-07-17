@@ -64,6 +64,10 @@ export type YooKassaPaymentResponse = ApiResponse<{
   payment_id?: string
   trade_no?: string
 }>
+export type NOWPaymentsPaymentResponse = ApiResponse<{
+  payment_url?: string
+  trade_no?: string
+}>
 
 export interface DiscountThreshold {
   min_amount: number
@@ -164,6 +168,8 @@ export interface TopupInfo {
   waffo_pancake_min_topup?: number
   /** Whether YooKassa topup is enabled */
   enable_yookassa_topup?: boolean
+  /** Whether crypto topup through NOWPayments is enabled */
+  enable_nowpayments_topup?: boolean
   /** Minimum topup amount for YooKassa */
   yookassa_min_topup?: number
   /** Whether redemption code usage is enabled */
@@ -228,6 +234,11 @@ export interface YooKassaPaymentRequest {
   amount: number
   /** Payment method identifier */
   payment_method: 'yookassa_sbp'
+}
+
+export interface NOWPaymentsPaymentRequest {
+  amount: number
+  payment_method: 'nowpayments'
 }
 
 /**
