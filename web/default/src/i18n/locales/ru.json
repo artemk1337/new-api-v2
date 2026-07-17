@@ -5030,6 +5030,17 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Accept cryptocurrency payments through NOWPayments": "Принимайте платежи в криптовалюте через NOWPayments",
+    "Set this IPN callback URL in the NOWPayments dashboard:": "Укажите этот IPN callback URL в кабинете NOWPayments:",
+    "IPN secret": "IPN-секрет",
+    "Used to verify payment webhooks": "Используется для проверки вебхуков оплаты",
+    "Invoice currency": "Валюта счета",
+    "Currency used to price the invoice, usually USD": "Валюта расчета счета, обычно USD",
+    "Fixed payment currency": "Фиксированная криптовалюта",
+    "Leave blank to let the customer choose": "Оставьте пустым, чтобы клиент выбрал сам",
+    "For example, USDTTRC20. Leave blank to show all supported assets.": "Например, USDTTRC20. Оставьте пустым, чтобы показать все доступные активы.",
+    "IPN callback URL": "IPN callback URL",
+    "Crypto payments are enabled when API key, IPN secret, and this URL are set.": "Оплата криптовалютой включается после заполнения API-ключа, IPN-секрета и этого URL."
   }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.41
+
+- Added a visible NOWPayments configuration tab to payment settings.
+- Restored NOWPayments as a selectable crypto top-up method in the wallet.
+
 ## v1.1.39
 
 - Normalized saturated upstream-model errors to English relay messages.

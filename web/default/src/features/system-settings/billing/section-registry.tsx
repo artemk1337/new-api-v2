@@ -157,6 +157,13 @@ const BILLING_SECTIONS = [
           YooKassaSecretKey: settings.YooKassaSecretKey ?? '',
           YooKassaReturnURL: settings.YooKassaReturnURL ?? '',
           YooKassaPaymentMethods: settings.YooKassaPaymentMethods ?? 'sbp',
+          NOWPaymentsAPIKey: settings.NOWPaymentsAPIKey ?? '',
+          NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
+          NOWPaymentsPriceCurrency:
+            settings.NOWPaymentsPriceCurrency ?? 'usd',
+          NOWPaymentsPayCurrency: settings.NOWPaymentsPayCurrency ?? '',
+          NOWPaymentsIPNCallbackURL:
+            settings.NOWPaymentsIPNCallbackURL ?? '',
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

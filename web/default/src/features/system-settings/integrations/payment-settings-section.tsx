@@ -204,6 +204,15 @@ const paymentSchema = z.object({
   YooKassaPaymentMethods: z.string().refine((value) => {
     return value.trim().toLowerCase() === 'sbp'
   }, 'Only SBP is supported for YooKassa payments'),
+  NOWPaymentsAPIKey: z.string(),
+  NOWPaymentsIPNSecret: z.string(),
+  NOWPaymentsPriceCurrency: z.string().min(1),
+  NOWPaymentsPayCurrency: z.string(),
+  NOWPaymentsIPNCallbackURL: z.string().refine((value) => {
+    const trimmed = value.trim()
+    if (!trimmed) return true
+    return /^https?:\/\//.test(trimmed)
+  }, 'Provide a valid URL starting with http:// or https://'),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -496,6 +505,17 @@ export function PaymentSettingsSection({
       YooKassaPaymentMethods: normalizeYooKassaPaymentMethods(
         values.YooKassaPaymentMethods
       ),
+      NOWPaymentsAPIKey: values.NOWPaymentsAPIKey.trim(),
+      NOWPaymentsIPNSecret: values.NOWPaymentsIPNSecret.trim(),
+      NOWPaymentsPriceCurrency: values.NOWPaymentsPriceCurrency
+        .trim()
+        .toLowerCase(),
+      NOWPaymentsPayCurrency: values.NOWPaymentsPayCurrency
+        .trim()
+        .toLowerCase(),
+      NOWPaymentsIPNCallbackURL: removeTrailingSlash(
+        values.NOWPaymentsIPNCallbackURL.trim()
+      ),
     }
 
     const initial = {
@@ -550,6 +570,17 @@ export function PaymentSettingsSection({
         initialRef.current.YooKassaReturnURL.trim()
       ),
       YooKassaPaymentMethods: initialRef.current.YooKassaPaymentMethods.trim(),
+      NOWPaymentsAPIKey: initialRef.current.NOWPaymentsAPIKey.trim(),
+      NOWPaymentsIPNSecret: initialRef.current.NOWPaymentsIPNSecret.trim(),
+      NOWPaymentsPriceCurrency: initialRef.current.NOWPaymentsPriceCurrency
+        .trim()
+        .toLowerCase(),
+      NOWPaymentsPayCurrency: initialRef.current.NOWPaymentsPayCurrency
+        .trim()
+        .toLowerCase(),
+      NOWPaymentsIPNCallbackURL: removeTrailingSlash(
+        initialRef.current.NOWPaymentsIPNCallbackURL.trim()
+      ),
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -706,6 +737,53 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'YooKassaPaymentMethods',
         value: sanitized.YooKassaPaymentMethods,
+      })
+    }
+
+    if (
+      sanitized.NOWPaymentsAPIKey &&
+      sanitized.NOWPaymentsAPIKey !== initial.NOWPaymentsAPIKey
+    ) {
+      updates.push({
+        key: 'NOWPaymentsAPIKey',
+        value: sanitized.NOWPaymentsAPIKey,
+      })
+    }
+
+    if (
+      sanitized.NOWPaymentsIPNSecret &&
+      sanitized.NOWPaymentsIPNSecret !== initial.NOWPaymentsIPNSecret
+    ) {
+      updates.push({
+        key: 'NOWPaymentsIPNSecret',
+        value: sanitized.NOWPaymentsIPNSecret,
+      })
+    }
+
+    if (
+      sanitized.NOWPaymentsPriceCurrency !== initial.NOWPaymentsPriceCurrency
+    ) {
+      updates.push({
+        key: 'NOWPaymentsPriceCurrency',
+        value: sanitized.NOWPaymentsPriceCurrency,
+      })
+    }
+
+    if (
+      sanitized.NOWPaymentsPayCurrency !== initial.NOWPaymentsPayCurrency
+    ) {
+      updates.push({
+        key: 'NOWPaymentsPayCurrency',
+        value: sanitized.NOWPaymentsPayCurrency,
+      })
+    }
+
+    if (
+      sanitized.NOWPaymentsIPNCallbackURL !== initial.NOWPaymentsIPNCallbackURL
+    ) {
+      updates.push({
+        key: 'NOWPaymentsIPNCallbackURL',
+        value: sanitized.NOWPaymentsIPNCallbackURL,
       })
     }
 
@@ -957,10 +1035,11 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[52rem] grid-cols-7'>
+              <TabsList className='grid min-w-[60rem] grid-cols-8'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='yookassa'>YooKassa</TabsTrigger>
+                <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
@@ -1468,6 +1547,144 @@ export function PaymentSettingsSection({
                     )}
                   />
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value='nowpayments'
+              className={paymentTabContentClassName}
+            >
+              <div className='space-y-4'>
+                <div>
+                  <h3 className='text-lg font-medium'>NOWPayments</h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t('Accept cryptocurrency payments through NOWPayments')}
+                  </p>
+                </div>
+
+                <div className='rounded-md bg-orange-50 p-4 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-100'>
+                  <p className='mb-2 font-medium'>
+                    {t('Webhook Configuration:')}
+                  </p>
+                  <p>
+                    {t('Set this IPN callback URL in the NOWPayments dashboard:')}{' '}
+                    <code className='rounded bg-orange-100 px-1 py-0.5 text-xs dark:bg-orange-900'>
+                      {form.watch('NOWPaymentsIPNCallbackURL') ||
+                        '<ServerAddress>/api/nowpayments/webhook'}
+                    </code>
+                  </p>
+                </div>
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='NOWPaymentsAPIKey'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('API key')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            autoComplete='new-password'
+                            placeholder={t('Leave blank unless updating')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Masked value means the saved key is unchanged')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NOWPaymentsIPNSecret'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('IPN secret')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            autoComplete='new-password'
+                            placeholder={t('Leave blank unless updating')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Used to verify payment webhooks')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='NOWPaymentsPriceCurrency'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Invoice currency')}</FormLabel>
+                        <FormControl>
+                          <Input placeholder='usd' {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Currency used to price the invoice, usually USD')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NOWPaymentsPayCurrency'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Fixed payment currency')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder={t(
+                              'Leave blank to let the customer choose'
+                            )}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'For example, USDTTRC20. Leave blank to show all supported assets.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name='NOWPaymentsIPNCallbackURL'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('IPN callback URL')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder='https://example.com/api/nowpayments/webhook'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Crypto payments are enabled when API key, IPN secret, and this URL are set.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
             </TabsContent>
 
