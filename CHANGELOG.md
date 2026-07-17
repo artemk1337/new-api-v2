@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.39
+
+- Normalized saturated upstream-model errors to English relay messages.
+
 ## v1.1.38
 
 - Replaced hardcoded Chinese YooKassa top-up messages and logs with English text.

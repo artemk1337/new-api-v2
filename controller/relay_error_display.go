@@ -25,7 +25,8 @@ func relayDisplayErrorMessage(err *types.NewAPIError) (string, bool) {
 	raw := err.Error()
 	switch err.StatusCode {
 	case http.StatusTooManyRequests:
-		if strings.Contains(raw, "当前分组上游负载已饱和") {
+		if strings.Contains(raw, "当前分组上游负载已饱和") ||
+			(strings.Contains(raw, "当前模型") && strings.Contains(raw, "上游已饱和")) {
 			return relayGroupUpstreamSaturatedMessage, true
 		}
 		if strings.Contains(raw, "所有可用凭据均已达到并发上限") {

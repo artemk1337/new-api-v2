@@ -48,6 +48,12 @@ func TestRelayDisplayErrorMessageNormalizesKnownUpstreamErrors(t *testing.T) {
 			expected:   relayGroupUpstreamSaturatedMessage,
 		},
 		{
+			name:       "model upstream saturated",
+			statusCode: http.StatusTooManyRequests,
+			message:    "当前模型gpt-image-1.5上游已饱和, 请稍后再试! (request id: upstream)",
+			expected:   relayGroupUpstreamSaturatedMessage,
+		},
+		{
 			name:       "credentials concurrency",
 			statusCode: http.StatusTooManyRequests,
 			message:    "所有可用凭据均已达到并发上限，请稍后重试。 [up_rate_limit]",
