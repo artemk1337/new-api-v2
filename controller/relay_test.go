@@ -119,6 +119,20 @@ func TestPrepareRelayResponseErrorUpdatesOpenAIRelayMessage(t *testing.T) {
 	assert.False(t, strings.Contains(openAIError.Message, "当前分组"))
 }
 
+func TestPrepareRelayResponseErrorKeepsEnglishChannelUnavailableMessage(t *testing.T) {
+	err := types.NewErrorWithStatusCode(
+		errors.New("No available channel for model gpt-5.2 under group 限时特价"),
+		types.ErrorCodeGetChannelFailed,
+		http.StatusServiceUnavailable,
+	)
+
+	prepareRelayResponseError(err, "req-503")
+
+	openAIError := err.ToOpenAIError()
+	assert.Equal(t, "No available channel for model gpt-5.2 under group 限时特价 (request id: req-503)", openAIError.Message)
+	assert.False(t, strings.Contains(openAIError.Message, "无可用渠道"))
+}
+
 func TestErrorLogPricingGroupUsesSelectedPricingGroup(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Set("group", "user-group")

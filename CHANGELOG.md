@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.42
+
+- Normalized relay channel-selection failures to English for 503 cases, including model/group no-available-channel errors.
+
 ## v1.1.41
 
 - Added a visible NOWPayments configuration tab to payment settings.
