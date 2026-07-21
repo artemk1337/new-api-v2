@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.43
+
+- Переведены сообщения и экран двухфакторной аутентификации с китайского на русский язык.
+
 ## v1.1.42
 
 - Normalized relay channel-selection failures to English for 503 cases, including model/group no-available-channel errors.

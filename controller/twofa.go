@@ -192,11 +192,11 @@ func Enable2FA(c *gin.Context) {
 	}
 
 	// 记录操作日志
-	model.RecordLog(userId, model.LogTypeSystem, "成功启用两步验证")
+	model.RecordLog(userId, model.LogTypeSystem, "Двухфакторная аутентификация успешно включена")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "两步验证启用成功",
+		"message": "Двухфакторная аутентификация успешно включена",
 	})
 }
 

@@ -26,25 +26,27 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const { Title, Text, Paragraph } = Typography;
 
 const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
 
   const handleSubmit = async () => {
     if (!verificationCode) {
-      showError('请输入验证码');
+      showError(t('请输入验证码'));
       return;
     }
     // Validate code format
     if (useBackupCode && verificationCode.length !== 8) {
-      showError('备用码必须是8位');
+      showError('Резервный код должен содержать 8 символов');
       return;
     } else if (!useBackupCode && !/^\d{6}$/.test(verificationCode)) {
-      showError('验证码必须是6位数字');
+      showError('Код подтверждения должен состоять из 6 цифр');
       return;
     }
 
@@ -55,7 +57,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
       });
 
       if (res.data.success) {
-        showSuccess('登录成功');
+        showSuccess(t('登录成功！'));
         // 保存用户信息到本地存储
         localStorage.setItem('user', JSON.stringify(res.data.data));
         if (onSuccess) {
@@ -65,7 +67,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
         showError(res.data.message);
       }
     } catch (error) {
-      showError('验证失败，请重试');
+      showError(t('验证失败，请重试'));
     } finally {
       setLoading(false);
     }
@@ -81,14 +83,14 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
     return (
       <div className='space-y-4'>
         <Paragraph className='text-gray-600 dark:text-gray-300'>
-          请输入认证器应用显示的验证码完成登录
+          {t('输入认证器应用显示的6位数字验证码')}
         </Paragraph>
 
         <Form onSubmit={handleSubmit}>
           <Form.Input
             field='code'
-            label={useBackupCode ? '备用码' : '验证码'}
-            placeholder={useBackupCode ? '请输入8位备用码' : '请输入6位验证码'}
+            label={useBackupCode ? 'Резервный код' : t('验证码')}
+            placeholder={useBackupCode ? 'Введите 8-значный резервный код' : 'Введите 6-значный код подтверждения'}
             value={verificationCode}
             onChange={setVerificationCode}
             onKeyPress={handleKeyPress}
@@ -105,7 +107,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
             size='large'
             style={{ marginBottom: 16 }}
           >
-            验证并登录
+            Подтвердить и войти
           </Button>
         </Form>
 
@@ -121,7 +123,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
             }}
             style={{ marginRight: 16, color: '#1890ff', padding: 0 }}
           >
-            {useBackupCode ? '使用认证器验证码' : '使用备用码'}
+            {useBackupCode ? 'Использовать код аутентификатора' : 'Использовать резервный код'}
           </Button>
 
           {onBack && (
@@ -131,19 +133,19 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
               onClick={onBack}
               style={{ color: '#1890ff', padding: 0 }}
             >
-              返回登录
+              Вернуться ко входу
             </Button>
           )}
         </div>
 
         <div className='bg-gray-50 dark:bg-gray-800 rounded-lg p-3'>
           <Text size='small' type='secondary'>
-            <strong>提示：</strong>
+            <strong>Подсказка:</strong>
             <br />
-            • 验证码每30秒更新一次
+            • Код подтверждения обновляется каждые 30 секунд
             <br />
-            • 如果无法获取验证码，请使用备用码
-            <br />• 每个备用码只能使用一次
+            • Если не удается получить код, используйте резервный код
+            <br />• Каждый резервный код можно использовать только один раз
           </Text>
         </div>
       </div>
@@ -161,17 +163,17 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
     >
       <Card style={{ width: 400, padding: 24 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title heading={3}>两步验证</Title>
+          <Title heading={3}>{t('两步验证')}</Title>
           <Paragraph type='secondary'>
-            请输入认证器应用显示的验证码完成登录
+            {t('输入认证器应用显示的6位数字验证码')}
           </Paragraph>
         </div>
 
         <Form onSubmit={handleSubmit}>
           <Form.Input
             field='code'
-            label={useBackupCode ? '备用码' : '验证码'}
-            placeholder={useBackupCode ? '请输入8位备用码' : '请输入6位验证码'}
+            label={useBackupCode ? 'Резервный код' : t('验证码')}
+            placeholder={useBackupCode ? 'Введите 8-значный резервный код' : 'Введите 6-значный код подтверждения'}
             value={verificationCode}
             onChange={setVerificationCode}
             onKeyPress={handleKeyPress}
@@ -188,7 +190,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
             size='large'
             style={{ marginBottom: 16 }}
           >
-            验证并登录
+            Подтвердить и войти
           </Button>
         </Form>
 
@@ -204,7 +206,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
             }}
             style={{ marginRight: 16, color: '#1890ff', padding: 0 }}
           >
-            {useBackupCode ? '使用认证器验证码' : '使用备用码'}
+            {useBackupCode ? 'Использовать код аутентификатора' : 'Использовать резервный код'}
           </Button>
 
           {onBack && (
@@ -214,7 +216,7 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
               onClick={onBack}
               style={{ color: '#1890ff', padding: 0 }}
             >
-              返回登录
+              Вернуться ко входу
             </Button>
           )}
         </div>
@@ -228,12 +230,12 @@ const TwoFAVerification = ({ onSuccess, onBack, isModal = false }) => {
           }}
         >
           <Text size='small' type='secondary'>
-            <strong>提示：</strong>
+            <strong>Подсказка:</strong>
             <br />
-            • 验证码每30秒更新一次
+            • Код подтверждения обновляется каждые 30 секунд
             <br />
-            • 如果无法获取验证码，请使用备用码
-            <br />• 每个备用码只能使用一次
+            • Если не удается получить код, используйте резервный код
+            <br />• Каждый резервный код можно использовать только один раз
           </Text>
         </div>
       </Card>
