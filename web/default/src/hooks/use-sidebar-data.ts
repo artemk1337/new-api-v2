@@ -26,6 +26,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  Newspaper,
   Radio,
   ServerCog,
   Settings,
@@ -117,6 +118,7 @@ export function useSidebarData(): SidebarData {
       {
         id: 'admin',
         title: t('Admin'),
+        requiredRole: ROLE.ADMIN,
         items: [
           {
             title: t('Channels'),
@@ -154,6 +156,18 @@ export function useSidebarData(): SidebarData {
             url: '/system-settings/site',
             activeUrls: ['/system-settings'],
             icon: Settings,
+          },
+        ],
+      },
+      {
+        id: 'super-admin',
+        title: t('Super Admin'),
+        requiredRole: ROLE.SUPER_ADMIN,
+        items: [
+          {
+            title: t('News'),
+            url: '/announcements',
+            icon: Newspaper,
           },
         ],
       },

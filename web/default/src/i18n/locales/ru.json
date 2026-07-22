@@ -5041,6 +5041,8 @@
     "Leave blank to let the customer choose": "Оставьте пустым, чтобы клиент выбрал сам",
     "For example, USDTTRC20. Leave blank to show all supported assets.": "Например, USDTTRC20. Оставьте пустым, чтобы показать все доступные активы.",
     "IPN callback URL": "IPN callback URL",
-    "Crypto payments are enabled when API key, IPN secret, and this URL are set.": "Оплата криптовалютой включается после заполнения API-ключа, IPN-секрета и этого URL."
+    "Crypto payments are enabled when API key, IPN secret, and this URL are set.": "Оплата криптовалютой включается после заполнения API-ключа, IPN-секрета и этого URL.",
+    "Loading announcements...": "Загрузка объявлений...",
+    "News": "Новости"
   }
 }

@@ -75,6 +75,7 @@ export type NavGroup = {
   id?: string
   title: string
   items: NavItem[]
+  requiredRole?: number
 }
 
 /**
