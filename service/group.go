@@ -9,37 +9,44 @@ import (
 )
 
 func GetUserUsableGroups(userGroup string) map[string]string {
-	groupsCopy := setting.GetUserUsableGroupsCopy()
-	normalizedGroups := make(map[string]string, len(groupsCopy))
-	for groupName, desc := range groupsCopy {
-		normalizedGroups[ratio_setting.PricingGroupKey(groupName)] = desc
-	}
-	groupsCopy = normalizedGroups
-	if userGroup != "" {
-		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
-		if b {
-			// 处理特殊可用分组
-			for specialGroup, desc := range specialSettings {
-				if strings.HasPrefix(specialGroup, "-:") {
-					// 移除分组
-					groupToRemove := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "-:"))
-					delete(groupsCopy, groupToRemove)
-				} else if strings.HasPrefix(specialGroup, "+:") {
-					// 添加分组
-					groupToAdd := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "+:"))
-					groupsCopy[groupToAdd] = desc
-				} else {
-					// 直接添加分组
-					groupsCopy[ratio_setting.PricingGroupKey(specialGroup)] = desc
-				}
-			}
+	pricingGroups := ratio_setting.GetPricingGroupsCopy()
+	groupsCopy := make(map[string]string, len(pricingGroups))
+	for _, group := range pricingGroups {
+		if group.Selectable {
+			groupsCopy[strconv.Itoa(group.Id)] = group.Description
 		}
+	}
+	if userGroup != "" {
 		// userGroup is a user-domain group. Add it only when it also exists as
 		// a pricing group for legacy installations that intentionally overlap.
+		// Explicit special rules below must have the final say.
 		if pricingGroup, ok := ratio_setting.GetPricingGroupByName(userGroup); ok {
 			userPricingGroup := strconv.Itoa(pricingGroup.Id)
 			if _, ok := groupsCopy[userPricingGroup]; !ok {
 				groupsCopy[userPricingGroup] = "用户分组"
+			}
+		}
+		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
+		if b {
+			// Apply additions first because map iteration order is undefined.
+			for specialGroup, desc := range specialSettings {
+				if strings.HasPrefix(specialGroup, "-:") {
+					continue
+				}
+				if strings.HasPrefix(specialGroup, "+:") {
+					groupToAdd := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "+:"))
+					groupsCopy[groupToAdd] = desc
+				} else {
+					groupsCopy[ratio_setting.PricingGroupKey(specialGroup)] = desc
+				}
+			}
+			// Explicit removals always have the final say.
+			for specialGroup := range specialSettings {
+				if !strings.HasPrefix(specialGroup, "-:") {
+					continue
+				}
+				groupToRemove := ratio_setting.PricingGroupKey(strings.TrimPrefix(specialGroup, "-:"))
+				delete(groupsCopy, groupToRemove)
 			}
 		}
 	}

@@ -175,15 +175,36 @@ func defaultPricingGroupsCopy() []*PricingGroup {
 }
 
 func buildPricingGroupsFromLegacy() []*PricingGroup {
-	return buildPricingGroupsFromLegacyWithIDs(existingPricingGroupIDsByName())
+	return buildPricingGroupsFromLegacyWithIDsAndUsableGroups(existingPricingGroupIDsByName(), nil)
 }
 
 func buildPricingGroupsFromLegacyWithIDs(existingIDs map[string]int) []*PricingGroup {
-	return buildPricingGroupsFromLegacyRatioWithIDs(GetLegacyGroupRatioCopy(), existingIDs)
+	return buildPricingGroupsFromLegacyWithIDsAndUsableGroups(existingIDs, nil)
 }
 
 func buildPricingGroupsFromLegacyRatioWithIDs(legacyRatios map[string]float64, existingIDs map[string]int) []*PricingGroup {
-	legacyUsable := setting.GetUserUsableGroupsCopy()
+	groups := buildPricingGroupsFromLegacyRatioWithIDsAndUsableGroups(legacyRatios, existingIDs, nil)
+	existingGroups := GetPricingGroupsCopy()
+	existingByName := make(map[string]*PricingGroup, len(existingGroups))
+	for _, group := range existingGroups {
+		existingByName[group.Name] = group
+	}
+	for _, group := range groups {
+		existing, ok := existingByName[group.Name]
+		if !ok {
+			continue
+		}
+		group.Selectable = existing.Selectable
+		group.Description = existing.Description
+	}
+	return groups
+}
+
+func buildPricingGroupsFromLegacyWithIDsAndUsableGroups(existingIDs map[string]int, legacyUsable map[string]string) []*PricingGroup {
+	return buildPricingGroupsFromLegacyRatioWithIDsAndUsableGroups(GetLegacyGroupRatioCopy(), existingIDs, legacyUsable)
+}
+
+func buildPricingGroupsFromLegacyRatioWithIDsAndUsableGroups(legacyRatios map[string]float64, existingIDs map[string]int, legacyUsable map[string]string) []*PricingGroup {
 	legacyAuto := setting.GetAutoGroups()
 	legacyGroupRatios := groupGroupRatioMap.ReadAll()
 	legacySpecial := GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll()
@@ -314,6 +335,134 @@ func buildPricingGroupsFromLegacyRatioWithIDs(legacyRatios map[string]float64, e
 		return defaultPricingGroupsCopy()
 	}
 	return normalized
+}
+
+// PricingGroupsFromLegacy builds canonical pricing groups without changing runtime state.
+// It is used only while migrating installations that have no PricingGroups option yet.
+func PricingGroupsFromLegacy(legacyGroupRatio string, legacyUsable map[string]string) (string, error) {
+	groups := make([]*PricingGroup, 0)
+	groupNames := make(map[string]struct{})
+	if strings.TrimSpace(legacyGroupRatio) == "" {
+		groups = defaultPricingGroupsCopy()
+		for _, group := range groups {
+			groupNames[group.Name] = struct{}{}
+		}
+	} else {
+		parsedRatios := make(map[string]float64)
+		if err := common.Unmarshal([]byte(legacyGroupRatio), &parsedRatios); err == nil {
+			normalizedRatios := make(map[string]float64, len(parsedRatios)+1)
+			for rawName, ratio := range parsedRatios {
+				trimmed := strings.TrimSpace(rawName)
+				if _, err := strconv.Atoi(trimmed); err == nil {
+					return "", errors.New("cannot migrate legacy pricing group with numeric name: " + trimmed)
+				}
+				if _, exists := normalizedRatios[trimmed]; exists {
+					return "", errors.New("legacy pricing group name collision after trimming: " + trimmed)
+				}
+				normalizedRatios[trimmed] = ratio
+			}
+			if _, ok := normalizedRatios["default"]; !ok {
+				normalizedRatios["default"] = 1
+			}
+			for name, ratio := range normalizedRatios {
+				id := 0
+				for _, defaultGroup := range defaultPricingGroups {
+					if defaultGroup.Name == name {
+						id = defaultGroup.Id
+						break
+					}
+				}
+				groups = append(groups, &PricingGroup{Id: id, Name: name, Ratio: ratio})
+				groupNames[name] = struct{}{}
+			}
+		} else {
+			normalized, err := NormalizePricingGroupsJSONString(legacyGroupRatio)
+			if err != nil {
+				return "", err
+			}
+			if err := common.Unmarshal([]byte(normalized), &groups); err != nil {
+				return "", err
+			}
+			for _, group := range groups {
+				groupNames[group.Name] = struct{}{}
+			}
+		}
+	}
+
+	if _, ok := groupNames["default"]; !ok {
+		groups = append(groups, &PricingGroup{Id: 1, Name: "default", Ratio: 1})
+		groupNames["default"] = struct{}{}
+	}
+
+	pricingReferences := make([]string, 0)
+	pricingReferences = append(pricingReferences, setting.GetAutoGroups()...)
+	for _, ratios := range groupGroupRatioMap.ReadAll() {
+		for name := range ratios {
+			pricingReferences = append(pricingReferences, name)
+		}
+	}
+	for _, specialGroups := range GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll() {
+		for name := range specialGroups {
+			name = strings.TrimPrefix(strings.TrimPrefix(name, "+:"), "-:")
+			pricingReferences = append(pricingReferences, name)
+		}
+	}
+	for name := range legacyUsable {
+		pricingReferences = append(pricingReferences, name)
+	}
+
+	for _, rawName := range pricingReferences {
+		name := strings.TrimSpace(rawName)
+		if name == "" || name == "auto" {
+			continue
+		}
+		if _, err := strconv.Atoi(name); err == nil {
+			continue
+		}
+		if _, exists := groupNames[name]; exists {
+			continue
+		}
+		groups = append(groups, &PricingGroup{Name: name, Ratio: 1})
+		groupNames[name] = struct{}{}
+	}
+
+	normalizedGroups, err := normalizePricingGroups(groups)
+	if err != nil {
+		return "", err
+	}
+	nameByID := make(map[string]string, len(normalizedGroups))
+	for _, group := range normalizedGroups {
+		nameByID[strconv.Itoa(group.Id)] = group.Name
+	}
+
+	usableByName := make(map[string]string, len(legacyUsable))
+	for rawName, description := range legacyUsable {
+		name := strings.TrimSpace(rawName)
+		if name == "" || name == "auto" {
+			continue
+		}
+		if _, err := strconv.Atoi(name); err == nil {
+			resolvedName, exists := nameByID[name]
+			if !exists {
+				return "", errors.New("cannot migrate legacy usable group with unknown numeric id: " + name)
+			}
+			name = resolvedName
+		}
+		if _, exists := usableByName[name]; exists {
+			return "", errors.New("legacy usable group name collision after normalization: " + name)
+		}
+		usableByName[name] = description
+	}
+
+	for _, group := range normalizedGroups {
+		group.Selectable = false
+		group.Description = ""
+		if description, ok := usableByName[group.Name]; ok {
+			group.Selectable = true
+			group.Description = description
+		}
+	}
+	return pricingGroupsToJSONString(normalizedGroups)
 }
 
 func existingPricingGroupIDsByName() map[string]int {
@@ -537,21 +686,6 @@ func ValidatePricingGroupIDStabilityJSONString(jsonStr string) error {
 	return nil
 }
 
-func updatePricingGroupsFromLegacyRatioJSON(jsonStr string) error {
-	legacy := make(map[string]float64)
-	if err := common.Unmarshal([]byte(jsonStr), &legacy); err != nil {
-		return err
-	}
-	for name, ratio := range legacy {
-		if ratio < 0 {
-			return errors.New("group ratio must be not less than 0: " + name)
-		}
-	}
-	groupRatioMap.Clear()
-	groupRatioMap.AddAll(legacy)
-	return setPricingGroups(buildPricingGroupsFromLegacy())
-}
-
 func UpdatePricingGroupsByJSONString(jsonStr string) error {
 	normalized, err := parsePricingGroupsJSONString(jsonStr)
 	if err != nil {
@@ -657,45 +791,6 @@ func NormalizePricingGroupKeys(groups []string) []string {
 		normalized = append(normalized, key)
 	}
 	return normalized
-}
-
-func NormalizeUserUsableGroupsJSONString(jsonStr string) (string, error) {
-	parsed := make(map[string]string)
-	if err := common.Unmarshal([]byte(jsonStr), &parsed); err != nil {
-		return "", err
-	}
-	normalized := make(map[string]string, len(parsed))
-	for group, desc := range parsed {
-		key := PricingGroupKey(group)
-		if strings.TrimSpace(key) == "" {
-			continue
-		}
-		normalized[key] = desc
-	}
-	bytes, err := common.Marshal(normalized)
-	if err != nil {
-		return "", err
-	}
-	return string(bytes), nil
-}
-
-func NormalizeUserUsableGroups() (string, error) {
-	value, err := NormalizeUserUsableGroupsJSONString(setting.UserUsableGroups2JSONString())
-	if err != nil {
-		return "", err
-	}
-	if err := setting.UpdateUserUsableGroupsByJSONString(value); err != nil {
-		return "", err
-	}
-	return value, nil
-}
-
-func NormalizeUserUsableGroupsJSONStringIfInitialized(jsonStr string) (string, bool, error) {
-	if !pricingGroupsInitialized() {
-		return "", false, nil
-	}
-	value, err := NormalizeUserUsableGroupsJSONString(jsonStr)
-	return value, true, err
 }
 
 func pricingGroupsInitialized() bool {

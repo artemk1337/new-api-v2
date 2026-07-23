@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,12 +16,15 @@ import (
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Option struct {
 	Key   string `json:"key" gorm:"primaryKey"`
 	Value string `json:"value"`
 }
+
+var optionUpdateMutex sync.Mutex
 
 func AllOption() ([]*Option, error) {
 	var options []*Option
@@ -30,6 +34,9 @@ func AllOption() ([]*Option, error) {
 }
 
 func InitOptionMap() {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
 
@@ -158,7 +165,6 @@ func InitOptionMap() {
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = "{}"
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
-	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
 	common.OptionMap["AudioRatio"] = ratio_setting.AudioRatio2JSONString()
@@ -196,18 +202,72 @@ func InitOptionMap() {
 	}
 
 	common.OptionMapRWMutex.Unlock()
-	loadOptionsFromDatabase()
+	loadOptionsFromDatabaseLocked()
 }
 
 func loadOptionsFromDatabase() {
-	options, _ := AllOption()
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
+	loadOptionsFromDatabaseLocked()
+}
+
+func loadOptionsFromDatabaseLocked() {
+	options, err := AllOption()
+	if err != nil {
+		common.SysLog("failed to load options: " + err.Error())
+		return
+	}
+	hasPricingGroups := false
+	hasLegacyUsableGroups := false
+	legacyUsableGroupsValid := true
+	legacyGroupRatio := ""
+	legacyUsableGroups := make(map[string]string)
+	for _, option := range options {
+		switch option.Key {
+		case "PricingGroups":
+			hasPricingGroups = true
+		case "GroupRatio":
+			legacyGroupRatio = option.Value
+		case "UserUsableGroups":
+			hasLegacyUsableGroups = true
+			if err := common.Unmarshal([]byte(option.Value), &legacyUsableGroups); err != nil {
+				common.SysLog("failed to read legacy user usable groups: " + err.Error())
+				legacyUsableGroupsValid = false
+			}
+		}
+	}
+	if !hasLegacyUsableGroups {
+		legacyUsableGroups = map[string]string{
+			"default": "默认分组",
+			"vip":     "vip分组",
+		}
+	}
 	sort.SliceStable(options, func(i, j int) bool {
 		return optionLoadPriority(options[i].Key) < optionLoadPriority(options[j].Key)
 	})
 	for _, option := range options {
+		if option.Key == "GroupRatio" {
+			continue
+		}
 		err := updateOptionMapFromDatabase(option.Key, option.Value)
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
+			if option.Key == "PricingGroups" {
+				return
+			}
+		}
+	}
+	if !hasPricingGroups && !legacyUsableGroupsValid {
+		return
+	}
+	if !hasPricingGroups && legacyUsableGroupsValid {
+		completed, err := migratePricingGroupsFromLegacy(legacyGroupRatio, legacyUsableGroups)
+		if err != nil {
+			common.SysLog("failed to migrate pricing groups: " + err.Error())
+		}
+		if !completed {
+			return
 		}
 	}
 	normalizePricingGroupOptionMaps()
@@ -216,19 +276,31 @@ func loadOptionsFromDatabase() {
 	}
 }
 
+func migratePricingGroupsFromLegacy(legacyGroupRatio string, legacyUsableGroups map[string]string) (bool, error) {
+	value, err := ratio_setting.PricingGroupsFromLegacy(legacyGroupRatio, legacyUsableGroups)
+	if err != nil {
+		return false, err
+	}
+	option := Option{Key: "PricingGroups", Value: value}
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+		return false, err
+	}
+	if err := DB.First(&option, "key = ?", "PricingGroups").Error; err != nil {
+		return false, err
+	}
+	if err := updateOptionMapFromDatabase(option.Key, option.Value); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func normalizePricingGroupOptionMaps() {
 	values := map[string]string{
-		"PricingGroups":    ratio_setting.PricingGroups2JSONString(),
-		"GroupRatio":       ratio_setting.GroupRatio2JSONString(),
-		"GroupGroupRatio":  ratio_setting.GroupGroupRatio2JSONString(),
-		"UserUsableGroups": setting.UserUsableGroups2JSONString(),
+		"PricingGroups":   ratio_setting.PricingGroups2JSONString(),
+		"GroupRatio":      ratio_setting.GroupRatio2JSONString(),
+		"GroupGroupRatio": ratio_setting.GroupGroupRatio2JSONString(),
 	}
 
-	if normalized, err := ratio_setting.NormalizeUserUsableGroups(); err == nil {
-		values["UserUsableGroups"] = normalized
-	} else {
-		common.SysLog("failed to normalize user usable groups: " + err.Error())
-	}
 	if normalized, err := ratio_setting.NormalizeGroupGroupRatio(); err == nil {
 		values["GroupGroupRatio"] = normalized
 	} else {
@@ -254,7 +326,7 @@ func normalizePricingGroupOptionMaps() {
 
 func optionLoadPriority(key string) int {
 	switch key {
-	case "UserUsableGroups", "AutoGroups", "GroupGroupRatio", "group_ratio_setting.group_special_usable_group":
+	case "AutoGroups", "GroupGroupRatio", "group_ratio_setting.group_special_usable_group":
 		return 0
 	case "GroupRatio":
 		return 1
@@ -274,6 +346,12 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
+	if key == "UserUsableGroups" {
+		return nil
+	}
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
@@ -282,26 +360,13 @@ func UpdateOption(key string, value string) error {
 		return err
 	}
 	value = normalizedValue
+	if key == "GroupRatio" {
+		key = "PricingGroups"
+	}
 	if err := normalizePricingGroupReferencesBeforeOptionUpdate(key); err != nil {
 		return err
 	}
-	// Save to database first
-	option := Option{
-		Key: key,
-	}
-	// https://gorm.io/docs/update.html#Save-All-Fields
-	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
-		return err
-	}
-	option.Value = value
-	// Save is a combination function.
-	// If save value does not contain primary key, it will execute Create,
-	// otherwise it will execute Update (with all fields).
-	if err := DB.Save(&option).Error; err != nil {
-		return err
-	}
-	// Update OptionMap
-	return updateOptionMap(key, value)
+	return persistOptionsAndRuntime(map[string]string{key: value})
 }
 
 func normalizePricingGroupReferencesBeforeOptionUpdate(key string) error {
@@ -310,7 +375,7 @@ func normalizePricingGroupReferencesBeforeOptionUpdate(key string) error {
 		if err := normalizePricingGroupOptionReferencesBeforeRename(); err != nil {
 			return err
 		}
-		return NormalizePricingGroupReferences()
+		return normalizePricingGroupReferencesBeforeUpdate()
 	default:
 		return nil
 	}
@@ -318,9 +383,8 @@ func normalizePricingGroupReferencesBeforeOptionUpdate(key string) error {
 
 func normalizePricingGroupOptionReferencesBeforeRename() error {
 	normalizers := map[string]func(string) (string, error){
-		"UserUsableGroups": ratio_setting.NormalizeUserUsableGroupsJSONString,
-		"AutoGroups":       ratio_setting.NormalizeAutoGroupsJSONString,
-		"GroupGroupRatio":  ratio_setting.NormalizeGroupGroupRatioJSONString,
+		"AutoGroups":      ratio_setting.NormalizeAutoGroupsJSONString,
+		"GroupGroupRatio": ratio_setting.NormalizeGroupGroupRatioJSONString,
 		"group_ratio_setting.group_special_usable_group": ratio_setting.NormalizeGroupSpecialUsableGroupJSONString,
 	}
 	for key, normalize := range normalizers {
@@ -374,8 +438,6 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		normalized, ok, err = ratio_setting.NormalizePricingGroupsJSONStringIfInitialized(value)
 	case "AutoGroups":
 		normalized, ok, err = ratio_setting.NormalizeAutoGroupsJSONStringIfInitialized(value)
-	case "UserUsableGroups":
-		normalized, ok, err = ratio_setting.NormalizeUserUsableGroupsJSONStringIfInitialized(value)
 	case "GroupGroupRatio":
 		normalized, ok, err = ratio_setting.NormalizeGroupGroupRatioJSONStringIfInitialized(value)
 	case "group_ratio_setting.group_special_usable_group":
@@ -389,23 +451,30 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 	return normalized, nil
 }
 
-// UpdateOptionsBulk persists multiple key/value pairs in a single database
-// transaction, then dispatches them through updateOptionMap in one pass. If
-// any DB write fails the whole transaction rolls back and no in-memory state
-// is touched — safe for callers that must commit a set of related options
-// atomically (e.g. payment gateway binding).
+// UpdateOptionsBulk persists related options in one transaction and restores
+// the previous runtime values if applying or committing the update fails.
 func UpdateOptionsBulk(values map[string]string) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
 	if len(values) == 0 {
 		return nil
 	}
 	normalizedValues := make(map[string]string, len(values))
-	for k, v := range values {
+	for _, k := range sortedOptionKeys(values) {
+		v := values[k]
+		if k == "UserUsableGroups" {
+			continue
+		}
 		if err := validateOptionValue(k, v); err != nil {
 			return err
 		}
 		normalized, err := normalizeOptionValueForSave(k, v)
 		if err != nil {
 			return err
+		}
+		if k == "GroupRatio" {
+			k = "PricingGroups"
 		}
 		normalizedValues[k] = normalized
 	}
@@ -414,28 +483,140 @@ func UpdateOptionsBulk(values map[string]string) error {
 			return err
 		}
 	}
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		for k, v := range normalizedValues {
-			option := Option{Key: k}
-			if err := tx.FirstOrCreate(&option, Option{Key: k}).Error; err != nil {
+	return persistOptionsAndRuntime(normalizedValues)
+}
+
+func persistOptionsAndRuntime(values map[string]string) error {
+	keys := sortedOptionKeys(values)
+	pricingNormalizer, pricingGroupsChanged, err := pricingGroupNormalizerForOptions(keys, values)
+	if err != nil {
+		return err
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		for _, key := range keys {
+			option := Option{Key: key}
+			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
 				return err
 			}
-			option.Value = v
+			option.Value = values[key]
 			if err := tx.Save(&option).Error; err != nil {
 				return err
 			}
 		}
-		return nil
+		if !pricingGroupsChanged {
+			return nil
+		}
+		if err := normalizeChannelPricingGroupsTxWith(tx, pricingNormalizer.normalizeCSV, pricingNormalizer.normalizeKey); err != nil {
+			return err
+		}
+		if err := normalizeTokenPricingGroupsTxWith(tx, pricingNormalizer.normalizeKey); err != nil {
+			return err
+		}
+		return normalizeTaskPricingGroupsTxWith(tx, pricingNormalizer.normalizeKeyOrDefault)
 	})
 	if err != nil {
 		return err
 	}
-	for k, v := range normalizedValues {
-		if err := updateOptionMap(k, v); err != nil {
+	for _, key := range keys {
+		if err := updateOptionMapFromDatabase(key, values[key]); err != nil {
 			return err
 		}
 	}
+	if pricingGroupsChanged {
+		InvalidatePricingCache()
+	}
 	return nil
+}
+
+type pricingGroupNormalizer struct {
+	normalizeKey          func(string) string
+	normalizeKeyOrDefault func(string) string
+	normalizeCSV          func(string) string
+}
+
+func pricingGroupNormalizerForOptions(keys []string, values map[string]string) (pricingGroupNormalizer, bool, error) {
+	value := ""
+	for _, key := range keys {
+		if key == "GroupRatio" || key == "PricingGroups" {
+			value = values[key]
+		}
+	}
+	if value == "" {
+		return pricingGroupNormalizer{}, false, nil
+	}
+	normalized, err := ratio_setting.NormalizePricingGroupsJSONString(value)
+	if err != nil {
+		return pricingGroupNormalizer{}, false, err
+	}
+	var groups []ratio_setting.PricingGroup
+	if err := common.Unmarshal([]byte(normalized), &groups); err != nil {
+		return pricingGroupNormalizer{}, false, err
+	}
+	keysByReference := make(map[string]string, len(groups)*2)
+	defaultKey := "1"
+	for _, group := range groups {
+		id := strconv.Itoa(group.Id)
+		keysByReference[group.Name] = id
+		keysByReference[id] = id
+		if group.Name == "default" {
+			defaultKey = id
+		}
+	}
+	normalizeKey := func(value string) string {
+		value = strings.TrimSpace(value)
+		if normalized, ok := keysByReference[value]; ok {
+			return normalized
+		}
+		return value
+	}
+	normalizeKeyOrDefault := func(value string) string {
+		value = strings.TrimSpace(value)
+		if value == "auto" {
+			return value
+		}
+		if normalized, ok := keysByReference[value]; ok {
+			return normalized
+		}
+		return defaultKey
+	}
+	normalizeCSV := func(value string) string {
+		parts := strings.Split(strings.Trim(value, ","), ",")
+		normalized := make([]string, 0, len(parts))
+		seen := make(map[string]struct{}, len(parts))
+		for _, part := range parts {
+			key := normalizeKey(part)
+			if key == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			normalized = append(normalized, key)
+		}
+		return strings.Join(normalized, ",")
+	}
+	return pricingGroupNormalizer{
+		normalizeKey:          normalizeKey,
+		normalizeKeyOrDefault: normalizeKeyOrDefault,
+		normalizeCSV:          normalizeCSV,
+	}, true, nil
+}
+
+func sortedOptionKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		iPricing := keys[i] == "GroupRatio" || keys[i] == "PricingGroups"
+		jPricing := keys[j] == "GroupRatio" || keys[j] == "PricingGroups"
+		if iPricing != jPricing {
+			return iPricing
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
 }
 
 func updateOptionMapFromDatabase(key string, value string) error {
@@ -447,6 +628,9 @@ func updateOptionMap(key string, value string) error {
 }
 
 func updateOptionMapWithPricingReferenceNormalization(key string, value string, normalizePricingReferences bool) (err error) {
+	if key == "UserUsableGroups" {
+		return nil
+	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	if common.OptionMap == nil {
@@ -762,8 +946,6 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		}
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
-	case "UserUsableGroups":
-		err = setting.UpdateUserUsableGroupsByJSONString(value)
 	case "CompletionRatio":
 		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
 	case "ModelPrice":

@@ -1,14 +1,17 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestNormalizeModelNames(t *testing.T) {
@@ -82,6 +85,53 @@ func TestCollectPendingApplyUpstreamModelChanges(t *testing.T) {
 
 	require.Equal(t, []string{"gpt-4o", "gpt-4.1"}, pendingAddModels)
 	require.Equal(t, []string{"old-model"}, pendingRemoveModels)
+}
+
+func TestApplyChannelUpstreamModelUpdatesRollsBackWhenAbilityBatchFails(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+
+	channel := &model.Channel{
+		Name:   "upstream-model-rollback",
+		Key:    "test-key",
+		Models: "original-model",
+		Group:  "default",
+	}
+	require.NoError(t, channel.Insert())
+
+	models := make([]string, 51)
+	for i := range models {
+		models[i] = "updated-model-" + strconv.Itoa(i)
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamModelUpdateLastDetectedModels: models,
+	})
+
+	callbackName := "test:fail_second_upstream_ability_batch"
+	abilityBatch := 0
+	require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != "abilities" {
+			return
+		}
+		abilityBatch++
+		if abilityBatch == 2 {
+			tx.AddError(errors.New("second upstream ability batch failed"))
+		}
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, db.Callback().Create().Remove(callbackName))
+	})
+
+	_, _, _, _, _, err := applyChannelUpstreamModelUpdates(channel, models, nil, nil)
+	require.ErrorContains(t, err, "second upstream ability batch failed")
+
+	var reloaded model.Channel
+	require.NoError(t, db.First(&reloaded, channel.Id).Error)
+	require.Equal(t, "original-model", reloaded.Models)
+	require.Empty(t, reloaded.GetOtherSettings().UpstreamModelUpdateLastDetectedModels)
+
+	var abilityModels []string
+	require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ?", channel.Id).Pluck("model", &abilityModels).Error)
+	require.Equal(t, []string{"original-model"}, abilityModels)
 }
 
 func TestNormalizeChannelModelMapping(t *testing.T) {

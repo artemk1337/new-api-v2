@@ -6,7 +6,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -61,18 +60,15 @@ func TestBuildOpenAIModelFallsBackToCustomForUnknownModels(t *testing.T) {
 
 func TestGetModelListGroupsUsesUserUsablePricingGroupsWhenTokenGroupIsEmpty(t *testing.T) {
 	originalGroups := ratio_setting.PricingGroups2JSONString()
-	originalUsableGroups := setting.UserUsableGroups2JSONString()
 	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
 		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
 	})
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
 		{"id":2,"name":"vip","ratio":1,"selectable":true}
 	]`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
 	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
 
 	gin.SetMode(gin.TestMode)

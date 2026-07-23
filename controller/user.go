@@ -595,6 +595,22 @@ func GetUserModels(c *gin.Context) {
 	groups := service.GetUserUsableGroups(user.Group)
 	group := ratio_setting.PricingGroupKey(c.Query("group"))
 	if group != "" {
+		if group == "auto" {
+			var models []string
+			for _, autoGroup := range service.GetUserAutoGroup(user.Group) {
+				for _, modelName := range model.GetGroupEnabledModels(autoGroup) {
+					if !common.StringsContains(models, modelName) {
+						models = append(models, modelName)
+					}
+				}
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"message": "",
+				"data":    models,
+			})
+			return
+		}
 		if _, ok := groups[group]; !ok {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,

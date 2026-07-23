@@ -413,7 +413,7 @@ func TokenAuth() func(c *gin.Context) {
 			tokenGroupKey := ratio_setting.PricingGroupKey(tokenGroup)
 			displayGroup := ratio_setting.PricingGroupNameByKey(tokenGroupKey)
 			if tokenGroupKey != "auto" {
-				// check common.UserUsableGroups[userGroup]
+				// check selectable pricing groups and user-group overrides
 				if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroupKey]; !ok {
 					abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("No permission to access %s group", displayGroup))
 					return

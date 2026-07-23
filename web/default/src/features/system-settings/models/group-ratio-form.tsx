@@ -63,7 +63,6 @@ type GroupFormValues = {
   GroupRatio: string
   PricingGroups: string
   TopupGroupRatio: string
-  UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
   DefaultUseAutoGroup: boolean
@@ -182,7 +181,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
           <SettingsForm onSubmit={form.handleSubmit(onSave)}>
             <FormField
               control={form.control}
-              name='GroupRatio'
+              name='PricingGroups'
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t('Group ratios')}</FormLabel>
@@ -213,25 +212,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                       'Optional multiplier per user group used when calculating recharge pricing. Provide a JSON object such as'
                     )}
                     {` { "default": 1, "vip": 1.2 }`}.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name='UserUsableGroups'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Selectable groups')}</FormLabel>
-                  <FormControl>
-                    <Textarea rows={6} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'JSON map of group → description exposed when users create API keys.'
-                    )}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

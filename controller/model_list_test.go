@@ -173,17 +173,14 @@ func decodeUserModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 
 func TestListModelsAnthropicAllowsEmptyModelList(t *testing.T) {
 	originalGroups := ratio_setting.PricingGroups2JSONString()
-	originalUsableGroups := setting.UserUsableGroups2JSONString()
 	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
 		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
 	})
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true}
 	]`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{}`))
 	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
 
 	recorder := httptest.NewRecorder()
@@ -235,6 +232,53 @@ func TestGetUserModelsFiltersByRequestedGroup(t *testing.T) {
 	GetUserModels(vipContext)
 
 	require.Empty(t, decodeUserModelsResponse(t, vipRecorder))
+}
+
+func TestGetUserModelsAutoReturnsDeduplicatedModelsFromAvailableAutoGroups(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       1003,
+		Username: "auto-model-user",
+		Password: "password",
+		Group:    "paid-users",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "1", Model: "zz-auto-shared-model", ChannelId: 1, Enabled: true},
+		{Group: "1", Model: "zz-auto-default-model", ChannelId: 1, Enabled: true},
+		{Group: "2", Model: "zz-auto-shared-model", ChannelId: 2, Enabled: true},
+		{Group: "2", Model: "zz-auto-vip-model", ChannelId: 2, Enabled: true},
+		{Group: "3", Model: "zz-auto-unavailable-model", ChannelId: 3, Enabled: true},
+	}).Error)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1,"selectable":true},
+		{"id":3,"name":"private","ratio":1,"selectable":false}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["1","2","3"]`))
+	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/user/models?group=auto", nil)
+	ctx.Set("id", 1003)
+
+	GetUserModels(ctx)
+
+	require.ElementsMatch(t, []string{
+		"zz-auto-shared-model",
+		"zz-auto-default-model",
+		"zz-auto-vip-model",
+	}, decodeUserModelsResponse(t, recorder))
 }
 
 func TestListModelsIncludesTieredBillingModel(t *testing.T) {

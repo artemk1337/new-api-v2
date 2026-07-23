@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -15,8 +14,11 @@ import (
 
 func TestSelectCheapestAvailableGroupChoosesLowestRatioWithChannel(t *testing.T) {
 	restoreGroupSettings(t)
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":0.8,"budget":0.5}`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP","budget":"Budget"}`))
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":0.8,"selectable":true},
+		{"id":3,"name":"budget","ratio":0.5,"selectable":true}
+	]`))
 
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	param := &RetryParam{
@@ -40,8 +42,10 @@ func TestSelectCheapestAvailableGroupChoosesLowestRatioWithChannel(t *testing.T)
 
 func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
 	restoreGroupSettings(t)
-	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"budget":0.5}`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","budget":"Budget"}`))
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"budget","ratio":0.5,"selectable":true}
+	]`))
 
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	param := &RetryParam{
@@ -68,12 +72,10 @@ func TestSelectCheapestAvailableGroupSkipsGroupsWithoutModel(t *testing.T) {
 func restoreGroupSettings(t *testing.T) {
 	t.Helper()
 
-	oldGroupRatio := ratio_setting.GroupRatio2JSONString()
+	oldPricingGroups := ratio_setting.PricingGroups2JSONString()
 	oldGroupSpecialUsableGroup := ratio_setting.GroupSpecialUsableGroup2JSONString()
-	oldUserUsableGroups := setting.UserUsableGroups2JSONString()
 	t.Cleanup(func() {
-		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(oldGroupRatio))
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(oldPricingGroups))
 		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(oldGroupSpecialUsableGroup))
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(oldUserUsableGroups))
 	})
 }

@@ -333,6 +333,22 @@ func NormalizePricingGroupReferences() error {
 	return err
 }
 
+func normalizePricingGroupReferencesBeforeUpdate() error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := normalizeChannelPricingGroupsTx(tx); err != nil {
+			return err
+		}
+		if err := normalizeTokenPricingGroupsTx(tx); err != nil {
+			return err
+		}
+		return normalizeTaskPricingGroupsTxWith(tx, ratio_setting.PricingGroupKey)
+	})
+	if err == nil {
+		InvalidatePricingCache()
+	}
+	return err
+}
+
 func NormalizeChannelPricingGroups() error {
 	err := DB.Transaction(normalizeChannelPricingGroupsTx)
 	if err == nil {
@@ -342,38 +358,49 @@ func NormalizeChannelPricingGroups() error {
 }
 
 func normalizeChannelPricingGroupsTx(tx *gorm.DB) error {
+	return normalizeChannelPricingGroupsTxWith(tx, ratio_setting.PricingGroupKeysCSV, ratio_setting.PricingGroupKey)
+}
+
+func normalizeChannelPricingGroupsTxWith(tx *gorm.DB, normalizeCSV func(string) string, normalizeKey func(string) string) error {
 	var channels []*Channel
 	if err := tx.Find(&channels).Error; err != nil {
 		return err
 	}
 
 	for _, channel := range channels {
-		normalizedGroup := ratio_setting.PricingGroupKeysCSV(channel.Group)
+		normalizedGroup := normalizeCSV(channel.Group)
 		if normalizedGroup == "" {
-			normalizedGroup = ratio_setting.PricingGroupKey("default")
+			normalizedGroup = normalizeKey("default")
 		}
 		needsRebuild := normalizedGroup != channel.Group
-		desiredGroups := make(map[string]struct{})
-		for _, group := range strings.Split(normalizedGroup, ",") {
-			group = strings.TrimSpace(group)
-			if group != "" {
-				desiredGroups[group] = struct{}{}
-			}
-		}
 		if !needsRebuild {
-			var abilityGroups []string
-			if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Pluck("group", &abilityGroups).Error; err != nil {
+			desiredAbilities := make(map[string]struct{})
+			for _, model := range strings.Split(channel.Models, ",") {
+				for _, group := range ratio_setting.NormalizePricingGroupKeys(strings.Split(normalizedGroup, ",")) {
+					desiredAbilities[group+"\x00"+model] = struct{}{}
+				}
+			}
+
+			var abilities []Ability
+			if err := tx.Select("group", "model").Where("channel_id = ?", channel.Id).Find(&abilities).Error; err != nil {
 				return err
 			}
-			for _, abilityGroup := range abilityGroups {
-				abilityGroup = strings.TrimSpace(abilityGroup)
-				if ratio_setting.PricingGroupKey(abilityGroup) != abilityGroup {
-					needsRebuild = true
-					break
+			if len(abilities) != len(desiredAbilities) {
+				needsRebuild = true
+			} else {
+				for _, ability := range abilities {
+					if _, ok := desiredAbilities[ability.Group+"\x00"+ability.Model]; !ok {
+						needsRebuild = true
+						break
+					}
 				}
-				if _, ok := desiredGroups[abilityGroup]; !ok {
-					needsRebuild = true
-					break
+			}
+			if !needsRebuild {
+				for _, ability := range abilities {
+					if normalizeKey(ability.Group) != ability.Group {
+						needsRebuild = true
+						break
+					}
 				}
 			}
 		}
@@ -392,12 +419,16 @@ func normalizeChannelPricingGroupsTx(tx *gorm.DB) error {
 }
 
 func normalizeTokenPricingGroupsTx(tx *gorm.DB) error {
+	return normalizeTokenPricingGroupsTxWith(tx, ratio_setting.PricingGroupKey)
+}
+
+func normalizeTokenPricingGroupsTxWith(tx *gorm.DB, normalizeKey func(string) string) error {
 	var tokens []*Token
 	if err := tx.Where(commonGroupCol+" <> ?", "").Find(&tokens).Error; err != nil {
 		return err
 	}
 	for _, token := range tokens {
-		normalizedGroup := ratio_setting.PricingGroupKey(token.Group)
+		normalizedGroup := normalizeKey(token.Group)
 		if normalizedGroup == "" || normalizedGroup == token.Group {
 			continue
 		}
@@ -409,12 +440,16 @@ func normalizeTokenPricingGroupsTx(tx *gorm.DB) error {
 }
 
 func normalizeTaskPricingGroupsTx(tx *gorm.DB) error {
+	return normalizeTaskPricingGroupsTxWith(tx, ratio_setting.PricingGroupKeyOrDefault)
+}
+
+func normalizeTaskPricingGroupsTxWith(tx *gorm.DB, normalizeKeyOrDefault func(string) string) error {
 	var tasks []*Task
 	if err := tx.Where(commonGroupCol+" <> ?", "").Find(&tasks).Error; err != nil {
 		return err
 	}
 	for _, task := range tasks {
-		normalizedGroup := ratio_setting.PricingGroupKeyOrDefault(task.Group)
+		normalizedGroup := normalizeKeyOrDefault(task.Group)
 		if normalizedGroup == task.Group {
 			continue
 		}
@@ -577,7 +612,11 @@ func BatchInsertChannels(channels []Channel) error {
 			}
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	InvalidatePricingCache()
+	return nil
 }
 
 func BatchDeleteChannels(ids []int) error {
@@ -599,7 +638,11 @@ func BatchDeleteChannels(ids []int) error {
 			return err
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	InvalidatePricingCache()
+	return nil
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -646,13 +689,17 @@ func (channel *Channel) Insert() error {
 	if channel.Group == "" {
 		channel.Group = ratio_setting.PricingGroupKey("default")
 	}
-	var err error
-	err = DB.Create(channel).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(channel).Error; err != nil {
+			return err
+		}
+		return channel.AddAbilities(tx)
+	})
 	if err != nil {
 		return err
 	}
-	err = channel.AddAbilities(nil)
-	return err
+	InvalidatePricingCache()
+	return nil
 }
 
 func (channel *Channel) Update() error {
@@ -698,14 +745,20 @@ func (channel *Channel) Update() error {
 			}
 		}
 	}
-	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(channel).Updates(channel).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(channel).First(channel, "id = ?", channel.Id).Error; err != nil {
+			return err
+		}
+		return channel.UpdateAbilities(tx)
+	})
 	if err != nil {
 		return err
 	}
-	DB.Model(channel).First(channel, "id = ?", channel.Id)
-	err = channel.UpdateAbilities(nil)
-	return err
+	InvalidatePricingCache()
+	return nil
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
@@ -876,7 +929,9 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
+				return
 			}
+			InvalidatePricingCache()
 		}
 	}()
 	channel, err := GetChannelById(channelId, true)
@@ -919,8 +974,11 @@ func EnableChannelByTag(tag string) error {
 	if err != nil {
 		return err
 	}
-	err = UpdateAbilityStatusByTag(tag, true)
-	return err
+	if err = UpdateAbilityStatusByTag(tag, true); err != nil {
+		return err
+	}
+	InvalidatePricingCache()
+	return nil
 }
 
 func DisableChannelByTag(tag string) error {
@@ -928,8 +986,11 @@ func DisableChannelByTag(tag string) error {
 	if err != nil {
 		return err
 	}
-	err = UpdateAbilityStatusByTag(tag, false)
-	return err
+	if err = UpdateAbilityStatusByTag(tag, false); err != nil {
+		return err
+	}
+	InvalidatePricingCache()
+	return nil
 }
 
 func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, priority *int64, weight *uint, paramOverride *string, headerOverride *string) error {
@@ -968,25 +1029,29 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.HeaderOverride = headerOverride
 	}
 
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error; err != nil {
+			return err
+		}
+		if shouldReCreateAbilities {
+			var channels []*Channel
+			if err := tx.Where("tag = ?", updatedTag).Find(&channels).Error; err != nil {
+				return err
+			}
+			for _, channel := range channels {
+				if err := channel.UpdateAbilities(tx); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return updateAbilityByTag(tx, tag, newTag, priority, weight)
+	})
 	if err != nil {
 		return err
 	}
 	if shouldReCreateAbilities {
-		channels, err := GetChannelsByTag(updatedTag, false, false)
-		if err == nil {
-			for _, channel := range channels {
-				err = channel.UpdateAbilities(nil)
-				if err != nil {
-					common.SysLog(fmt.Sprintf("failed to update abilities: channel_id=%d, tag=%s, error=%v", channel.Id, channel.GetTag(), err))
-				}
-			}
-		}
-	} else {
-		err := UpdateAbilityByTag(tag, newTag, priority, weight)
-		if err != nil {
-			return err
-		}
+		InvalidatePricingCache()
 	}
 	return nil
 }

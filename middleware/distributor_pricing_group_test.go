@@ -8,7 +8,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -41,11 +40,9 @@ func TestGetModelRequestNormalizesPlaygroundGroupName(t *testing.T) {
 
 func TestCanUsePlaygroundPricingGroupUsesUserGroupDomain(t *testing.T) {
 	originalGroups := ratio_setting.PricingGroups2JSONString()
-	originalUsable := setting.UserUsableGroups2JSONString()
 	originalSpecial := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
 		ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Clear()
 		ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.AddAll(originalSpecial)
 	})
@@ -54,7 +51,6 @@ func TestCanUsePlaygroundPricingGroupUsesUserGroupDomain(t *testing.T) {
 		{"id":2,"name":"locked","ratio":1,"selectable":true},
 		{"id":3,"name":"vip","ratio":1,"selectable":true}
 	]`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Clear()
 	ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Set("paid-user", map[string]string{
 		"+:vip": "VIP",

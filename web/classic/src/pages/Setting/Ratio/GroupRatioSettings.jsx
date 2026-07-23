@@ -51,8 +51,7 @@ import GroupSpecialUsableRules from './components/GroupSpecialUsableRules';
 const { Text, Title, Paragraph } = Typography;
 
 const OPTION_KEYS = [
-  'GroupRatio',
-  'UserUsableGroups',
+  'PricingGroups',
   'GroupGroupRatio',
   'group_ratio_setting.group_special_usable_group',
   'AutoGroups',
@@ -68,6 +67,28 @@ function parseJSONSafe(str, fallback) {
   }
 }
 
+function verifyPricingGroupsJSON(value) {
+  if (!verifyJSON(value)) return false;
+
+  const groups = JSON.parse(value);
+  return (
+    Array.isArray(groups) &&
+    groups.every(
+      (group) =>
+        group &&
+        typeof group === 'object' &&
+        !Array.isArray(group) &&
+        typeof group.name === 'string' &&
+        typeof group.ratio === 'number' &&
+        typeof group.selectable === 'boolean' &&
+        Number.isInteger(group.id) &&
+        group.id > 0 &&
+        (group.description === undefined ||
+          typeof group.description === 'string'),
+    )
+  );
+}
+
 export default function GroupRatioSettings(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -75,8 +96,7 @@ export default function GroupRatioSettings(props) {
   const [showGuide, setShowGuide] = useState(false);
 
   const [inputs, setInputs] = useState({
-    GroupRatio: '',
-    UserUsableGroups: '',
+    PricingGroups: '',
     GroupGroupRatio: '',
     'group_ratio_setting.group_special_usable_group': '',
     AutoGroups: '',
@@ -87,7 +107,7 @@ export default function GroupRatioSettings(props) {
   const dataVersionRef = useRef(0);
 
   const groupOptions = useMemo(() => {
-    const ratioValue = parseJSONSafe(inputs.GroupRatio, {});
+    const ratioValue = parseJSONSafe(inputs.PricingGroups, {});
     if (Array.isArray(ratioValue)) {
       return ratioValue.map((group) => ({
         value: String(group.id ?? group.name),
@@ -98,7 +118,7 @@ export default function GroupRatioSettings(props) {
       value: name,
       label: name,
     }));
-  }, [inputs.GroupRatio]);
+  }, [inputs.PricingGroups]);
 
   async function onSubmit() {
     if (editMode === 'manual') {
@@ -164,8 +184,8 @@ export default function GroupRatioSettings(props) {
   }, [props.options]);
 
   const handleGroupTableChange = useCallback(
-    ({ GroupRatio, UserUsableGroups }) => {
-      setInputs((prev) => ({ ...prev, GroupRatio, UserUsableGroups }));
+    ({ PricingGroups }) => {
+      setInputs((prev) => ({ ...prev, PricingGroups }));
     },
     [],
   );
@@ -195,8 +215,7 @@ export default function GroupRatioSettings(props) {
         </Text>
         <GroupTable
           key={`gt_${dv}`}
-          groupRatio={inputs.GroupRatio}
-          userUsableGroups={inputs.UserUsableGroups}
+          groupRatio={inputs.PricingGroups}
           onChange={handleGroupTableChange}
         />
       </Form.Section>
@@ -279,49 +298,23 @@ export default function GroupRatioSettings(props) {
         <Row gutter={16}>
           <Col xs={24} sm={16}>
             <Form.TextArea
-              label={t('分组倍率')}
-              placeholder={t('为一个 JSON 文本，键为分组名称，值为倍率')}
+              label={t('计费分组')}
+              placeholder={t('为一个 JSON 数组，每项包含 id、name、ratio、selectable 和 description')}
               extraText={t(
-                '分组倍率设置，可以在此处新增分组或修改现有分组的倍率，格式为 JSON 字符串，例如：{"vip": 0.5, "test": 1}，表示 vip 分组的倍率为 0.5，test 分组的倍率为 1',
+                '计费分组设置，格式为 JSON 数组。selectable 为 true 时用户可在创建令牌时选择该分组，例如：[{"id": 1, "name": "default", "ratio": 1, "selectable": true, "description": "默认分组"}]',
               )}
-              field={'GroupRatio'}
+              field={'PricingGroups'}
               autosize={{ minRows: 6, maxRows: 12 }}
               trigger='blur'
               stopValidateWithError
               rules={[
                 {
-                  validator: (rule, value) => verifyJSON(value),
-                  message: t('不是合法的 JSON 字符串'),
+                  validator: (rule, value) => verifyPricingGroupsJSON(value),
+                  message: t('必须是合法的计费分组 JSON 数组'),
                 },
               ]}
               onChange={(value) =>
-                setInputs((prev) => ({ ...prev, GroupRatio: value }))
-              }
-            />
-          </Col>
-        </Row>
-        <Row gutter={16}>
-          <Col xs={24} sm={16}>
-            <Form.TextArea
-              label={t('用户可选分组')}
-              placeholder={t(
-                '为一个 JSON 文本，键为分组名称，值为分组描述',
-              )}
-              extraText={t(
-                '用户新建令牌时可选的分组，格式为 JSON 字符串，例如：{"vip": "VIP 用户", "test": "测试"}，表示用户可以选择 vip 分组和 test 分组',
-              )}
-              field={'UserUsableGroups'}
-              autosize={{ minRows: 6, maxRows: 12 }}
-              trigger='blur'
-              stopValidateWithError
-              rules={[
-                {
-                  validator: (rule, value) => verifyJSON(value),
-                  message: t('不是合法的 JSON 字符串'),
-                },
-              ]}
-              onChange={(value) =>
-                setInputs((prev) => ({ ...prev, UserUsableGroups: value }))
+                setInputs((prev) => ({ ...prev, PricingGroups: value }))
               }
             />
           </Col>
@@ -592,13 +585,12 @@ export default function GroupRatioSettings(props) {
 
             <GuideSection title={t('JSON 格式参考')}>
               <Paragraph size='small' style={{ marginBottom: 4 }}>
-                <Text strong code>GroupRatio</Text>{' — '}{t('分组名称到倍率的映射')}
+                <Text strong code>PricingGroups</Text>{' — '}{t('计费分组数组，包含倍率、用户可选状态和描述')}
               </Paragraph>
-              <CodeBlock>{`{"default": 1, "vip": 0.5, "standard": 1, "premium": 0.5}`}</CodeBlock>
-              <Paragraph size='small' style={{ marginBottom: 4, marginTop: 8 }}>
-                <Text strong code>UserUsableGroups</Text>{' — '}{t('用户可选分组的名称和描述（只包含勾选了用户可选的分组）')}
-              </Paragraph>
-              <CodeBlock>{`{"standard": "${t('标准价格')}", "premium": "${t('高级套餐，半价优惠')}"}`}</CodeBlock>
+              <CodeBlock>{`[
+  {"id": 1, "name": "default", "ratio": 1, "selectable": true, "description": "${t('默认分组')}"},
+  {"id": 2, "name": "vip", "ratio": 0.5, "selectable": true, "description": "${t('VIP 分组')}"}
+]`}</CodeBlock>
             </GuideSection>
           </div>
         </Tabs.TabPane>

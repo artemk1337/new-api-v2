@@ -5,7 +5,6 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +25,7 @@ func GetUserGroups(c *gin.Context) {
 	userGroup, _ = model.GetUserGroup(userId, false)
 	userUsableGroups := service.GetUserUsableGroups(userGroup)
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
-		// UserUsableGroups contains the groups that the user can use
+		// Usable groups are derived from selectable pricing groups.
 		if desc, ok := userUsableGroups[groupName]; ok {
 			displayName := ratio_setting.PricingGroupNameByKey(groupName)
 			if displayName == "" {
@@ -40,10 +39,10 @@ func GetUserGroups(c *gin.Context) {
 			}
 		}
 	}
-	if _, ok := userUsableGroups["auto"]; ok {
+	if len(service.GetUserAutoGroup(userGroup)) > 0 {
 		usableGroups["auto"] = map[string]interface{}{
 			"ratio": "自动",
-			"desc":  setting.GetUsableGroupDescription("auto"),
+			"desc":  "自动分组",
 			"id":    "auto",
 			"name":  "auto",
 		}

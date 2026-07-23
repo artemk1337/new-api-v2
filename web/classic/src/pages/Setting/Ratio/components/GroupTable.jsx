@@ -25,51 +25,35 @@ function parseJSON(str, fallback) {
   }
 }
 
-function buildRows(groupRatioStr, userUsableGroupsStr) {
+function buildRows(groupRatioStr) {
   const ratioMap = parseJSON(groupRatioStr, {});
-  const usableMap = parseJSON(userUsableGroupsStr, {});
 
   if (Array.isArray(ratioMap)) {
     return ratioMap.map((group) => {
       const id = group.id == null ? '' : String(group.id);
-      const usableValue = usableMap[id] ?? usableMap[group.name];
       return {
         _id: uid(),
         id,
         name: group.name || id,
         ratio: group.ratio ?? 1,
-        selectable: group.selectable ?? usableValue !== undefined,
-        description: group.description ?? usableValue ?? '',
+        selectable: group.selectable ?? false,
+        description: group.description ?? '',
       };
     });
   }
 
-  const allNames = new Set([
-    ...Object.keys(ratioMap),
-    ...Object.keys(usableMap),
-  ]);
-
-  return Array.from(allNames).map((name) => ({
+  return Object.keys(ratioMap).map((name) => ({
     _id: uid(),
     name,
     ratio: ratioMap[name] ?? 1,
-    selectable: name in usableMap,
-    description: usableMap[name] ?? '',
+    selectable: false,
+    description: '',
   }));
 }
 
 export function serializeGroupTable(rows) {
-  const userUsableGroups = {};
-
-  rows.forEach((row) => {
-    if (!row.name) return;
-    if (row.selectable) {
-      userUsableGroups[row.id || row.name] = row.description;
-    }
-  });
-
   return {
-    GroupRatio: JSON.stringify(
+    PricingGroups: JSON.stringify(
       rows
         .filter((row) => row.name)
         .map((row) => ({
@@ -82,15 +66,14 @@ export function serializeGroupTable(rows) {
       null,
       2,
     ),
-    UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
   };
 }
 
-export default function GroupTable({ groupRatio, userUsableGroups, onChange }) {
+export default function GroupTable({ groupRatio, onChange }) {
   const { t } = useTranslation();
 
   const [rows, setRows] = useState(() =>
-    buildRows(groupRatio, userUsableGroups),
+    buildRows(groupRatio),
   );
 
   // Use functional setRows to keep updateRow/addRow/removeRow referentially

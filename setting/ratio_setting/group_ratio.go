@@ -91,7 +91,11 @@ func UpdateGroupRatioByJSONString(jsonStr string) error {
 	if err := common.Unmarshal([]byte(jsonStr), &groups); err == nil {
 		return UpdatePricingGroupsByJSONString(jsonStr)
 	}
-	return updatePricingGroupsFromLegacyRatioJSON(jsonStr)
+	normalized, err := NormalizeGroupRatioJSONStringForSave(jsonStr)
+	if err != nil {
+		return err
+	}
+	return UpdatePricingGroupsByJSONString(normalized)
 }
 
 func NormalizeGroupRatioJSONStringForSave(jsonStr string) (string, error) {

@@ -18,20 +18,17 @@ func TestGetUserGroupsReturnsPricingGroupRefs(t *testing.T) {
 	require.NoError(t, db.Create(&model.User{Id: 1, Username: "alice", Group: "paid-users"}).Error)
 
 	originalGroups := ratio_setting.PricingGroups2JSONString()
-	originalUsable := setting.UserUsableGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
 	})
 
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
 		{"id":2,"name":"Renamed VIP","ratio":1.2,"selectable":true,"description":"vip"}
 	]`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{
-		"2": "vip desc",
-		"auto": "auto desc"
-	}`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["1"]`))
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -53,8 +50,6 @@ func TestGetUserGroupsReturnsPricingGroupRefs(t *testing.T) {
 	require.True(t, payload.Success)
 	require.Equal(t, "2", payload.Data["2"].Id)
 	require.Equal(t, "Renamed VIP", payload.Data["2"].Name)
-	require.Equal(t, "vip desc", payload.Data["2"].Desc)
+	require.Equal(t, "vip", payload.Data["2"].Desc)
 	require.Equal(t, "auto", payload.Data["auto"].Id)
-	require.Equal(t, "auto", payload.Data["auto"].Name)
-	require.Equal(t, "auto desc", payload.Data["auto"].Desc)
 }

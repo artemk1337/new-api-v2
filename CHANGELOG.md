@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.45
+
+- Made `PricingGroups[].selectable` the source of user-visible pricing groups across model listings, pricing responses, API keys, and auto-group selection.
+- Migrated legacy group availability safely into canonical pricing groups while preserving stable IDs, descriptions, and rollback compatibility.
+- Rebuilt incomplete channel abilities atomically and invalidated pricing data immediately after group or channel-status changes.
+
 ## v1.1.44
 
 - Вынесено управление новостями в отдельный раздел меню Super Admin с сохранением совместимости со старыми настройками анонсов.

@@ -10,7 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -36,7 +35,6 @@ func TestMain(m *testing.M) {
 
 func TestTokenAuthReturnsEnglishForUnavailableTokenGroup(t *testing.T) {
 	resetTokenAuthTestState(t)
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"claude":1}`))
 	createTokenAuthUserAndToken(t, "default", "claude")
 
@@ -46,15 +44,14 @@ func TestTokenAuthReturnsEnglishForUnavailableTokenGroup(t *testing.T) {
 	assert.Equal(t, "new_api_error", body.Get("error.type").String())
 }
 
-func TestTokenAuthReturnsEnglishForDeprecatedTokenGroup(t *testing.T) {
+func TestTokenAuthRejectsDeprecatedTokenGroup(t *testing.T) {
 	resetTokenAuthTestState(t)
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","claude":"Claude"}`))
 	createTokenAuthUserAndToken(t, "default", "claude")
 
 	body := performTokenAuthRequest(t, http.StatusForbidden)
 
-	assert.Equal(t, "Group claude has been deprecated (request id: test-request-id)", body.Get("error.message").String())
+	assert.Equal(t, "No permission to access claude group (request id: test-request-id)", body.Get("error.message").String())
 	assert.Equal(t, "new_api_error", body.Get("error.type").String())
 }
 
@@ -70,7 +67,6 @@ func TestTokenAuthAllowsAutoTokenGroup(t *testing.T) {
 
 func TestTokenAuthDoesNotTreatNumericUserGroupAsPricingID(t *testing.T) {
 	resetTokenAuthTestState(t)
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default"}`))
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
 		{"id":2,"name":"vip","ratio":1,"selectable":true}
@@ -88,7 +84,6 @@ func resetTokenAuthTestState(t *testing.T) {
 	require.NoError(t, model.DB.Exec("DELETE FROM tokens").Error)
 	require.NoError(t, model.DB.Exec("DELETE FROM users").Error)
 	t.Cleanup(func() {
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"默认分组","vip":"vip分组"}`))
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1,"svip":1}`))
 	})
 }

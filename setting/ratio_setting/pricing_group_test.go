@@ -3,6 +3,7 @@ package ratio_setting
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -196,62 +197,6 @@ func TestNormalizeAutoGroupsUsesPricingGroupIDs(t *testing.T) {
 	assert.Equal(t, []string{"1", "2", "missing"}, setting.GetAutoGroups())
 }
 
-func TestLegacyUsableOnlyGroupDefaultsRatioToOne(t *testing.T) {
-	originalGroups := PricingGroups2JSONString()
-	originalUsable := setting.UserUsableGroups2JSONString()
-	originalSpecial := GroupSpecialUsableGroup2JSONString()
-	originalGroupGroupRatio := GroupGroupRatio2JSONString()
-	originalAutoGroups := setting.AutoGroups2JsonString()
-	t.Cleanup(func() {
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
-		require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(originalSpecial))
-		require.NoError(t, UpdateGroupGroupRatioByJSONString(originalGroupGroupRatio))
-		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
-		require.NoError(t, UpdatePricingGroupsByJSONString(originalGroups))
-	})
-
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{
-		"default": "default",
-		"usable_only": "usable only"
-	}`))
-	require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(`{}`))
-	require.NoError(t, UpdateGroupGroupRatioByJSONString(`{}`))
-	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`[]`))
-	ResetPricingGroupsForTest()
-
-	assert.InDelta(t, 1, GetGroupRatio("usable_only"), 1e-9)
-}
-
-func TestLegacyGroupRatioKeepsUsableOnlyGroups(t *testing.T) {
-	originalGroups := PricingGroups2JSONString()
-	originalUsable := setting.UserUsableGroups2JSONString()
-	originalSpecial := GroupSpecialUsableGroup2JSONString()
-	originalGroupGroupRatio := GroupGroupRatio2JSONString()
-	originalAutoGroups := setting.AutoGroups2JsonString()
-	t.Cleanup(func() {
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
-		require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(originalSpecial))
-		require.NoError(t, UpdateGroupGroupRatioByJSONString(originalGroupGroupRatio))
-		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
-		require.NoError(t, UpdatePricingGroupsByJSONString(originalGroups))
-	})
-
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{
-		"default": "default",
-		"vip": "vip",
-		"usable_only": "usable only"
-	}`))
-	require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(`{}`))
-	require.NoError(t, UpdateGroupGroupRatioByJSONString(`{}`))
-	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`[]`))
-	ResetPricingGroupsForTest()
-	require.NoError(t, UpdateGroupRatioByJSONString(`{"default":1,"vip":1.2}`))
-
-	assert.NotEqual(t, "usable_only", PricingGroupKey("usable_only"))
-	assert.InDelta(t, 1, GetGroupRatio("usable_only"), 1e-9)
-	assert.InDelta(t, 1.2, GetGroupRatio("vip"), 1e-9)
-}
-
 func TestLegacyGroupRatioPreservesExistingPricingGroupIDs(t *testing.T) {
 	restore := withTestPricingGroups(t, nil)
 	defer restore()
@@ -276,45 +221,40 @@ func TestLegacyGroupRatioPreservesExistingPricingGroupIDs(t *testing.T) {
 	assert.InDelta(t, 0.8, GetGroupRatio("7"), 1e-9)
 }
 
-func TestLegacyGroupRatioMapsIDBasedUsableGroupsThroughDefaultCatalog(t *testing.T) {
-	originalGroups := PricingGroups2JSONString()
-	originalUsable := setting.UserUsableGroups2JSONString()
-	originalSpecial := GroupSpecialUsableGroup2JSONString()
-	originalGroupGroupRatio := GroupGroupRatio2JSONString()
-	originalAutoGroups := setting.AutoGroups2JsonString()
-	t.Cleanup(func() {
-		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsable))
-		require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(originalSpecial))
-		require.NoError(t, UpdateGroupGroupRatioByJSONString(originalGroupGroupRatio))
-		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
-		require.NoError(t, UpdatePricingGroupsByJSONString(originalGroups))
-	})
+func TestLegacyGroupRatioPreservesExistingAvailabilityMetadata(t *testing.T) {
+	restore := withTestPricingGroups(t, nil)
+	defer restore()
 
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"1":"Default","2":"VIP"}`))
-	require.NoError(t, UpdateGroupSpecialUsableGroupByJSONString(`{}`))
-	require.NoError(t, UpdateGroupGroupRatioByJSONString(`{}`))
-	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`[]`))
+	require.NoError(t, UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"Default access"},
+		{"id":7,"name":"sale","ratio":1,"selectable":false,"description":"Sale access"}
+	]`))
 
-	ResetPricingGroupsForTest()
-	require.NoError(t, UpdateGroupRatioByJSONString(`{"default":1,"vip":1.2}`))
+	normalized, err := NormalizeGroupRatioJSONStringForSave(`{"default":0.9,"sale":0.3}`)
+	require.NoError(t, err)
 
-	defaultGroup, ok := GetPricingGroupByID(1)
-	require.True(t, ok)
-	assert.Equal(t, "default", defaultGroup.Name)
-	assert.Equal(t, "Default", defaultGroup.Description)
-	assert.True(t, defaultGroup.Selectable)
-
-	vip, ok := GetPricingGroupByID(2)
-	require.True(t, ok)
-	assert.Equal(t, "vip", vip.Name)
-	assert.Equal(t, "VIP", vip.Description)
-	assert.True(t, vip.Selectable)
-
-	_, ok = GetPricingGroupByName("1")
-	assert.False(t, ok)
-	_, ok = GetPricingGroupByName("2")
-	assert.False(t, ok)
-	assert.InDelta(t, 1.2, GetGroupRatio("2"), 1e-9)
+	var groups []PricingGroup
+	require.NoError(t, common.Unmarshal([]byte(normalized), &groups))
+	groupsByName := make(map[string]PricingGroup, len(groups))
+	for _, group := range groups {
+		groupsByName[group.Name] = group
+	}
+	require.Contains(t, groupsByName, "default")
+	require.Contains(t, groupsByName, "sale")
+	assert.Equal(t, PricingGroup{
+		Id:          1,
+		Name:        "default",
+		Ratio:       0.9,
+		Selectable:  true,
+		Description: "Default access",
+	}, groupsByName["default"])
+	assert.Equal(t, PricingGroup{
+		Id:          7,
+		Name:        "sale",
+		Ratio:       0.3,
+		Selectable:  false,
+		Description: "Sale access",
+	}, groupsByName["sale"])
 }
 
 func TestCheckGroupRatioAcceptsPricingGroupsArray(t *testing.T) {
