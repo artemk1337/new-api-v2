@@ -5043,6 +5043,7 @@
     "IPN callback URL": "IPN callback URL",
     "Crypto payments are enabled when API key, IPN secret, and this URL are set.": "Оплата криптовалютой включается после заполнения API-ключа, IPN-секрета и этого URL.",
     "Loading announcements...": "Загрузка объявлений...",
-    "News": "Новости"
+    "News": "Новости",
+    "Share filter link": "Поделиться"
   }
 }

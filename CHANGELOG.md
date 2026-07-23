@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.47
+
+- Renamed the pricing filter sharing button to “Share” and added localized labels.
+
 ## v1.1.46
 
 - Added a copyable link for sharing the current pricing-page filters.

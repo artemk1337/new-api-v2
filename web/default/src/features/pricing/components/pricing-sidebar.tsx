@@ -336,12 +336,12 @@ export function PricingSidebar(props: PricingSidebarProps) {
             value={props.shareUrl}
             variant='ghost'
             size='sm'
-            tooltip={t('Copy Link')}
+            tooltip={t('Share filter link')}
             successTooltip={t('Copied!')}
-            aria-label={t('Copy Link')}
+            aria-label={t('Share filter link')}
             className='h-7 gap-1.5 px-2 text-xs'
           >
-            {t('Copy Link')}
+            {t('Share filter link')}
           </CopyButton>
         </div>
       </div>
