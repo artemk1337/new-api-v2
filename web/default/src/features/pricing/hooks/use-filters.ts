@@ -77,6 +77,23 @@ export function useFilters(models: PricingModel[]) {
   const viewMode = normalizeViewMode(filterState.view)
   const showRechargePrice = filterState.rechargePrice === true
 
+  const shareUrl = useMemo(() => {
+    const baseUrl =
+      typeof window === 'undefined'
+        ? '/pricing'
+        : `${window.location.origin}${window.location.pathname}`
+    const params = new URLSearchParams()
+
+    for (const [key, value] of Object.entries(filterState)) {
+      if (value !== undefined && value !== null && value !== false && value !== '') {
+        params.set(key, String(value))
+      }
+    }
+
+    const query = params.toString()
+    return query ? `${baseUrl}?${query}` : baseUrl
+  }, [filterState])
+
   const updateFilters = useCallback((updates: Record<string, unknown>) => {
     setFilterState((prev) => {
       const next: Record<string, unknown> = { ...prev, ...updates }
@@ -210,6 +227,7 @@ export function useFilters(models: PricingModel[]) {
     tokenUnit,
     viewMode,
     showRechargePrice,
+    shareUrl,
     setSearchInput,
     setSortBy,
     setVendorFilter,

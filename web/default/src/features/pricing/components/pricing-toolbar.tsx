@@ -92,6 +92,7 @@ export interface PricingToolbarProps {
   hasActiveFilters: boolean
   activeFilterCount: number
   onClearFilters: () => void
+  shareUrl: string
 }
 
 function SegmentedControl(props: {
@@ -305,6 +306,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
               models={props.models}
               hasActiveFilters={props.hasActiveFilters}
               onClearFilters={props.onClearFilters}
+              shareUrl={props.shareUrl}
               className='border-0 bg-transparent p-0 shadow-none'
             />
           </div>

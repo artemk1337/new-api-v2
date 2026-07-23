@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.46
+
+- Added a copyable link for sharing the current pricing-page filters.
+- Shortened the Russian text showing the number of available models.
+
 ## v1.1.45
 
 - Made `PricingGroups[].selectable` the source of user-visible pricing groups across model listings, pricing responses, API keys, and auto-group selection.

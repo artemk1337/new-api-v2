@@ -23,6 +23,7 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { CopyButton } from '@/components/copy-button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -73,6 +74,7 @@ export interface PricingSidebarProps {
   models: PricingModel[]
   hasActiveFilters: boolean
   onClearFilters: () => void
+  shareUrl: string
   className?: string
 }
 
@@ -311,24 +313,37 @@ export function PricingSidebar(props: PricingSidebarProps) {
 
   return (
     <aside className={cn('rounded-xl border p-3', props.className)}>
-      <div className='mb-2.5 flex items-center justify-between gap-2'>
+      <div className='mb-2.5 flex items-start justify-between gap-2'>
         <div>
           <h2 className='text-foreground text-sm font-bold'>{t('Filter')}</h2>
           <p className='text-muted-foreground mt-1 text-xs'>
             {t('Refine models by provider, group, type, and tags.')}
           </p>
         </div>
-        <Button
-          type='button'
-          variant='ghost'
-          size='sm'
-          onClick={props.onClearFilters}
-          disabled={!props.hasActiveFilters}
-          className='h-7 gap-1.5 px-2 text-xs'
-        >
-          <RotateCcw className='size-3.5' />
-          {t('Reset')}
-        </Button>
+        <div className='flex shrink-0 flex-col items-end gap-1'>
+          <Button
+            type='button'
+            variant='ghost'
+            size='sm'
+            onClick={props.onClearFilters}
+            disabled={!props.hasActiveFilters}
+            className='h-7 gap-1.5 px-2 text-xs'
+          >
+            <RotateCcw className='size-3.5' />
+            {t('Reset')}
+          </Button>
+          <CopyButton
+            value={props.shareUrl}
+            variant='ghost'
+            size='sm'
+            tooltip={t('Copy Link')}
+            successTooltip={t('Copied!')}
+            aria-label={t('Copy Link')}
+            className='h-7 gap-1.5 px-2 text-xs'
+          >
+            {t('Copy Link')}
+          </CopyButton>
+        </div>
       </div>
 
       {props.hasActiveFilters && (

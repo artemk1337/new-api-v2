@@ -65,6 +65,7 @@ export function Pricing() {
     tokenUnit,
     viewMode,
     showRechargePrice,
+    shareUrl,
     setSearchInput,
     setSortBy,
     setVendorFilter,
@@ -231,6 +232,7 @@ export function Pricing() {
               models={models || []}
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
+              shareUrl={shareUrl}
               className='hover-scrollbar sticky top-4 hidden max-h-[calc(100dvh-2rem)] self-start overflow-y-auto xl:block'
             />
 
@@ -266,6 +268,7 @@ export function Pricing() {
                 hasActiveFilters={hasActiveFilters}
                 activeFilterCount={activeFilterCount}
                 onClearFilters={clearFilters}
+                shareUrl={shareUrl}
               />
 
               {renderPricingContent()}
