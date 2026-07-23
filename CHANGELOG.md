@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.48
+
+- Removed the recommended actions card from the dashboard overview.
+
 ## v1.1.47
 
 - Renamed the pricing filter sharing button to “Share” and added localized labels.
