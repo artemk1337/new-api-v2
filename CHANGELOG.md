@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.49
+
+- Removed the auxiliary pricing-group labels below group names.
+
 ## v1.1.48
 
 - Removed the recommended actions card from the dashboard overview.

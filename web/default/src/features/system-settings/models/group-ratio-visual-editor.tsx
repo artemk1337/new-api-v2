@@ -942,11 +942,6 @@ function GroupPricingTable({
                         aria-invalid={duplicateNames.includes(row.name.trim())}
                       />
                     </div>
-                    <div className='text-muted-foreground text-xs'>
-                      {row.id === 1
-                        ? t('Reserved default group')
-                        : t('Stable identifier')}
-                    </div>
                   </div>
                 ),
               },
