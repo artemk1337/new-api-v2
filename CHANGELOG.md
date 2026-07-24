@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.50
+
+- Refined the quota adjustment dialog with a clear segmented mode selector and an action-specific primary button.
+
 ## v1.1.49
 
 - Removed the auxiliary pricing-group labels below group names.

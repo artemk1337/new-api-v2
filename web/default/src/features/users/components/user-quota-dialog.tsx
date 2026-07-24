@@ -117,11 +117,11 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
       bodyClassName='space-y-4'
       footer={
         <>
-          <Button variant='outline' onClick={handleCancel}>
+          <Button variant='ghost' onClick={handleCancel}>
             {t('Cancel')}
           </Button>
           <Button onClick={handleConfirm} disabled={loading}>
-            {loading ? t('Processing...') : t('Confirm')}
+            {loading ? t('Processing...') : t('Adjust Quota')}
           </Button>
         </>
       }
@@ -131,16 +131,21 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
 
         <div className='space-y-2'>
           <Label>{t('Mode')}</Label>
-          <div className='flex gap-1'>
+          <div
+            role='group'
+            aria-label={t('Mode')}
+            className='bg-muted/60 inline-flex rounded-lg border p-0.5'
+          >
             {(['add', 'subtract', 'override'] as const).map((m) => (
-              <Button
+              <button
                 key={m}
                 type='button'
-                variant='outline'
-                size='sm'
+                aria-pressed={mode === m}
                 className={cn(
-                  mode === m &&
-                    'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+                  'h-8 rounded-md px-3 text-sm font-medium transition-all',
+                  mode === m
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
                 onClick={() => {
                   setMode(m)
@@ -152,7 +157,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
                   : m === 'subtract'
                     ? t('Subtract')
                     : t('Override')}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
