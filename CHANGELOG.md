@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.51
+
+- Close the release dialog after a system update is successfully started.
+
 ## v1.1.50
 
 - Refined the quota adjustment dialog with a clear segmented mode selector and an action-specific primary button.

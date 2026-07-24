@@ -195,6 +195,7 @@ export function UpdateCheckerSection({
       setUpdateJobLookupFailures(0)
       setExpectedUpdateVersion(requestedVersion)
       setExpectedUpdateStartedAt(Date.now())
+      setDialogOpen(false)
       toast.success(
         t('Installing {{version}}. The service may restart soon.', {
           version: requestedVersion,
