@@ -5033,6 +5033,9 @@
     "Zoom": "ズーム",
     "Loading announcements...": "お知らせを読み込んでいます...",
     "News": "ニュース",
-    "Share filter link": "共有"
+    "Share filter link": "共有",
+    "System menu: Channel Affinity": "チャネルアフィニティ",
+    "System menu: Quota": "クォータ",
+    "System menu: Rate Limiting": "レート制限"
   }
 }

@@ -5033,6 +5033,9 @@
     "Zoom": "Zoom",
     "Loading announcements...": "Loading announcements...",
     "News": "News",
-    "Share filter link": "Share"
+    "Share filter link": "Share",
+    "System menu: Channel Affinity": "Channel Affinity",
+    "System menu: Quota": "Quota",
+    "System menu: Rate Limiting": "Rate Limits"
   }
 }

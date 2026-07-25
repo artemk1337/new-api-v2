@@ -26,7 +26,7 @@ import { createSectionRegistry } from '../utils/section-registry'
 const SECURITY_SECTIONS = [
   {
     id: 'rate-limit',
-    titleKey: 'Rate Limiting',
+    titleKey: 'System menu: Rate Limiting',
     build: (settings: SecuritySettings) => (
       <RateLimitSection
         defaultValues={{

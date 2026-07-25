@@ -5033,6 +5033,9 @@
     "Zoom": "Zoom",
     "Loading announcements...": "Đang tải thông báo...",
     "News": "Tin tức",
-    "Share filter link": "Chia sẻ"
+    "Share filter link": "Chia sẻ",
+    "System menu: Channel Affinity": "Ưu tiên kênh",
+    "System menu: Quota": "Hạn mức",
+    "System menu: Rate Limiting": "Giới hạn tốc độ"
   }
 }

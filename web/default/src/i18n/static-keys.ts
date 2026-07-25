@@ -44,6 +44,9 @@ export const STATIC_I18N_KEYS = [
   'Models',
   'Routing Reliability',
   'Maintenance',
+  'System menu: Quota',
+  'System menu: Channel Affinity',
+  'System menu: Rate Limiting',
 
   // System info
   'online',

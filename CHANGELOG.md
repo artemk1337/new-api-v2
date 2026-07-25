@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.53
+
+- Shortened Russian labels in the system-settings sidebar and clarified its section names.
+- Added sidebar-specific translation keys so shared labels outside the menu remain unchanged.
+
 ## v1.1.52
 
 - Reduced database load from admin user searches by debouncing the search input.

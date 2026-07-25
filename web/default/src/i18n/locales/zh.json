@@ -5033,6 +5033,9 @@
     "Zoom": "缩放",
     "Loading announcements...": "正在加载公告...",
     "News": "新闻",
-    "Share filter link": "分享"
+    "Share filter link": "分享",
+    "System menu: Channel Affinity": "渠道亲和性",
+    "System menu: Quota": "额度",
+    "System menu: Rate Limiting": "速率限制"
   }
 }

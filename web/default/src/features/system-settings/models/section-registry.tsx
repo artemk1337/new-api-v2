@@ -147,7 +147,7 @@ const MODELS_SECTIONS = [
   },
   {
     id: 'channel-affinity',
-    titleKey: 'Channel Affinity',
+    titleKey: 'System menu: Channel Affinity',
     build: (settings: ModelSettings) => (
       <ChannelAffinitySection
         defaultValues={{

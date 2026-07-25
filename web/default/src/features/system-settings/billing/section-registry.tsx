@@ -53,7 +53,7 @@ const getGroupDefaults = (settings: BillingSettings) => ({
 const BILLING_SECTIONS = [
   {
     id: 'quota',
-    titleKey: 'Quota Settings',
+    titleKey: 'System menu: Quota',
     build: (settings: BillingSettings) => (
       <QuotaSettingsSection
         defaultValues={{
