@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.54
+
+- Added Telegram Login Widget support in the default frontend for sign-in and account binding.
+- Masked saved Telegram bot tokens in system settings and made Telegram OAuth configuration validation safer.
+
 ## v1.1.53
 
 - Shortened Russian labels in the system-settings sidebar and clarified its section names.

@@ -18,16 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
 import {
   IconDiscord,
   IconGithub,
   IconLinuxDo,
   IconWeChat,
 } from '@/assets/brand-icons'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+
 import { useOAuthLogin } from '../hooks/use-oauth-login'
 import type { SystemStatus } from '../types'
+import { TelegramLoginWidget } from './telegram-login-widget'
 
 type OAuthProvidersProps = {
   status: SystemStatus | null
@@ -35,6 +39,7 @@ type OAuthProvidersProps = {
   className?: string
   onWeChatLogin?: () => void
   isWeChatLoading?: boolean
+  includeTelegram?: boolean
 }
 
 type ProviderButton = {
@@ -51,6 +56,7 @@ export function OAuthProviders({
   className,
   onWeChatLogin,
   isWeChatLoading = false,
+  includeTelegram = true,
 }: OAuthProvidersProps) {
   const { t } = useTranslation()
   const {
@@ -113,13 +119,12 @@ export function OAuthProviders({
     })
   }
 
-  if (status?.telegram_oauth) {
-    providerButtons.push({
-      key: 'telegram',
-      label: t('Continue with Telegram'),
-      onClick: handleTelegramLogin,
-    })
-  }
+  const telegramBotName = status?.telegram_bot_name
+  const hasTelegramLogin =
+    includeTelegram &&
+    status?.telegram_oauth &&
+    typeof telegramBotName === 'string' &&
+    telegramBotName.trim() !== ''
 
   // Custom OAuth providers
   const customProviders = status?.custom_oauth_providers
@@ -133,7 +138,7 @@ export function OAuthProviders({
     }
   }
 
-  if (providerButtons.length === 0) return null
+  if (providerButtons.length === 0 && !hasTelegramLogin) return null
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -164,6 +169,25 @@ export function OAuthProviders({
             </Button>
           )
         )}
+        {hasTelegramLogin &&
+          (disabled || isLoading ? (
+            <Button
+              variant='outline'
+              type='button'
+              disabled
+              className='h-11 w-full justify-center gap-2 rounded-lg'
+            >
+              {t('Continue with Telegram')}
+            </Button>
+          ) : (
+            <TelegramLoginWidget
+              botName={telegramBotName}
+              onAuth={handleTelegramLogin}
+              onError={() =>
+                toast.error(t('Failed to load Telegram login widget'))
+              }
+            />
+          ))}
       </div>
     </div>
   )

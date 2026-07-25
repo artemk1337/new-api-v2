@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Send } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+
 import { Dialog } from '@/components/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { TelegramLoginWidget } from '@/features/auth/components/telegram-login-widget'
 
 // ============================================================================
 // Telegram Bind Dialog Component
@@ -29,7 +31,6 @@ interface TelegramBindDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   botName: string
-  onSuccess: () => void
 }
 
 export function TelegramBindDialog({
@@ -75,13 +76,10 @@ export function TelegramBindDialog({
             </p>
           </div>
 
-          {/* Telegram Login Widget will be injected here by react-telegram-login */}
-          <div id='telegram-login-widget' className='flex justify-center'>
-            {/* This would require the react-telegram-login library */}
-            <div className='text-muted-foreground rounded-lg border border-dashed px-6 py-3 text-sm'>
-              {t('Telegram Login Widget')}
-            </div>
-          </div>
+          <TelegramLoginWidget
+            botName={botName}
+            authUrl='/api/oauth/telegram/bind'
+          />
         </div>
 
         <p className='text-muted-foreground text-center text-xs'>

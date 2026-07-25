@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,11 +18,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useRef, useEffect } from 'react'
-import type { AxiosRequestConfig } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { useAuthStore } from '@/stores/auth-store'
+
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
+
 import { getOAuthState } from '../api'
 import {
   buildGitHubOAuthUrl,
@@ -30,6 +32,7 @@ import {
   buildLinuxDOOAuthUrl,
 } from '../lib/oauth'
 import type { SystemStatus, CustomOAuthProviderInfo } from '../types'
+import { useAuthRedirect } from './use-auth-redirect'
 
 type LogoutRequestConfig = AxiosRequestConfig & {
   skipErrorHandler?: boolean
@@ -45,6 +48,7 @@ export function useOAuthLogin(status: SystemStatus | null) {
   const [githubButtonDisabled, setGithubButtonDisabled] = useState(false)
   const githubTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const { auth } = useAuthStore()
+  const { handleLoginSuccess } = useAuthRedirect()
 
   useEffect(() => {
     setGithubButtonText(t('Continue with GitHub'))
@@ -59,14 +63,14 @@ export function useOAuthLogin(status: SystemStatus | null) {
   const resetSession = async () => {
     try {
       auth.reset()
-    } catch (_error) {
+    } catch {
       // ignore store reset errors
     }
     try {
       await api.get('/api/user/logout', {
         skipErrorHandler: true,
       } as LogoutRequestConfig)
-    } catch (_error) {
+    } catch {
       // ignore logout errors
     }
   }
@@ -107,7 +111,7 @@ export function useOAuthLogin(status: SystemStatus | null) {
 
       const url = buildGitHubOAuthUrl(status.github_client_id, state)
       window.open(url, '_self')
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to start GitHub login'))
       if (githubTimeoutRef.current) {
         clearTimeout(githubTimeoutRef.current)
@@ -132,7 +136,7 @@ export function useOAuthLogin(status: SystemStatus | null) {
 
       const url = buildDiscordOAuthUrl(status.discord_client_id, state)
       window.open(url, '_self')
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to start Discord login'))
     } finally {
       setIsLoading(false)
@@ -157,7 +161,7 @@ export function useOAuthLogin(status: SystemStatus | null) {
         state
       )
       window.open(url, '_self')
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to start OIDC login'))
     } finally {
       setIsLoading(false)
@@ -178,15 +182,32 @@ export function useOAuthLogin(status: SystemStatus | null) {
 
       const url = buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)
       window.open(url, '_self')
-    } catch (_error) {
+    } catch {
       toast.error(t('Failed to start LinuxDO login'))
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleTelegramLogin = () => {
-    toast.info(t('Telegram login requires widget integration; coming soon'))
+  const handleTelegramLogin = async (params: Record<string, unknown>) => {
+    setIsLoading(true)
+    try {
+      await resetSession()
+      const res = await api.get('/api/oauth/telegram/login', {
+        params,
+        skipBusinessError: true,
+        skipErrorHandler: true,
+      })
+      if (!res.data?.success) {
+        toast.error(res.data?.message || t('Failed to sign in with Telegram'))
+        return
+      }
+      await handleLoginSuccess(res.data.data)
+    } catch {
+      toast.error(t('Failed to sign in with Telegram'))
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleCustomOAuthLogin = async (provider: CustomOAuthProviderInfo) => {
@@ -212,7 +233,7 @@ export function useOAuthLogin(status: SystemStatus | null) {
       }
 
       window.open(url.toString(), '_self')
-    } catch (_error) {
+    } catch {
       toast.error(
         t('Failed to start {{provider}} login', { provider: provider.name })
       )

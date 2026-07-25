@@ -89,7 +89,7 @@ func GetOptions(c *gin.Context) {
 			strings.HasSuffix(k, "secret") ||
 			strings.HasSuffix(k, "api_key")
 		if isSensitiveKey {
-			if k == "YooKassaSecretKey" || k == "NOWPaymentsAPIKey" || k == "NOWPaymentsIPNSecret" {
+			if k == "YooKassaSecretKey" || k == "NOWPaymentsAPIKey" || k == "NOWPaymentsIPNSecret" || k == "TelegramBotToken" {
 				if value != "" {
 					value = maskedOptionValue
 				}
@@ -149,7 +149,7 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	switch option.Key {
-	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret":
+	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken":
 		if option.Value == maskedOptionValue {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
@@ -227,10 +227,10 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "TelegramOAuthEnabled":
-		if option.Value == "true" && common.TelegramBotToken == "" {
+		if option.Value == "true" && (common.TelegramBotToken == "" || common.TelegramBotName == "") {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "无法启用 Telegram OAuth，请先填入 Telegram Bot Token！",
+				"message": "无法启用 Telegram OAuth，请先填入 Telegram Bot Token 和 Bot Name！",
 			})
 			return
 		}
