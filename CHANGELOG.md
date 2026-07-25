@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.56
+
+- Fixed duplicate-looking Telegram Login Widget rendering while keeping it centered in the OAuth form.
+
 ## v1.1.55
 
 - Aligned the Telegram Login Widget with the default frontend OAuth button layout.

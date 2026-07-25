@@ -95,7 +95,7 @@ export function TelegramLoginWidget({
     <div
       ref={containerRef}
       className={cn(
-        'flex h-11 w-full items-center justify-center [&>iframe]:h-11 [&>iframe]:w-full',
+        'flex min-h-11 w-full items-center justify-center',
         className
       )}
     />
