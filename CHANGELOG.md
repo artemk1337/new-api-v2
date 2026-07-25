@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.59
+
+- Clarified the Russian Auto-group guidance: failover conditions, reserve return after a successful request, and insufficient-balance recovery.
+
 ## v1.1.58
 
 - Fixed API-key group descriptions overflowing the group selection card by wrapping long text within the available width.
