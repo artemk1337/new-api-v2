@@ -152,12 +152,12 @@ export function ApiKeyGroupCombobox({
         }
       >
         <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
-          <span className='min-w-0'>
+          <span className='min-w-0 flex-1'>
             <span className='block truncate font-medium'>
               {selectedOption?.label || placeholder || t('Select a group')}
             </span>
             {selectedOption?.desc && (
-              <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
+              <span className='text-muted-foreground block break-words text-[11px] sm:text-xs'>
                 {selectedOption.desc}
               </span>
             )}

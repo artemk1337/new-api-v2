@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.58
+
+- Fixed API-key group descriptions overflowing the group selection card by wrapping long text within the available width.
+
 ## v1.1.57
 
 - Added the `Auto` token group: it tries eligible pricing groups from the lowest effective price to the highest and transparently switches only after an upstream-confirmed no-charge failure.
