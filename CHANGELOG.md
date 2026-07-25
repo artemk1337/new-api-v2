@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.55
+
+- Aligned the Telegram Login Widget with the default frontend OAuth button layout.
+
 ## v1.1.54
 
 - Added Telegram Login Widget support in the default frontend for sign-in and account binding.

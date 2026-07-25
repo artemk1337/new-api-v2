@@ -92,6 +92,12 @@ export function TelegramLoginWidget({
   }, [authUrl, callbackName, normalizedBotName])
 
   return (
-    <div ref={containerRef} className={cn('flex justify-center', className)} />
+    <div
+      ref={containerRef}
+      className={cn(
+        'flex h-11 w-full items-center justify-center [&>iframe]:h-11 [&>iframe]:w-full',
+        className
+      )}
+    />
   )
 }
