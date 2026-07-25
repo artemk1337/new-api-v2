@@ -319,6 +319,13 @@ func TestShouldRetryAttemptRequiresProvenFreeOutcome(t *testing.T) {
 	assert.False(t, ShouldRetryAttempt(types.AttemptFinancialOutcomeAmbiguous, true, true))
 }
 
+func TestShouldChargeAttemptRequiresConfirmedBilling(t *testing.T) {
+	assert.True(t, ShouldChargeAttempt(types.AttemptFinancialOutcomeBillable))
+	assert.False(t, ShouldChargeAttempt(types.AttemptFinancialOutcomeNonBillable))
+	assert.False(t, ShouldChargeAttempt(types.AttemptFinancialOutcomeAmbiguous))
+	assert.False(t, ShouldChargeAttempt(types.AttemptFinancialOutcomeUnknown))
+}
+
 func TestShouldRetryAutoAttemptUsesAnyProvenFreeDispatchedError(t *testing.T) {
 	assert.True(t, ShouldRetryAutoAttempt(types.AttemptFinancialOutcomeNonBillable, true, false, true))
 	assert.False(t, ShouldRetryAutoAttempt(types.AttemptFinancialOutcomeNonBillable, true, false, false))

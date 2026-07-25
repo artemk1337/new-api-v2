@@ -352,8 +352,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 
 			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
-			if (outcome == types.AttemptFinancialOutcomeBillable || outcome == types.AttemptFinancialOutcomeAmbiguous) &&
-				!relayInfo.AttemptSettlementHandled {
+			if service.ShouldChargeAttempt(outcome) && !relayInfo.AttemptSettlementHandled {
 				settleErr, logErr := service.SettleChargedAttemptError(c, relayInfo, newAPIError, outcome)
 				if logErr != nil {
 					common.SysLog("error recording charged relay attempt: " + logErr.Error())
@@ -372,8 +371,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
-		if (outcome == types.AttemptFinancialOutcomeBillable || outcome == types.AttemptFinancialOutcomeAmbiguous) &&
-			!relayInfo.AttemptSettlementHandled {
+		if service.ShouldChargeAttempt(outcome) && !relayInfo.AttemptSettlementHandled {
 			settleErr, logErr := service.SettleChargedAttemptError(c, relayInfo, newAPIError, outcome)
 			if logErr != nil {
 				common.SysLog("error recording charged relay attempt: " + logErr.Error())
@@ -841,7 +839,7 @@ func RelayTask(c *gin.Context) {
 			continue
 		}
 
-		if outcome == types.AttemptFinancialOutcomeBillable || outcome == types.AttemptFinancialOutcomeAmbiguous {
+		if service.ShouldChargeAttempt(outcome) {
 			settleErr, logErr := service.SettleChargedAttemptError(c, relayInfo, apiErr, outcome)
 			if logErr != nil {
 				common.SysLog("error recording charged task relay attempt: " + logErr.Error())

@@ -186,6 +186,10 @@ func ShouldRetryAttempt(outcome types.AttemptFinancialOutcome, retryable bool, a
 	return outcome == types.AttemptFinancialOutcomeNonBillable && retryable && attemptsRemaining
 }
 
+func ShouldChargeAttempt(outcome types.AttemptFinancialOutcome) bool {
+	return outcome == types.AttemptFinancialOutcomeBillable
+}
+
 func ShouldRetryAutoAttempt(outcome types.AttemptFinancialOutcome, dispatched bool, retryable bool, attemptsRemaining bool) bool {
 	return outcome == types.AttemptFinancialOutcomeNonBillable &&
 		attemptsRemaining &&

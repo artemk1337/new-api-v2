@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.61
+
+- Returned the reserved quota for upstream errors unless the response explicitly confirms a charge; errors without billing evidence are no longer charged by estimate.
+
 ## v1.1.60
 
 - Made Auto consider every pricing group available to the user; the legacy global Auto-group list no longer restricts routing or API-key group choices.
