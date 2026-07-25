@@ -229,21 +229,11 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int) ([]*User, int64, error) {
 	var users []*User
 	var total int64
-	var err error
 
-	// 开始事务
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 构建基础查询
-	query := tx.Unscoped().Model(&User{})
+	// A transaction is unnecessary for two read-only queries. In particular,
+	// keeping one open while Count and Find run can hold a SQLite read snapshot
+	// longer than needed.
+	query := DB.Unscoped().Model(&User{})
 
 	// 构建搜索条件
 	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
@@ -273,21 +263,12 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 	}
 
 	// 获取总数
-	err = query.Count(&total).Error
-	if err != nil {
-		tx.Rollback()
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	// 获取分页数据
-	err = query.Omit("password").Order("id desc").Limit(num).Offset(startIdx).Find(&users).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	// 提交事务
-	if err = tx.Commit().Error; err != nil {
+	if err := query.Omit("password").Order("id desc").Limit(num).Offset(startIdx).Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
 

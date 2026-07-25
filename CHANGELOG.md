@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.52
+
+- Reduced database load from admin user searches by debouncing the search input.
+- Removed the unnecessary read transaction around user search queries, reducing the time SQLite read snapshots are held.
+
 ## v1.1.51
 
 - Close the release dialog after a system update is successfully started.
