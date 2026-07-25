@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useMemo, useEffect, useCallback, memo } from 'react'
-import { Plus, Trash2, GripVertical, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
@@ -49,6 +49,11 @@ import {
 } from '@/components/ui/select'
 
 import { safeJsonParse } from '../utils/json-parser'
+import {
+  addAutoGroup,
+  normalizeAutoGroupList,
+  removeAutoGroup,
+} from './auto-group-list'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
@@ -250,11 +255,18 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
   // Parse auto groups
   const autoGroupsList = useMemo(() => {
-    return safeJsonParse<string[]>(autoGroups, {
-      fallback: [],
-      context: 'auto groups',
-    })
+    return normalizeAutoGroupList(
+      safeJsonParse<unknown>(autoGroups, {
+        fallback: [],
+        context: 'auto groups',
+      })
+    )
   }, [autoGroups])
+
+  const availableAutoGroupOptions = useMemo(() => {
+    const selected = new Set(autoGroupsList)
+    return pricingGroupOptions.filter((group) => !selected.has(group.id))
+  }, [autoGroupsList, pricingGroupOptions])
 
   // Parse group-group ratios
   const groupGroupRatioList = useMemo(() => {
@@ -336,22 +348,18 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   const handleAutoGroupSave = () => {
     if (!autoGroupInput.trim()) return
 
-    const list = [...autoGroupsList, autoGroupInput.trim()]
+    const list = addAutoGroup(autoGroupsList, autoGroupInput)
+    if (list.length === autoGroupsList.length) {
+      setAutoGroupDialogOpen(false)
+      return
+    }
     onChange('AutoGroups', JSON.stringify(list, null, 2))
     setAutoGroupDialogOpen(false)
   }
 
   const handleAutoGroupDelete = (index: number) => {
-    const list = autoGroupsList.filter((_, i) => i !== index)
-    onChange('AutoGroups', JSON.stringify(list, null, 2))
-  }
-
-  const handleAutoGroupMove = (index: number, direction: 'up' | 'down') => {
-    const list = [...autoGroupsList]
-    const newIndex = direction === 'up' ? index - 1 : index + 1
-
-    if (newIndex < 0 || newIndex >= list.length) return
-    ;[list[index], list[newIndex]] = [list[newIndex], list[index]]
+    const list = removeAutoGroup(autoGroupsList, index)
+    if (list.length === autoGroupsList.length) return
     onChange('AutoGroups', JSON.stringify(list, null, 2))
   }
 
@@ -641,16 +649,20 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       {/* Auto Groups */}
       <Card className={sectionCardClassName}>
         <CardHeader className={sectionHeaderClassName}>
-          <CardTitle>{t('Auto assignment order')}</CardTitle>
+          <CardTitle>{t('Auto group allowlist')}</CardTitle>
           <CardDescription>
             {t(
-              'Priority order for automatic group assignment. New tokens rotate through this list.'
+              'Auto uses only allowed groups, sorts them by price, and tries the cheapest available group first.'
             )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className='space-y-4'>
-            <Button onClick={handleAutoGroupAdd} size='sm'>
+            <Button
+              onClick={handleAutoGroupAdd}
+              size='sm'
+              disabled={availableAutoGroupOptions.length === 0}
+            >
               <Plus className='mr-2 h-4 w-4' />
               {t('Add group')}
             </Button>
@@ -661,35 +673,17 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
                     key={group}
                     className='flex items-center gap-2 rounded-md border p-3'
                   >
-                    <GripVertical className='text-muted-foreground h-4 w-4' />
                     <span className='flex-1 font-medium'>
                       {formatPricingGroupLabel(group, pricingGroupNames)}
                     </span>
-                    <div className='flex gap-1'>
-                      <Button
-                        variant='ghost'
-                        size='sm'
-                        disabled={index === 0}
-                        onClick={() => handleAutoGroupMove(index, 'up')}
-                      >
-                        ↑
-                      </Button>
-                      <Button
-                        variant='ghost'
-                        size='sm'
-                        disabled={index === autoGroupsList.length - 1}
-                        onClick={() => handleAutoGroupMove(index, 'down')}
-                      >
-                        ↓
-                      </Button>
-                      <Button
-                        variant='ghost'
-                        size='sm'
-                        onClick={() => handleAutoGroupDelete(index)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
-                    </div>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      onClick={() => handleAutoGroupDelete(index)}
+                      disabled={autoGroupsList.length <= 1}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -712,7 +706,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         open={autoGroupDialogOpen}
         onOpenChange={setAutoGroupDialogOpen}
         title={t('Add auto group')}
-        description={t('Add a group identifier to the auto assignment list.')}
+        description={t('Add a group to the Auto allowlist.')}
         contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
@@ -748,7 +742,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 <SelectGroup>
-                  {pricingGroupOptions.map((group) => (
+                  {availableAutoGroupOptions.map((group) => (
                     <SelectItem key={group.id} value={group.id}>
                       {formatPricingGroupLabel(group.id, pricingGroupNames)}
                     </SelectItem>

@@ -189,12 +189,69 @@ func TestNormalizeAutoGroupsUsesPricingGroupIDs(t *testing.T) {
 		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
 		{"id":2,"name":"renamed_vip","ratio":1.2,"selectable":true,"description":"vip"}
 	]`))
-	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","renamed_vip","missing"]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","1","renamed_vip","2","missing"]`))
 
 	normalized, err := NormalizeAutoGroups()
 	require.NoError(t, err)
-	assert.JSONEq(t, `["1","2","missing"]`, normalized)
-	assert.Equal(t, []string{"1", "2", "missing"}, setting.GetAutoGroups())
+	assert.JSONEq(t, `["1","2"]`, normalized)
+	assert.Equal(t, []string{"1", "2"}, setting.GetAutoGroups())
+}
+
+func TestValidateAutoGroupsRequiresNonEmptyList(t *testing.T) {
+	restore := withTestPricingGroups(t, nil)
+	defer restore()
+	require.NoError(t, UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"internal","ratio":1,"selectable":false}
+	]`))
+
+	require.NoError(t, ValidateAutoGroupsJSONString(`["missing"," default "]`))
+	require.Error(t, ValidateAutoGroupsJSONString(`[]`))
+	require.Error(t, ValidateAutoGroupsJSONString(`[" "]`))
+	require.Error(t, ValidateAutoGroupsJSONString(`["missing"]`))
+	require.Error(t, ValidateAutoGroupsJSONString(`["internal"]`))
+}
+
+func TestNormalizeAutoGroupsRecoversLegacyEmptyList(t *testing.T) {
+	restore := withTestPricingGroups(t, nil)
+	defer restore()
+
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+	require.NoError(t, UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
+		{"id":2,"name":"vip","ratio":1.2,"selectable":true,"description":"vip"},
+		{"id":3,"name":"internal","ratio":0.5,"selectable":false,"description":"internal"}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`[]`))
+
+	normalized, err := NormalizeAutoGroups()
+	require.NoError(t, err)
+	assert.JSONEq(t, `["1","2"]`, normalized)
+	assert.Equal(t, []string{"1", "2"}, setting.GetAutoGroups())
+}
+
+func TestNormalizeAutoGroupsRecoversLegacyUnknownOnlyList(t *testing.T) {
+	restore := withTestPricingGroups(t, nil)
+	defer restore()
+
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+	require.NoError(t, UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1.2,"selectable":true},
+		{"id":3,"name":"internal","ratio":0.5,"selectable":false}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["missing","internal"]`))
+
+	normalized, err := NormalizeAutoGroups()
+	require.NoError(t, err)
+	assert.JSONEq(t, `["1","2"]`, normalized)
+	assert.Equal(t, []string{"1", "2"}, setting.GetAutoGroups())
 }
 
 func TestLegacyGroupRatioPreservesExistingPricingGroupIDs(t *testing.T) {

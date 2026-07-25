@@ -93,14 +93,18 @@ const renderGroupColumn = (text, record, t, groupRatios = {}) => {
     return (
       <Tooltip
         content={t(
-          '当前分组为 auto，会自动选择最优分组，当一个组不可用时自动降级到下一个组（熔断机制）',
+          'Auto 优先使用所选分组中最便宜的分组，仅在确认未产生费用的错误后切换。',
         )}
         position='top'
       >
-        <Tag color='white' shape='circle'>
-          {t('智能熔断')}
-          {record && record.cross_group_retry ? `(${t('跨分组')})` : ''}
-        </Tag>
+        <Space spacing={4}>
+          <Tag color='white' shape='circle'>
+            Auto
+          </Tag>
+          <Tag color='green' shape='circle'>
+            {t('动态倍率')}
+          </Tag>
+        </Space>
       </Tooltip>
     );
   }

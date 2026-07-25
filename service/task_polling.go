@@ -80,7 +80,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 		}
 		timedOutCount++
 		if !isLegacy && task.Quota != 0 {
-			RefundTaskQuota(ctx, task, reason)
+			HandleTaskTerminalFailureBilling(ctx, task, reason, nil)
 		}
 	}
 
@@ -277,24 +277,43 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 			continue
 		}
 
+		snap := task.Snapshot()
 		task.Status = lo.If(model.TaskStatus(responseItem.Status) != "", model.TaskStatus(responseItem.Status)).Else(task.Status)
 		task.FailReason = lo.If(responseItem.FailReason != "", responseItem.FailReason).Else(task.FailReason)
 		task.SubmitTime = lo.If(responseItem.SubmitTime != 0, responseItem.SubmitTime).Else(task.SubmitTime)
 		task.StartTime = lo.If(responseItem.StartTime != 0, responseItem.StartTime).Else(task.StartTime)
 		task.FinishTime = lo.If(responseItem.FinishTime != 0, responseItem.FinishTime).Else(task.FinishTime)
-		if responseItem.FailReason != "" || task.Status == model.TaskStatusFailure {
+		failed := responseItem.FailReason != "" || task.Status == model.TaskStatusFailure
+		if failed {
 			logger.LogInfo(ctx, task.TaskID+" 构建失败，"+task.FailReason)
 			task.Progress = "100%"
-			RefundTaskQuota(ctx, task, task.FailReason)
 		}
 		if responseItem.Status == model.TaskStatusSuccess {
 			task.Progress = "100%"
 		}
 		task.Data = responseItem.Data
 
-		err = task.Update()
-		if err != nil {
-			common.SysLog("UpdateSunoTask task error: " + err.Error())
+		isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
+		if isDone && snap.Status != task.Status {
+			var won bool
+			var updateErr error
+			if failed {
+				won, updateErr = transitionTaskTerminalFailure(ctx, task, snap.Status, task.FailReason, responseBody)
+			} else {
+				won, updateErr = task.UpdateWithStatus(snap.Status)
+			}
+			if updateErr != nil {
+				common.SysLog("UpdateSunoTask task error: " + updateErr.Error())
+				continue
+			}
+			if !won {
+				logger.LogWarn(ctx, fmt.Sprintf("Suno task %s already transitioned, skip billing", task.TaskID))
+				continue
+			}
+			continue
+		}
+		if _, updateErr := task.UpdateWithStatus(snap.Status); updateErr != nil {
+			common.SysLog("UpdateSunoTask task error: " + updateErr.Error())
 		}
 	}
 	return nil
@@ -509,9 +528,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		}
 	}
 
-	shouldRefund := false
+	shouldHandleFailure := false
 	shouldSettle := false
-	quota := task.Quota
 
 	task.Status = model.TaskStatus(taskResult.Status)
 	switch taskResult.Status {
@@ -550,8 +568,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 		task.FailReason = taskResult.Reason
 		logger.LogInfo(ctx, fmt.Sprintf("Task %s failed: %s", task.TaskID, task.FailReason))
 		taskResult.Progress = taskcommon.ProgressComplete
-		if quota != 0 {
-			shouldRefund = true
+		if task.Quota != 0 {
+			shouldHandleFailure = true
 		}
 	default:
 		return fmt.Errorf("unknown task status %s for task %s", taskResult.Status, task.TaskID)
@@ -562,15 +580,23 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 	if isDone && snap.Status != task.Status {
-		won, err := task.UpdateWithStatus(snap.Status)
+		var won bool
+		var err error
+		if shouldHandleFailure {
+			won, err = transitionTaskTerminalFailure(ctx, task, snap.Status, task.FailReason, responseBody)
+		} else {
+			won, err = task.UpdateWithStatus(snap.Status)
+		}
 		if err != nil {
 			logger.LogError(ctx, fmt.Sprintf("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
-			shouldRefund = false
+			shouldHandleFailure = false
 			shouldSettle = false
 		} else if !won {
 			logger.LogWarn(ctx, fmt.Sprintf("Task %s already transitioned by another process, skip billing", task.TaskID))
-			shouldRefund = false
+			shouldHandleFailure = false
 			shouldSettle = false
+		} else if shouldHandleFailure {
+			shouldHandleFailure = false
 		}
 	} else if !snap.Equal(task.Snapshot()) {
 		if _, err := task.UpdateWithStatus(snap.Status); err != nil {
@@ -584,8 +610,8 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if shouldSettle {
 		settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 	}
-	if shouldRefund {
-		RefundTaskQuota(ctx, task, task.FailReason)
+	if shouldHandleFailure {
+		HandleTaskTerminalFailureBilling(ctx, task, task.FailReason, responseBody)
 	}
 
 	return nil

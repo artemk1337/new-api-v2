@@ -1,14 +1,30 @@
 package channel
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestClassifyWssHandshakeErrorPreservesStructuredFreeOutcome(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"rate limited"}}`)),
+	}
+
+	apiErr := classifyWssHandshakeError("wss://example.test", resp, errors.New("websocket handshake failed"))
+
+	require.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+	require.Equal(t, types.AttemptFinancialOutcomeNonBillable, apiErr.GetFinancialOutcome())
+}
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	t.Parallel()

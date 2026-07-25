@@ -478,6 +478,7 @@ func uploadFileFromForm(c *gin.Context, info *relaycommon.RelayInfo, fieldCandid
 	req.Header.Set("Content-Type", formContentType)
 	req.Header.Set("Authorization", "Bearer "+info.ApiKey)
 
+	info.MarkAttemptDispatched()
 	resp, err := service.GetHttpClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("replicate adaptor: upload image failed: %w", err)
@@ -499,6 +500,7 @@ func uploadFileFromForm(c *gin.Context, info *relaycommon.RelayInfo, fieldCandid
 	if uploadResp.Urls.Get == "" {
 		return "", errors.New("replicate adaptor: upload response missing url")
 	}
+	info.MarkAttemptBillingEvidence()
 	return uploadResp.Urls.Get, nil
 }
 

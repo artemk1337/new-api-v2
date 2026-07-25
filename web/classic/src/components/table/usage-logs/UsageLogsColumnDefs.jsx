@@ -389,6 +389,85 @@ function getUsageLogGroupSummary(groupRatio, userGroupRatio, t) {
   return `${useUserGroupRatio ? t('专属倍率') : t('分组')} ${formatRatio(ratio)}x`;
 }
 
+function hasAutoFallback(other) {
+  return (
+    (Number(other?.auto_fallback_count) || 0) > 0 ||
+    (other?.auto_initial_group &&
+      other?.auto_used_group &&
+      other.auto_initial_group !== other.auto_used_group)
+  );
+}
+
+function getAutoFallbackLabel(other, t) {
+  return other?.auto_used_more_expensive === true
+    ? t('Auto 使用了更贵的分组')
+    : t('Auto 已切换分组');
+}
+
+function formatAutoFailedGroups(other, formatGroupName) {
+  if (!Array.isArray(other?.auto_failed_groups)) {
+    return '';
+  }
+
+  return other.auto_failed_groups
+    .map((item) => {
+      if (typeof item === 'string') {
+        return formatGroupName(item);
+      }
+      const group = item?.group ? formatGroupName(item.group) : '';
+      const reason =
+        item?.status_code ??
+        item?.error_code ??
+        item?.code ??
+        item?.error ??
+        item?.reason;
+      if (!group) {
+        return reason == null ? '' : String(reason);
+      }
+      return reason == null ? group : `${group} — ${reason}`;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+function buildAutoFallbackTooltip(other, t, formatGroupName) {
+  const lines = [
+    hasAutoFallback(other) ? getAutoFallbackLabel(other, t) : t('错误后扣费'),
+  ];
+  if (other?.auto_initial_group) {
+    lines.push(
+      `${t('初始分组')}：${formatGroupName(other.auto_initial_group)}`,
+    );
+  }
+  if (other?.auto_used_group) {
+    lines.push(`${t('实际分组')}：${formatGroupName(other.auto_used_group)}`);
+  }
+  if (other?.auto_fallback_count != null) {
+    lines.push(`${t('切换次数')}：${other.auto_fallback_count}`);
+  }
+  const failedGroups = formatAutoFailedGroups(other, formatGroupName);
+  if (failedGroups) {
+    lines.push(`${t('失败分组')}：${failedGroups}`);
+  }
+  if (other?.reserved_quota != null) {
+    lines.push(`${t('预留额度')}：${renderQuota(other.reserved_quota, 6)}`);
+  }
+  if (other?.released_quota != null) {
+    lines.push(`${t('释放额度')}：${renderQuota(other.released_quota, 6)}`);
+  }
+  if (other?.charged_on_error) {
+    lines.push(`${t('错误后扣费')}：${t('是')}`);
+  }
+
+  return (
+    <div style={{ lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>
+      {lines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+    </div>
+  );
+}
+
 function renderCompactDetailSummary(summarySegments) {
   const segments = Array.isArray(summarySegments)
     ? summarySegments.filter((segment) => segment?.text)
@@ -439,6 +518,10 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     return null;
   }
 
+  const autoFallbackSegment = hasAutoFallback(other)
+    ? { text: getAutoFallbackLabel(other, t), tone: 'primary' }
+    : null;
+
   if (
     other?.violation_fee === true ||
     Boolean(other?.violation_fee_code) ||
@@ -452,6 +535,7 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     );
     return {
       segments: [
+        autoFallbackSegment,
         groupText ? { text: groupText, tone: 'primary' } : null,
         { text: t('违规扣费'), tone: 'primary' },
         {
@@ -463,16 +547,28 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     };
   }
 
-  const summaryOpts = { ...other, displayMode: billingDisplayMode, outputMode: 'segments' };
+  const summaryOpts = {
+    ...other,
+    displayMode: billingDisplayMode,
+    outputMode: 'segments',
+  };
 
   if (other?.billing_mode === 'tiered_expr') {
-    return { segments: renderTieredModelPriceSimple(summaryOpts) };
+    return {
+      segments: [
+        autoFallbackSegment,
+        ...renderTieredModelPriceSimple(summaryOpts),
+      ].filter(Boolean),
+    };
   }
 
   return {
-    segments: other?.claude
+    segments: [
+      autoFallbackSegment,
+      ...(other?.claude
       ? renderModelPriceSimple({ ...summaryOpts, provider: 'claude' })
-      : renderModelPriceSimple({ ...summaryOpts, provider: 'openai' }),
+        : renderModelPriceSimple({ ...summaryOpts, provider: 'openai' })),
+    ].filter(Boolean),
   };
 }
 
@@ -548,7 +644,11 @@ export const getLogsColumns = ({
                       <div>{content}</div>
                       {affinity ? (
                         <div style={{ marginTop: 6 }}>
-                          {buildChannelAffinityTooltip(affinity, t, groupNameMap)}
+                          {buildChannelAffinityTooltip(
+                            affinity,
+                            t,
+                            groupNameMap,
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -646,41 +746,45 @@ export const getLogsColumns = ({
       dataIndex: 'group',
       render: (text, record, index) => {
         if (
-          record.type === 0 ||
-          record.type === 2 ||
-          record.type === 5 ||
-          record.type === 6
+          record.type !== 0 &&
+          record.type !== 2 &&
+          record.type !== 5 &&
+          record.type !== 6
         ) {
-          if (record.group) {
-            return (
-              <>
-                {renderGroup(
-                  record.group_ref?.name || formatPricingGroupName(record.group),
-                )}
-              </>
-            );
-          } else {
-            let other = null;
-            try {
-              other = JSON.parse(record.other);
-            } catch (e) {
-              console.error(
-                `Failed to parse record.other: "${record.other}".`,
-                e,
-              );
-            }
-            if (other === null) {
               return <></>;
             }
-            if (other.group !== undefined) {
-              return <>{renderGroup(formatPricingGroupName(other.group))}</>;
-            } else {
-              return <></>;
-            }
-          }
-        } else {
-          return <></>;
+
+        const other = getLogOther(record.other);
+        const group = record.group || other?.group || '';
+        const displayGroup =
+          record.group_ref?.name || formatPricingGroupName(group);
+        const groupNode = group ? renderGroup(displayGroup) : null;
+
+        const autoFallback = hasAutoFallback(other);
+        const chargedOnError = Boolean(other?.charged_on_error);
+        if (!autoFallback && !chargedOnError) {
+          return groupNode || <></>;
         }
+
+        return (
+          <Space spacing={4}>
+            {groupNode}
+            <Tooltip
+              content={buildAutoFallbackTooltip(
+                other,
+                t,
+                formatPricingGroupName,
+              )}
+              position='top'
+            >
+              <Tag color={chargedOnError ? 'red' : 'blue'} shape='circle'>
+                {chargedOnError
+                  ? t('错误后扣费')
+                  : getAutoFallbackLabel(other, t)}
+              </Tag>
+            </Tooltip>
+          </Space>
+        );
       },
     },
     {

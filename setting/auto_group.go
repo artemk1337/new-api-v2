@@ -1,6 +1,7 @@
 package setting
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
@@ -28,8 +29,21 @@ func UpdateAutoGroupsByJsonString(jsonString string) error {
 	if err := common.Unmarshal([]byte(jsonString), &updated); err != nil {
 		return err
 	}
+	normalized := make([]string, 0, len(updated))
+	seen := make(map[string]struct{}, len(updated))
+	for _, group := range updated {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		normalized = append(normalized, group)
+	}
 	autoGroupsMutex.Lock()
-	autoGroups = updated
+	autoGroups = normalized
 	autoGroupsMutex.Unlock()
 	return nil
 }

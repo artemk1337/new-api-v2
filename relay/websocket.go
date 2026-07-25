@@ -1,8 +1,10 @@
 package relay
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
@@ -27,6 +29,10 @@ func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 	resp, err := adaptor.DoRequest(c, info, nil)
 	if err != nil {
+		var apiErr *types.NewAPIError
+		if errors.As(err, &apiErr) {
+			return apiErr
+		}
 		return types.NewError(err, types.ErrorCodeDoRequestFailed)
 	}
 
@@ -37,10 +43,21 @@ func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.
 
 	usage, newAPIError := adaptor.DoResponse(c, nil, info)
 	if newAPIError != nil {
+		if realtimeUsage, ok := usage.(*dto.RealtimeUsage); ok &&
+			(info.AttemptActualQuotaKnown || info.AttemptUsageBillingEvidence) {
+			if billingErr := service.PostWssConsumeQuota(c, info, info.UpstreamModelName, realtimeUsage, ""); billingErr != nil {
+				common.SysLog("error finalizing failed realtime billing: " + billingErr.Error())
+				newAPIError.Err = errors.Join(newAPIError.Err, billingErr)
+			}
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
-	service.PostWssConsumeQuota(c, info, info.UpstreamModelName, usage.(*dto.RealtimeUsage), "")
+	if billingErr := service.PostWssConsumeQuota(c, info, info.UpstreamModelName, usage.(*dto.RealtimeUsage), ""); billingErr != nil {
+		apiErr := types.NewError(billingErr, types.ErrorCodeBadResponse)
+		apiErr.SetFinancialOutcome(types.AttemptFinancialOutcomeBillable)
+		return apiErr
+	}
 	return nil
 }

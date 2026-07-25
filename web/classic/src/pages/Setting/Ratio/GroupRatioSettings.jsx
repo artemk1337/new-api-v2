@@ -28,7 +28,6 @@ import {
   Row,
   SideSheet,
   Spin,
-  Switch,
   Tabs,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -55,7 +54,6 @@ const OPTION_KEYS = [
   'GroupGroupRatio',
   'group_ratio_setting.group_special_usable_group',
   'AutoGroups',
-  'DefaultUseAutoGroup',
 ];
 
 function parseJSONSafe(str, fallback) {
@@ -100,7 +98,6 @@ export default function GroupRatioSettings(props) {
     GroupGroupRatio: '',
     'group_ratio_setting.group_special_usable_group': '',
     AutoGroups: '',
-    DefaultUseAutoGroup: false,
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -222,31 +219,8 @@ export default function GroupRatioSettings(props) {
 
       <Form.Section text={t('自动分组')}>
         <Text type='tertiary' size='small' style={{ display: 'block', marginBottom: 12 }}>
-          {t('令牌分组设为 auto 时，按以下顺序依次尝试选择可用分组，排在前面的优先级更高')}
+          {t('Auto 仅使用下方允许的分组，并按价格排序，优先尝试最便宜的可用分组。')}
         </Text>
-        <Row gutter={16}>
-          <Col xs={24} sm={12} md={8} lg={8} xl={8}>
-            <Form.Slot label={t('默认使用auto分组')}>
-              <div className='flex items-center gap-2'>
-                <Switch
-                  checked={!!inputs.DefaultUseAutoGroup}
-                  size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
-                  onChange={(value) =>
-                    setInputs((prev) => ({
-                      ...prev,
-                      DefaultUseAutoGroup: value,
-                    }))
-                  }
-                />
-              </div>
-              <Text type='tertiary' size='small' style={{ marginTop: 4 }}>
-                {t('开启后创建令牌默认选择auto分组，初始令牌也将设为auto')}
-              </Text>
-            </Form.Slot>
-          </Col>
-        </Row>
         <AutoGroupList
           key={`ag_${dv}`}
           value={inputs.AutoGroups}
@@ -373,7 +347,7 @@ export default function GroupRatioSettings(props) {
         <Row gutter={16}>
           <Col xs={24} sm={16}>
             <Form.TextArea
-              label={t('自动分组auto，从第一个开始选择')}
+              label={t('Auto 允许分组')}
               placeholder={t('为一个 JSON 文本')}
               field={'AutoGroups'}
               autosize={{ minRows: 6, maxRows: 12 }}
@@ -398,22 +372,6 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) =>
                 setInputs((prev) => ({ ...prev, AutoGroups: value }))
-              }
-            />
-          </Col>
-        </Row>
-        <Row gutter={16}>
-          <Col span={16}>
-            <Form.Switch
-              label={t(
-                '创建令牌默认选择auto分组，初始令牌也将设为auto（否则留空，为用户默认分组）',
-              )}
-              field={'DefaultUseAutoGroup'}
-              onChange={(value) =>
-                setInputs((prev) => ({
-                  ...prev,
-                  DefaultUseAutoGroup: value,
-                }))
               }
             />
           </Col>
@@ -512,7 +470,7 @@ export default function GroupRatioSettings(props) {
               </Paragraph>
               <Paragraph style={{ lineHeight: 1.8, marginTop: 4 }}>
                 <Text strong>{t('自动分组')}</Text>{' — '}
-                {t('令牌分组设为 auto 时，系统按优先级顺序自动选择一个可用分组。')}
+                {t('Auto 仅使用允许的分组，并按价格优先选择最便宜的可用分组。')}
               </Paragraph>
             </GuideSection>
           </div>
@@ -599,24 +557,22 @@ export default function GroupRatioSettings(props) {
           <div style={{ paddingTop: 20 }}>
             <Title heading={5}>{t('自动分组选择')}</Title>
             <Paragraph style={{ marginTop: 12, lineHeight: 1.8 }}>
-              {t('当令牌分组设为 auto 时，系统按列表顺序依次选择可用分组。排在前面的优先级更高。')}
+              {t('Auto 仅使用下方允许的分组，并按价格排序，优先尝试最便宜的可用分组。')}
             </Paragraph>
 
             <GuideSection title={t('查看示例')}>
               <Paragraph size='small' type='tertiary' style={{ marginBottom: 6 }}>
-                {t('场景：设置自动选择优先级')}
+                {t('场景：限制 Auto 可使用的分组')}
               </Paragraph>
-              <CodeBlock>
-                {`1. default    ${t('最高优先级')}\n2. vip`}
-              </CodeBlock>
+              <CodeBlock>{`["default", "vip"]`}</CodeBlock>
               <Paragraph size='small' style={{ marginTop: 6, lineHeight: 1.6 }}>
-                {t('开启「默认使用 auto 分组」后，新建令牌和初始令牌都会自动设为 auto。')}
+                {t('新建令牌默认使用 Auto。')}
               </Paragraph>
             </GuideSection>
 
             <GuideSection title={t('JSON 格式参考')}>
               <Paragraph size='small' style={{ marginBottom: 4 }}>
-                <Text strong code>AutoGroups</Text>{' — '}{t('有序字符串数组')}
+                <Text strong code>AutoGroups</Text>{' — '}{t('字符串数组')}
               </Paragraph>
               <CodeBlock>{`["default", "vip"]`}</CodeBlock>
             </GuideSection>

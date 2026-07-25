@@ -80,11 +80,17 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *common.RelayInfo, requestBody 
 		return nil, err
 	}
 	err = json.Unmarshal(respBody, &cozeResponse)
+	if err != nil {
+		return nil, err
+	}
 	if cozeResponse.Code != 0 {
 		return nil, errors.New(cozeResponse.Msg)
 	}
 	c.Set("coze_conversation_id", cozeResponse.Data.ConversationId)
 	c.Set("coze_chat_id", cozeResponse.Data.Id)
+	if cozeResponse.Data.ConversationId != "" || cozeResponse.Data.Id != "" {
+		info.MarkAttemptBillingEvidence()
+	}
 	// 轮询检查消息是否完成
 	for {
 		err, isComplete := checkIfChatComplete(a, c, info)

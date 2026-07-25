@@ -16,18 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
 import { CircleAlert, GitBranch, Sparkles, KeyRound } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import {
-  formatUseTime,
-  formatLogQuota,
-  formatTimestampToDate,
-} from '@/lib/format'
-import { cn } from '@/lib/utils'
+
+import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Popover,
@@ -40,7 +34,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
+import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import {
+  formatUseTime,
+  formatLogQuota,
+  formatTimestampToDate,
+} from '@/lib/format'
+import { cn } from '@/lib/utils'
+
 import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
@@ -93,6 +95,21 @@ function getGroupRatioText(other: LogOtherData | null): string | null {
   }
 
   return null
+}
+
+function hasAutoFallback(other: LogOtherData | null): boolean {
+  return (
+    (other?.auto_fallback_count ?? 0) > 0 ||
+    (!!other?.auto_initial_group &&
+      !!other?.auto_used_group &&
+      other.auto_initial_group !== other.auto_used_group)
+  )
+}
+
+function getAutoFallbackLabel(other: LogOtherData | null): string {
+  return other?.auto_used_more_expensive === true
+    ? 'Auto used a more expensive group'
+    : 'Auto switched group'
 }
 
 function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
@@ -332,8 +349,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             ? rawUseChannel.map(String).filter(Boolean)
             : []
           const hasRetryChain = useChannel.length > 1
-          const channelChain =
-            hasRetryChain ? useChannel.join(' → ') : undefined
+          const channelChain = hasRetryChain
+            ? useChannel.join(' → ')
+            : undefined
           const channelDisplay = log.channel_name
             ? `${log.channel_name} #${log.channel}`
             : `#${log.channel}`
@@ -538,8 +556,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
     accessorKey: 'token_name',
     header: t('Token'),
     cell: function TokenNameCell({ row }) {
-      const { sensitiveVisible, formatPricingGroupName } =
-        useUsageLogsContext()
+      const { sensitiveVisible, formatPricingGroupName } = useUsageLogsContext()
       const log = row.original
       if (!isDisplayableLogType(log.type)) return null
 
@@ -833,6 +850,58 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const segments = buildDetailSegments(log, other, t)
         const primary = segments[0]
         const hasMore = segments.length > 1
+        const autoFallback = hasAutoFallback(other)
+        let preview: ReactNode
+
+        if (other?.charged_on_error) {
+          preview = (
+            <StatusBadge
+              label={t('Charged on error')}
+              variant='danger'
+              size='sm'
+              copyable={false}
+            />
+          )
+        } else if (autoFallback) {
+          preview = (
+            <StatusBadge
+              label={t(getAutoFallbackLabel(other))}
+              variant='info'
+              size='sm'
+              copyable={false}
+            />
+          )
+        } else if (primary) {
+          let primaryClassName = 'text-foreground'
+          if (primary.muted) {
+            primaryClassName = 'text-muted-foreground/60'
+          } else if (primary.danger) {
+            primaryClassName = 'text-red-600 dark:text-red-400'
+          }
+          preview = (
+            <span
+              className={cn(
+                'truncate leading-snug group-hover:underline',
+                primaryClassName
+              )}
+            >
+              {primary.text}
+              {hasMore && (
+                <span className='text-muted-foreground/40 ml-0.5'>
+                  +{segments.length - 1}
+                </span>
+              )}
+            </span>
+          )
+        } else if (log.content) {
+          preview = (
+            <span className='text-muted-foreground truncate group-hover:underline'>
+              {log.content}
+            </span>
+          )
+        } else {
+          preview = <span className='text-muted-foreground/40'>—</span>
+        }
 
         return (
           <>
@@ -842,31 +911,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               onClick={() => setDialogOpen(true)}
               title={t('Click to view full details')}
             >
-              {primary ? (
-                <span
-                  className={cn(
-                    'truncate leading-snug group-hover:underline',
-                    primary.muted
-                      ? 'text-muted-foreground/60'
-                      : primary.danger
-                        ? 'text-red-600 dark:text-red-400'
-                        : 'text-foreground'
-                  )}
-                >
-                  {primary.text}
-                  {hasMore && (
-                    <span className='text-muted-foreground/40 ml-0.5'>
-                      +{segments.length - 1}
-                    </span>
-                  )}
-                </span>
-              ) : log.content ? (
-                <span className='text-muted-foreground truncate group-hover:underline'>
-                  {log.content}
-                </span>
-              ) : (
-                <span className='text-muted-foreground/40'>—</span>
-              )}
+              {preview}
             </button>
             <DetailsDialog
               log={log}

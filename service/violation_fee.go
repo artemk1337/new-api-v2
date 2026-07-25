@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,7 +47,11 @@ func WrapAsViolationFeeGrokCSAM(err *types.NewAPIError) *types.NewAPIError {
 	oai := err.ToOpenAIError()
 	oai.Type = string(types.ErrorCodeViolationFeeGrokCSAM)
 	oai.Code = string(types.ErrorCodeViolationFeeGrokCSAM)
-	return types.WithOpenAIError(oai, err.StatusCode, types.ErrOptionWithSkipRetry())
+	options := []types.NewAPIErrorOptions{types.ErrOptionWithSkipRetry()}
+	if outcome := err.GetFinancialOutcome(); outcome != types.AttemptFinancialOutcomeUnknown {
+		options = append(options, types.ErrOptionWithFinancialOutcome(outcome))
+	}
+	return types.WithOpenAIError(oai, err.StatusCode, options...)
 }
 
 // NormalizeViolationFeeError ensures:
@@ -64,10 +70,18 @@ func NormalizeViolationFeeError(err *types.NewAPIError) *types.NewAPIError {
 
 	if IsViolationFeeCode(err.GetErrorCode()) {
 		oai := err.ToOpenAIError()
-		return types.WithOpenAIError(oai, err.StatusCode, types.ErrOptionWithSkipRetry())
+		options := []types.NewAPIErrorOptions{types.ErrOptionWithSkipRetry()}
+		if outcome := err.GetFinancialOutcome(); outcome != types.AttemptFinancialOutcomeUnknown {
+			options = append(options, types.ErrOptionWithFinancialOutcome(outcome))
+		}
+		return types.WithOpenAIError(oai, err.StatusCode, options...)
 	}
 
 	return err
+}
+
+func ShouldRefundBaseForViolation(info *relaycommon.RelayInfo, err *types.NewAPIError) bool {
+	return info != nil && shouldChargeViolationFee(err)
 }
 
 func shouldChargeViolationFee(err *types.NewAPIError) bool {
@@ -99,42 +113,33 @@ func calcViolationFeeQuota(amount, groupRatio float64) int {
 	return int(quota)
 }
 
-// ChargeViolationFeeIfNeeded charges an additional fee after the normal flow finishes (including refund).
+// ChargeViolationFeeIfNeeded charges the violation fee after the base request reserve is refunded.
 // It uses Grok fee settings as the fee policy.
-func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) bool {
+func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) (bool, error) {
 	if ctx == nil || relayInfo == nil || apiErr == nil {
-		return false
+		return false, nil
 	}
 	//if relayInfo.IsPlayground {
 	//	return false
 	//}
 	if !shouldChargeViolationFee(apiErr) {
-		return false
+		return false, nil
 	}
 
 	settings := model_setting.GetGrokSettings()
 	if settings == nil || !settings.ViolationDeductionEnabled {
-		return false
+		return false, nil
 	}
 
 	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
 	feeQuota := calcViolationFeeQuota(settings.ViolationDeductionAmount, groupRatio)
 	if feeQuota <= 0 {
-		return false
+		return false, nil
 	}
-
-	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("failed to charge violation fee: %s", err.Error()))
-		return false
-	}
-
-	model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
-	model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
 
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	tokenName := ctx.GetString("token_name")
 	oai := apiErr.ToOpenAIError()
-
 	other := map[string]any{
 		"violation_fee":        true,
 		"violation_fee_code":   string(types.ErrorCodeViolationFeeGrokCSAM),
@@ -146,8 +151,41 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		"upstream_error_code":  fmt.Sprintf("%v", oai.Code),
 		"violation_fee_marker": CSAMViolationMarker,
 	}
+	requestID := relayInfo.RequestId
+	if requestID == "" {
+		requestID = ctx.GetString(common.RequestIdKey)
+	}
+	if requestID == "" {
+		requestID = common.NewRequestId()
+	}
+	eventHash := sha256.Sum256([]byte(fmt.Sprintf("violation_fee:%s:%d", requestID, relayInfo.TokenId)))
+	eventID := fmt.Sprintf("%x", eventHash)
+	pendingOther := make(map[string]any, len(other)+1)
+	for key, value := range other {
+		pendingOther[key] = value
+	}
+	pendingOther["settlement_pending"] = true
+	pendingLog := model.RecordConsumeLogParams{
+		ChannelId:      relayInfo.ChannelId,
+		ModelName:      relayInfo.OriginModelName,
+		TokenName:      tokenName,
+		Quota:          0,
+		Content:        "Violation fee settlement pending",
+		TokenId:        relayInfo.TokenId,
+		UseTimeSeconds: int(useTimeSeconds),
+		IsStream:       relayInfo.IsStream,
+		Group:          relayInfo.UsingGroup,
+		Other:          pendingOther,
+		Force:          true,
+	}
+	if !model.HasBillingOutboxTable() {
+		return chargeViolationFeeLegacy(ctx, relayInfo, feeQuota, pendingLog, other)
+	}
+	if err := model.StageConsumeLogOutboxIntent(ctx, relayInfo.UserId, eventID, pendingLog); err != nil {
+		return false, fmt.Errorf("persist violation fee billing intent: %w", err)
+	}
 
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+	finalLog := model.RecordConsumeLogParams{
 		ChannelId:      relayInfo.ChannelId,
 		ModelName:      relayInfo.OriginModelName,
 		TokenName:      tokenName,
@@ -158,7 +196,88 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		IsStream:       relayInfo.IsStream,
 		Group:          relayInfo.UsingGroup,
 		Other:          other,
-	})
+		Force:          true,
+	}
+	commitErr := model.CommitViolationFeeWithOutbox(ctx, eventID, model.ViolationFeeCommitParams{
+		UserID:          relayInfo.UserId,
+		TokenID:         relayInfo.TokenId,
+		TokenKey:        relayInfo.TokenKey,
+		Quota:           feeQuota,
+		SubscriptionID:  relayInfo.SubscriptionId,
+		UseSubscription: relayInfo.BillingSource == BillingSourceSubscription,
+		SkipTokenQuota:  relayInfo.IsPlayground,
+	}, finalLog)
+	charged := commitErr == nil
+	logQuota := feeQuota
+	content := "Violation fee charged"
+	if !charged {
+		logger.LogError(ctx, fmt.Sprintf("failed to charge violation fee: %s", commitErr.Error()))
+		logQuota = 0
+		content = "Violation fee was not charged"
+		other["charge_failed"] = true
+		other["settlement_error"] = commitErr.Error()
+	}
 
-	return true
+	if charged {
+		if relayInfo.BillingSource == BillingSourceSubscription {
+			relayInfo.SubscriptionPostDelta += int64(feeQuota)
+			checkAndSendSubscriptionQuotaNotify(relayInfo)
+		} else {
+			checkAndSendQuotaNotify(relayInfo, feeQuota, 0)
+		}
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
+	}
+
+	finalLog = model.RecordConsumeLogParams{
+		ChannelId:      relayInfo.ChannelId,
+		ModelName:      relayInfo.OriginModelName,
+		TokenName:      tokenName,
+		Quota:          logQuota,
+		Content:        content,
+		TokenId:        relayInfo.TokenId,
+		UseTimeSeconds: int(useTimeSeconds),
+		IsStream:       relayInfo.IsStream,
+		Group:          relayInfo.UsingGroup,
+		Other:          other,
+		Force:          true,
+	}
+	var logErr error
+	if !charged {
+		logErr = model.UpsertConsumeLogOutboxIntent(ctx, relayInfo.UserId, eventID, finalLog)
+	}
+	if logErr == nil {
+		logErr = model.DeliverBillingOutboxEvent(eventID)
+	}
+
+	return charged, errors.Join(commitErr, logErr)
+}
+
+func chargeViolationFeeLegacy(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, feeQuota int, logParams model.RecordConsumeLogParams, other map[string]any) (bool, error) {
+	adjustment := PostConsumeQuotaWithResult(relayInfo, feeQuota, 0, true)
+	charged := adjustment.FundingCommitted
+	if charged {
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
+		logParams.Quota = feeQuota
+		logParams.Content = "Violation fee charged"
+	} else {
+		logParams.Content = "Violation fee was not charged"
+		other["charge_failed"] = true
+	}
+	if adjustment.Err != nil {
+		other["settlement_error"] = adjustment.Err.Error()
+		if adjustment.FundingCommitted != adjustment.TokenCommitted {
+			other["settlement_partial"] = true
+		}
+	}
+	logParams.Other = other
+	return charged, errors.Join(adjustment.Err, model.RecordConsumeLog(ctx, relayInfo.UserId, logParams))
+}
+
+func RefundBaseAndChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) (bool, error) {
+	if err := RefundBilling(ctx, relayInfo, apiErr); err != nil {
+		return false, err
+	}
+	return ChargeViolationFeeIfNeeded(ctx, relayInfo, apiErr)
 }

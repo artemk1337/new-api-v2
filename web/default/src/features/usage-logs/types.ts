@@ -93,6 +93,15 @@ export interface ChannelAffinityInfo {
   using_group_name?: string
 }
 
+export interface AutoFailedGroup {
+  group?: string
+  error_code?: string
+  status_code?: number
+  code?: string | number
+  error?: string
+  reason?: string
+}
+
 export interface LogOtherData {
   admin_info?: {
     is_multi_key?: boolean
@@ -183,6 +192,16 @@ export interface LogOtherData {
   po?: string[]
   billing_source?: string
   group?: string
+  auto_initial_group?: string
+  auto_used_group?: string
+  auto_initial_ratio?: number
+  auto_used_ratio?: number
+  auto_used_more_expensive?: boolean
+  auto_fallback_count?: number
+  auto_failed_groups?: Array<string | AutoFailedGroup>
+  reserved_quota?: number
+  released_quota?: number
+  charged_on_error?: boolean
   stream_status?: {
     status?: string
     end_reason?: string

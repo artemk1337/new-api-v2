@@ -29,6 +29,23 @@ func isolateLegacyPricingReferences(t *testing.T) {
 	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
 }
 
+func TestValidateOptionValueRejectsEmptyAutoGroups(t *testing.T) {
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"internal","ratio":1,"selectable":false}
+	]`))
+
+	require.NoError(t, validateOptionValue("AutoGroups", `["default"]`))
+	require.Error(t, validateOptionValue("AutoGroups", `[]`))
+	require.Error(t, validateOptionValue("AutoGroups", `[" "]`))
+	require.Error(t, validateOptionValue("AutoGroups", `["missing"]`))
+	require.Error(t, validateOptionValue("AutoGroups", `["internal"]`))
+}
+
 func TestUpdateOptionDoesNotPersistInvalidPricingGroups(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 	require.NoError(t, DB.Where("key = ?", "PricingGroups").Delete(&Option{}).Error)
@@ -128,6 +145,36 @@ func TestUpdateOptionsBulkPersistsLegacyGroupRatioAsPricingGroups(t *testing.T) 
 	var legacyCount int64
 	require.NoError(t, DB.Model(&Option{}).Where("key = ?", "GroupRatio").Count(&legacyCount).Error)
 	assert.Zero(t, legacyCount)
+}
+
+func TestUpdateOptionsBulkValidatesAutoGroupsAgainstNewPricingGroups(t *testing.T) {
+	isolateLegacyPricingReferences(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Exec("DELETE FROM options").Error)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, DB.Exec("DELETE FROM options").Error)
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true}
+	]`))
+
+	require.NoError(t, UpdateOptionsBulk(map[string]string{
+		"PricingGroups": `[
+			{"id":1,"name":"default","ratio":1,"selectable":true},
+			{"id":2,"name":"new","ratio":1.2,"selectable":true}
+		]`,
+		"AutoGroups": `["missing","new"]`,
+	}))
+
+	var persisted Option
+	require.NoError(t, DB.First(&persisted, "key = ?", "AutoGroups").Error)
+	assert.JSONEq(t, `["2"]`, persisted.Value)
+	assert.Equal(t, []string{"2"}, setting.GetAutoGroups())
 }
 
 func TestUpdateOptionsBulkDoesNotPersistInvalidPricingGroups(t *testing.T) {
@@ -352,6 +399,62 @@ func TestLoadOptionsMigratesDefaultGroupsWhenGroupRatioIsAbsent(t *testing.T) {
 		{"id":2,"name":"vip","ratio":1,"selectable":true,"description":"vip分组"},
 		{"id":3,"name":"svip","ratio":1,"selectable":false}
 	]`, pricingGroups.Value)
+}
+
+func TestLoadOptionsPersistsRecoveredLegacyEmptyAutoGroups(t *testing.T) {
+	isolateLegacyPricingReferences(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Exec("DELETE FROM options").Error)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, DB.Exec("DELETE FROM options").Error)
+	})
+	require.NoError(t, DB.Create(&[]Option{
+		{Key: "PricingGroups", Value: `[
+			{"id":1,"name":"default","ratio":1,"selectable":true,"description":"Default"},
+			{"id":2,"name":"vip","ratio":1.2,"selectable":true,"description":"VIP"},
+			{"id":3,"name":"internal","ratio":0.5,"selectable":false,"description":"Internal"}
+		]`},
+		{Key: "AutoGroups", Value: `[]`},
+	}).Error)
+
+	ratio_setting.ResetPricingGroupsForTest()
+	loadOptionsFromDatabase()
+
+	assert.Equal(t, []string{"1", "2"}, setting.GetAutoGroups())
+	var persisted Option
+	require.NoError(t, DB.First(&persisted, "key = ?", "AutoGroups").Error)
+	assert.JSONEq(t, `["1","2"]`, persisted.Value)
+}
+
+func TestLoadOptionsPersistsRecoveredLegacyUnknownAutoGroups(t *testing.T) {
+	isolateLegacyPricingReferences(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Exec("DELETE FROM options").Error)
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, DB.Exec("DELETE FROM options").Error)
+	})
+	require.NoError(t, DB.Create(&[]Option{
+		{Key: "PricingGroups", Value: `[
+			{"id":1,"name":"default","ratio":1,"selectable":true,"description":"Default"},
+			{"id":2,"name":"vip","ratio":1.2,"selectable":true,"description":"VIP"},
+			{"id":3,"name":"internal","ratio":0.5,"selectable":false,"description":"Internal"}
+		]`},
+		{Key: "AutoGroups", Value: `["missing","internal"]`},
+	}).Error)
+
+	ratio_setting.ResetPricingGroupsForTest()
+	loadOptionsFromDatabase()
+
+	assert.Equal(t, []string{"1", "2"}, setting.GetAutoGroups())
+	var persisted Option
+	require.NoError(t, DB.First(&persisted, "key = ?", "AutoGroups").Error)
+	assert.JSONEq(t, `["1","2"]`, persisted.Value)
 }
 
 func TestLoadOptionsMigratesLegacyGroupsWithoutDefault(t *testing.T) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.57
+
+- Added the `Auto` token group: it tries eligible pricing groups from the lowest effective price to the highest and transparently switches only after an upstream-confirmed no-charge failure.
+- Made token group selection mandatory, migrated legacy empty selections to `Auto`, and clarified group and Auto behavior in both interfaces.
+- Reserved Auto requests at the highest eligible group price and added clear insufficient-reserve guidance.
+- Preserved billing and usage logs for charged failures, including asynchronous task settlement and retryable log delivery.
+
 ## v1.1.56
 
 - Fixed duplicate-looking Telegram Login Widget rendering while keeping it centered in the OAuth form.

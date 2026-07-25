@@ -353,13 +353,39 @@ type RecordConsumeLogParams struct {
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
+	Force            bool                   `json:"-"`
 }
 
-func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
-	if !common.LogConsumeEnabled {
-		return
+func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) error {
+	if !common.LogConsumeEnabled && !params.Force {
+		return nil
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	log := buildConsumeLog(c, userId, params)
+	err := persistBillingLog(log)
+	if err != nil {
+		logger.LogError(c, "failed to record log: "+err.Error())
+	}
+	if common.DataExportEnabled {
+		gopool.Go(func() {
+			LogQuotaData(QuotaDataLogParams{
+				UserID:    userId,
+				Username:  log.Username,
+				ModelName: params.ModelName,
+				Quota:     params.Quota,
+				CreatedAt: log.CreatedAt,
+				TokenUsed: params.PromptTokens + params.CompletionTokens,
+				UseGroup:  log.Group,
+				TokenID:   params.TokenId,
+				ChannelID: params.ChannelId,
+				NodeName:  common.NodeName,
+			})
+		})
+	}
+	return err
+}
+
+func buildConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) *Log {
 	group := ratio_setting.PricingGroupKeyOrDefault(params.Group)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
@@ -373,7 +399,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			needRecordIp = true
 		}
 	}
-	log := &Log{
+	return &Log{
 		UserId:           userId,
 		Username:         username,
 		CreatedAt:        createdAt,
@@ -399,26 +425,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
-	err := createLog(log)
-	if err != nil {
-		logger.LogError(c, "failed to record log: "+err.Error())
-	}
-	if common.DataExportEnabled {
-		gopool.Go(func() {
-			LogQuotaData(QuotaDataLogParams{
-				UserID:    userId,
-				Username:  username,
-				ModelName: params.ModelName,
-				Quota:     params.Quota,
-				CreatedAt: createdAt,
-				TokenUsed: params.PromptTokens + params.CompletionTokens,
-				UseGroup:  group,
-				TokenID:   params.TokenId,
-				ChannelID: params.ChannelId,
-				NodeName:  common.NodeName,
-			})
-		})
-	}
 }
 
 type RecordTaskBillingLogParams struct {
@@ -432,11 +438,12 @@ type RecordTaskBillingLogParams struct {
 	Group     string
 	Other     map[string]interface{}
 	NodeName  string // 任务发起节点；为空时回退当前节点
+	Force     bool   // 即使普通消费日志关闭，也持久化关键计费审计
 }
 
-func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
-	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
-		return
+func RecordTaskBillingLog(params RecordTaskBillingLogParams) error {
+	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled && !params.Force {
+		return nil
 	}
 	username, _ := GetUsernameById(params.UserId, false)
 	tokenName := ""
@@ -461,7 +468,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		Group:     group,
 		Other:     common.MapToJsonStr(params.Other),
 	}
-	err := createLog(log)
+	err := persistBillingLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
 	}
@@ -484,6 +491,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 			})
 		})
 	}
+	return err
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {

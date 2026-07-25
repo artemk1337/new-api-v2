@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -188,10 +189,30 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	}
 
 	if tokenGroup == "auto" {
+		autoGroups := service.GetUserAutoGroup(userGroup)
+		allowed := make(map[string]struct{}, len(autoGroups))
+		for _, group := range autoGroups {
+			allowed[group] = struct{}{}
+		}
+		configuredCandidates, hasConfiguredCandidates := common.GetContextKeyType[[]string](c, constant.ContextKeyTokenAutoGroupCandidates)
+		ownerGroups := make([]string, 0, len(autoGroups))
+		if hasConfiguredCandidates && len(configuredCandidates) > 0 {
+			for _, candidate := range configuredCandidates {
+				key := ratio_setting.PricingGroupKey(candidate)
+				if _, ok := ratio_setting.ResolvePricingGroupKey(key); !ok {
+					continue
+				}
+				if _, ok := allowed[key]; ok {
+					ownerGroups = append(ownerGroups, key)
+				}
+			}
+		} else {
+			ownerGroups = append(ownerGroups, autoGroups...)
+		}
 		return modelListGroups{
 			userGroup:   userGroup,
 			tokenGroup:  tokenGroup,
-			ownerGroups: service.GetUserAutoGroup(userGroup),
+			ownerGroups: ownerGroups,
 		}, nil
 	}
 
@@ -243,6 +264,14 @@ func ListModels(c *gin.Context, modelType int) {
 	ownerGroups := groups.ownerGroups
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
 	if modelLimitEnable {
+		autoGroupModels := make(map[string]struct{})
+		if groups.tokenGroup == "auto" {
+			for _, ownerGroup := range ownerGroups {
+				for _, modelName := range model.GetGroupEnabledModels(ownerGroup) {
+					autoGroupModels[modelName] = struct{}{}
+				}
+			}
+		}
 		s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
 		var tokenModelLimit map[string]bool
 		if ok {
@@ -251,6 +280,11 @@ func ListModels(c *gin.Context, modelType int) {
 			tokenModelLimit = map[string]bool{}
 		}
 		for allowModel, _ := range tokenModelLimit {
+			if groups.tokenGroup == "auto" {
+				if _, ok := autoGroupModels[allowModel]; !ok {
+					continue
+				}
+			}
 			if !acceptUnsetRatioModel {
 				if !helper.HasModelBillingConfig(allowModel) {
 					continue

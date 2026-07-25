@@ -337,6 +337,53 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
+func TestListModelsAppliesAutoCandidateSubsetBeforeTokenModelLimits(t *testing.T) {
+	originalSelfUseMode := operation_setting.SelfUseModeEnabled
+	operation_setting.SelfUseModeEnabled = true
+	t.Cleanup(func() {
+		operation_setting.SelfUseModeEnabled = originalSelfUseMode
+	})
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1.5,"selectable":true}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["1","2"]`))
+	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "1", Model: "zz-auto-cheap-limited", ChannelId: 1, Enabled: true},
+		{Group: "2", Model: "zz-auto-expensive-limited", ChannelId: 2, Enabled: true},
+	}).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "paid-users")
+	common.SetContextKey(ctx, constant.ContextKeyTokenGroup, "auto")
+	common.SetContextKey(ctx, constant.ContextKeyTokenAutoGroupCandidates, []string{"2"})
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimit, map[string]bool{
+		"zz-auto-cheap-limited":     true,
+		"zz-auto-expensive-limited": true,
+	})
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	require.Equal(t, map[string]struct{}{
+		"zz-auto-expensive-limited": {},
+	}, decodeListModelsResponse(t, recorder))
+}
+
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
 	withSelfUseModeDisabled(t)
 	withTieredBillingConfig(t, map[string]string{

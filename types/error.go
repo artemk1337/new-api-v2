@@ -84,18 +84,32 @@ const (
 
 	// quota error
 	ErrorCodeInsufficientUserQuota      ErrorCode = "insufficient_user_quota"
+	ErrorCodeInsufficientAutoReserve    ErrorCode = "insufficient_auto_reserve"
 	ErrorCodePreConsumeTokenQuotaFailed ErrorCode = "pre_consume_token_quota_failed"
 )
 
+type AttemptFinancialOutcome string
+
+const (
+	AttemptFinancialOutcomeUnknown     AttemptFinancialOutcome = ""
+	AttemptFinancialOutcomeNonBillable AttemptFinancialOutcome = "non_billable"
+	AttemptFinancialOutcomeBillable    AttemptFinancialOutcome = "billable"
+	AttemptFinancialOutcomeAmbiguous   AttemptFinancialOutcome = "ambiguous"
+)
+
 type NewAPIError struct {
-	Err            error
-	RelayError     any
-	skipRetry      bool
-	recordErrorLog *bool
-	errorType      ErrorType
-	errorCode      ErrorCode
-	StatusCode     int
-	Metadata       json.RawMessage
+	Err              error
+	RelayError       any
+	skipRetry        bool
+	recordErrorLog   *bool
+	financialOutcome AttemptFinancialOutcome
+	errorType        ErrorType
+	errorCode        ErrorCode
+	StatusCode       int
+	Metadata         json.RawMessage
+	upstreamUsage    json.RawMessage
+	upstreamCost     float64
+	upstreamCostSet  bool
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -118,6 +132,36 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 		return ""
 	}
 	return e.errorType
+}
+
+func (e *NewAPIError) GetFinancialOutcome() AttemptFinancialOutcome {
+	if e == nil {
+		return AttemptFinancialOutcomeUnknown
+	}
+	return e.financialOutcome
+}
+
+func (e *NewAPIError) SetFinancialOutcome(outcome AttemptFinancialOutcome) {
+	if e == nil {
+		return
+	}
+	e.financialOutcome = outcome
+}
+
+func (e *NewAPIError) SetUpstreamBillingEvidence(usage json.RawMessage, cost float64, costSet bool) {
+	if e == nil {
+		return
+	}
+	e.upstreamUsage = append(e.upstreamUsage[:0], usage...)
+	e.upstreamCost = cost
+	e.upstreamCostSet = costSet
+}
+
+func (e *NewAPIError) GetUpstreamBillingEvidence() (json.RawMessage, float64, bool) {
+	if e == nil {
+		return nil, 0, false
+	}
+	return append(json.RawMessage(nil), e.upstreamUsage...), e.upstreamCost, e.upstreamCostSet
 }
 
 func (e *NewAPIError) Error() string {
@@ -387,6 +431,12 @@ func ErrOptionWithSkipRetry() NewAPIErrorOptions {
 func ErrOptionWithNoRecordErrorLog() NewAPIErrorOptions {
 	return func(e *NewAPIError) {
 		e.recordErrorLog = common.GetPointer(false)
+	}
+}
+
+func ErrOptionWithFinancialOutcome(outcome AttemptFinancialOutcome) NewAPIErrorOptions {
+	return func(e *NewAPIError) {
+		e.financialOutcome = outcome
 	}
 }
 

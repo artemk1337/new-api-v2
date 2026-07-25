@@ -14,8 +14,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -32,10 +36,12 @@ type tokenPageResponse struct {
 }
 
 type tokenResponseItem struct {
-	ID     int    `json:"id"`
-	Name   string `json:"name"`
-	Key    string `json:"key"`
-	Status int    `json:"status"`
+	ID                  int      `json:"id"`
+	Name                string   `json:"name"`
+	Key                 string   `json:"key"`
+	Status              int      `json:"status"`
+	Group               string   `json:"group"`
+	AutoGroupCandidates []string `json:"auto_group_candidates"`
 }
 
 type tokenKeyResponse struct {
@@ -109,6 +115,7 @@ func setupTokenControllerTestDB(t *testing.T) *gorm.DB {
 
 	db := openTokenControllerTestDB(t)
 	migrateTokenControllerTestDB(t, db)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
 	return db
 }
 
@@ -163,6 +170,18 @@ func openTokenControllerExternalDB(t *testing.T, dialect string, dsn string) (*g
 func seedToken(t *testing.T, db *gorm.DB, userID int, name string, rawKey string) *model.Token {
 	t.Helper()
 
+	var userCount int64
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", userID).Count(&userCount).Error)
+	if userCount == 0 {
+		require.NoError(t, db.Create(&model.User{
+			Id:       userID,
+			Username: fmt.Sprintf("token-user-%d", userID),
+			Password: "not-used-in-test",
+			Group:    "default",
+			Status:   common.UserStatusEnabled,
+			AffCode:  fmt.Sprintf("token-%d", userID),
+		}).Error)
+	}
 	token := &model.Token{
 		UserId:         userID,
 		Name:           name,
@@ -503,6 +522,167 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	if strings.Contains(recorder.Body.String(), token.Key) {
 		t.Fatalf("update response leaked raw token key: %s", recorder.Body.String())
 	}
+}
+
+func useTokenPricingGroups(t *testing.T) {
+	t.Helper()
+
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(originalSpecialUsable))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1.5,"selectable":true},
+		{"id":3,"name":"private","ratio":2,"selectable":false}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["1","2"]`))
+	require.NoError(t, ratio_setting.UpdateGroupSpecialUsableGroupByJSONString(`{}`))
+}
+
+func TestAddTokenDefaultsToAutoAndNormalizesCandidateIDs(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       71,
+		Username: "auto-token-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"name":                  "auto-token",
+		"expired_time":          -1,
+		"unlimited_quota":       true,
+		"auto_group_candidates": []string{"vip", "2", "default"},
+		"cross_group_retry":     true,
+	}, 71)
+	AddToken(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, decodeAPIResponse(t, recorder).Success)
+
+	var stored model.Token
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).First(&stored, "name = ?", "auto-token").Error)
+	assert.Equal(t, "auto", stored.Group)
+	assert.Equal(t, model.PricingGroupCandidates("2,1"), stored.AutoGroupCandidates)
+	assert.False(t, stored.CrossGroupRetry)
+
+	getCtx, getRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/token/"+strconv.Itoa(stored.Id), nil, 71)
+	getCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(stored.Id)}}
+	GetToken(getCtx)
+
+	var detail tokenResponseItem
+	response := decodeAPIResponse(t, getRecorder)
+	require.True(t, response.Success)
+	require.NoError(t, common.Unmarshal(response.Data, &detail))
+	assert.Equal(t, "auto", detail.Group)
+	assert.Equal(t, []string{"2", "1"}, detail.AutoGroupCandidates)
+	assert.NotContains(t, getRecorder.Body.String(), "cross_group_retry")
+}
+
+func TestAddTokenFixedGroupClearsCandidates(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       72,
+		Username: "fixed-token-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"name":                  "fixed-token",
+		"expired_time":          -1,
+		"unlimited_quota":       true,
+		"group":                 "vip",
+		"auto_group_candidates": []string{"private"},
+	}, 72)
+	AddToken(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, decodeAPIResponse(t, recorder).Success)
+
+	var stored model.Token
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).First(&stored, "name = ?", "fixed-token").Error)
+	assert.Equal(t, "2", stored.Group)
+	assert.Empty(t, stored.AutoGroupCandidates)
+}
+
+func TestAddTokenRejectsUnavailableExplicitAutoCandidate(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       73,
+		Username: "candidate-token-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"name":                  "invalid-auto-token",
+		"expired_time":          -1,
+		"unlimited_quota":       true,
+		"group":                 "auto",
+		"auto_group_candidates": []string{"private"},
+	}, 73)
+	AddToken(ctx)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.False(t, decodeAPIResponse(t, recorder).Success)
+
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("name = ?", "invalid-auto-token").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestUpdateTokenDistinguishesOmittedAndEmptyAutoCandidates(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	token := seedToken(t, db, 74, "candidate-update-token", "updatecandidate1234")
+	require.NoError(t, db.Model(&model.Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+		"group":                 "auto",
+		"auto_group_candidates": "1,2",
+		"cross_group_retry":     true,
+	}).Error)
+
+	baseBody := map[string]any{
+		"id":                   token.Id,
+		"name":                 "candidate-update-token",
+		"expired_time":         -1,
+		"remain_quota":         100,
+		"unlimited_quota":      true,
+		"model_limits_enabled": false,
+		"model_limits":         "",
+		"group":                "auto",
+		"cross_group_retry":    false,
+	}
+	omittedCtx, omittedRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", baseBody, 74)
+	UpdateToken(omittedCtx)
+	require.Equal(t, http.StatusOK, omittedRecorder.Code)
+	require.True(t, decodeAPIResponse(t, omittedRecorder).Success)
+
+	var stored model.Token
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).First(&stored, token.Id).Error)
+	assert.Equal(t, model.PricingGroupCandidates("1,2"), stored.AutoGroupCandidates)
+	assert.True(t, stored.CrossGroupRetry)
+	assert.NotContains(t, omittedRecorder.Body.String(), "cross_group_retry")
+
+	baseBody["auto_group_candidates"] = []string{}
+	emptyCtx, emptyRecorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", baseBody, 74)
+	UpdateToken(emptyCtx)
+	require.Equal(t, http.StatusOK, emptyRecorder.Code)
+	require.True(t, decodeAPIResponse(t, emptyRecorder).Success)
+
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).First(&stored, token.Id).Error)
+	assert.Empty(t, stored.AutoGroupCandidates)
 }
 
 func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {

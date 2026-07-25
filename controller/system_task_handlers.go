@@ -23,6 +23,22 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(systemUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(billingOutboxHandler{})
+}
+
+type billingOutboxHandler struct{}
+
+func (billingOutboxHandler) Type() string { return model.SystemTaskTypeBillingOutbox }
+
+func (billingOutboxHandler) Enabled() bool { return model.HasPendingBillingOutbox() }
+
+func (billingOutboxHandler) Interval() time.Duration { return 15 * time.Second }
+
+func (billingOutboxHandler) NewPayload() any { return nil }
+
+func (billingOutboxHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	result := model.ProcessBillingOutbox(ctx, 100)
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

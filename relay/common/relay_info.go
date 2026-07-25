@@ -85,6 +85,30 @@ type TokenCountMeta struct {
 	estimatePromptTokens int
 }
 
+type AutoRouteCandidate struct {
+	Group          string
+	Ratio          float64
+	EstimatedQuota int
+	PriceData      types.PriceData
+	TieredSnapshot *billingexpr.BillingSnapshot
+}
+
+type AutoFailedGroup struct {
+	Group      string          `json:"group"`
+	ErrorCode  types.ErrorCode `json:"error_code,omitempty"`
+	StatusCode int             `json:"status_code,omitempty"`
+}
+
+type AutoRouteState struct {
+	Candidates    []AutoRouteCandidate
+	InitialGroup  string
+	UsedGroup     string
+	ReserveGroup  string
+	FailedGroups  []AutoFailedGroup
+	ReservedQuota int
+	ReleasedQuota int
+}
+
 type RelayInfo struct {
 	TokenId           int
 	TokenKey          string
@@ -131,7 +155,9 @@ type RelayInfo struct {
 	Billing BillingSettler
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
-	BillingSource string
+	BillingSource        string
+	BillingOverageSource string
+	BillingOverageQuota  int
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
@@ -153,6 +179,19 @@ type RelayInfo struct {
 	RuntimeHeadersOverride                map[string]interface{}
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
+	AutoRoute                             AutoRouteState
+	AttemptDispatched                     bool
+	AttemptTaskAccepted                   bool
+	AttemptHasBillingEvidence             bool
+	AttemptUsageBillingEvidence           bool
+	AttemptActualQuota                    int
+	AttemptActualQuotaKnown               bool
+	AttemptFinancialOutcome               types.AttemptFinancialOutcome
+	AttemptSettlementHandled              bool
+	RealtimeConsumedQuota                 int
+	ChargedOnError                        bool
+	BillingSettled                        bool
+	SettledQuota                          int
 
 	// UpstreamRequestBodySize is the byte size of the marshaled upstream request
 	// body. It is set when the body is wrapped in a BodyStorage (see
@@ -650,6 +689,54 @@ func (info *RelayInfo) SetEstimatePromptTokens(promptTokens int) {
 
 func (info *RelayInfo) GetEstimatePromptTokens() int {
 	return info.estimatePromptTokens
+}
+
+func (info *RelayInfo) ResetAttempt() {
+	info.AttemptDispatched = false
+	info.AttemptTaskAccepted = false
+	info.AttemptHasBillingEvidence = false
+	info.AttemptUsageBillingEvidence = false
+	info.AttemptActualQuota = 0
+	info.AttemptActualQuotaKnown = false
+	info.AttemptFinancialOutcome = types.AttemptFinancialOutcomeUnknown
+	info.AttemptSettlementHandled = false
+	info.RealtimeConsumedQuota = 0
+	info.SendResponseCount = 0
+	info.ReceivedResponseCount = 0
+	info.StreamStatus = nil
+}
+
+func (info *RelayInfo) MarkAttemptDispatched() {
+	info.AttemptDispatched = true
+}
+
+func (info *RelayInfo) MarkAttemptTaskAccepted() {
+	info.AttemptTaskAccepted = true
+	info.AttemptHasBillingEvidence = true
+}
+
+func (info *RelayInfo) MarkAttemptBillingEvidence() {
+	info.AttemptHasBillingEvidence = true
+}
+
+func (info *RelayInfo) AutoRouteCandidate(group string) (AutoRouteCandidate, bool) {
+	for _, candidate := range info.AutoRoute.Candidates {
+		if candidate.Group == group {
+			return candidate, true
+		}
+	}
+	return AutoRouteCandidate{}, false
+}
+
+func (info *RelayInfo) ApplyAutoRouteCandidate(group string) bool {
+	candidate, ok := info.AutoRouteCandidate(group)
+	if !ok {
+		return false
+	}
+	info.UsingGroup = candidate.Group
+	info.PriceData = candidate.PriceData
+	info.TieredBillingSnapshot = candidate.TieredSnapshot
+	return true
 }
 
 func (info *RelayInfo) SetFirstResponseTime() {

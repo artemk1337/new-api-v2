@@ -39,8 +39,9 @@ func TestGetUserGroupsReturnsPricingGroupRefs(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	var payload struct {
-		Success bool `json:"success"`
-		Data    map[string]struct {
+		Success    bool     `json:"success"`
+		AutoGroups []string `json:"auto_groups"`
+		Data       map[string]struct {
 			Id   string `json:"id"`
 			Name string `json:"name"`
 			Desc string `json:"desc"`
@@ -52,4 +53,24 @@ func TestGetUserGroupsReturnsPricingGroupRefs(t *testing.T) {
 	require.Equal(t, "Renamed VIP", payload.Data["2"].Name)
 	require.Equal(t, "vip", payload.Data["2"].Desc)
 	require.Equal(t, "auto", payload.Data["auto"].Id)
+	require.Equal(t, []string{"1"}, payload.AutoGroups)
+}
+
+func TestGetUserGroupsReturnsUserGroupReadError(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Migrator().DropTable(&model.User{}))
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 1)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/user/self/groups", nil)
+
+	GetUserGroups(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/tidwall/gjson"
 )
 
 func MidjourneyErrorWrapper(code int, desc string) *dto.MidjourneyResponse {
@@ -88,8 +89,18 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		newApiErr.SetFinancialOutcome(types.AttemptFinancialOutcomeAmbiguous)
 		return
 	}
+	value := gjson.ParseBytes(responseBody)
+	upstreamUsage, upstreamCost, upstreamCostSet := extractAuthoritativeBillingPayload(value)
+	financialOutcome := ClassifyUpstreamErrorResponse(resp.StatusCode, responseBody)
+	defer func() {
+		if financialOutcome != types.AttemptFinancialOutcomeUnknown {
+			newApiErr.SetFinancialOutcome(financialOutcome)
+		}
+		newApiErr.SetUpstreamBillingEvidence(upstreamUsage, upstreamCost, upstreamCostSet)
+	}()
 	CloseResponseBodyGracefully(resp)
 	var errResponse dto.GeneralErrorResponse
 	responseBodyText := string(responseBody)
@@ -128,6 +139,150 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
+}
+
+// ClassifyUpstreamErrorResponse classifies a complete, structured terminal
+// upstream response independently from retry policy and HTTP status. Invalid,
+// empty, or structurally unknown bodies stay unknown: after dispatch the caller
+// must treat them as financially ambiguous.
+func ClassifyUpstreamErrorResponse(_ int, body []byte) types.AttemptFinancialOutcome {
+	if !gjson.ValidBytes(body) {
+		return types.AttemptFinancialOutcomeUnknown
+	}
+	value := gjson.ParseBytes(body)
+	if responseHasBillingEvidence(value) {
+		return types.AttemptFinancialOutcomeBillable
+	}
+	if responseExplicitlyGuaranteesNoBilling(value) {
+		return types.AttemptFinancialOutcomeNonBillable
+	}
+	return types.AttemptFinancialOutcomeUnknown
+}
+
+func responseExplicitlyGuaranteesNoBilling(value gjson.Result) bool {
+	for _, container := range authoritativeBillingContainers(value) {
+		cost := container.Get("cost")
+		if cost.Exists() && cost.Type == gjson.Number && cost.Float() == 0 {
+			return true
+		}
+		for _, field := range []string{"billed", "billable", "charged"} {
+			marker := container.Get(field)
+			if marker.Exists() && marker.Type == gjson.False {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func responseHasBillingEvidence(value gjson.Result) bool {
+	for _, container := range authoritativeBillingContainers(value) {
+		usage := container.Get("usage")
+		if hasNonEmptyJSONValue(usage) {
+			return true
+		}
+		cost := container.Get("cost")
+		if cost.Exists() && cost.Type != gjson.Null &&
+			(cost.Type != gjson.Number || cost.Float() != 0) {
+			return true
+		}
+		for _, field := range []string{"billed", "billable", "charged"} {
+			marker := container.Get(field)
+			if marker.Exists() && marker.Type == gjson.True {
+				return true
+			}
+		}
+	}
+
+	evidenceContainers := []gjson.Result{value}
+	if directError := value.Get("error"); directError.IsObject() {
+		evidenceContainers = append(evidenceContainers, directError)
+	}
+	for _, container := range evidenceContainers {
+		for _, field := range []string{"task_id", "taskid", "job_id", "operation_id", "prediction_id"} {
+			if identifierIsPresent(container.Get(field)) {
+				return true
+			}
+		}
+		if identifierIsPresent(container.Get("operation.name")) {
+			return true
+		}
+		for _, field := range []string{"result", "output", "choices"} {
+			if hasNonEmptyJSONValue(container.Get(field)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func authoritativeBillingContainers(value gjson.Result) []gjson.Result {
+	if !value.IsObject() {
+		return nil
+	}
+	containers := []gjson.Result{value}
+	for _, path := range []string{"error", "billing", "error.billing"} {
+		child := value.Get(path)
+		if child.IsObject() {
+			containers = append(containers, child)
+		}
+	}
+	return containers
+}
+
+func extractAuthoritativeBillingPayload(value gjson.Result) (json.RawMessage, float64, bool) {
+	var usage json.RawMessage
+	for _, path := range []string{"usage", "error.usage"} {
+		child := value.Get(path)
+		if child.IsObject() && hasNonEmptyJSONValue(child) {
+			usage = json.RawMessage(child.Raw)
+			break
+		}
+	}
+
+	for _, path := range []string{
+		"cost",
+		"usage.cost",
+		"error.cost",
+		"error.usage.cost",
+		"billing.cost",
+		"error.billing.cost",
+	} {
+		child := value.Get(path)
+		if child.Exists() && child.Type == gjson.Number {
+			return usage, child.Float(), true
+		}
+	}
+	return usage, 0, false
+}
+
+func hasNonEmptyJSONValue(value gjson.Result) bool {
+	if !value.Exists() || value.Type == gjson.Null {
+		return false
+	}
+	switch value.Type {
+	case gjson.String:
+		return strings.TrimSpace(value.String()) != ""
+	case gjson.JSON:
+		raw := strings.TrimSpace(value.Raw)
+		return raw != "" && raw != "{}" && raw != "[]"
+	default:
+		return false
+	}
+}
+
+func identifierIsPresent(value gjson.Result) bool {
+	if !value.Exists() || value.Type == gjson.Null {
+		return false
+	}
+	switch value.Type {
+	case gjson.String:
+		return strings.TrimSpace(value.String()) != ""
+	case gjson.Number:
+		return true
+	default:
+		return false
+	}
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
@@ -215,9 +370,11 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *dto.TaskError {
 		return nil
 	}
 	return &dto.TaskError{
-		Code:       string(apiErr.GetErrorCode()),
-		Message:    apiErr.Err.Error(),
-		StatusCode: apiErr.StatusCode,
-		Error:      apiErr.Err,
+		Code:             string(apiErr.GetErrorCode()),
+		Message:          apiErr.Err.Error(),
+		StatusCode:       apiErr.StatusCode,
+		LocalError:       types.IsSkipRetryError(apiErr),
+		Error:            apiErr.Err,
+		FinancialOutcome: apiErr.GetFinancialOutcome(),
 	}
 }

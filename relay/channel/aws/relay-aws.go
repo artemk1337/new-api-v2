@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	bedrockruntimeTypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/auth/bearer"
 )
 
@@ -38,6 +39,24 @@ func getAwsErrorStatusCode(err error) int {
 	}
 	// Default to 500 if we can't determine the status code
 	return http.StatusInternalServerError
+}
+
+func awsInvokeError(err error, operation string) *types.NewAPIError {
+	statusCode := getAwsErrorStatusCode(err)
+	apiErr := types.NewOpenAIError(errors.Wrap(err, operation), types.ErrorCodeAwsInvokeError, statusCode)
+	outcome := types.AttemptFinancialOutcomeAmbiguous
+	var smithyErr smithy.APIError
+	if errors.As(err, &smithyErr) &&
+		(statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable) {
+		code := strings.ToLower(smithyErr.ErrorCode())
+		if strings.Contains(code, "throttl") ||
+			strings.Contains(code, "unavailable") ||
+			strings.Contains(code, "servicequota") {
+			outcome = types.AttemptFinancialOutcomeNonBillable
+		}
+	}
+	apiErr.SetFinancialOutcome(outcome)
+	return apiErr
 }
 
 func newAwsInvokeContext() (context.Context, context.CancelFunc) {
@@ -226,10 +245,10 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 	ctx, cancel := newAwsInvokeContext()
 	defer cancel()
 
+	info.MarkAttemptDispatched()
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
-		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return awsInvokeError(err, "InvokeModel"), nil
 	}
 
 	claudeInfo := &claude.ClaudeResponseInfo{
@@ -256,10 +275,10 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	ctx, cancel := newAwsInvokeContext()
 	defer cancel()
 
+	info.MarkAttemptDispatched()
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
 	if err != nil {
-		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return awsInvokeError(err, "InvokeModelWithResponseStream"), nil
 	}
 	stream := awsResp.GetStream()
 	defer stream.Close()
@@ -299,10 +318,10 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 	ctx, cancel := newAwsInvokeContext()
 	defer cancel()
 
+	info.MarkAttemptDispatched()
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
-		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return awsInvokeError(err, "InvokeModel"), nil
 	}
 
 	// 解析Nova响应

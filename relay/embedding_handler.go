@@ -85,6 +85,9 @@ func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
+		if service.CaptureAttemptUsageQuota(c, info, usage) {
+			newAPIError.SetFinancialOutcome(info.AttemptFinancialOutcome)
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError

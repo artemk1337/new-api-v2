@@ -539,6 +539,8 @@ func TestUpdatePricingGroupsNormalizesLegacyTokenGroupsBeforeRename(t *testing.T
 	}
 	require.NoError(t, DB.Create(token).Error)
 	require.NoError(t, DB.Create(autoToken).Error)
+	require.NoError(t, DB.Session(&gorm.Session{SkipHooks: true}).Model(&Token{}).Where("id = ?", token.Id).Update("group", "vip").Error)
+	require.NoError(t, DB.Session(&gorm.Session{SkipHooks: true}).Model(&Token{}).Where("id = ?", autoToken.Id).Update("auto_group_candidates", "vip,vip").Error)
 
 	require.NoError(t, UpdateOption("PricingGroups", `[
 		{"id":1,"name":"default","ratio":1,"selectable":true,"description":"default"},
@@ -550,8 +552,9 @@ func TestUpdatePricingGroupsNormalizesLegacyTokenGroupsBeforeRename(t *testing.T
 	assert.Equal(t, "2", reloaded.Group)
 
 	var reloadedAuto Token
-	require.NoError(t, DB.First(&reloadedAuto, autoToken.Id).Error)
+	require.NoError(t, DB.Session(&gorm.Session{SkipHooks: true}).First(&reloadedAuto, autoToken.Id).Error)
 	assert.Equal(t, "auto", reloadedAuto.Group)
+	assert.Equal(t, PricingGroupCandidates("2"), reloadedAuto.AutoGroupCandidates)
 }
 
 func TestUpdatePricingGroupsNormalizesLegacyTaskGroupsBeforeRename(t *testing.T) {

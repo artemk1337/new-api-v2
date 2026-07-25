@@ -386,14 +386,36 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		targetHeader.Set(key, value)
 	}
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
-	targetConn, _, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
+	targetConn, resp, err := websocket.DefaultDialer.Dial(fullRequestURL, targetHeader)
 	if err != nil {
-		return nil, fmt.Errorf("dial failed to %s: %w", fullRequestURL, err)
+		return nil, classifyWssHandshakeError(fullRequestURL, resp, err)
 	}
 	// send request body
 	//all, err := io.ReadAll(requestBody)
 	//err = service.WssString(c, targetConn, string(all))
 	return targetConn, nil
+}
+
+func classifyWssHandshakeError(requestURL string, resp *http.Response, dialErr error) *types.NewAPIError {
+	statusCode := http.StatusBadGateway
+	outcome := types.AttemptFinancialOutcomeNonBillable
+	if resp != nil {
+		statusCode = resp.StatusCode
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr == nil {
+			if classified := service.ClassifyUpstreamErrorResponse(resp.StatusCode, body); classified != types.AttemptFinancialOutcomeUnknown {
+				outcome = classified
+			}
+		}
+	}
+	apiErr := types.NewErrorWithStatusCode(
+		fmt.Errorf("dial failed to %s: %w", requestURL, dialErr),
+		types.ErrorCodeDoRequestFailed,
+		statusCode,
+	)
+	apiErr.SetFinancialOutcome(outcome)
+	return apiErr
 }
 
 func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.CancelFunc {
@@ -514,6 +536,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	info.MarkAttemptDispatched()
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())

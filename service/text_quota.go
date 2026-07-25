@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -319,8 +320,9 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 	return "openai"
 }
 
-func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
+func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) error {
 	originUsage := usage
+	missingUsageEstimated := false
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
 	}
@@ -345,6 +347,20 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
 		}
 	}
+	if originUsage == nil || summary.TotalTokens == 0 {
+		capturedExactBilling := originUsage != nil &&
+			CaptureAttemptUsageQuota(ctx, relayInfo, originUsage) &&
+			relayInfo.AttemptActualQuotaKnown
+		if capturedExactBilling {
+			summary.Quota = relayInfo.AttemptActualQuota
+			extraContent = append(extraContent, "上游未返回 token usage，按明确 cost 结算")
+		} else {
+			summary.Quota = CurrentAutoEstimate(relayInfo)
+			missingUsageEstimated = true
+			relayInfo.AttemptFinancialOutcome = types.AttemptFinancialOutcomeAmbiguous
+			extraContent = append(extraContent, "上游未返回可确认的计费信息，按请求估算额度结算")
+		}
+	}
 
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
@@ -362,16 +378,18 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", decimal.NewFromFloat(summary.ImageGenerationCallPrice).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 
-	if summary.TotalTokens == 0 {
-		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
-		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
-	} else {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
-		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
+	if missingUsageEstimated {
+		logger.LogError(ctx, fmt.Sprintf("upstream usage is missing, settling estimated quota, userId %d, channelId %d, tokenId %d, model %s, estimated quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, summary.Quota))
 	}
 
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	settlement := SettleSuccessfulBilling(ctx, relayInfo, summary.Quota)
+	if settlement.Err != nil {
+		extraContent = append(extraContent, fmt.Sprintf("计费结算异常，日志按实际保留额度 %s 记录", logger.FormatQuota(settlement.Quota)))
+		logger.LogError(ctx, "error settling billing: "+settlement.Err.Error())
+	}
+	if settlement.Quota > 0 {
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, settlement.Quota)
+		model.UpdateChannelUsedQuota(relayInfo.ChannelId, settlement.Quota)
 	}
 
 	logModel := summary.ModelName
@@ -458,22 +476,32 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	if missingUsageEstimated {
+		other["usage_missing"] = true
+		other["estimated_billing"] = true
+	}
+	AppendSettlementOutcome(relayInfo, other, settlement)
 
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+	logErr := model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     summary.PromptTokens,
 		CompletionTokens: summary.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
+		Quota:            settlement.Quota,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(summary.UseTimeSeconds),
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
+		Force:            settlement.Err != nil || missingUsageEstimated,
 	})
+	if logErr != nil {
+		common.SysLog("error recording text consume log: " + logErr.Error())
+	}
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})
+	return errors.Join(settlement.Err, logErr)
 }

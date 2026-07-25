@@ -11,14 +11,15 @@ const (
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
 
 	/* token related keys */
-	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
-	ContextKeyTokenKey               ContextKey = "token_key"
-	ContextKeyTokenId                ContextKey = "token_id"
-	ContextKeyTokenGroup             ContextKey = "token_group"
-	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
-	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
-	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
-	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
+	ContextKeyTokenUnlimited           ContextKey = "token_unlimited_quota"
+	ContextKeyTokenKey                 ContextKey = "token_key"
+	ContextKeyTokenId                  ContextKey = "token_id"
+	ContextKeyTokenGroup               ContextKey = "token_group"
+	ContextKeyTokenSpecificChannelId   ContextKey = "specific_channel_id"
+	ContextKeyTokenModelLimitEnabled   ContextKey = "token_model_limit_enabled"
+	ContextKeyTokenModelLimit          ContextKey = "token_model_limit"
+	ContextKeyTokenAutoGroupCandidates ContextKey = "token_auto_group_candidates"
+	ContextKeyTokenCrossGroupRetry     ContextKey = "token_cross_group_retry"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
@@ -39,6 +40,7 @@ const (
 	ContextKeyChannelKey               ContextKey = "channel_key"
 
 	ContextKeyAutoGroup           ContextKey = "auto_group"
+	ContextKeyAutoGroupSnapshot   ContextKey = "auto_group_snapshot"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"
 

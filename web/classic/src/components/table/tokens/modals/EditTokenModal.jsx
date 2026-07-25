@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   API,
   showError,
@@ -46,6 +46,7 @@ import {
   Col,
   Row,
   InputNumber,
+  Radio,
 } from '@douyinfe/semi-ui';
 import {
   IconCreditCard,
@@ -55,18 +56,17 @@ import {
   IconKey,
 } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
-import { StatusContext } from '../../../../context/Status';
 
 const { Text, Title } = Typography;
 
 const EditTokenModal = (props) => {
   const { t } = useTranslation();
-  const [statusState, statusDispatch] = useContext(StatusContext);
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
   const [models, setModels] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [autoCandidateGroups, setAutoCandidateGroups] = useState([]);
   const [showQuotaInput, setShowQuotaInput] = useState(false);
   const isEdit = props.editingToken.id !== undefined;
 
@@ -79,8 +79,9 @@ const EditTokenModal = (props) => {
     model_limits_enabled: false,
     model_limits: [],
     allow_ips: '',
-    group: '',
-    cross_group_retry: false,
+    group: 'auto',
+    auto_group_mode: 'all',
+    auto_group_candidates: [],
     tokenCount: 1,
   });
 
@@ -134,51 +135,109 @@ const EditTokenModal = (props) => {
   };
 
   const loadGroups = async () => {
-    let res = await API.get(`/api/user/self/groups`);
-    const { success, message, data } = res.data;
-    if (success) {
-      let localGroupOptions = Object.entries(data).map(([group, info]) => ({
-        label: info.desc,
-        value: group,
-        ratio: info.ratio,
-      }));
-      if (statusState?.status?.default_use_auto_group) {
-        if (localGroupOptions.some((group) => group.value === 'auto')) {
-          localGroupOptions.sort((a, b) => (a.value === 'auto' ? -1 : 1));
-        }
+    try {
+      const res = await API.get(`/api/user/self/groups`);
+      const { success, message, data, auto_groups } = res.data;
+      if (!success) {
+        showError(t(message));
+        return;
       }
-      setGroups(localGroupOptions);
-      // if (statusState?.status?.default_use_auto_group && formApiRef.current) {
-      //   formApiRef.current.setValue('group', 'auto');
-      // }
-    } else {
-      showError(t(message));
+
+      const concreteGroups = Object.entries(data)
+        .filter(([group]) => group !== 'auto')
+        .map(([group, info]) => ({
+          label: info.name || info.desc || group,
+          fullLabel: info.desc,
+          value: group,
+          ratio: info.ratio,
+        }));
+      const concreteByValue = new Map(
+        concreteGroups.map((group) => [group.value, group]),
+      );
+      const seen = new Set();
+      const autoGroups = (auto_groups || [])
+        .map((group) => String(group))
+        .filter((group) => {
+          if (
+            group === 'auto' ||
+            seen.has(group) ||
+            !concreteByValue.has(group)
+          ) {
+            return false;
+          }
+          seen.add(group);
+          return true;
+        })
+        .map((group) => concreteByValue.get(group));
+
+      setAutoCandidateGroups(autoGroups);
+      if (autoGroups.length === 0) {
+        setGroups(concreteGroups);
+        return;
+      }
+      setGroups([
+        {
+          label: 'Auto',
+          fullLabelKey: '先尝试最便宜的分组，确认错误未产生费用后再切换。',
+          value: 'auto',
+          dynamicRatio: true,
+        },
+        ...concreteGroups,
+      ]);
+    } catch (error) {
+      showError(error.message);
     }
   };
 
-  const loadToken = async () => {
+  const loadToken = async (tokenId, isCurrent) => {
     setLoading(true);
-    let res = await API.get(`/api/token/${props.editingToken.id}`);
-    const { success, message, data } = res.data;
-    if (success) {
-      if (data.expired_time !== -1) {
-        data.expired_time = timestamp2string(data.expired_time);
+    try {
+      let res = await API.get(`/api/token/${tokenId}`);
+      if (!isCurrent()) {
+        return;
       }
-      if (data.model_limits !== '') {
-        data.model_limits = data.model_limits.split(',');
+      const { success, message, data } = res.data;
+      if (success) {
+        if (data.expired_time !== -1) {
+          data.expired_time = timestamp2string(data.expired_time);
+        }
+        if (data.model_limits !== '') {
+          data.model_limits = data.model_limits.split(',');
+        } else {
+          data.model_limits = [];
+        }
+        data.group = data.group || 'auto';
+        if (typeof data.auto_group_candidates === 'string') {
+          data.auto_group_candidates = data.auto_group_candidates
+            .split(',')
+            .map((group) => group.trim())
+            .filter(Boolean);
+        } else if (!Array.isArray(data.auto_group_candidates)) {
+          data.auto_group_candidates = [];
+        }
+        data.auto_group_candidates = data.auto_group_candidates.filter(
+          (group) => group !== 'auto',
+        );
+        data.auto_group_mode =
+          data.auto_group_candidates.length > 0 ? 'specific' : 'all';
+        data.remain_amount = Number(
+          quotaToDisplayAmount(data.remain_quota || 0).toFixed(6),
+        );
+        if (formApiRef.current) {
+          formApiRef.current.setValues({ ...getInitValues(), ...data });
+        }
       } else {
-        data.model_limits = [];
+        showError(message);
       }
-      data.remain_amount = Number(
-        quotaToDisplayAmount(data.remain_quota || 0).toFixed(6),
-      );
-      if (formApiRef.current) {
-        formApiRef.current.setValues({ ...getInitValues(), ...data });
+    } catch (error) {
+      if (isCurrent()) {
+        showError(error.message);
       }
-    } else {
-      showError(message);
+    } finally {
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -192,15 +251,21 @@ const EditTokenModal = (props) => {
   }, [props.editingToken.id]);
 
   useEffect(() => {
+    let ignore = false;
     if (props.visiable) {
       if (isEdit) {
-        loadToken();
+        loadToken(props.editingToken.id, () => !ignore);
       } else {
+        setLoading(false);
         formApiRef.current?.setValues(getInitValues());
       }
     } else {
+      setLoading(false);
       formApiRef.current?.reset();
     }
+    return () => {
+      ignore = true;
+    };
   }, [props.visiable, props.editingToken.id]);
 
   const generateRandomSuffix = () => {
@@ -215,10 +280,80 @@ const EditTokenModal = (props) => {
     return result;
   };
 
+  const availableGroupValues = useMemo(
+    () => new Set(groups.map((group) => group.value)),
+    [groups],
+  );
+  const autoCandidateValues = useMemo(
+    () => new Set(autoCandidateGroups.map((group) => group.value)),
+    [autoCandidateGroups],
+  );
+  const getGroupOptions = (selectedGroup) => {
+    if (!selectedGroup || availableGroupValues.has(selectedGroup)) {
+      return groups;
+    }
+    const unavailableGroup = {
+      label: `${selectedGroup} (${t('不可用')})`,
+      fullLabel: t('此分组已不可用，请选择其他分组。'),
+      value: selectedGroup,
+    };
+    return selectedGroup === 'auto'
+      ? [unavailableGroup, ...groups]
+      : [...groups, unavailableGroup];
+  };
+  const getUnavailableAutoCandidates = (values) => {
+    const selected = Array.isArray(values.auto_group_candidates)
+      ? values.auto_group_candidates
+      : [];
+    return selected.filter(
+      (group) => group === 'auto' || !autoCandidateValues.has(group),
+    );
+  };
+  const getAutoCandidateOptions = (values) => [
+    ...autoCandidateGroups,
+    ...getUnavailableAutoCandidates(values).map((group) => ({
+      label: `${group} (${t('不可用')})`,
+      fullLabel: t('保存前请移除此分组。'),
+      value: group,
+    })),
+  ];
+
   const submit = async (values) => {
+    if (!values.group || !availableGroupValues.has(values.group)) {
+      showError(t('请选择可用分组'));
+      return;
+    }
+    const autoGroupCandidates = Array.isArray(values.auto_group_candidates)
+      ? values.auto_group_candidates.filter((group) => group !== 'auto')
+      : [];
+    if (
+      values.group === 'auto' &&
+      values.auto_group_mode === 'specific' &&
+      autoGroupCandidates.length === 0
+    ) {
+      showError(t('请为 Auto 至少选择一个分组'));
+      return;
+    }
+    if (
+      values.group === 'auto' &&
+      autoGroupCandidates.some((group) => !autoCandidateValues.has(group))
+    ) {
+      showError(t('保存前请移除不可用分组'));
+      return;
+    }
+
     setLoading(true);
     if (isEdit) {
-      let { tokenCount: _tc, ...localInputs } = values;
+      let {
+        tokenCount: _tc,
+        auto_group_mode: _autoGroupMode,
+        ...localInputs
+      } = values;
+      localInputs.group = localInputs.group || 'auto';
+      localInputs.auto_group_candidates =
+        localInputs.group === 'auto' && values.auto_group_mode === 'specific'
+          ? autoGroupCandidates
+          : [];
       localInputs.remain_quota = localInputs.unlimited_quota
         ? 0
         : displayAmountToQuota(localInputs.remain_amount);
@@ -254,7 +389,16 @@ const EditTokenModal = (props) => {
       const count = parseInt(values.tokenCount, 10) || 1;
       let successCount = 0;
       for (let i = 0; i < count; i++) {
-        let { tokenCount: _tc, ...localInputs } = values;
+        let {
+          tokenCount: _tc,
+          auto_group_mode: _autoGroupMode,
+          ...localInputs
+        } = values;
+        localInputs.group = localInputs.group || 'auto';
+        localInputs.auto_group_candidates =
+          localInputs.group === 'auto' && values.auto_group_mode === 'specific'
+            ? autoGroupCandidates
+            : [];
         const baseName =
           values.name.trim() === '' ? 'default' : values.name.trim();
         if (i !== 0 || values.name.trim() === '') {
@@ -384,23 +528,44 @@ const EditTokenModal = (props) => {
                   </Col>
                   <Col span={24}>
                     {groups.length > 0 ? (
-                      <Form.Select
-                        field='group'
-                        label={t('令牌分组')}
-                        placeholder={t('令牌分组，默认为用户的分组')}
-                        optionList={groups}
-                        renderOptionItem={renderGroupOption}
-                        filter={(input, option) => {
-                          const q = input.toLowerCase();
-                          return (
-                            option.value?.toLowerCase().includes(q) ||
-                            (typeof option.label === 'string' &&
-                              option.label.toLowerCase().includes(q))
-                          );
-                        }}
-                        showClear
-                        style={{ width: '100%' }}
-                      />
+                      <>
+                        <Form.Select
+                          field='group'
+                          label={t('令牌分组')}
+                          placeholder={t('请选择分组')}
+                          optionList={getGroupOptions(values.group)}
+                          renderOptionItem={renderGroupOption}
+                          rules={[{ required: true, message: t('请选择分组') }]}
+                          extraText={t('分组影响渠道稳定性和模型可用性。')}
+                          onChange={(value) => {
+                            if (value !== 'auto') {
+                              formApiRef.current?.setValue(
+                                'auto_group_candidates',
+                                [],
+                              );
+                              formApiRef.current?.setValue(
+                                'auto_group_mode',
+                                'all',
+                              );
+                            }
+                          }}
+                          filter={(input, option) => {
+                            const q = input.toLowerCase();
+                            return (
+                              option.value?.toLowerCase().includes(q) ||
+                              (typeof option.label === 'string' &&
+                                option.label.toLowerCase().includes(q))
+                            );
+                          }}
+                          style={{ width: '100%' }}
+                        />
+                        {values.group &&
+                          !availableGroupValues.has(values.group) && (
+                            <Text type='danger' size='small'>
+                              {t('此分组已不可用，请选择其他分组。')}
+                            </Text>
+                          )}
+                      </>
                     ) : (
                       <Form.Select
                         placeholder={t('管理员未设置用户可选分组')}
@@ -413,17 +578,111 @@ const EditTokenModal = (props) => {
                   <Col
                     span={24}
                     style={{
-                      display: values.group === 'auto' ? 'block' : 'none',
+                      display:
+                        values.group === 'auto' &&
+                        availableGroupValues.has('auto')
+                          ? 'block'
+                          : 'none',
                     }}
                   >
-                    <Form.Switch
-                      field='cross_group_retry'
-                      label={t('跨分组重试')}
-                      size='default'
-                      extraText={t(
-                        '开启后，当前分组渠道失败时会按顺序尝试下一个分组的渠道',
+                    <Card
+                      className='!rounded-xl'
+                      style={{
+                        background: 'var(--semi-color-fill-0)',
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Form.RadioGroup
+                        field='auto_group_mode'
+                        label={t('Auto 可用分组')}
+                        type='button'
+                        direction='horizontal'
+                        onChange={(value) => {
+                          if (value === 'all') {
+                            formApiRef.current?.setValue(
+                              'auto_group_candidates',
+                              [],
+                            );
+                          }
+                        }}
+                      >
+                        <Radio value='all'>{t('全部分组')}</Radio>
+                        <Radio value='specific'>{t('指定分组')}</Radio>
+                      </Form.RadioGroup>
+
+                      <div
+                        style={{
+                          display:
+                            values.auto_group_mode === 'specific'
+                              ? 'block'
+                              : 'none',
+                        }}
+                      >
+                        <Form.Select
+                          field='auto_group_candidates'
+                          label={t('Auto 分组候选')}
+                          placeholder={t('请选择 Auto 可使用的分组')}
+                          multiple
+                          optionList={getAutoCandidateOptions(values)}
+                          renderOptionItem={renderGroupOption}
+                          onChange={(selected) => {
+                            const next = Array.isArray(selected)
+                              ? selected.filter((group) => group !== 'auto')
+                              : [];
+                            formApiRef.current?.setValue(
+                              'auto_group_candidates',
+                              next,
+                            );
+                          }}
+                          rules={
+                            values.auto_group_mode === 'specific'
+                              ? [
+                                  {
+                                    required: true,
+                                    message: t('请为 Auto 至少选择一个分组'),
+                                  },
+                                ]
+                              : []
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+
+                      {getUnavailableAutoCandidates(values).length > 0 && (
+                        <Text type='danger' size='small'>
+                          {t(
+                            '以下已保存分组不再可用：{{groups}}。保存前请将其移除。',
+                            {
+                              groups:
+                                getUnavailableAutoCandidates(values).join(', '),
+                            },
+                          )}
+                        </Text>
                       )}
-                    />
+
+                      <div
+                        className='mt-2'
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4,
+                        }}
+                      >
+                        <Text type='tertiary' size='small'>
+                          {t(
+                            'Auto 优先使用所选分组中最便宜的分组，仅在确认未产生费用的错误后切换。',
+                          )}
+                        </Text>
+                        <Text type='tertiary' size='small'>
+                          {t(
+                            '请求前会按所选最贵分组预留额度，最终只扣除实际费用。',
+                          )}
+                        </Text>
+                        <Text type='tertiary' size='small'>
+                          {t('若预留额度过高，请充值或仅保留更便宜的分组。')}
+                        </Text>
+                      </div>
+                    </Card>
                   </Col>
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.DatePicker
@@ -552,7 +811,10 @@ const EditTokenModal = (props) => {
                         ? `▾ ${t('收起原生额度输入')}`
                         : `▸ ${t('使用原生额度输入')}`}
                     </div>
-                    <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                    <div
+                      style={{ display: showQuotaInput ? 'block' : 'none' }}
+                      className='mt-2'
+                    >
                       <Form.InputNumber
                         field='remain_quota'
                         label={t('额度')}

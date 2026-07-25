@@ -125,6 +125,47 @@ func seedPollingTask(t *testing.T, channelID int, publicID string, upstreamID st
 	return task
 }
 
+func TestSweepTimedOutTasksRetainsAmbiguousAcceptedCharge(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID, channelID = 71, 71, 71
+	const retainedQuota = 2500
+	seedUser(t, userID, 7500)
+	seedToken(t, tokenID, userID, "sk-timeout-task", 1500)
+	seedChannel(t, channelID)
+	task := makeTask(userID, channelID, retainedQuota, tokenID, BillingSourceWallet, 0)
+	task.TaskID = "task_timeout_ambiguous"
+	task.Status = model.TaskStatusInProgress
+	task.Progress = "30%"
+	task.SubmitTime = time.Now().Add(-2 * time.Minute).Unix()
+	require.NoError(t, model.DB.Create(task).Error)
+
+	originalTimeout := constant.TaskTimeoutMinutes
+	originalLogConsumeEnabled := common.LogConsumeEnabled
+	constant.TaskTimeoutMinutes = 1
+	common.LogConsumeEnabled = false
+	t.Cleanup(func() {
+		constant.TaskTimeoutMinutes = originalTimeout
+		common.LogConsumeEnabled = originalLogConsumeEnabled
+	})
+
+	sweepTimedOutTasks(context.Background())
+
+	var stored model.Task
+	require.NoError(t, model.DB.First(&stored, task.ID).Error)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), stored.Status)
+	assert.Equal(t, 7500, getUserQuota(t, userID))
+	assert.Equal(t, 1500, getTokenRemainQuota(t, tokenID))
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	assert.Equal(t, model.LogTypeConsume, log.Type)
+	assert.Zero(t, log.Quota)
+	var other map[string]interface{}
+	require.NoError(t, common.Unmarshal([]byte(log.Other), &other))
+	assert.Equal(t, float64(retainedQuota), other["retained_quota"])
+	assert.Equal(t, true, other["charge_retained"])
+}
+
 func TestUpdateVideoTasksDefaultSleepWaitsBetweenTasks(t *testing.T) {
 	truncate(t)
 

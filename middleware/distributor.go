@@ -136,16 +136,20 @@ func Distribute() func(c *gin.Context) {
 							channelSupportsRequestPath(preferred, c.Request.URL.Path) {
 							if selectTokenGroup == "auto" {
 								userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-								autoGroups := service.GetUserAutoGroup(userGroup)
-								for _, g := range autoGroups {
-									if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-										selectGroup = g
-										common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-										channel = preferred
-										affinityUsable = true
-										service.MarkChannelAffinityUsed(c, g, preferred.Id)
-										break
-									}
+								autoGroups, snapshotErr := service.BuildAutoGroupSnapshot(&service.RetryParam{
+									Ctx:         c,
+									ModelName:   modelRequest.Model,
+									TokenGroup:  "auto",
+									RequestPath: c.Request.URL.Path,
+									Retry:       common.GetPointer(0),
+								}, userGroup)
+								if snapshotErr == nil && len(autoGroups) > 0 &&
+									model.IsChannelEnabledForGroupModel(autoGroups[0], modelRequest.Model, preferred.Id) {
+									selectGroup = autoGroups[0]
+									common.SetContextKey(c, constant.ContextKeyAutoGroup, selectGroup)
+									channel = preferred
+									affinityUsable = true
+									service.MarkChannelAffinityUsed(c, selectGroup, preferred.Id)
 								}
 							} else if selectTokenGroup != "" && model.IsChannelEnabledForGroupModel(selectTokenGroup, modelRequest.Model, preferred.Id) {
 								channel = preferred
@@ -161,13 +165,49 @@ func Distribute() func(c *gin.Context) {
 				}
 
 				if channel == nil && !autoCheapestGroup {
-					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
-						Ctx:         c,
-						ModelName:   modelRequest.Model,
-						TokenGroup:  selectTokenGroup,
-						RequestPath: c.Request.URL.Path,
-						Retry:       common.GetPointer(0),
-					})
+					if selectTokenGroup == "auto" {
+						userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+						autoParam := &service.RetryParam{
+							Ctx:         c,
+							ModelName:   modelRequest.Model,
+							TokenGroup:  selectTokenGroup,
+							RequestPath: c.Request.URL.Path,
+							Retry:       common.GetPointer(0),
+						}
+						autoGroups, snapshotErr := service.BuildAutoGroupSnapshot(autoParam, userGroup)
+						if snapshotErr != nil {
+							err = snapshotErr
+						} else {
+							var lastErr error
+							for index := range autoGroups {
+								autoParam.SetRetry(index)
+								channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(autoParam)
+								if err != nil {
+									lastErr = err
+									continue
+								}
+								if channel != nil {
+									common.SetContextKey(
+										c,
+										constant.ContextKeyAutoGroupSnapshot,
+										slices.Clone(autoGroups[index:]),
+									)
+									break
+								}
+							}
+							if channel == nil {
+								err = lastErr
+							}
+						}
+					} else {
+						channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+							Ctx:         c,
+							ModelName:   modelRequest.Model,
+							TokenGroup:  selectTokenGroup,
+							RequestPath: c.Request.URL.Path,
+							Retry:       common.GetPointer(0),
+						})
+					}
 					if err != nil {
 						showGroup := selectTokenGroup
 						if selectTokenGroup == "" {

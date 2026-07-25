@@ -199,6 +199,7 @@ export async function getUserModels(): Promise<{
 export async function getUserGroups(): Promise<{
   success: boolean
   message?: string
+  auto_groups?: string[]
   data?: Record<
     string,
     { id?: string; name?: string; desc: string; ratio: number | string }

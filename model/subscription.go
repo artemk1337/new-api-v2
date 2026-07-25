@@ -984,6 +984,8 @@ type SubscriptionPreConsumeResult struct {
 	AmountUsedAfter    int64
 }
 
+var ErrSubscriptionQuotaExceeded = errors.New("subscription quota exceeded")
+
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
 func ExpireDueSubscriptions(limit int) (int, error) {
 	if limit <= 0 {
@@ -1374,7 +1376,7 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 			newUsed = 0
 		}
 		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+			return fmt.Errorf("%w, used=%d total=%d", ErrSubscriptionQuotaExceeded, newUsed, sub.AmountTotal)
 		}
 		sub.AmountUsed = newUsed
 		return tx.Save(&sub).Error

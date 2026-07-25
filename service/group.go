@@ -62,11 +62,17 @@ func GroupInUserUsableGroups(userGroup, groupName string) bool {
 func GetUserAutoGroup(userGroup string) []string {
 	groups := GetUserUsableGroups(userGroup)
 	autoGroups := make([]string, 0)
+	seen := make(map[string]struct{})
 	for _, group := range setting.GetAutoGroups() {
 		normalizedGroup := ratio_setting.PricingGroupKey(group)
-		if _, ok := groups[normalizedGroup]; ok {
-			autoGroups = append(autoGroups, normalizedGroup)
+		if _, ok := groups[normalizedGroup]; !ok {
+			continue
 		}
+		if _, ok := seen[normalizedGroup]; ok {
+			continue
+		}
+		seen[normalizedGroup] = struct{}{}
+		autoGroups = append(autoGroups, normalizedGroup)
 	}
 	return autoGroups
 }

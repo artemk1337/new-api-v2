@@ -78,6 +78,9 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		applySystemPromptIfNeeded(c, info, request)
 		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, request)
 		if newApiErr != nil {
+			if service.CaptureAttemptUsageQuota(c, info, usage) {
+				newApiErr.SetFinancialOutcome(info.AttemptFinancialOutcome)
+			}
 			return newApiErr
 		}
 
@@ -206,6 +209,9 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
 	if newApiErr != nil {
+		if service.CaptureAttemptUsageQuota(c, info, usage) {
+			newApiErr.SetFinancialOutcome(info.AttemptFinancialOutcome)
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr

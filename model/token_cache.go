@@ -10,6 +10,7 @@ import (
 
 func cacheSetToken(token Token) error {
 	key := common.GenerateHMAC(token.Key)
+	token.NormalizeRouting()
 	token.Clean()
 	err := common.RedisHSetObj(fmt.Sprintf("token:%s", key), &token, time.Duration(common.RedisKeyCacheSeconds())*time.Second)
 	if err != nil {
@@ -56,10 +57,15 @@ func cacheGetTokenByKey(key string) (*Token, error) {
 		return nil, fmt.Errorf("redis is not enabled")
 	}
 	var token Token
-	err := common.RedisHGetObj(fmt.Sprintf("token:%s", hmacKey), &token)
+	err := common.RedisHGetObj(
+		fmt.Sprintf("token:%s", hmacKey),
+		&token,
+		constant.TokenFieldAutoGroupCandidates,
+	)
 	if err != nil {
 		return nil, err
 	}
 	token.Key = key
+	token.NormalizeRouting()
 	return &token, nil
 }

@@ -142,6 +142,29 @@ function formatRatio(ratio: number | undefined): string {
   return ratio.toFixed(4)
 }
 
+function formatAutoFailedGroups(
+  other: LogOtherData,
+  formatGroup: (group: string) => string
+): string {
+  if (!Array.isArray(other.auto_failed_groups)) return ''
+
+  return other.auto_failed_groups
+    .map((item) => {
+      if (typeof item === 'string') return formatGroup(item)
+      const group = item.group ? formatGroup(item.group) : ''
+      const reason =
+        item.status_code ??
+        item.error_code ??
+        item.code ??
+        item.error ??
+        item.reason
+      if (!group) return reason == null ? '' : String(reason)
+      return reason == null ? group : `${group} — ${reason}`
+    })
+    .filter(Boolean)
+    .join(', ')
+}
+
 function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
@@ -534,6 +557,15 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  const hasAutoFallback =
+    (other?.auto_fallback_count ?? 0) > 0 ||
+    (!!other?.auto_initial_group &&
+      !!other?.auto_used_group &&
+      other.auto_initial_group !== other.auto_used_group)
+  const hasAutoBillingAlert = hasAutoFallback || !!other?.charged_on_error
+  const autoFailedGroups = other
+    ? formatAutoFailedGroups(other, formatPricingGroupName)
+    : ''
 
   return (
     <Dialog
@@ -666,6 +698,81 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
         </div>
+
+        {hasAutoBillingAlert && other && (
+          <DetailSection
+            icon={<Route className='size-3.5' aria-hidden='true' />}
+            label={hasAutoFallback ? t('Auto fallback') : t('Billing')}
+          >
+            {hasAutoFallback && (
+              <div className='mb-2'>
+                <StatusBadge
+                  label={t(
+                    other.auto_used_more_expensive === true
+                      ? 'Auto used a more expensive group'
+                      : 'Auto switched group'
+                  )}
+                  variant='info'
+                  copyable={false}
+                />
+              </div>
+            )}
+            {other.charged_on_error && (
+              <div className='mb-2'>
+                <StatusBadge
+                  label={t('Charged on error')}
+                  variant='danger'
+                  copyable={false}
+                />
+              </div>
+            )}
+            {other.auto_initial_group && (
+              <DetailRow
+                label={t('Initial group')}
+                value={formatPricingGroupName(other.auto_initial_group)}
+                mono
+              />
+            )}
+            {other.auto_used_group && (
+              <DetailRow
+                label={t('Used group')}
+                value={formatPricingGroupName(other.auto_used_group)}
+                mono
+              />
+            )}
+            {other.auto_fallback_count != null && (
+              <DetailRow
+                label={t('Fallback count')}
+                value={String(other.auto_fallback_count)}
+                mono
+              />
+            )}
+            {autoFailedGroups && (
+              <DetailRow
+                label={t('Failed groups')}
+                value={autoFailedGroups}
+                mono
+              />
+            )}
+            {other.reserved_quota != null && (
+              <DetailRow
+                label={t('Reserved quota')}
+                value={formatLogQuota(other.reserved_quota)}
+                mono
+              />
+            )}
+            {other.released_quota != null && (
+              <DetailRow
+                label={t('Released quota')}
+                value={formatLogQuota(other.released_quota)}
+                mono
+              />
+            )}
+            {other.charged_on_error && (
+              <DetailRow label={t('Charged on error')} value={t('Yes')} />
+            )}
+          </DetailSection>
+        )}
 
         {/* Request conversion (admin only, not for refund) */}
         {showConversion && (

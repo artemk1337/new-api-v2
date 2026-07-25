@@ -419,20 +419,30 @@ func normalizeChannelPricingGroupsTxWith(tx *gorm.DB, normalizeCSV func(string) 
 }
 
 func normalizeTokenPricingGroupsTx(tx *gorm.DB) error {
-	return normalizeTokenPricingGroupsTxWith(tx, ratio_setting.PricingGroupKey)
+	return normalizeTokenPricingGroupsTxWith(tx, ratio_setting.PricingGroupKey, ratio_setting.PricingGroupKeysCSV)
 }
 
-func normalizeTokenPricingGroupsTxWith(tx *gorm.DB, normalizeKey func(string) string) error {
+func normalizeTokenPricingGroupsTxWith(tx *gorm.DB, normalizeKey func(string) string, normalizeCSV func(string) string) error {
 	var tokens []*Token
-	if err := tx.Where(commonGroupCol+" <> ?", "").Find(&tokens).Error; err != nil {
+	if err := tx.Session(&gorm.Session{SkipHooks: true}).Find(&tokens).Error; err != nil {
 		return err
 	}
 	for _, token := range tokens {
 		normalizedGroup := normalizeKey(token.Group)
-		if normalizedGroup == "" || normalizedGroup == token.Group {
+		if normalizedGroup == "" {
+			normalizedGroup = "auto"
+		}
+		normalizedCandidates := normalizeCSV(string(token.AutoGroupCandidates))
+		if normalizedGroup != "auto" {
+			normalizedCandidates = ""
+		}
+		if normalizedGroup == token.Group && normalizedCandidates == string(token.AutoGroupCandidates) {
 			continue
 		}
-		if err := tx.Model(&Token{}).Where("id = ?", token.Id).Update("group", normalizedGroup).Error; err != nil {
+		if err := tx.Model(&Token{}).Where("id = ?", token.Id).Updates(map[string]any{
+			"group":                 normalizedGroup,
+			"auto_group_candidates": normalizedCandidates,
+		}).Error; err != nil {
 			return err
 		}
 	}

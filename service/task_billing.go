@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,12 +12,13 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
-// 实际扣费已由 BillingSession（PreConsumeBilling + SettleBilling）完成。
-func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
+func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, settlement BillingSettlementOutcome) error {
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
 	// 支持任务仅按次计费
@@ -50,18 +52,27 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName
 	}
-	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
+	AppendAutoRoutingInfo(info, other)
+	AppendSettlementOutcome(info, other, settlement)
+	logErr := model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 		ChannelId: info.ChannelId,
 		ModelName: info.OriginModelName,
 		TokenName: tokenName,
-		Quota:     info.PriceData.Quota,
+		Quota:     settlement.Quota,
 		Content:   logContent,
 		TokenId:   info.TokenId,
 		Group:     info.UsingGroup,
 		Other:     other,
+		Force:     settlement.Err != nil,
 	})
-	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
-	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
+	if logErr != nil {
+		common.SysLog("error recording task consume log: " + logErr.Error())
+	}
+	if settlement.Quota > 0 {
+		model.UpdateUserUsedQuotaAndRequestCount(info.UserId, settlement.Quota)
+		model.UpdateChannelUsedQuota(info.ChannelId, settlement.Quota)
+	}
+	return errors.Join(settlement.Err, logErr)
 }
 
 // ---------------------------------------------------------------------------
@@ -87,12 +98,15 @@ func taskIsSubscription(task *model.Task) bool {
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
 	if taskIsSubscription(task) {
+		if delta < 0 {
+			return model.RefundUserSubscriptionQuotaForBilling(task.PrivateData.SubscriptionId, -delta)
+		}
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(task.UserId, delta, false)
+		return model.DebitUserQuotaForBilling(task.UserId, delta)
 	}
-	return model.IncreaseUserQuota(task.UserId, -delta, false)
+	return model.RefundUserQuotaForBilling(task.UserId, -delta)
 }
 
 // taskAdjustTokenQuota 调整任务的令牌额度，delta > 0 表示扣费，delta < 0 表示退还。
@@ -107,9 +121,9 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 	}
 	var err error
 	if delta > 0 {
-		err = model.DecreaseTokenQuota(task.PrivateData.TokenId, tokenKey, delta)
+		err = model.DebitTokenQuotaForBilling(task.PrivateData.TokenId, tokenKey, delta)
 	} else {
-		err = model.IncreaseTokenQuota(task.PrivateData.TokenId, tokenKey, -delta)
+		err = model.RefundTokenQuotaForBilling(task.PrivateData.TokenId, tokenKey, -delta)
 	}
 	if err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("调整令牌额度失败 (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
@@ -119,6 +133,13 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	if task.PrivateData.BillingSource != "" {
+		other["billing_source"] = task.PrivateData.BillingSource
+	}
+	if task.PrivateData.BillingOverageSource != "" {
+		other["billing_overage_source"] = task.PrivateData.BillingOverageSource
+		other["billing_overage_quota"] = task.PrivateData.BillingOverageQuota
+	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
@@ -161,6 +182,110 @@ func ResolveTaskGroupRatio(task *model.Task) float64 {
 	return ratio_setting.GetGroupRatio(ResolveTaskPricingGroupKey(task))
 }
 
+func classifyTaskTerminalFailureBilling(responseBody []byte) types.AttemptFinancialOutcome {
+	if !gjson.ValidBytes(responseBody) {
+		return types.AttemptFinancialOutcomeUnknown
+	}
+	value := gjson.ParseBytes(responseBody)
+	for _, container := range authoritativeBillingContainers(value) {
+		if hasNonEmptyJSONValue(container.Get("usage")) {
+			return types.AttemptFinancialOutcomeBillable
+		}
+		cost := container.Get("cost")
+		if cost.Exists() && cost.Type != gjson.Null &&
+			(cost.Type != gjson.Number || cost.Float() != 0) {
+			return types.AttemptFinancialOutcomeBillable
+		}
+		for _, field := range []string{"billed", "billable", "charged"} {
+			if marker := container.Get(field); marker.Exists() && marker.Type == gjson.True {
+				return types.AttemptFinancialOutcomeBillable
+			}
+		}
+	}
+	for _, container := range []gjson.Result{value, value.Get("error")} {
+		if !container.IsObject() {
+			continue
+		}
+		for _, field := range []string{"result", "output", "choices"} {
+			if hasNonEmptyJSONValue(container.Get(field)) {
+				return types.AttemptFinancialOutcomeBillable
+			}
+		}
+	}
+	if responseExplicitlyGuaranteesNoBilling(value) {
+		return types.AttemptFinancialOutcomeNonBillable
+	}
+	return types.AttemptFinancialOutcomeUnknown
+}
+
+// transitionTaskTerminalFailure persists the terminal state together with a
+// durable refund intent when upstream authoritatively guarantees zero billing.
+// Ambiguous/billable failures keep the existing CAS and retained-charge path.
+func transitionTaskTerminalFailure(ctx context.Context, task *model.Task, fromStatus model.TaskStatus, reason string, responseBody []byte) (bool, error) {
+	outcome := classifyTaskTerminalFailureBilling(responseBody)
+	if outcome != types.AttemptFinancialOutcomeNonBillable || task.Quota == 0 {
+		won, err := task.UpdateWithStatus(fromStatus)
+		if err == nil && won && task.Quota != 0 {
+			HandleTaskTerminalFailureBilling(ctx, task, reason, responseBody)
+		}
+		return won, err
+	}
+
+	won, eventID, err := task.UpdateWithStatusAndTaskRefund(fromStatus, reason)
+	if err != nil || !won {
+		return won, err
+	}
+	if err := model.ProcessBillingOutboxEvent(eventID); err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("task refund queued for retry (task=%s): %s", task.TaskID, err.Error()))
+	}
+	return true, nil
+}
+
+// HandleTaskTerminalFailureBilling refunds only when the terminal response
+// authoritatively guarantees that nothing was billed. Otherwise the accepted
+// task keeps its original charge and receives a zero-quota audit log so usage
+// aggregates do not count the same charge twice.
+func HandleTaskTerminalFailureBilling(ctx context.Context, task *model.Task, reason string, responseBody []byte) types.AttemptFinancialOutcome {
+	outcome := classifyTaskTerminalFailureBilling(responseBody)
+	if outcome == types.AttemptFinancialOutcomeNonBillable {
+		RefundTaskQuota(ctx, task, reason)
+		return outcome
+	}
+	if outcome == types.AttemptFinancialOutcomeUnknown {
+		outcome = types.AttemptFinancialOutcomeAmbiguous
+	}
+	if task.Quota == 0 {
+		return outcome
+	}
+
+	other := taskBillingOther(task)
+	other["is_task"] = true
+	other["task_id"] = task.TaskID
+	other["reason"] = reason
+	other["financial_outcome"] = outcome
+	other["charged_on_error"] = true
+	other["charge_retained"] = true
+	other["retained_quota"] = task.Quota
+	if outcome == types.AttemptFinancialOutcomeAmbiguous {
+		other["usage_missing"] = true
+		other["estimated_billing"] = true
+	}
+	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
+		UserId:    task.UserId,
+		LogType:   model.LogTypeConsume,
+		Content:   "异步任务失败，未收到上游未计费证明，保留已扣额度",
+		ChannelId: task.ChannelId,
+		ModelName: taskModelName(task),
+		Quota:     0,
+		TokenId:   task.PrivateData.TokenId,
+		Group:     ResolveTaskPricingGroupKey(task),
+		Other:     other,
+		NodeName:  task.PrivateData.NodeName,
+		Force:     true,
+	})
+	return outcome
+}
+
 // RefundTaskQuota 统一的任务失败退款逻辑。
 // 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
@@ -170,7 +295,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	}
 
 	// 1. 退还资金来源（钱包或订阅）
-	if err := taskAdjustFunding(task, -quota); err != nil {
+	if err := model.RefundTaskFundingSources(task); err != nil {
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}

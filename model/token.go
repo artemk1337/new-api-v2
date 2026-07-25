@@ -13,24 +13,105 @@ import (
 )
 
 type Token struct {
-	Id                 int                            `json:"id"`
-	UserId             int                            `json:"user_id" gorm:"index"`
-	Key                string                         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
-	Status             int                            `json:"status" gorm:"default:1"`
-	Name               string                         `json:"name" gorm:"index" `
-	CreatedTime        int64                          `json:"created_time" gorm:"bigint"`
-	AccessedTime       int64                          `json:"accessed_time" gorm:"bigint"`
-	ExpiredTime        int64                          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
-	RemainQuota        int                            `json:"remain_quota" gorm:"default:0"`
-	UnlimitedQuota     bool                           `json:"unlimited_quota"`
-	ModelLimitsEnabled bool                           `json:"model_limits_enabled"`
-	ModelLimits        string                         `json:"model_limits" gorm:"type:text"`
-	AllowIps           *string                        `json:"allow_ips" gorm:"default:''"`
-	UsedQuota          int                            `json:"used_quota" gorm:"default:0"` // used quota
-	Group              string                         `json:"group" gorm:"default:''"`
-	GroupRef           *ratio_setting.PricingGroupRef `json:"group_ref,omitempty" gorm:"-"`
-	CrossGroupRetry    bool                           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
-	DeletedAt          gorm.DeletedAt                 `gorm:"index"`
+	Id                  int                            `json:"id"`
+	UserId              int                            `json:"user_id" gorm:"index"`
+	Key                 string                         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
+	Status              int                            `json:"status" gorm:"default:1"`
+	Name                string                         `json:"name" gorm:"index" `
+	CreatedTime         int64                          `json:"created_time" gorm:"bigint"`
+	AccessedTime        int64                          `json:"accessed_time" gorm:"bigint"`
+	ExpiredTime         int64                          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
+	RemainQuota         int                            `json:"remain_quota" gorm:"default:0"`
+	UnlimitedQuota      bool                           `json:"unlimited_quota"`
+	ModelLimitsEnabled  bool                           `json:"model_limits_enabled"`
+	ModelLimits         string                         `json:"model_limits" gorm:"type:text"`
+	AllowIps            *string                        `json:"allow_ips" gorm:"default:''"`
+	UsedQuota           int                            `json:"used_quota" gorm:"default:0"` // used quota
+	Group               string                         `json:"group" gorm:"default:auto"`
+	GroupRef            *ratio_setting.PricingGroupRef `json:"group_ref,omitempty" gorm:"-"`
+	AutoGroupCandidates PricingGroupCandidates         `json:"auto_group_candidates" gorm:"type:text"`
+	CrossGroupRetry     bool                           `json:"-"` // kept for rolling rollback compatibility
+	DeletedAt           gorm.DeletedAt                 `gorm:"index"`
+}
+
+type PricingGroupCandidates string
+
+var ErrTokenRoutingMigrationPending = errors.New(
+	"Auto group selection is temporarily unavailable while the database migration is pending; select all groups or try again shortly",
+)
+
+func NewPricingGroupCandidates(groups []string) PricingGroupCandidates {
+	normalized := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		seen[group] = struct{}{}
+		normalized = append(normalized, group)
+	}
+	return PricingGroupCandidates(strings.Join(normalized, ","))
+}
+
+func (c PricingGroupCandidates) Values() []string {
+	if strings.TrimSpace(string(c)) == "" {
+		return []string{}
+	}
+	normalized := string(NewPricingGroupCandidates(strings.Split(string(c), ",")))
+	if normalized == "" {
+		return []string{}
+	}
+	return strings.Split(normalized, ",")
+}
+
+func (c PricingGroupCandidates) MarshalJSON() ([]byte, error) {
+	return common.Marshal(c.Values())
+}
+
+func (c *PricingGroupCandidates) UnmarshalJSON(data []byte) error {
+	var groups []string
+	if err := common.Unmarshal(data, &groups); err != nil {
+		return err
+	}
+	*c = NewPricingGroupCandidates(groups)
+	return nil
+}
+
+func (token *Token) NormalizeRouting() {
+	if strings.TrimSpace(token.Group) == "" {
+		token.Group = "auto"
+	} else {
+		token.Group = ratio_setting.PricingGroupKey(token.Group)
+	}
+	candidates := token.AutoGroupCandidates.Values()
+	for i, candidate := range candidates {
+		candidates[i] = ratio_setting.PricingGroupKey(candidate)
+	}
+	token.AutoGroupCandidates = NewPricingGroupCandidates(candidates)
+	if token.Group != "auto" {
+		token.AutoGroupCandidates = ""
+	}
+}
+
+func (token *Token) BeforeCreate(_ *gorm.DB) error {
+	token.NormalizeRouting()
+	return nil
+}
+
+func (token *Token) AfterFind(_ *gorm.DB) error {
+	token.NormalizeRouting()
+	return nil
+}
+
+func migrateLegacyTokenGroupsToAuto() error {
+	return DB.Unscoped().
+		Model(&Token{}).
+		Where(commonGroupCol+" IS NULL OR "+commonGroupCol+" = ?", "").
+		UpdateColumn("group", "auto").Error
 }
 
 func (token *Token) Clean() {
@@ -286,13 +367,24 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 }
 
 func (token *Token) Insert() error {
-	var err error
-	err = DB.Create(token).Error
-	return err
+	token.NormalizeRouting()
+	hasCandidatesColumn := DB.Migrator().HasColumn(&Token{}, "auto_group_candidates")
+	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
+		return ErrTokenRoutingMigrationPending
+	}
+	if !hasCandidatesColumn {
+		return DB.Omit("auto_group_candidates").Create(token).Error
+	}
+	return DB.Create(token).Error
 }
 
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (token *Token) Update() (err error) {
+	token.NormalizeRouting()
+	hasCandidatesColumn := DB.Migrator().HasColumn(&Token{}, "auto_group_candidates")
+	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
+		return ErrTokenRoutingMigrationPending
+	}
 	defer func() {
 		if shouldUpdateRedis(true, err) {
 			gopool.Go(func() {
@@ -303,8 +395,14 @@ func (token *Token) Update() (err error) {
 			})
 		}
 	}()
-	err = DB.Model(token).Select("name", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry").Updates(token).Error
+	fields := []string{
+		"name", "status", "expired_time", "remain_quota", "unlimited_quota",
+		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+	}
+	if hasCandidatesColumn {
+		fields = append(fields, "auto_group_candidates")
+	}
+	err = DB.Model(token).Select(fields).Updates(token).Error
 	return err
 }
 
@@ -356,6 +454,10 @@ func (token *Token) GetModelLimitsMap() map[string]bool {
 		limitsMap[limit] = true
 	}
 	return limitsMap
+}
+
+func (token *Token) GetAutoGroupCandidates() []string {
+	return token.AutoGroupCandidates.Values()
 }
 
 func DisableModelLimits(tokenId int) error {

@@ -800,12 +800,51 @@ func pricingGroupsInitialized() bool {
 }
 
 func normalizeAutoGroupValues(groups []string) (string, error) {
-	normalized := NormalizePricingGroupKeys(groups)
+	return normalizeAutoGroupValuesForPricingGroups(groups, GetPricingGroupsCopy())
+}
+
+func normalizeAutoGroupValuesForPricingGroups(groups []string, pricingGroups []*PricingGroup) (string, error) {
+	groupsByReference := make(map[string]*PricingGroup, len(pricingGroups)*2)
+	for _, group := range pricingGroups {
+		if group == nil {
+			continue
+		}
+		groupsByReference[strconv.Itoa(group.Id)] = group
+		groupsByReference[group.Name] = group
+	}
+	normalized := make([]string, 0, len(groups))
+	seen := make(map[int]struct{}, len(groups))
+	for _, reference := range groups {
+		pricingGroup, ok := groupsByReference[strings.TrimSpace(reference)]
+		if !ok || !pricingGroup.Selectable {
+			continue
+		}
+		if _, ok := seen[pricingGroup.Id]; ok {
+			continue
+		}
+		seen[pricingGroup.Id] = struct{}{}
+		normalized = append(normalized, strconv.Itoa(pricingGroup.Id))
+	}
 	bytes, err := common.Marshal(normalized)
 	if err != nil {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+func ValidateAutoGroupsJSONString(jsonStr string) error {
+	normalized, err := NormalizeAutoGroupsJSONString(jsonStr)
+	if err != nil {
+		return err
+	}
+	var groups []string
+	if err := common.Unmarshal([]byte(normalized), &groups); err != nil {
+		return err
+	}
+	if len(groups) > 0 {
+		return nil
+	}
+	return errors.New("at least one existing selectable Auto group is required")
 }
 
 func NormalizeAutoGroupsJSONString(jsonStr string) (string, error) {
@@ -814,6 +853,29 @@ func NormalizeAutoGroupsJSONString(jsonStr string) (string, error) {
 		return "", err
 	}
 	return normalizeAutoGroupValues(groups)
+}
+
+func NormalizeAutoGroupsJSONStringForPricingGroups(autoGroupsJSON string, pricingGroupsJSON string) (string, error) {
+	var autoGroups []string
+	if err := common.Unmarshal([]byte(autoGroupsJSON), &autoGroups); err != nil {
+		return "", err
+	}
+	pricingGroups, err := parsePricingGroupsJSONString(pricingGroupsJSON)
+	if err != nil {
+		return "", err
+	}
+	normalized, err := normalizeAutoGroupValuesForPricingGroups(autoGroups, pricingGroups)
+	if err != nil {
+		return "", err
+	}
+	var groups []string
+	if err := common.Unmarshal([]byte(normalized), &groups); err != nil {
+		return "", err
+	}
+	if len(groups) == 0 {
+		return "", errors.New("at least one existing selectable Auto group is required")
+	}
+	return normalized, nil
 }
 
 func NormalizeAutoGroupsJSONStringIfInitialized(jsonStr string) (string, bool, error) {
@@ -825,9 +887,30 @@ func NormalizeAutoGroupsJSONStringIfInitialized(jsonStr string) (string, bool, e
 }
 
 func NormalizeAutoGroups() (string, error) {
-	value, err := normalizeAutoGroupValues(setting.GetAutoGroups())
+	groups := setting.GetAutoGroups()
+	value, err := normalizeAutoGroupValues(groups)
 	if err != nil {
 		return "", err
+	}
+	var normalized []string
+	if err := common.Unmarshal([]byte(value), &normalized); err != nil {
+		return "", err
+	}
+	if len(normalized) == 0 {
+		// Empty AutoGroups was valid in older releases. Once empty token groups
+		// migrate to Auto, recover empty or obsolete legacy values to the
+		// currently selectable pricing groups so existing keys remain usable.
+		pricingGroups := GetPricingGroupsCopy()
+		groups = make([]string, 0, len(pricingGroups))
+		for _, group := range pricingGroups {
+			if group.Selectable {
+				groups = append(groups, strconv.Itoa(group.Id))
+			}
+		}
+		value, err = normalizeAutoGroupValues(groups)
+		if err != nil {
+			return "", err
+		}
 	}
 	if err := setting.UpdateAutoGroupsByJsonString(value); err != nil {
 		return "", err

@@ -127,6 +127,11 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo.UserSetting.BillingPreference != "" {
 		other["billing_preference"] = relayInfo.UserSetting.BillingPreference
 	}
+	if relayInfo.BillingOverageSource != "" {
+		other["billing_overage_source"] = relayInfo.BillingOverageSource
+		other["billing_overage_quota"] = relayInfo.BillingOverageQuota
+	}
+	AppendAutoRoutingInfo(relayInfo, other)
 	if relayInfo.BillingSource == "subscription" {
 		if relayInfo.SubscriptionId != 0 {
 			other["subscription_id"] = relayInfo.SubscriptionId
@@ -165,8 +170,58 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 		if consumed > 0 {
 			other["subscription_consumed"] = consumed
 		}
-		// Wallet quota is not deducted when billed from subscription.
-		other["wallet_quota_deducted"] = 0
+		walletQuotaDeducted := 0
+		if relayInfo.BillingOverageSource == BillingSourceWallet {
+			walletQuotaDeducted = relayInfo.BillingOverageQuota
+		}
+		other["wallet_quota_deducted"] = walletQuotaDeducted
+	}
+}
+
+func AppendAutoRoutingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	state := relayInfo.AutoRoute
+	if state.InitialGroup != "" {
+		other["auto_initial_group"] = state.InitialGroup
+		other["auto_used_group"] = state.UsedGroup
+		var initialRatio, usedRatio float64
+		var initialRatioFound, usedRatioFound bool
+		for _, candidate := range state.Candidates {
+			if candidate.Group == state.InitialGroup {
+				initialRatio = candidate.Ratio
+				initialRatioFound = true
+			}
+			if candidate.Group == state.UsedGroup {
+				usedRatio = candidate.Ratio
+				usedRatioFound = true
+			}
+		}
+		if initialRatioFound {
+			other["auto_initial_ratio"] = initialRatio
+		}
+		if usedRatioFound {
+			other["auto_used_ratio"] = usedRatio
+		}
+		if initialRatioFound && usedRatioFound {
+			other["auto_used_more_expensive"] = usedRatio > initialRatio
+		}
+		other["auto_fallback_count"] = len(state.FailedGroups)
+		if len(state.FailedGroups) > 0 {
+			other["auto_failed_groups"] = state.FailedGroups
+		}
+		other["reserved_quota"] = state.ReservedQuota
+		other["released_quota"] = state.ReleasedQuota
+		if state.ReserveGroup != "" {
+			other["auto_reserve_group"] = state.ReserveGroup
+		}
+	}
+	if relayInfo.ChargedOnError {
+		other["charged_on_error"] = true
+	}
+	if relayInfo.AttemptFinancialOutcome != types.AttemptFinancialOutcomeUnknown {
+		other["financial_outcome"] = relayInfo.AttemptFinancialOutcome
 	}
 }
 

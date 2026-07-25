@@ -16,16 +16,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
-import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronDown,
+  KeyRound,
+  Settings2,
+  WalletCards,
+} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { getUserModels, getUserGroups } from '@/lib/api'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
-import { cn } from '@/lib/utils'
+
+import { DateTimePicker } from '@/components/datetime-picker'
+import {
+  SideDrawerSection,
+  SideDrawerSectionHeader,
+  sideDrawerContentClassName,
+  sideDrawerFooterClassName,
+  sideDrawerFormClassName,
+  sideDrawerHeaderClassName,
+  sideDrawerSwitchItemClassName,
+} from '@/components/drawer-layout'
+import { MultiSelect } from '@/components/multi-select'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -53,32 +69,21 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { DateTimePicker } from '@/components/datetime-picker'
-import {
-  SideDrawerSection,
-  SideDrawerSectionHeader,
-  sideDrawerContentClassName,
-  sideDrawerFooterClassName,
-  sideDrawerFormClassName,
-  sideDrawerHeaderClassName,
-  sideDrawerSwitchItemClassName,
-} from '@/components/drawer-layout'
-import { MultiSelect } from '@/components/multi-select'
+import { getUserModels, getUserGroups } from '@/lib/api'
+import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { cn } from '@/lib/utils'
+
 import { createApiKey, updateApiKey, getApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   getApiKeyFormSchema,
   type ApiKeyFormValues,
   getApiKeyFormDefaultValues,
+  resolveAutoGroupCandidates,
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
-import { type ApiKey } from '../types'
+import type { ApiKey } from '../types'
 import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
@@ -118,16 +123,52 @@ export function ApiKeysMutateDrawer({
     staleTime: 0,
   })
 
+  const groupOptionsReady = groupsData?.success === true
   const models = modelsData?.data || []
-  const groupsRaw = groupsData?.data || {}
-  const groups: ApiKeyGroupOption[] = Object.entries(groupsRaw).map(
-    ([key, info]) => ({
-      value: key,
-      label: info.name || key,
-      desc: info.desc || info.name || key,
-      ratio: info.ratio,
-    })
+  const groupsRaw = groupsData?.data
+  const concreteGroups = useMemo<ApiKeyGroupOption[]>(
+    () =>
+      Object.entries(groupsRaw ?? {})
+        .filter(([key]) => key !== 'auto')
+        .map(([key, info]) => ({
+          value: key,
+          label: info.name || key,
+          desc: info.desc || info.name || key,
+          ratio: info.ratio,
+        })),
+    [groupsRaw]
   )
+  const autoGroupValues = useMemo(
+    () =>
+      resolveAutoGroupCandidates(
+        concreteGroups.map((group) => group.value),
+        groupsData?.auto_groups ?? []
+      ),
+    [concreteGroups, groupsData?.auto_groups]
+  )
+  const autoCandidateGroups = useMemo(() => {
+    const concreteByValue = new Map(
+      concreteGroups.map((group) => [group.value, group])
+    )
+    return autoGroupValues
+      .map((group) => concreteByValue.get(group))
+      .filter((group): group is ApiKeyGroupOption => group !== undefined)
+  }, [autoGroupValues, concreteGroups])
+  const autoAvailable = autoCandidateGroups.length > 0
+  const availableGroups = useMemo<ApiKeyGroupOption[]>(() => {
+    if (!autoAvailable) return concreteGroups
+    return [
+      {
+        value: 'auto',
+        label: 'Auto',
+        desc: t(
+          'Tries the cheapest group first and switches after a guaranteed non-billable error.'
+        ),
+        dynamicRatio: true,
+      },
+      ...concreteGroups,
+    ]
+  }, [autoAvailable, concreteGroups, t])
   const schema = getApiKeyFormSchema(t)
 
   const form = useForm<ApiKeyFormValues>({
@@ -137,34 +178,117 @@ export function ApiKeysMutateDrawer({
 
   // Load existing data when updating
   useEffect(() => {
+    let ignore = false
+
     if (open && isUpdate && currentRow) {
-      getApiKey(currentRow.id).then((result) => {
-        if (result.success && result.data) {
-          form.reset(transformApiKeyToFormDefaults(result.data))
-        }
-      })
+      getApiKey(currentRow.id)
+        .then((result) => {
+          if (!ignore && result.success && result.data) {
+            form.reset(transformApiKeyToFormDefaults(result.data))
+          }
+        })
+        .catch(() => {
+          if (!ignore) {
+            toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+          }
+        })
     } else if (open && !isUpdate) {
       form.reset(getApiKeyFormDefaultValues())
     }
-  }, [open, isUpdate, currentRow, form])
 
-  // Correct group after groups load: if the form value is not in available groups, fall back
-  useEffect(() => {
-    if (groups.length === 0) return
-    const currentGroup = form.getValues('group')
-    if (currentGroup && !groups.some((g) => g.value === currentGroup)) {
-      const fallback =
-        groups.find((g) => g.value === '1' || g.label === 'default')?.value ??
-        groups[0]?.value ??
-        ''
-      form.setValue('group', fallback)
-      if (currentGroup === 'auto') {
-        form.setValue('cross_group_retry', false)
-      }
+    return () => {
+      ignore = true
     }
-  }, [groups, form])
+  }, [open, isUpdate, currentRow, form, t])
+
+  const selectedGroup = form.watch('group')
+  const autoGroupMode = form.watch('auto_group_mode')
+  const selectedCandidates = form.watch('auto_group_candidates')
+  const unlimitedQuota = form.watch('unlimited_quota')
+
+  const availableGroupValues = useMemo(
+    () => new Set(availableGroups.map((group) => group.value)),
+    [availableGroups]
+  )
+  const autoCandidateValues = useMemo(
+    () => new Set(autoGroupValues),
+    [autoGroupValues]
+  )
+  const groups = useMemo<ApiKeyGroupOption[]>(() => {
+    if (
+      !groupOptionsReady ||
+      !selectedGroup ||
+      availableGroupValues.has(selectedGroup)
+    ) {
+      return availableGroups
+    }
+    const unavailableGroup = {
+      value: selectedGroup,
+      label: `${selectedGroup} (${t('Unavailable')})`,
+      desc: t('This group is no longer available. Select another group.'),
+    }
+    return selectedGroup === 'auto'
+      ? [unavailableGroup, ...availableGroups]
+      : [...availableGroups, unavailableGroup]
+  }, [
+    availableGroups,
+    availableGroupValues,
+    groupOptionsReady,
+    selectedGroup,
+    t,
+  ])
+  const unavailableCandidates = useMemo(
+    () =>
+      selectedCandidates.filter(
+        (group) => group === 'auto' || !autoCandidateValues.has(group)
+      ),
+    [autoCandidateValues, selectedCandidates]
+  )
+  const candidateOptions = useMemo(() => {
+    const concreteOptions = autoCandidateGroups.map((group) => ({
+      value: group.value,
+      label: group.label,
+    }))
+    const missingOptions = unavailableCandidates.map((group) => ({
+      value: group,
+      label: `${group} (${t('Unavailable')})`,
+    }))
+    return [...concreteOptions, ...missingOptions]
+  }, [autoCandidateGroups, unavailableCandidates, t])
+
+  useEffect(() => {
+    if (selectedGroup === 'auto') return
+    if (selectedCandidates.length > 0) {
+      form.setValue('auto_group_candidates', [])
+    }
+    if (autoGroupMode !== 'all') {
+      form.setValue('auto_group_mode', 'all')
+    }
+  }, [autoGroupMode, form, selectedCandidates.length, selectedGroup])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
+    if (!availableGroupValues.has(data.group)) {
+      form.setError('group', {
+        message: t('This group is no longer available. Select another group.'),
+      })
+      toast.error(t('Please remove unavailable groups before saving'))
+      return
+    }
+
+    if (
+      data.group === 'auto' &&
+      data.auto_group_mode === 'specific' &&
+      data.auto_group_candidates.some(
+        (group) => group === 'auto' || !autoCandidateValues.has(group)
+      )
+    ) {
+      form.setError('auto_group_candidates', {
+        message: t('Please remove unavailable groups before saving'),
+      })
+      toast.error(t('Please remove unavailable groups before saving'))
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const basePayload = transformFormDataToPayload(data)
@@ -212,7 +336,7 @@ export function ApiKeysMutateDrawer({
           triggerRefresh()
         }
       }
-    } catch (_error) {
+    } catch {
       toast.error(t(ERROR_MESSAGES.UNEXPECTED))
     } finally {
       setIsSubmitting(false)
@@ -244,8 +368,6 @@ export function ApiKeysMutateDrawer({
   const quotaPlaceholder = tokensOnly
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
-  const selectedGroup = form.watch('group')
-  const unlimitedQuota = form.watch('unlimited_quota')
 
   return (
     <Sheet
@@ -303,71 +425,141 @@ export function ApiKeysMutateDrawer({
                   <FormItem>
                     <FormLabel>{t('Group')}</FormLabel>
                     <FormControl>
-                      <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
-                        <ApiKeyGroupCombobox
-                          options={groups}
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          placeholder={t('Select a group')}
-                        />
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='icon'
-                                className='h-14 w-10 shrink-0 rounded-lg sm:h-20'
-                                disabled={!field.value}
-                                onClick={() => field.onChange('')}
-                                aria-label={t('Clear')}
-                              />
-                            }
-                          >
-                            <X className='size-4' />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{t('Clear')}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
+                      <ApiKeyGroupCombobox
+                        options={groups}
+                        value={field.value}
+                        disabled={!groupOptionsReady}
+                        onValueChange={(value) => {
+                          field.onChange(value)
+                          form.clearErrors('group')
+                        }}
+                        placeholder={t('Select a group')}
+                      />
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Leave empty to use the lowest-priced available group for each requested model.'
+                        'Group affects channel stability and model availability.'
                       )}
                     </FormDescription>
                     <FormMessage />
+                    {groupOptionsReady &&
+                      !availableGroupValues.has(selectedGroup) && (
+                        <Alert variant='destructive'>
+                          <AlertTriangle aria-hidden='true' />
+                          <AlertTitle>{t('Unavailable group')}</AlertTitle>
+                          <AlertDescription>
+                            {t(
+                              'This group is no longer available. Select another group.'
+                            )}
+                          </AlertDescription>
+                        </Alert>
+                      )}
                   </FormItem>
                 )}
               />
 
-              {selectedGroup === 'auto' && (
-                <FormField
-                  control={form.control}
-                  name='cross_group_retry'
-                  render={({ field }) => (
-                    <FormItem className={sideDrawerSwitchItemClassName()}>
-                      <div className='flex flex-col gap-0.5'>
-                        <FormLabel className='text-sm'>
-                          {t('Cross-group retry')}
-                        </FormLabel>
-                        <FormDescription className='line-clamp-2 text-xs sm:line-clamp-none'>
+              {selectedGroup === 'auto' &&
+                groupOptionsReady &&
+                autoAvailable && (
+                  <div className='space-y-3 rounded-lg border p-3'>
+                    <FormField
+                      control={form.control}
+                      name='auto_group_mode'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Groups available to Auto')}</FormLabel>
+                          <FormControl>
+                            <div className='grid grid-cols-2 gap-2'>
+                              <Button
+                                type='button'
+                                variant={
+                                  field.value === 'all' ? 'default' : 'outline'
+                                }
+                                aria-pressed={field.value === 'all'}
+                                onClick={() => {
+                                  field.onChange('all')
+                                  form.setValue('auto_group_candidates', [])
+                                  form.clearErrors('auto_group_candidates')
+                                }}
+                              >
+                                {t('All groups')}
+                              </Button>
+                              <Button
+                                type='button'
+                                variant={
+                                  field.value === 'specific'
+                                    ? 'default'
+                                    : 'outline'
+                                }
+                                aria-pressed={field.value === 'specific'}
+                                onClick={() => field.onChange('specific')}
+                              >
+                                {t('Specific groups')}
+                              </Button>
+                            </div>
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    {autoGroupMode === 'specific' && (
+                      <FormField
+                        control={form.control}
+                        name='auto_group_candidates'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Auto group candidates')}</FormLabel>
+                            <FormControl>
+                              <MultiSelect
+                                options={candidateOptions}
+                                selected={field.value}
+                                onChange={(values) => {
+                                  field.onChange(
+                                    values.filter((value) => value !== 'auto')
+                                  )
+                                  form.clearErrors('auto_group_candidates')
+                                }}
+                                placeholder={t('Select groups for Auto')}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {unavailableCandidates.length > 0 && (
+                      <Alert variant='destructive'>
+                        <AlertTriangle aria-hidden='true' />
+                        <AlertTitle>{t('Unavailable groups')}</AlertTitle>
+                        <AlertDescription>
                           {t(
-                            'When enabled, if channels in the current group fail, it will try channels in the next group in order.'
+                            'These saved groups are no longer available: {{groups}}. Remove them before saving.',
+                            { groups: unavailableCandidates.join(', ') }
                           )}
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={!!field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              )}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    <div className='text-muted-foreground space-y-1 text-xs'>
+                      <p>
+                        {t(
+                          'Auto tries the cheapest selected group first and switches only after a guaranteed non-billable error.'
+                        )}
+                      </p>
+                      <p>
+                        {t(
+                          'Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.'
+                        )}
+                      </p>
+                      <p>
+                        {t(
+                          'If the reserve is too high, top up your balance or limit Auto to cheaper groups.'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
               <FormField
                 control={form.control}
@@ -613,7 +805,7 @@ export function ApiKeysMutateDrawer({
           <Button
             type='button'
             onClick={form.handleSubmit(onSubmit, onInvalid)}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !groupOptionsReady}
             className='w-full sm:w-auto'
           >
             {isSubmitting ? t('Saving...') : t('Save changes')}

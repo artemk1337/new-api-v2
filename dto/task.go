@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 )
 
 type TaskError struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Data       any    `json:"data"`
-	StatusCode int    `json:"-"`
-	LocalError bool   `json:"-"`
-	Error      error  `json:"-"`
+	Code             string                        `json:"code"`
+	Message          string                        `json:"message"`
+	Data             any                           `json:"data"`
+	StatusCode       int                           `json:"-"`
+	LocalError       bool                          `json:"-"`
+	Error            error                         `json:"-"`
+	FinancialOutcome types.AttemptFinancialOutcome `json:"-"`
 }
 
 type TaskData interface {

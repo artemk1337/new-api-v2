@@ -921,6 +921,9 @@ export function truncateText(text, maxWidth = 200) {
 }
 
 export const renderGroupOption = (item) => {
+  const localizedFullLabel = item.fullLabelKey
+    ? i18next.t(item.fullLabelKey)
+    : item.fullLabel;
   const {
     disabled,
     selected,
@@ -974,13 +977,17 @@ export const renderGroupOption = (item) => {
           <Typography.Text strong type={disabled ? 'tertiary' : undefined}>
             {label || value}
           </Typography.Text>
-          {(empty ? emptyContent : item.fullLabel || item.desc) && (
+          {(empty ? emptyContent : localizedFullLabel || item.desc) && (
             <Typography.Text type='secondary' size='small'>
-              {empty ? emptyContent : item.fullLabel || item.desc}
+              {empty ? emptyContent : localizedFullLabel || item.desc}
             </Typography.Text>
           )}
         </div>
-        {item.ratio && renderRatio(item.ratio)}
+        {item.dynamicRatio ? (
+          <Tag color='green'>{i18next.t('动态倍率')}</Tag>
+        ) : (
+          item.ratio && renderRatio(item.ratio)
+        )}
       </div>
   );
 };

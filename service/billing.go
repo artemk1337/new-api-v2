@@ -72,7 +72,15 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 	// 回退：无 BillingSession 时使用旧路径
 	quotaDelta := actualQuota - relayInfo.FinalPreConsumedQuota
 	if quotaDelta != 0 {
-		return PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+		result := PostConsumeQuotaWithResult(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
+		if result.FundingCommitted {
+			// Funding is authoritative for the amount shown in the consume log.
+			// A later token-quota failure is a partial settlement, not an
+			// uncommitted charge.
+			relayInfo.BillingSettled = true
+			relayInfo.SettledQuota = actualQuota
+		}
+		return result.Err
 	}
 	return nil
 }

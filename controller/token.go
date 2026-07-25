@@ -9,11 +9,75 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
+
+type tokenRequest struct {
+	Id                  int       `json:"id"`
+	Status              int       `json:"status"`
+	Name                string    `json:"name"`
+	ExpiredTime         int64     `json:"expired_time"`
+	RemainQuota         int       `json:"remain_quota"`
+	UnlimitedQuota      bool      `json:"unlimited_quota"`
+	ModelLimitsEnabled  bool      `json:"model_limits_enabled"`
+	ModelLimits         string    `json:"model_limits"`
+	AllowIps            *string   `json:"allow_ips"`
+	Group               *string   `json:"group"`
+	AutoGroupCandidates *[]string `json:"auto_group_candidates"`
+}
+
+func normalizeTokenRoutingForUser(userGroup, group string, candidates []string) (string, model.PricingGroupCandidates, error) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		group = "auto"
+	}
+
+	usableGroups := service.GetUserUsableGroups(userGroup)
+	if group != "auto" {
+		pricingGroup, ok := ratio_setting.ResolvePricingGroupKey(group)
+		if !ok {
+			return "", "", fmt.Errorf("pricing group %q is unavailable", group)
+		}
+		key := strconv.Itoa(pricingGroup.Id)
+		if _, ok := usableGroups[key]; !ok {
+			return "", "", fmt.Errorf("pricing group %q is unavailable for this user", pricingGroup.Name)
+		}
+		return key, "", nil
+	}
+
+	autoGroups := service.GetUserAutoGroup(userGroup)
+	if len(autoGroups) == 0 {
+		return "", "", fmt.Errorf("Auto is unavailable because no Auto pricing groups are configured for this user")
+	}
+	autoGroupSet := make(map[string]struct{}, len(autoGroups))
+	for _, autoGroup := range autoGroups {
+		autoGroupSet[autoGroup] = struct{}{}
+	}
+	normalized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		pricingGroup, ok := ratio_setting.ResolvePricingGroupKey(candidate)
+		if !ok {
+			return "", "", fmt.Errorf("auto pricing group %q is unavailable", strings.TrimSpace(candidate))
+		}
+		key := strconv.Itoa(pricingGroup.Id)
+		if _, ok := autoGroupSet[key]; !ok {
+			return "", "", fmt.Errorf("auto pricing group %q is outside this user's Auto allowlist", pricingGroup.Name)
+		}
+		normalized = append(normalized, key)
+	}
+	return "auto", model.NewPricingGroupCandidates(normalized), nil
+}
+
+func writeInvalidTokenRouting(c *gin.Context, err error) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"success": false,
+		"message": err.Error(),
+	})
+}
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
 	if token == nil {
@@ -169,7 +233,7 @@ func GetTokenUsage(c *gin.Context) {
 }
 
 func AddToken(c *gin.Context) {
-	token := model.Token{}
+	token := tokenRequest{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
 		common.ApiError(c, err)
@@ -211,20 +275,38 @@ func AddToken(c *gin.Context) {
 		common.SysLog("failed to generate token key: " + err.Error())
 		return
 	}
+	user, err := model.GetUserCache(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	group := "auto"
+	if token.Group != nil {
+		group = *token.Group
+	}
+	candidates := []string{}
+	if token.AutoGroupCandidates != nil {
+		candidates = *token.AutoGroupCandidates
+	}
+	group, autoGroupCandidates, err := normalizeTokenRoutingForUser(user.Group, group, candidates)
+	if err != nil {
+		writeInvalidTokenRouting(c, err)
+		return
+	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
-		Name:               token.Name,
-		Key:                key,
-		CreatedTime:        common.GetTimestamp(),
-		AccessedTime:       common.GetTimestamp(),
-		ExpiredTime:        token.ExpiredTime,
-		RemainQuota:        token.RemainQuota,
-		UnlimitedQuota:     token.UnlimitedQuota,
-		ModelLimitsEnabled: token.ModelLimitsEnabled,
-		ModelLimits:        token.ModelLimits,
-		AllowIps:           token.AllowIps,
-		Group:              ratio_setting.PricingGroupKey(token.Group),
-		CrossGroupRetry:    token.CrossGroupRetry,
+		UserId:              c.GetInt("id"),
+		Name:                token.Name,
+		Key:                 key,
+		CreatedTime:         common.GetTimestamp(),
+		AccessedTime:        common.GetTimestamp(),
+		ExpiredTime:         token.ExpiredTime,
+		RemainQuota:         token.RemainQuota,
+		UnlimitedQuota:      token.UnlimitedQuota,
+		ModelLimitsEnabled:  token.ModelLimitsEnabled,
+		ModelLimits:         token.ModelLimits,
+		AllowIps:            token.AllowIps,
+		Group:               group,
+		AutoGroupCandidates: autoGroupCandidates,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -254,7 +336,7 @@ func DeleteToken(c *gin.Context) {
 func UpdateToken(c *gin.Context) {
 	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
-	token := model.Token{}
+	token := tokenRequest{}
 	err := c.ShouldBindJSON(&token)
 	if err != nil {
 		common.ApiError(c, err)
@@ -301,8 +383,24 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = ratio_setting.PricingGroupKey(token.Group)
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		group := cleanToken.Group
+		if token.Group != nil {
+			group = *token.Group
+		}
+		candidates := cleanToken.GetAutoGroupCandidates()
+		if token.AutoGroupCandidates != nil {
+			candidates = *token.AutoGroupCandidates
+		}
+		user, err := model.GetUserCache(userId)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		cleanToken.Group, cleanToken.AutoGroupCandidates, err = normalizeTokenRoutingForUser(user.Group, group, candidates)
+		if err != nil {
+			writeInvalidTokenRouting(c, err)
+			return
+		}
 	}
 	err = cleanToken.Update()
 	if err != nil {

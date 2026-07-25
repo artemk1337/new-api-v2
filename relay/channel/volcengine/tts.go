@@ -211,18 +211,17 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 
 	conn, resp, dialErr := websocket.DefaultDialer.DialContext(context.Background(), requestURL, header)
 	if dialErr != nil {
+		statusCode := http.StatusBadGateway
 		if resp != nil {
-			return nil, types.NewErrorWithStatusCode(
-				fmt.Errorf("failed to connect to websocket: %w, status: %d", dialErr, resp.StatusCode),
-				types.ErrorCodeBadResponseStatusCode,
-				http.StatusBadGateway,
-			)
+			statusCode = resp.StatusCode
 		}
-		return nil, types.NewErrorWithStatusCode(
+		apiErr := types.NewErrorWithStatusCode(
 			fmt.Errorf("failed to connect to websocket: %w", dialErr),
 			types.ErrorCodeBadResponseStatusCode,
-			http.StatusBadGateway,
+			statusCode,
 		)
+		apiErr.SetFinancialOutcome(types.AttemptFinancialOutcomeNonBillable)
+		return nil, apiErr
 	}
 	defer conn.Close()
 
@@ -235,6 +234,7 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 		)
 	}
 
+	info.MarkAttemptDispatched()
 	if sendErr := FullClientRequest(conn, payload); sendErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("failed to send request: %w", sendErr),

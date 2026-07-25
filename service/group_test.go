@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,4 +67,21 @@ func TestGetUserUsableGroupsExplicitRemovalWinsOverConflictingAddition(t *testin
 	groups := GetUserUsableGroups("paid-users")
 
 	assert.Equal(t, map[string]string{"1": "Default"}, groups)
+}
+
+func TestGetUserAutoGroupDeduplicatesResolvedPricingGroups(t *testing.T) {
+	originalPricingGroups := ratio_setting.PricingGroups2JSONString()
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalPricingGroups))
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+	})
+
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"premium","ratio":2,"selectable":true}
+	]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","1","premium","2"]`))
+
+	assert.Equal(t, []string{"1", "2"}, GetUserAutoGroup(""))
 }

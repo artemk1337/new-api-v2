@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ComponentProps } from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -41,14 +41,17 @@ export type ApiKeyGroupOption = {
   label: string
   desc?: string
   ratio?: number | string
+  dynamicRatio?: boolean
 }
 
-type ApiKeyGroupComboboxProps = {
+type ApiKeyGroupComboboxProps = Omit<
+  ComponentProps<typeof Button>,
+  'children' | 'onValueChange' | 'value'
+> & {
   options: ApiKeyGroupOption[]
   value?: string
   onValueChange: (value: string) => void
   placeholder?: string
-  disabled?: boolean
 }
 
 function formatGroupRatio(
@@ -76,9 +79,11 @@ function getRatioBadgeClassName(ratio: ApiKeyGroupOption['ratio']) {
   return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
 }
 
-function GroupRatioBadge({ ratio }: { ratio: ApiKeyGroupOption['ratio'] }) {
+function GroupRatioBadge({ option }: { option?: ApiKeyGroupOption }) {
   const { t } = useTranslation()
-  const label = formatGroupRatio(ratio, t('Ratio'))
+  const label = option?.dynamicRatio
+    ? t('Dynamic ratio')
+    : formatGroupRatio(option?.ratio, t('Ratio'))
 
   if (!label) return null
 
@@ -87,7 +92,7 @@ function GroupRatioBadge({ ratio }: { ratio: ApiKeyGroupOption['ratio'] }) {
       variant='outline'
       className={cn(
         'max-w-24 shrink-0 truncate text-[10px] sm:max-w-none sm:text-xs',
-        getRatioBadgeClassName(ratio)
+        getRatioBadgeClassName(option?.ratio)
       )}
     >
       {label}
@@ -100,7 +105,8 @@ export function ApiKeyGroupCombobox({
   value,
   onValueChange,
   placeholder,
-  disabled,
+  className,
+  ...triggerProps
 }: ApiKeyGroupComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -133,12 +139,15 @@ export function ApiKeyGroupCombobox({
       <PopoverTrigger
         render={
           <Button
+            {...triggerProps}
             type='button'
             variant='outline'
             role='combobox'
             aria-expanded={open}
-            disabled={disabled}
-            className='border-input bg-muted/40 hover:bg-muted/55 hover:text-foreground active:bg-background data-popup-open:border-ring data-popup-open:bg-background data-popup-open:ring-ring/20 h-auto min-h-14 w-full justify-between gap-2 rounded-lg px-3 py-2 text-start shadow-none transition-[background-color,border-color,box-shadow] duration-150 data-popup-open:ring-[3px] sm:min-h-20 sm:gap-3 sm:px-4 sm:py-3'
+            className={cn(
+              'border-input bg-muted/40 hover:bg-muted/55 hover:text-foreground active:bg-background data-popup-open:border-ring data-popup-open:bg-background data-popup-open:ring-ring/20 h-auto min-h-14 w-full justify-between gap-2 rounded-lg px-3 py-2 text-start shadow-none transition-[background-color,border-color,box-shadow] duration-150 data-popup-open:ring-[3px] sm:min-h-20 sm:gap-3 sm:px-4 sm:py-3',
+              className
+            )}
           />
         }
       >
@@ -154,7 +163,7 @@ export function ApiKeyGroupCombobox({
             )}
           </span>
           <span className='hidden sm:block'>
-            <GroupRatioBadge ratio={selectedOption?.ratio} />
+            <GroupRatioBadge option={selectedOption} />
           </span>
         </span>
         <ChevronsUpDown className='h-4 w-4 shrink-0 opacity-50' />
@@ -197,7 +206,7 @@ export function ApiKeyGroupCombobox({
                       </span>
                     )}
                   </span>
-                  <GroupRatioBadge ratio={option.ratio} />
+                  <GroupRatioBadge option={option} />
                 </CommandItem>
               ))}
             </CommandGroup>

@@ -196,6 +196,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
 	if openaiErr != nil {
+		if service.CaptureAttemptUsageQuota(c, info, usage) {
+			openaiErr.SetFinancialOutcome(info.AttemptFinancialOutcome)
+		}
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr
 	}
@@ -297,6 +300,9 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo) (newAPI
 
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
 	if openaiErr != nil {
+		if service.CaptureAttemptUsageQuota(c, info, usage) {
+			openaiErr.SetFinancialOutcome(info.AttemptFinancialOutcome)
+		}
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr
 	}

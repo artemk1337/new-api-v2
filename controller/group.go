@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -20,10 +21,14 @@ func GetGroups(c *gin.Context) {
 
 func GetUserGroups(c *gin.Context) {
 	usableGroups := make(map[string]map[string]interface{})
-	userGroup := ""
 	userId := c.GetInt("id")
-	userGroup, _ = model.GetUserGroup(userId, false)
+	userGroup, err := model.GetUserGroup(userId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	userUsableGroups := service.GetUserUsableGroups(userGroup)
+	autoGroups := service.GetUserAutoGroup(userGroup)
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// Usable groups are derived from selectable pricing groups.
 		if desc, ok := userUsableGroups[groupName]; ok {
@@ -39,7 +44,7 @@ func GetUserGroups(c *gin.Context) {
 			}
 		}
 	}
-	if len(service.GetUserAutoGroup(userGroup)) > 0 {
+	if len(autoGroups) > 0 {
 		usableGroups["auto"] = map[string]interface{}{
 			"ratio": "自动",
 			"desc":  "自动分组",
@@ -48,8 +53,9 @@ func GetUserGroups(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    usableGroups,
+		"success":     true,
+		"message":     "",
+		"data":        usableGroups,
+		"auto_groups": autoGroups,
 	})
 }

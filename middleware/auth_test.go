@@ -65,7 +65,7 @@ func TestTokenAuthAllowsAutoTokenGroup(t *testing.T) {
 	assert.Equal(t, "auto", body.Get("token_group").String())
 }
 
-func TestTokenAuthDoesNotTreatNumericUserGroupAsPricingID(t *testing.T) {
+func TestTokenAuthDefaultsEmptyTokenGroupToAuto(t *testing.T) {
 	resetTokenAuthTestState(t)
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
@@ -75,8 +75,34 @@ func TestTokenAuthDoesNotTreatNumericUserGroupAsPricingID(t *testing.T) {
 
 	body := performTokenAuthRequest(t, http.StatusOK)
 
-	assert.Equal(t, "1", body.Get("using_group").String())
-	assert.Empty(t, body.Get("token_group").String())
+	assert.Equal(t, "auto", body.Get("using_group").String())
+	assert.Equal(t, "auto", body.Get("token_group").String())
+}
+
+func TestSetupContextForTokenNormalizesLegacyRedisRoutingFields(t *testing.T) {
+	originalGroups := ratio_setting.PricingGroups2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+	})
+	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
+		{"id":1,"name":"default","ratio":1,"selectable":true},
+		{"id":2,"name":"vip","ratio":1.5,"selectable":true}
+	]`))
+
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	token := &model.Token{
+		UserId:              101,
+		Group:               "",
+		AutoGroupCandidates: model.PricingGroupCandidates("vip,2,default"),
+	}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+
+	assert.Equal(t, "auto", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	candidates, ok := common.GetContextKeyType[[]string](ctx, constant.ContextKeyTokenAutoGroupCandidates)
+	require.True(t, ok)
+	assert.Equal(t, []string{"2", "1"}, candidates)
 }
 
 func resetTokenAuthTestState(t *testing.T) {

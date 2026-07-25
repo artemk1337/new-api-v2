@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -161,6 +162,110 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 	info.PriceData = priceData
 	return priceData, nil
+}
+
+func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []string, promptTokens int, meta *types.TokenCountMeta) (relaycommon.AutoRouteState, error) {
+	state := relaycommon.AutoRouteState{
+		Candidates: make([]relaycommon.AutoRouteCandidate, 0, len(groups)),
+	}
+	if len(groups) == 0 {
+		return state, nil
+	}
+
+	originalGroup := info.UsingGroup
+	requestInput := info.BillingRequestInput
+	for _, group := range groups {
+		common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
+		candidateInfo := *info
+		candidateInfo.UsingGroup = group
+		candidateInfo.PriceData = types.PriceData{}
+		candidateInfo.TieredBillingSnapshot = nil
+
+		priceData, err := ModelPriceHelper(c, &candidateInfo, promptTokens, meta)
+		if err != nil {
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
+			return relaycommon.AutoRouteState{}, err
+		}
+		if requestInput == nil {
+			requestInput = candidateInfo.BillingRequestInput
+		}
+		state.Candidates = append(state.Candidates, relaycommon.AutoRouteCandidate{
+			Group:          group,
+			Ratio:          priceData.GroupRatioInfo.GroupRatio,
+			EstimatedQuota: priceData.QuotaToPreConsume,
+			PriceData:      priceData,
+			TieredSnapshot: candidateInfo.TieredBillingSnapshot,
+		})
+		if priceData.QuotaToPreConsume >= state.ReservedQuota {
+			state.ReservedQuota = priceData.QuotaToPreConsume
+			state.ReserveGroup = group
+		}
+	}
+
+	state.InitialGroup = groups[0]
+	state.UsedGroup = groups[0]
+	info.AutoRoute = state
+	info.BillingRequestInput = requestInput
+	info.ApplyAutoRouteCandidate(state.InitialGroup)
+	common.SetContextKey(c, constant.ContextKeyAutoGroup, state.InitialGroup)
+	return state, nil
+}
+
+func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []string, otherRatios map[string]float64) (relaycommon.AutoRouteState, error) {
+	state := relaycommon.AutoRouteState{
+		Candidates:   make([]relaycommon.AutoRouteCandidate, 0, len(groups)),
+		FailedGroups: append([]relaycommon.AutoFailedGroup(nil), info.AutoRoute.FailedGroups...),
+	}
+	if len(groups) == 0 {
+		return state, nil
+	}
+
+	originalGroup := info.UsingGroup
+	for _, group := range groups {
+		common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
+		candidateInfo := *info
+		candidateInfo.UsingGroup = group
+		candidateInfo.PriceData = types.PriceData{}
+
+		priceData, err := ModelPriceHelperPerCall(c, &candidateInfo)
+		if err != nil {
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
+			return relaycommon.AutoRouteState{}, err
+		}
+		priceData.OtherRatios = make(map[string]float64, len(otherRatios))
+		for name, ratio := range otherRatios {
+			priceData.OtherRatios[name] = ratio
+		}
+		if !common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
+			for _, ratio := range priceData.OtherRatios {
+				if ratio != 1 {
+					priceData.Quota = int(float64(priceData.Quota) * ratio)
+				}
+			}
+		}
+
+		state.Candidates = append(state.Candidates, relaycommon.AutoRouteCandidate{
+			Group:          group,
+			Ratio:          priceData.GroupRatioInfo.GroupRatio,
+			EstimatedQuota: priceData.Quota,
+			PriceData:      priceData,
+		})
+		if priceData.Quota >= state.ReservedQuota {
+			state.ReservedQuota = priceData.Quota
+			state.ReserveGroup = group
+		}
+	}
+
+	state.InitialGroup = groups[0]
+	state.UsedGroup = originalGroup
+	info.AutoRoute = state
+	if !info.ApplyAutoRouteCandidate(state.UsedGroup) {
+		info.ApplyAutoRouteCandidate(state.InitialGroup)
+		state.UsedGroup = state.InitialGroup
+		info.AutoRoute.UsedGroup = state.UsedGroup
+	}
+	common.SetContextKey(c, constant.ContextKeyAutoGroup, state.UsedGroup)
+	return state, nil
 }
 
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)

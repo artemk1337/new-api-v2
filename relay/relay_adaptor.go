@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"reflect"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -165,4 +166,12 @@ func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {
 		}
 	}
 	return nil
+}
+
+func TaskPricingContract(platform constant.TaskPlatform) string {
+	adaptor := GetTaskAdaptor(platform)
+	if adaptor == nil {
+		return ""
+	}
+	return reflect.TypeOf(adaptor).String()
 }

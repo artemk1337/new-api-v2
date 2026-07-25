@@ -31,3 +31,14 @@ func TestGetAutoGroupsReturnsCopy(t *testing.T) {
 
 	assert.Equal(t, []string{"default"}, GetAutoGroups())
 }
+
+func TestUpdateAutoGroupsNormalizesValues(t *testing.T) {
+	original := AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, UpdateAutoGroupsByJsonString(original))
+	})
+
+	require.NoError(t, UpdateAutoGroupsByJsonString(`[" default ","vip","default"," ","vip"]`))
+
+	assert.Equal(t, []string{"default", "vip"}, GetAutoGroups())
+}

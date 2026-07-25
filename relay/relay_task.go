@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -177,36 +178,78 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		info.PublicTaskID = model.GenerateTaskID()
 	}
 
-	// 4. 价格计算：基础模型价格
+	// 4. 价格计算：基础模型价格。Auto 重试复用请求开始时冻结的
+	// 分组价格，避免中途配置变更影响结算。
 	info.OriginModelName = modelName
-	priceData, err := helper.ModelPriceHelperPerCall(c, info)
-	if err != nil {
-		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
+	autoRouteReady := info.TokenGroup == "auto" && len(info.AutoRoute.Candidates) > 0
+	if autoRouteReady {
+		if !info.ApplyAutoRouteCandidate(info.UsingGroup) {
+			return nil, service.TaskErrorWrapperLocal(
+				fmt.Errorf("Auto group %s is not present in the frozen route plan", info.UsingGroup),
+				"model_price_error",
+				http.StatusBadRequest,
+			)
+		}
+	} else {
+		priceData, err := helper.ModelPriceHelperPerCall(c, info)
+		if err != nil {
+			return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
+		}
+		info.PriceData = priceData
 	}
-	info.PriceData = priceData
 
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
-		for k, v := range estimatedRatios {
-			info.PriceData.AddOtherRatio(k, v)
+	if !autoRouteReady {
+		if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
+			for k, v := range estimatedRatios {
+				info.PriceData.AddOtherRatio(k, v)
+			}
 		}
-	}
 
-	// 6. 将 OtherRatios 应用到基础额度
-	if !common.StringsContains(constant.TaskPricePatches, modelName) {
-		for _, ra := range info.PriceData.OtherRatios {
-			if ra != 1.0 {
-				info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
+		// 6. 将 OtherRatios 应用到基础额度
+		if !common.StringsContains(constant.TaskPricePatches, modelName) {
+			for _, ra := range info.PriceData.OtherRatios {
+				if ra != 1.0 {
+					info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
+				}
 			}
 		}
 	}
 
-	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
-	if info.Billing == nil && !info.PriceData.FreeModel {
+	// 6.5. Для Auto замораживаем цену каждой группы и резервируем максимум
+	// до первого upstream dispatch.
+	reserveQuota := info.PriceData.Quota
+	if info.TokenGroup == "auto" && !autoRouteReady {
+		groups := common.GetContextKeyStringSlice(c, constant.ContextKeyAutoGroupSnapshot)
+		if len(groups) > 0 {
+			autoRoute, err := helper.BuildAutoPerCallRouteState(c, info, groups, info.PriceData.OtherRatios)
+			if err != nil {
+				return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
+			}
+			reserveQuota = autoRoute.ReservedQuota
+		}
+	}
+
+	// 7. 预扣费（только один раз; все relay-запросы отключают trust bypass,
+	// чтобы неоднозначная ошибка после dispatch была покрыта резервом).
+	if info.Billing == nil && reserveQuota > 0 {
 		info.ForcePreConsume = true
-		if apiErr := service.PreConsumeBilling(c, info.PriceData.Quota, info); apiErr != nil {
+		if apiErr := service.PreConsumeBilling(c, reserveQuota, info); apiErr != nil {
+			if info.TokenGroup == "auto" &&
+				(apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota ||
+					apiErr.GetErrorCode() == types.ErrorCodePreConsumeTokenQuotaFailed) {
+				failure := service.DescribeAutoReserveFailure(c, info, apiErr)
+				service.RecordAutoReserveFailure(c, info, failure)
+				apiErr = types.NewErrorWithStatusCode(
+					errors.New(failure.Message),
+					types.ErrorCodeInsufficientAutoReserve,
+					http.StatusForbidden,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithNoRecordErrorLog(),
+				)
+			}
 			return nil, service.TaskErrorFromAPIError(apiErr)
 		}
 	}
@@ -218,13 +261,26 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	// 9. 发送请求
-	resp, err := adaptor.DoRequest(c, info, requestBody)
+	resp, err := dispatchTaskRequest(info, func() (*http.Response, error) {
+		return adaptor.DoRequest(c, info, requestBody)
+	})
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "do_request_failed", http.StatusInternalServerError)
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		return nil, service.TaskErrorWrapper(fmt.Errorf("%s", string(responseBody)), "fail_to_fetch_task", resp.StatusCode)
+		responseBody, readErr := io.ReadAll(resp.Body)
+		responseErr := error(fmt.Errorf("%s", string(responseBody)))
+		if readErr != nil {
+			responseErr = errors.Join(responseErr, readErr)
+		}
+		taskErr := service.TaskErrorWrapper(responseErr, "fail_to_fetch_task", resp.StatusCode)
+		if readErr != nil {
+			taskErr.FinancialOutcome = types.AttemptFinancialOutcomeAmbiguous
+		} else {
+			service.CaptureUpstreamErrorBodyQuota(c, info, responseBody)
+			taskErr.FinancialOutcome = service.ClassifyUpstreamErrorResponse(resp.StatusCode, responseBody)
+		}
+		return nil, taskErr
 	}
 
 	// 10. 返回 OtherRatios 给下游（header 必须在 DoResponse 写 body 之前设置）
@@ -237,6 +293,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 11. 解析响应
 	upstreamTaskID, taskData, taskErr := adaptor.DoResponse(c, resp, info)
+	if strings.TrimSpace(upstreamTaskID) != "" {
+		info.MarkAttemptTaskAccepted()
+	}
 	if taskErr != nil {
 		return nil, taskErr
 	}
@@ -256,6 +315,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		Platform:       platform,
 		Quota:          finalQuota,
 	}, nil
+}
+
+func dispatchTaskRequest(info *relaycommon.RelayInfo, request func() (*http.Response, error)) (*http.Response, error) {
+	info.MarkAttemptDispatched()
+	return request()
 }
 
 // recalcQuotaFromRatios 根据 adjustedRatios 重新计算 quota。

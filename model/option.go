@@ -295,6 +295,7 @@ func migratePricingGroupsFromLegacy(legacyGroupRatio string, legacyUsableGroups 
 }
 
 func normalizePricingGroupOptionMaps() {
+	previousAutoGroups := setting.AutoGroups2JsonString()
 	values := map[string]string{
 		"PricingGroups":   ratio_setting.PricingGroups2JSONString(),
 		"GroupRatio":      ratio_setting.GroupRatio2JSONString(),
@@ -313,6 +314,11 @@ func normalizePricingGroupOptionMaps() {
 	}
 	if normalized, err := ratio_setting.NormalizeAutoGroups(); err == nil {
 		values["AutoGroups"] = normalized
+		if normalized != previousAutoGroups {
+			if err := DB.Model(&Option{}).Where("key = ?", "AutoGroups").Update("value", normalized).Error; err != nil {
+				common.SysLog("failed to persist recovered auto groups: " + err.Error())
+			}
+		}
 	} else {
 		common.SysLog("failed to normalize auto groups: " + err.Error())
 	}
@@ -420,6 +426,8 @@ func validateOptionValue(key string, value string) error {
 			return err
 		}
 		return ratio_setting.ValidatePricingGroupIDStabilityJSONString(value)
+	case "AutoGroups":
+		return ratio_setting.ValidateAutoGroupsJSONString(value)
 	default:
 		return nil
 	}
@@ -460,10 +468,22 @@ func UpdateOptionsBulk(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	prospectivePricingGroups := values["PricingGroups"]
+	if prospectivePricingGroups == "" {
+		prospectivePricingGroups = values["GroupRatio"]
+	}
 	normalizedValues := make(map[string]string, len(values))
 	for _, k := range sortedOptionKeys(values) {
 		v := values[k]
 		if k == "UserUsableGroups" {
+			continue
+		}
+		if k == "AutoGroups" && prospectivePricingGroups != "" {
+			normalized, err := ratio_setting.NormalizeAutoGroupsJSONStringForPricingGroups(v, prospectivePricingGroups)
+			if err != nil {
+				return err
+			}
+			normalizedValues[k] = normalized
 			continue
 		}
 		if err := validateOptionValue(k, v); err != nil {
@@ -509,7 +529,7 @@ func persistOptionsAndRuntime(values map[string]string) error {
 		if err := normalizeChannelPricingGroupsTxWith(tx, pricingNormalizer.normalizeCSV, pricingNormalizer.normalizeKey); err != nil {
 			return err
 		}
-		if err := normalizeTokenPricingGroupsTxWith(tx, pricingNormalizer.normalizeKey); err != nil {
+		if err := normalizeTokenPricingGroupsTxWith(tx, pricingNormalizer.normalizeKey, pricingNormalizer.normalizeCSV); err != nil {
 			return err
 		}
 		return normalizeTaskPricingGroupsTxWith(tx, pricingNormalizer.normalizeKeyOrDefault)
