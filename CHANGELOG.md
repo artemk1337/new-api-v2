@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.62
+
+- Fixed Auto group descriptions overflowing the API-key creation drawer by wrapping the text within the selected-group control.
+
 ## v1.1.61
 
 - Returned the reserved quota for upstream errors unless the response explicitly confirms a charge; errors without billing evidence are no longer charged by estimate.

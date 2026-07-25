@@ -157,7 +157,7 @@ export function ApiKeyGroupCombobox({
               {selectedOption?.label || placeholder || t('Select a group')}
             </span>
             {selectedOption?.desc && (
-              <span className='text-muted-foreground block break-words text-[11px] sm:text-xs'>
+              <span className='text-muted-foreground block break-words whitespace-normal text-[11px] sm:text-xs'>
                 {selectedOption.desc}
               </span>
             )}
