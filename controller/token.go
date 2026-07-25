@@ -51,7 +51,7 @@ func normalizeTokenRoutingForUser(userGroup, group string, candidates []string) 
 
 	autoGroups := service.GetUserAutoGroup(userGroup)
 	if len(autoGroups) == 0 {
-		return "", "", fmt.Errorf("Auto is unavailable because no Auto pricing groups are configured for this user")
+		return "", "", fmt.Errorf("Auto is unavailable because this user has no available pricing groups")
 	}
 	autoGroupSet := make(map[string]struct{}, len(autoGroups))
 	for _, autoGroup := range autoGroups {
@@ -65,7 +65,7 @@ func normalizeTokenRoutingForUser(userGroup, group string, candidates []string) 
 		}
 		key := strconv.Itoa(pricingGroup.Id)
 		if _, ok := autoGroupSet[key]; !ok {
-			return "", "", fmt.Errorf("auto pricing group %q is outside this user's Auto allowlist", pricingGroup.Name)
+			return "", "", fmt.Errorf("auto pricing group %q is unavailable for this user", pricingGroup.Name)
 		}
 		normalized = append(normalized, key)
 	}

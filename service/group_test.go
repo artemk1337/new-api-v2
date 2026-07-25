@@ -69,7 +69,7 @@ func TestGetUserUsableGroupsExplicitRemovalWinsOverConflictingAddition(t *testin
 	assert.Equal(t, map[string]string{"1": "Default"}, groups)
 }
 
-func TestGetUserAutoGroupDeduplicatesResolvedPricingGroups(t *testing.T) {
+func TestGetUserAutoGroupReturnsAllUsableGroups(t *testing.T) {
 	originalPricingGroups := ratio_setting.PricingGroups2JSONString()
 	originalAutoGroups := setting.AutoGroups2JsonString()
 	t.Cleanup(func() {
@@ -79,9 +79,10 @@ func TestGetUserAutoGroupDeduplicatesResolvedPricingGroups(t *testing.T) {
 
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
-		{"id":2,"name":"premium","ratio":2,"selectable":true}
+		{"id":2,"name":"premium","ratio":2,"selectable":true},
+		{"id":3,"name":"internal","ratio":1,"selectable":false}
 	]`))
-	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default","1","premium","2"]`))
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default"]`))
 
 	assert.Equal(t, []string{"1", "2"}, GetUserAutoGroup(""))
 }

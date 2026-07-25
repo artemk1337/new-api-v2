@@ -103,7 +103,7 @@ func TestBuildAutoGroupSnapshotUsesConfiguredSubsetAndEffectiveUserRatio(t *test
 	assert.Equal(t, []string{vipGroup, defaultGroup}, groups)
 }
 
-func TestBuildAutoGroupSnapshotDoesNotExpandBeyondAutoAllowlist(t *testing.T) {
+func TestBuildAutoGroupSnapshotUsesAllUserGroups(t *testing.T) {
 	restoreGroupSettings(t)
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
 		{"id":1,"name":"default","ratio":1,"selectable":true},
@@ -122,6 +122,7 @@ func TestBuildAutoGroupSnapshotDoesNotExpandBeyondAutoAllowlist(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{
+		ratio_setting.PricingGroupKey("budget"),
 		ratio_setting.PricingGroupKey("default"),
 		ratio_setting.PricingGroupKey("vip"),
 	}, groups)

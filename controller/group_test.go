@@ -53,7 +53,7 @@ func TestGetUserGroupsReturnsPricingGroupRefs(t *testing.T) {
 	require.Equal(t, "Renamed VIP", payload.Data["2"].Name)
 	require.Equal(t, "vip", payload.Data["2"].Desc)
 	require.Equal(t, "auto", payload.Data["auto"].Id)
-	require.Equal(t, []string{"1"}, payload.AutoGroups)
+	require.Equal(t, []string{"1", "2"}, payload.AutoGroups)
 }
 
 func TestGetUserGroupsReturnsUserGroupReadError(t *testing.T) {

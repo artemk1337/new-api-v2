@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.60
+
+- Made Auto consider every pricing group available to the user; the legacy global Auto-group list no longer restricts routing or API-key group choices.
+
 ## v1.1.59
 
 - Clarified the Russian Auto-group guidance: failover conditions, reserve return after a successful request, and insufficient-balance recovery.

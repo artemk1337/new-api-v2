@@ -1,10 +1,10 @@
 package service
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -58,22 +58,14 @@ func GroupInUserUsableGroups(userGroup, groupName string) bool {
 	return ok
 }
 
-// GetUserAutoGroup 根据用户分组获取自动分组设置
+// GetUserAutoGroup returns every group available to the user for Auto routing.
 func GetUserAutoGroup(userGroup string) []string {
 	groups := GetUserUsableGroups(userGroup)
-	autoGroups := make([]string, 0)
-	seen := make(map[string]struct{})
-	for _, group := range setting.GetAutoGroups() {
-		normalizedGroup := ratio_setting.PricingGroupKey(group)
-		if _, ok := groups[normalizedGroup]; !ok {
-			continue
-		}
-		if _, ok := seen[normalizedGroup]; ok {
-			continue
-		}
-		seen[normalizedGroup] = struct{}{}
-		autoGroups = append(autoGroups, normalizedGroup)
+	autoGroups := make([]string, 0, len(groups))
+	for group := range groups {
+		autoGroups = append(autoGroups, group)
 	}
+	sort.Strings(autoGroups)
 	return autoGroups
 }
 
