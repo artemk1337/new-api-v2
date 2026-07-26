@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.64
+
+- Made the Telegram sign-in action match the default OAuth button layout and moved the provider widget into a dialog.
+
 ## v1.1.63
 
 - Simplified the Auto-group description in API-key creation and moved detailed routing and reserve guidance into an accessible popover.

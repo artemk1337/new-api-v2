@@ -24,9 +24,16 @@ import {
   IconDiscord,
   IconGithub,
   IconLinuxDo,
+  IconTelegram,
   IconWeChat,
 } from '@/assets/brand-icons'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 import { useOAuthLogin } from '../hooks/use-oauth-login'
@@ -177,16 +184,34 @@ export function OAuthProviders({
               disabled
               className='h-11 w-full justify-center gap-2 rounded-lg'
             >
+              <IconTelegram className='h-4 w-4' />
               {t('Continue with Telegram')}
             </Button>
           ) : (
-            <TelegramLoginWidget
-              botName={telegramBotName}
-              onAuth={handleTelegramLogin}
-              onError={() =>
-                toast.error(t('Failed to load Telegram login widget'))
-              }
-            />
+            <Dialog>
+              <DialogTrigger
+                render={
+                  <Button
+                    variant='outline'
+                    type='button'
+                    className='h-11 w-full justify-center gap-2 rounded-lg'
+                  />
+                }
+              >
+                <IconTelegram className='h-4 w-4' />
+                {t('Continue with Telegram')}
+              </DialogTrigger>
+              <DialogContent className='w-fit min-w-72 items-center'>
+                <DialogTitle>{t('Continue with Telegram')}</DialogTitle>
+                <TelegramLoginWidget
+                  botName={telegramBotName}
+                  onAuth={handleTelegramLogin}
+                  onError={() =>
+                    toast.error(t('Failed to load Telegram login widget'))
+                  }
+                />
+              </DialogContent>
+            </Dialog>
           ))}
       </div>
     </div>
