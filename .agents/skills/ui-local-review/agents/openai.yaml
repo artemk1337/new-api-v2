@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI Local Review"
+  short_description: "Проверять UI локально со скриншотами"
+  default_prompt: "Use $ui-local-review to review this project UI change locally with screenshots."

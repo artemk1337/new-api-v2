@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.63
+
+- Simplified the Auto-group description in API-key creation and moved detailed routing and reserve guidance into an accessible popover.
+
 ## v1.1.62
 
 - Fixed Auto group descriptions overflowing the API-key creation drawer by wrapping the text within the selected-group control.

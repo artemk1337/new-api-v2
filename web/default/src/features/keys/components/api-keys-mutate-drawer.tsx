@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ChevronDown,
+  Info,
   KeyRound,
   Settings2,
   WalletCards,
@@ -58,6 +59,11 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Sheet,
   SheetClose,
@@ -106,6 +112,7 @@ export function ApiKeysMutateDrawer({
   const { triggerRefresh } = useApiKeys()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [isAutoHelpOpen, setIsAutoHelpOpen] = useState(false)
 
   // Fetch models
   const { data: modelsData } = useQuery({
@@ -161,9 +168,7 @@ export function ApiKeysMutateDrawer({
       {
         value: 'auto',
         label: 'Auto',
-        desc: t(
-          'Tries the cheapest group first and switches after a guaranteed non-billable error.'
-        ),
+        desc: t('Iterates through available groups in ascending price order.'),
         dynamicRatio: true,
       },
       ...concreteGroups,
@@ -467,7 +472,69 @@ export function ApiKeysMutateDrawer({
                       name='auto_group_mode'
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>{t('Groups available to Auto')}</FormLabel>
+                          <div className='flex items-center gap-1'>
+                            <FormLabel>
+                              {t('Groups available to Auto')}
+                            </FormLabel>
+                            <Popover
+                              open={isAutoHelpOpen}
+                              onOpenChange={setIsAutoHelpOpen}
+                            >
+                              <PopoverTrigger
+                                onKeyDown={(event) => {
+                                  if (
+                                    event.key === 'Escape' &&
+                                    isAutoHelpOpen
+                                  ) {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    setIsAutoHelpOpen(false)
+                                  }
+                                }}
+                                render={
+                                  <Button
+                                    type='button'
+                                    variant='ghost'
+                                    size='icon'
+                                    className='size-5'
+                                  />
+                                }
+                              >
+                                <span className='sr-only'>
+                                  {t('Learn more')}
+                                </span>
+                                <Info className='size-4' />
+                              </PopoverTrigger>
+                              <PopoverContent
+                                side='top'
+                                align='start'
+                                className='text-muted-foreground w-80 space-y-3'
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Escape') {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    setIsAutoHelpOpen(false)
+                                  }
+                                }}
+                              >
+                                <p>
+                                  {t(
+                                    'Auto tries the cheapest selected group first and switches only after a guaranteed non-billable error.'
+                                  )}
+                                </p>
+                                <p>
+                                  {t(
+                                    'Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.'
+                                  )}
+                                </p>
+                                <p>
+                                  {t(
+                                    'If the reserve is too high, top up your balance or limit Auto to cheaper groups.'
+                                  )}
+                                </p>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                           <FormControl>
                             <div className='grid grid-cols-2 gap-2'>
                               <Button
@@ -540,24 +607,6 @@ export function ApiKeysMutateDrawer({
                         </AlertDescription>
                       </Alert>
                     )}
-
-                    <div className='text-muted-foreground space-y-1 text-xs'>
-                      <p>
-                        {t(
-                          'Auto tries the cheapest selected group first and switches only after a guaranteed non-billable error.'
-                        )}
-                      </p>
-                      <p>
-                        {t(
-                          'Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.'
-                        )}
-                      </p>
-                      <p>
-                        {t(
-                          'If the reserve is too high, top up your balance or limit Auto to cheaper groups.'
-                        )}
-                      </p>
-                    </div>
                   </div>
                 )}
 
