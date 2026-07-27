@@ -58,6 +58,7 @@ import {
 } from '@/features/performance-metrics/lib/format'
 import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
+import { getAutoGroupChain } from '../lib/auto-group-chain'
 import {
   getDynamicPriceEntries,
   getDynamicPricingSummary,
@@ -811,14 +812,17 @@ function PriceSection(props: {
 function AutoGroupChain(props: {
   model: PricingModel
   autoGroups: string[]
+  groupRatio: Record<string, number>
   groupNames?: Record<string, string>
 }) {
   const { t } = useTranslation()
   const modelEnableGroups = Array.isArray(props.model.enable_groups)
     ? props.model.enable_groups
     : []
-  const autoChain = props.autoGroups.filter((g) =>
-    modelEnableGroups.includes(g)
+  const autoChain = getAutoGroupChain(
+    props.autoGroups,
+    modelEnableGroups,
+    props.groupRatio
   )
 
   if (autoChain.length === 0) return null
@@ -927,6 +931,7 @@ function GroupPricingSection(props: {
         <AutoGroupChain
           model={props.model}
           autoGroups={props.autoGroups}
+          groupRatio={props.groupRatio}
           groupNames={props.groupNames}
         />
         <p className='text-muted-foreground text-sm'>
@@ -951,6 +956,7 @@ function GroupPricingSection(props: {
           <AutoGroupChain
             model={props.model}
             autoGroups={props.autoGroups}
+            groupRatio={props.groupRatio}
             groupNames={props.groupNames}
           />
           <div className='rounded-lg border border-amber-200/70 bg-amber-50/70 p-3 dark:border-amber-500/20 dark:bg-amber-500/10'>
@@ -1004,6 +1010,7 @@ function GroupPricingSection(props: {
         <AutoGroupChain
           model={props.model}
           autoGroups={props.autoGroups}
+          groupRatio={props.groupRatio}
           groupNames={props.groupNames}
         />
         <div className='space-y-3'>
@@ -1093,6 +1100,7 @@ function GroupPricingSection(props: {
       <AutoGroupChain
         model={props.model}
         autoGroups={props.autoGroups}
+        groupRatio={props.groupRatio}
         groupNames={props.groupNames}
       />
       <StaticDataTable

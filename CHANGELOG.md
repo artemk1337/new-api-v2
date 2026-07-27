@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.69
+
+- Fixed the displayed Auto group chain on model pricing pages so it follows the effective price order used for routing.
+
 ## v1.1.68
 
 - Moved upstream pricing synchronization from environment variables into persisted channel settings in both admin interfaces, with per-channel endpoint mode and update interval.
