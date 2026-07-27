@@ -102,6 +102,9 @@ func ensureLogRequestId(log *Log) {
 }
 
 func createLog(log *Log) error {
+	if log != nil {
+		log.Content = common.SanitizeLogText(log.Content)
+	}
 	ensureLogRequestId(log)
 	return LOG_DB.Create(log).Error
 }
@@ -159,6 +162,7 @@ func RecordLog(userId int, logType int, content string) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
+	content = common.SanitizeLogText(content)
 	username, _ := GetUsernameById(userId, false)
 	log := &Log{
 		UserId:    userId,
@@ -178,6 +182,7 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo m
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
+	content = common.SanitizeLogText(content)
 	username, _ := GetUsernameById(userId, false)
 	log := &Log{
 		UserId:    userId,
@@ -215,6 +220,7 @@ func buildOpField(action string, params map[string]interface{}) map[string]inter
 // content 为英文兜底文本（用于导出/经典前端）；action+params 供前端本地化渲染。
 // extra 可携带 login_method、user_agent 等附加信息（普通用户可见）。
 func RecordLoginLog(userId int, username string, content string, ip string, action string, params map[string]interface{}, extra map[string]interface{}) {
+	content = common.SanitizeLogText(content)
 	other := map[string]interface{}{}
 	for k, v := range extra {
 		other[k] = v
@@ -241,6 +247,7 @@ func RecordLoginLog(userId int, username string, content string, ip string, acti
 // adminInfo 存放操作者身份（写入 Other.admin_info，普通用户查询时剥离）；
 // auditInfo 存放路由/方法/结果等中间件兜底信息（写入 Other.audit_info，普通用户查询时剥离）。
 func RecordOperationAuditLog(logUserId int, content string, ip string, action string, params map[string]interface{}, adminInfo map[string]interface{}, auditInfo map[string]interface{}) {
+	content = common.SanitizeLogText(content)
 	username, _ := GetUsernameById(logUserId, false)
 	other := map[string]interface{}{
 		"op": buildOpField(action, params),

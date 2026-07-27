@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.65
+
+- Translated Chinese log messages into English and sanitized backend logs to prevent CJK text from reaching log outputs.
+
 ## v1.1.64
 
 - Made the Telegram sign-in action match the default OAuth button layout and moved the provider widget into a dialog.
