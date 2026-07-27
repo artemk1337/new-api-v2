@@ -264,6 +264,7 @@
     "Turnstile Secret Key": "Turnstile Secret Key",
     "Turnstile Site Key": "Turnstile Site Key",
     "Unix时间戳": "Dấu thời gian Unix",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "Đã bỏ qua giá không được hỗ trợ hoặc không hợp lệ: {{warningMsg}}",
     "Uptime Kuma地址": "Địa chỉ Uptime Kuma",
     "Uptime Kuma监控分类管理，可以配置多个监控分类用于服务状态展示（最多20个）": "Quản lý danh mục giám sát Uptime Kuma, bạn có thể cấu hình nhiều danh mục giám sát để hiển thị trạng thái dịch vụ (tối đa 20)",
     "URL 标识，只能包含小写字母、数字和连字符": "Định danh URL, chỉ cho phép chữ thường, số và dấu gạch ngang",

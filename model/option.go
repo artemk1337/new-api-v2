@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
@@ -24,7 +25,32 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+// JSONObjectPatch describes changes to one JSON-object option. Set values are
+// applied after Delete, so Set wins when a field is present in both lists.
+type JSONObjectPatch struct {
+	Set    map[string]any
+	Delete []string
+}
+
 var optionUpdateMutex sync.Mutex
+
+// jsonObjectPatchOptionKeys is intentionally limited to model-pricing maps.
+// Unlike a regular option update, patching an arbitrary JSON option cannot
+// safely run the option-specific migration/normalization pipeline while also
+// merging the latest value under a row lock. Keep this API scoped to the
+// pricing synchronizer's independent per-model maps.
+var jsonObjectPatchOptionKeys = map[string]struct{}{
+	"ModelRatio":                   {},
+	"ModelPrice":                   {},
+	"CompletionRatio":              {},
+	"CacheRatio":                   {},
+	"CreateCacheRatio":             {},
+	"ImageRatio":                   {},
+	"AudioRatio":                   {},
+	"AudioCompletionRatio":         {},
+	"billing_setting.billing_mode": {},
+	"billing_setting.billing_expr": {},
+}
 
 func AllOption() ([]*Option, error) {
 	var options []*Option
@@ -464,7 +490,91 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 func UpdateOptionsBulk(values map[string]string) error {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
+	return updateOptionsBulkLocked(values)
+}
 
+// ApplyJSONOptionPatches merges model-pricing JSON-object changes with the
+// latest values stored in the database and persists all resulting options
+// together. A missing option is treated as an empty JSON object.
+func ApplyJSONOptionPatches(patches map[string]JSONObjectPatch) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
+	if len(patches) == 0 {
+		return nil
+	}
+	values := make(map[string]string, len(patches))
+	keys := make([]string, 0, len(patches))
+	for key := range patches {
+		if _, ok := jsonObjectPatchOptionKeys[key]; !ok {
+			return errors.New("JSON option patch is only supported for model pricing options: " + key)
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		options := make(map[string]Option, len(keys))
+		for _, optionKey := range keys {
+			option := Option{Key: optionKey, Value: "{}"}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+				return err
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", optionKey).Error; err != nil {
+				return err
+			}
+
+			current := make(map[string]any)
+			if err := common.UnmarshalJsonStr(option.Value, &current); err != nil {
+				return err
+			}
+			if current == nil {
+				return errors.New("option " + optionKey + " must contain a JSON object")
+			}
+			patch := patches[optionKey]
+			for _, field := range patch.Delete {
+				delete(current, field)
+			}
+			for field, value := range patch.Set {
+				current[field] = value
+			}
+			encoded, err := common.Marshal(current)
+			if err != nil {
+				return err
+			}
+			value := string(encoded)
+			if err := validateOptionValue(optionKey, value); err != nil {
+				return err
+			}
+			value, err = normalizeOptionValueForSave(optionKey, value)
+			if err != nil {
+				return err
+			}
+			option.Value = value
+			options[optionKey] = option
+			values[optionKey] = value
+		}
+		for _, optionKey := range keys {
+			option := options[optionKey]
+			if err := tx.Save(&option).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	unlockPricing := ratio_setting.LockPricingConfigWrite()
+	defer unlockPricing()
+	for _, optionKey := range keys {
+		if err := updateOptionMapFromDatabase(optionKey, values[optionKey]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func updateOptionsBulkLocked(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -1026,11 +1136,14 @@ func handleConfigUpdate(key, value string) bool {
 		return false // 未注册的配置
 	}
 
-	// 更新配置
 	configMap := map[string]string{
 		configKey: value,
 	}
-	config.UpdateConfigFromMap(cfg, configMap)
+	if configName == "billing_setting" {
+		_ = billing_setting.UpdateFromMap(configMap)
+	} else {
+		_ = config.UpdateConfigFromMap(cfg, configMap)
+	}
 
 	// 特定配置的后处理
 	if configName == "performance_setting" {

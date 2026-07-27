@@ -20,6 +20,7 @@ import (
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
+	service.RegisterSystemTaskHandler(pricingSyncHandler{})
 	service.RegisterSystemTaskHandler(systemUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
@@ -125,6 +126,53 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 		return
 	}
 	summary := runChannelUpstreamModelUpdateTaskOnce(ctx, payload.Manual, !payload.Manual, service.NewSystemTaskProgressReporter(task, runnerID))
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+// pricingSyncHandler periodically adopts unambiguous upstream prices. It is
+// deliberately separate from modelUpdateHandler: channel model discovery must
+// not silently change billing.
+type pricingSyncHandler struct{}
+
+func (pricingSyncHandler) Type() string { return model.SystemTaskTypePricingSync }
+
+func (pricingSyncHandler) Enabled() bool {
+	return common.GetEnvOrDefaultBool("UPSTREAM_PRICING_SYNC_TASK_ENABLED", false)
+}
+
+func (pricingSyncHandler) Interval() time.Duration {
+	seconds := common.GetEnvOrDefault("UPSTREAM_PRICING_SYNC_TASK_INTERVAL_SECONDS", 60)
+	if seconds < 1 {
+		seconds = 60
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (pricingSyncHandler) NewPayload() any { return nil }
+
+func (pricingSyncHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	if !(pricingSyncHandler{}).Enabled() {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, upstreamPricingSyncSummary{}, nil)
+		return
+	}
+	previousHash := ""
+	previousTask, err := model.GetPreviousSystemTask(model.SystemTaskTypePricingSync, task.ID)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	if previousTask != nil && previousTask.Status == model.SystemTaskStatusSucceeded {
+		previousSummary := upstreamPricingSyncSummary{}
+		if err := previousTask.DecodeResult(&previousSummary); err == nil && previousSummary.FailedChannels == 0 {
+			previousHash = previousSummary.CandidateHash
+		}
+	}
+
+	summary, err := runUpstreamPricingSyncTaskOnce(ctx, previousHash, service.NewSystemTaskProgressReporter(task, runnerID))
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, summary, err)
+		return
+	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 

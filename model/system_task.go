@@ -19,6 +19,7 @@ const (
 	SystemTaskTypeLogCleanup     = "log_cleanup"
 	SystemTaskTypeChannelTest    = "channel_test"
 	SystemTaskTypeModelUpdate    = "model_update"
+	SystemTaskTypePricingSync    = "pricing_sync"
 	SystemTaskTypeSystemUpdate   = "system_update"
 	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
@@ -195,6 +196,18 @@ func ListSystemTasks(limit int) ([]*SystemTask, error) {
 func GetLatestSystemTask(taskType string) (*SystemTask, error) {
 	var task SystemTask
 	err := DB.Where("type = ?", taskType).Order("id desc").First(&task).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &task, nil
+}
+
+func GetPreviousSystemTask(taskType string, beforeID int64) (*SystemTask, error) {
+	var task SystemTask
+	err := DB.Where("type = ? AND id < ?", taskType, beforeID).Order("id desc").First(&task).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -413,6 +426,10 @@ func (task *SystemTask) DecodePayload(v any) error {
 
 func (task *SystemTask) DecodeState(v any) error {
 	return decodeSystemTaskJSONString(task.State, v)
+}
+
+func (task *SystemTask) DecodeResult(v any) error {
+	return decodeSystemTaskJSONString(task.Result, v)
 }
 
 func (task *SystemTask) ToResponse() SystemTaskResponse {

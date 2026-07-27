@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.66
+
+- Added a guarded one-minute upstream pricing synchronization task for allowlisted Yunwu channels: it applies only unanimous model prices after two identical checks and reports unsupported or conflicting models.
+- Converted supported upstream context tiers into billing expressions, including cache and audio pricing, and kept realtime tiered settlement consistent with accumulated upstream usage.
+- Added concurrent-safe pricing configuration updates and surfaced skipped-pricing warnings in both admin interfaces.
+
 ## v1.1.64
 
 - Made the Telegram sign-in action match the default OAuth button layout and moved the provider widget into a dialog.

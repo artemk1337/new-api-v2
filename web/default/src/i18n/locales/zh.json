@@ -4678,6 +4678,7 @@
     "Unlimited Quota": "无限配额",
     "Unsaved changes": "未保存的更改",
     "Unset price": "未设置价格",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "已跳过不支持或无效的价格：{{warningMsg}}",
     "Until": "至",
     "Untitled": "未命名",
     "Untrusted upstream data:": "不受信任的上游数据：",

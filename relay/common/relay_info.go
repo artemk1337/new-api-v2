@@ -189,9 +189,13 @@ type RelayInfo struct {
 	AttemptFinancialOutcome               types.AttemptFinancialOutcome
 	AttemptSettlementHandled              bool
 	RealtimeConsumedQuota                 int
-	ChargedOnError                        bool
-	BillingSettled                        bool
-	SettledQuota                          int
+	// RealtimeTieredTokenParams accumulates upstream usage chunks for tiered
+	// realtime billing. Expressions may be non-linear at tier boundaries, so
+	// each reservation is calculated from the cumulative token counts.
+	RealtimeTieredTokenParams billingexpr.TokenParams
+	ChargedOnError            bool
+	BillingSettled            bool
+	SettledQuota              int
 
 	// UpstreamRequestBodySize is the byte size of the marshaled upstream request
 	// body. It is set when the body is wrapped in a BodyStorage (see
@@ -701,6 +705,7 @@ func (info *RelayInfo) ResetAttempt() {
 	info.AttemptFinancialOutcome = types.AttemptFinancialOutcomeUnknown
 	info.AttemptSettlementHandled = false
 	info.RealtimeConsumedQuota = 0
+	info.RealtimeTieredTokenParams = billingexpr.TokenParams{}
 	info.SendResponseCount = 0
 	info.ReceivedResponseCount = 0
 	info.StreamStatus = nil

@@ -4678,6 +4678,7 @@
     "Unlimited Quota": "Quota illimité",
     "Unsaved changes": "Modifications non enregistrées",
     "Unset price": "Prix non défini",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "Tarification non prise en charge ou invalide ignorée : {{warningMsg}}",
     "Until": "Jusqu'au",
     "Untitled": "Sans titre",
     "Untrusted upstream data:": "Données amont non fiables :",

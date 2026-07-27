@@ -4678,6 +4678,7 @@
     "Unlimited Quota": "Hạn mức không giới hạn",
     "Unsaved changes": "Thay đổi chưa được lưu",
     "Unset price": "Chưa đặt giá",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "Đã bỏ qua giá không được hỗ trợ hoặc không hợp lệ: {{warningMsg}}",
     "Until": "Cho đến",
     "Untitled": "Không có tiêu đề",
     "Untrusted upstream data:": "Dữ liệu nguồn không đáng tin cậy:",

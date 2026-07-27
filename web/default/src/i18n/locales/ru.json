@@ -4678,6 +4678,7 @@
     "Unlimited Quota": "Неограниченная квота",
     "Unsaved changes": "Несохранённые изменения",
     "Unset price": "Цена не задана",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "Неподдерживаемые или некорректные цены пропущены: {{warningMsg}}",
     "Until": "До",
     "Untitled": "Без названия",
     "Untrusted upstream data:": "Недоверенные вышестоящие данные:",

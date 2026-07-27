@@ -197,6 +197,20 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         toast.warning(t('Some channels failed: {{errorMsg}}', { errorMsg }))
       }
 
+      const warningResults = test_results.filter(
+        (r) => (r.warnings?.length ?? 0) > 0
+      )
+      if (warningResults.length > 0) {
+        const warningMsg = warningResults
+          .map((r) => `${r.name}: ${r.warnings?.join(', ')}`)
+          .join('; ')
+        toast.warning(
+          t('Unsupported or invalid pricing skipped: {{warningMsg}}', {
+            warningMsg,
+          })
+        )
+      }
+
       setDifferences(diffs)
       setResolutions({})
 

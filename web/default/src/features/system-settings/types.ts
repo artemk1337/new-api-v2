@@ -504,6 +504,7 @@ export type TestResult = {
   name: string
   status: 'success' | 'error'
   error?: string
+  warnings?: string[]
 }
 
 export type UpstreamRatiosResponse = {

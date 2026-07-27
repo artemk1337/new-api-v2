@@ -2,6 +2,8 @@ package billing_setting
 
 import (
 	"fmt"
+	"math"
+	"sync"
 
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -26,6 +28,7 @@ var billingSetting = BillingSetting{
 	BillingMode: make(map[string]string),
 	BillingExpr: make(map[string]string),
 }
+var billingSettingMutex sync.RWMutex
 
 func init() {
 	config.GlobalConfig.Register("billing_setting", &billingSetting)
@@ -36,6 +39,8 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func GetBillingMode(model string) string {
+	billingSettingMutex.RLock()
+	defer billingSettingMutex.RUnlock()
 	if mode, ok := billingSetting.BillingMode[model]; ok {
 		return mode
 	}
@@ -43,24 +48,39 @@ func GetBillingMode(model string) string {
 }
 
 func GetBillingExpr(model string) (string, bool) {
+	billingSettingMutex.RLock()
+	defer billingSettingMutex.RUnlock()
 	expr, ok := billingSetting.BillingExpr[model]
 	return expr, ok
 }
 
 func GetBillingModeCopy() map[string]string {
+	billingSettingMutex.RLock()
+	defer billingSettingMutex.RUnlock()
 	return lo.Assign(billingSetting.BillingMode)
 }
 
 func GetBillingExprCopy() map[string]string {
+	billingSettingMutex.RLock()
+	defer billingSettingMutex.RUnlock()
 	return lo.Assign(billingSetting.BillingExpr)
 }
 
+// UpdateFromMap replaces billing maps while keeping all read accessors safe.
+func UpdateFromMap(values map[string]string) error {
+	billingSettingMutex.Lock()
+	defer billingSettingMutex.Unlock()
+	return config.UpdateConfigFromMap(&billingSetting, values)
+}
+
 func GetPricingSyncData(base map[string]any) map[string]any {
+	billingSettingMutex.RLock()
+	defer billingSettingMutex.RUnlock()
 	extra := make(map[string]any, 2)
-	if modes := GetBillingModeCopy(); len(modes) > 0 {
+	if modes := lo.Assign(billingSetting.BillingMode); len(modes) > 0 {
 		extra[BillingModeField] = modes
 	}
-	if exprs := GetBillingExprCopy(); len(exprs) > 0 {
+	if exprs := lo.Assign(billingSetting.BillingExpr); len(exprs) > 0 {
 		extra[BillingExprField] = exprs
 	}
 	return lo.Assign(base, extra)
@@ -80,6 +100,13 @@ func smokeTestExpr(exprStr string) error {
 		{P: 1000, C: 1000, Len: 1000},
 		{P: 100000, C: 100000, Len: 100000},
 		{P: 1000000, C: 1000000, Len: 1000000},
+		{CR: 1000, Len: 1000},
+		{CC: 1000, Len: 1000},
+		{CC1h: 1000, Len: 1000},
+		{Img: 1000, Len: 1000},
+		{ImgO: 1000, Len: 1000},
+		{AI: 1000, Len: 1000},
+		{AO: 1000, Len: 1000},
 	}
 	requests := []billingexpr.RequestInput{
 		{},
@@ -96,6 +123,9 @@ func smokeTestExpr(exprStr string) error {
 			result, _, err := billingexpr.RunExprWithRequest(exprStr, v, request)
 			if err != nil {
 				return fmt.Errorf("vector {p=%g, c=%g}: run failed: %w", v.P, v.C, err)
+			}
+			if math.IsNaN(result) || math.IsInf(result, 0) {
+				return fmt.Errorf("vector {p=%g, c=%g}: result must be finite", v.P, v.C)
 			}
 			if result < 0 {
 				return fmt.Errorf("vector {p=%g, c=%g}: result %f < 0", v.P, v.C, result)

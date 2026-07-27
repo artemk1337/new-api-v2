@@ -88,6 +88,10 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	if relayInfo.UsePrice {
 		return nil
 	}
+	var tieredUsedVars map[string]bool
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
+		tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
+	}
 
 	modelName := relayInfo.OriginModelName
 	textInputTokens := usage.InputTokenDetails.TextTokens
@@ -112,6 +116,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	hasUsage := usage.TotalTokens > 0 ||
 		usage.InputTokens > 0 ||
 		usage.OutputTokens > 0 ||
+		usage.InputTokenDetails.CachedTokens > 0 ||
 		textInputTokens > 0 ||
 		textOutTokens > 0 ||
 		audioInputTokens > 0 ||
@@ -121,7 +126,21 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-	relayInfo.RealtimeConsumedQuota += quota
+	if relayInfo.TieredBillingSnapshot != nil {
+		params := BuildRealtimeTieredTokenParams(usage, tieredUsedVars)
+		relayInfo.RealtimeTieredTokenParams.P += params.P
+		relayInfo.RealtimeTieredTokenParams.C += params.C
+		relayInfo.RealtimeTieredTokenParams.Len += params.Len
+		relayInfo.RealtimeTieredTokenParams.CR += params.CR
+		relayInfo.RealtimeTieredTokenParams.AI += params.AI
+		relayInfo.RealtimeTieredTokenParams.AO += params.AO
+		if tieredOK, tieredQuota, _ := TryTieredSettle(relayInfo, relayInfo.RealtimeTieredTokenParams); tieredOK {
+			quota = tieredQuota
+		}
+		relayInfo.RealtimeConsumedQuota = quota
+	} else {
+		relayInfo.RealtimeConsumedQuota += quota
+	}
 	relayInfo.AttemptActualQuota = relayInfo.RealtimeConsumedQuota
 	relayInfo.AttemptActualQuotaKnown = true
 	relayInfo.AttemptUsageBillingEvidence = true
@@ -143,12 +162,12 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelName string,
 	usage *dto.RealtimeUsage, extraContent string) error {
 
+	var tieredUsedVars map[string]bool
+	if snap := relayInfo.TieredBillingSnapshot; snap != nil {
+		tieredUsedVars = billingexpr.UsedVars(snap.ExprString)
+	}
 	var tieredResult *billingexpr.TieredResult
-	tieredOk, tieredQuota, tieredRes := TryTieredSettle(relayInfo, billingexpr.TokenParams{
-		P:   float64(usage.InputTokens),
-		C:   float64(usage.OutputTokens),
-		Len: float64(usage.InputTokens),
-	})
+	tieredOk, tieredQuota, tieredRes := TryTieredSettle(relayInfo, BuildRealtimeTieredTokenParams(usage, tieredUsedVars))
 	if tieredOk {
 		tieredResult = tieredRes
 	}

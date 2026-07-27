@@ -475,6 +475,36 @@ func TestPreWssConsumeQuotaExtendsReserveWithoutIncrementalCharge(t *testing.T) 
 	assert.True(t, info.AttemptUsageBillingEvidence)
 }
 
+func TestPreWssConsumeQuotaUsesCumulativeTieredUsage(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := makeRelayInfo(`tier("default", p + cr * 0.1)`, 2, 0, 0)
+	settler := &autoTestSettler{info: info}
+	info.Billing = settler
+
+	first := &dto.RealtimeUsage{
+		InputTokens: 100,
+		InputTokenDetails: dto.InputTokenDetails{
+			CachedTokens: 40,
+		},
+	}
+	require.NoError(t, PreWssConsumeQuota(ctx, info, first))
+	// (60 + 40*0.1) / 1M * 500K * 2 = 64 quota.
+	require.Equal(t, 64, info.RealtimeConsumedQuota)
+	require.Equal(t, 64, settler.reserve)
+
+	second := &dto.RealtimeUsage{
+		InputTokens: 100,
+		InputTokenDetails: dto.InputTokenDetails{
+			CachedTokens: 20,
+		},
+	}
+	require.NoError(t, PreWssConsumeQuota(ctx, info, second))
+	// Cumulative params are P=140 and CR=60, not two independently rounded chunks.
+	// (140 + 60*0.1) / 1M * 500K * 2 = 146 quota.
+	require.Equal(t, 146, info.RealtimeConsumedQuota)
+	require.Equal(t, 146, settler.reserve)
+}
+
 func TestChargedAttemptQuotaDoesNotReplaceKnownZeroWithEstimate(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		AttemptActualQuotaKnown: true,

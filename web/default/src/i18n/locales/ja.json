@@ -4678,6 +4678,7 @@
     "Unlimited Quota": "無制限のクォータ",
     "Unsaved changes": "未保存の変更",
     "Unset price": "価格未設定",
+    "Unsupported or invalid pricing skipped: {{warningMsg}}": "未対応または無効な料金設定をスキップしました：{{warningMsg}}",
     "Until": "まで",
     "Untitled": "無題",
     "Untrusted upstream data:": "信頼されていないアップストリームデータ:",

@@ -247,6 +247,20 @@ export default function UpstreamRatioSync(props) {
         );
       }
 
+      const warningResults = test_results.filter(
+        (r) => (r.warnings?.length ?? 0) > 0,
+      );
+      if (warningResults.length > 0) {
+        const warningMsg = warningResults
+          .map((r) => `${r.name}: ${r.warnings?.join(', ')}`)
+          .join('; ');
+        showWarning(
+          t('Unsupported or invalid pricing skipped: {{warningMsg}}', {
+            warningMsg,
+          }),
+        );
+      }
+
       setDifferences(differences);
       setResolutions({});
       setHasSynced(true);

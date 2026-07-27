@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/require"
 )
 
 // Claude Sonnet-style tiered expression: standard vs long-context
@@ -557,6 +558,42 @@ func TestBuildTieredTokenParams_GPT_AudioOutputNoVar(t *testing.T) {
 	if math.Abs(got-want) > 0.01 {
 		t.Fatalf("quota = %f, want %f", got, want)
 	}
+}
+
+func TestBuildRealtimeTieredTokenParamsNormalizesAudio(t *testing.T) {
+	usage := &dto.RealtimeUsage{
+		InputTokens:  100,
+		OutputTokens: 80,
+		InputTokenDetails: dto.InputTokenDetails{
+			AudioTokens: 30,
+		},
+		OutputTokenDetails: dto.OutputTokenDetails{
+			AudioTokens: 20,
+		},
+	}
+
+	params := BuildRealtimeTieredTokenParams(usage, map[string]bool{"ai": true, "ao": true})
+
+	require.Equal(t, 70.0, params.P)
+	require.Equal(t, 60.0, params.C)
+	require.Equal(t, 100.0, params.Len)
+	require.Equal(t, 30.0, params.AI)
+	require.Equal(t, 20.0, params.AO)
+}
+
+func TestBuildRealtimeTieredTokenParamsNormalizesCache(t *testing.T) {
+	usage := &dto.RealtimeUsage{
+		InputTokens: 100,
+		InputTokenDetails: dto.InputTokenDetails{
+			CachedTokens: 30,
+		},
+	}
+
+	params := BuildRealtimeTieredTokenParams(usage, map[string]bool{"cr": true})
+
+	require.Equal(t, 70.0, params.P)
+	require.Equal(t, 30.0, params.CR)
+	require.Equal(t, 100.0, params.Len)
 }
 
 func TestBuildTieredTokenParams_ParityWithRatio(t *testing.T) {
