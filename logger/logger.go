@@ -74,15 +74,15 @@ func SetupLogger() {
 }
 
 func LogInfo(ctx context.Context, msg string) {
-	logHelper(ctx, loggerINFO, msg)
+	logHelper(ctx, loggerINFO, common.SanitizeLogText(msg))
 }
 
 func LogWarn(ctx context.Context, msg string) {
-	logHelper(ctx, loggerWarn, msg)
+	logHelper(ctx, loggerWarn, common.SanitizeLogText(msg))
 }
 
 func LogError(ctx context.Context, msg string) {
-	logHelper(ctx, loggerError, msg)
+	logHelper(ctx, loggerError, common.SanitizeLogText(msg))
 }
 
 func LogDebug(ctx context.Context, msg string, args ...any) {
@@ -90,7 +90,7 @@ func LogDebug(ctx context.Context, msg string, args ...any) {
 		if len(args) > 0 {
 			msg = fmt.Sprintf(msg, args...)
 		}
-		logHelper(ctx, loggerDebug, msg)
+		logHelper(ctx, loggerDebug, common.SanitizeLogText(msg))
 	}
 }
 
@@ -126,7 +126,7 @@ func LogQuota(quota int) string {
 	case operation_setting.QuotaDisplayTypeCNY:
 		usd := q / common.QuotaPerUnit
 		cny := usd * operation_setting.USDExchangeRate
-		return fmt.Sprintf("¥%.6f 额度", cny)
+		return fmt.Sprintf("¥%.6f quota", cny)
 	case operation_setting.QuotaDisplayTypeCustom:
 		usd := q / common.QuotaPerUnit
 		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
@@ -138,11 +138,11 @@ func LogQuota(quota int) string {
 			rate = 1
 		}
 		v := usd * rate
-		return fmt.Sprintf("%s%.6f 额度", symbol, v)
+		return fmt.Sprintf("%s%.6f quota", symbol, v)
 	case operation_setting.QuotaDisplayTypeTokens:
-		return fmt.Sprintf("%d 点额度", quota)
+		return fmt.Sprintf("%d token points", quota)
 	default: // USD
-		return fmt.Sprintf("＄%.6f 额度", q/common.QuotaPerUnit)
+		return fmt.Sprintf("$%.6f quota", q/common.QuotaPerUnit)
 	}
 }
 
@@ -168,8 +168,8 @@ func FormatQuota(quota int) string {
 	case operation_setting.QuotaDisplayTypeTokens:
 		return fmt.Sprintf("%d", quota)
 	default:
-		return fmt.Sprintf("＄%.6f", q/common.QuotaPerUnit)
-	}
+		return fmt.Sprintf("$%.6f", q/common.QuotaPerUnit)
+}
 }
 
 // LogJson 仅供测试使用 only for test

@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.1.68
 
 - Moved upstream pricing synchronization from environment variables into persisted channel settings in both admin interfaces, with per-channel endpoint mode and update interval.
 - Added confirmed upstream price snapshots, conflict resolution strategies, per-model source selection, and safe price removal when a selected source disappears.
 - Models without a positive base price or a valid tiered billing expression are no longer listed or relayed.
+- Translated Chinese log messages into English and sanitized backend logs to prevent CJK text from reaching log outputs.
 
 ## v1.1.67
 
