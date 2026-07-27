@@ -48,6 +48,6 @@ export function shouldResumeDeployingSystemUpdateTask(
     task.result?.status === 'deploying' &&
     Boolean(task.result?.job_id) &&
     Boolean(requestedVersion) &&
-    isNewerStableVersion(requestedVersion, currentVersion)
+    isNewerStableVersion(requestedVersion ?? '', currentVersion)
   )
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Moved upstream pricing synchronization from environment variables into persisted channel settings in both admin interfaces, with per-channel endpoint mode and update interval.
+- Added confirmed upstream price snapshots, conflict resolution strategies, per-model source selection, and safe price removal when a selected source disappears.
+- Models without a positive base price or a valid tiered billing expression are no longer listed or relayed.
+
 ## v1.1.67
 
 - Restricted manual upstream pricing synchronization to the Yunwu-compatible `/api/pricing` format and removed misleading endpoint-type choices from the channel selector.

@@ -10,10 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/glebarez/sqlite"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
@@ -49,17 +53,17 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 		require.Zero(t, applied)
 	})
 
-	t.Run("skips upstream disagreement", func(t *testing.T) {
+	t.Run("resolves upstream disagreement with highest price", func(t *testing.T) {
 		upstreams := []map[string]any{
-			{"model_ratio": map[string]any{"model-a": 2.0}},
-			{"model_ratio": map[string]any{"model-a": 3.0}},
+			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 1.0}},
+			{"model_ratio": map[string]any{"model-a": 3.0}, "completion_ratio": map[string]any{"model-a": 1.0}},
 		}
 
 		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams, nil)
 
-		require.Empty(t, patches)
-		require.Equal(t, []string{"model-a"}, skipped)
-		require.Zero(t, applied)
+		require.Empty(t, skipped)
+		require.Equal(t, 1, applied)
+		require.Equal(t, 3.0, patches["ModelRatio"].Set["model-a"])
 	})
 
 	t.Run("skips model unsupported by another upstream", func(t *testing.T) {
@@ -109,6 +113,117 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 		require.Equal(t, []string{"model-a"}, skipped)
 		require.Zero(t, applied)
 	})
+
+	t.Run("honors the selected source for a model", func(t *testing.T) {
+		upstreams := []map[string]any{
+			{"model_price": map[string]any{"model-a": 1.0}},
+			{"model_price": map[string]any{"model-a": 2.0}},
+		}
+		patches, skipped, applied := buildUpstreamPricingSyncPatchesWithPreferences(
+			map[string]any{},
+			upstreams,
+			[]int{10, 20},
+			nil,
+			map[string]model.PricingSyncModelState{
+				"model-a": {Mode: model.PricingSyncModelModeChannel, ChannelID: 10},
+			},
+		)
+
+		require.Empty(t, skipped)
+		require.Equal(t, 1, applied)
+		require.Equal(t, 1.0, patches["ModelPrice"].Set["model-a"])
+	})
+
+	t.Run("selected source replaces a different local billing category", func(t *testing.T) {
+		patches, skipped, applied := buildUpstreamPricingSyncPatchesWithPreferences(
+			map[string]any{"model_price": map[string]any{"model-a": 0.5}},
+			[]map[string]any{{
+				"model_ratio":      map[string]any{"model-a": 2.0},
+				"completion_ratio": map[string]any{"model-a": 3.0},
+			}},
+			[]int{10},
+			nil,
+			map[string]model.PricingSyncModelState{
+				"model-a": {Mode: model.PricingSyncModelModeChannel, ChannelID: 10},
+			},
+		)
+
+		require.Empty(t, skipped)
+		require.Equal(t, 1, applied)
+		require.Equal(t, 2.0, patches["ModelRatio"].Set["model-a"])
+		require.Equal(t, 3.0, patches["CompletionRatio"].Set["model-a"])
+		require.Equal(t, []string{"model-a"}, patches["ModelPrice"].Delete)
+	})
+
+	t.Run("never overwrites a manually priced model", func(t *testing.T) {
+		patches, skipped, applied := buildUpstreamPricingSyncPatchesWithPreferences(
+			map[string]any{},
+			[]map[string]any{{"model_price": map[string]any{"model-a": 2.0}}},
+			[]int{10},
+			nil,
+			map[string]model.PricingSyncModelState{
+				"model-a": {Mode: model.PricingSyncModelModeManual},
+			},
+		)
+
+		require.Empty(t, patches)
+		require.Equal(t, []string{"model-a"}, skipped)
+		require.Zero(t, applied)
+	})
+}
+
+func TestResolveComparableNumericPricingAverageRatioUsesLanePrices(t *testing.T) {
+	common.OptionMapRWMutex.Lock()
+	original := common.OptionMap
+	options := make(map[string]string, len(original)+1)
+	for key, value := range original {
+		options[key] = value
+	}
+	options["PricingSyncStrategy"] = model.PricingSyncStrategyAverage
+	common.OptionMap = options
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = original
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	resolved, ok := resolveComparableNumericPricing([]map[string]any{
+		{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 4.0}, "cache_ratio": map[string]any{"model-a": 0.5}},
+		{"model_ratio": map[string]any{"model-a": 6.0}, "completion_ratio": map[string]any{"model-a": 2.0}, "cache_ratio": map[string]any{"model-a": 0.25}},
+	}, "model-a", "ratio")
+
+	require.True(t, ok)
+	require.Equal(t, 4.0, resolved["model_ratio"])
+	// Average completion price is (2*4 + 6*2)/2 = 10; 10 / 4 = 2.5.
+	require.Equal(t, 2.5, resolved["completion_ratio"])
+	require.Equal(t, 0.3125, resolved["cache_ratio"])
+}
+
+func TestResolveComparableNumericPricingHighestUsesActualLanePrices(t *testing.T) {
+	common.OptionMapRWMutex.Lock()
+	original := common.OptionMap
+	options := make(map[string]string, len(original)+1)
+	for key, value := range original {
+		options[key] = value
+	}
+	options["PricingSyncStrategy"] = model.PricingSyncStrategyHighest
+	common.OptionMap = options
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = original
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	resolved, ok := resolveComparableNumericPricing([]map[string]any{
+		{"model_ratio": map[string]any{"model-a": 5.0}, "completion_ratio": map[string]any{"model-a": 2.0}},
+		{"model_ratio": map[string]any{"model-a": 4.0}, "completion_ratio": map[string]any{"model-a": 30.0}},
+	}, "model-a", "ratio")
+
+	require.True(t, ok)
+	require.Equal(t, 5.0, resolved["model_ratio"])
+	require.Equal(t, 24.0, resolved["completion_ratio"])
 }
 
 func TestIsUpstreamPricingSyncChannel(t *testing.T) {
@@ -156,6 +271,259 @@ func TestFetchChannelPricingRejectsRedirectOutsideAllowlist(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "redirect target is not allowlisted")
+}
+
+func TestFetchPricingSyncURLParsesRatioConfig(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"model_ratio":{"model-a":2},"completion_ratio":{"model-a":3}}}`))
+	}))
+	t.Cleanup(server.Close)
+	parsed, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	fetched, err := fetchPricingSyncURL(context.Background(), server.URL+"/api/ratio_config", "ratio_config", map[string]struct{}{parsed.Hostname(): {}}, "", server.Client())
+
+	require.NoError(t, err)
+	require.Equal(t, 2.0, valueMap(fetched.Data["model_ratio"])["model-a"])
+	require.Equal(t, 3.0, valueMap(fetched.Data["completion_ratio"])["model-a"])
+}
+
+func TestPricingSyncFetchTargetRejectsProtocolRelativeEndpoint(t *testing.T) {
+	_, err := pricingSyncFetchTargetForSource(
+		model.PricingSyncSource{ChannelID: 1, Endpoint: "//untrusted.example/prices"},
+		&model.Channel{Id: 1, BaseURL: ptr("https://trusted.example")},
+	)
+
+	require.ErrorContains(t, err, "relative path")
+}
+
+func TestPricingSyncFetchTargetAcceptsOfficialAbsolutePreset(t *testing.T) {
+	const endpoint = "https://basellm.github.io/llm-metadata/api/newapi/ratio_config-v1-base.json"
+	target, err := pricingSyncFetchTargetForSource(
+		model.PricingSyncSource{ChannelID: officialRatioPresetID, Endpoint: endpoint},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, endpoint, target.URL)
+	require.Equal(t, "ratio_config", target.Mode)
+}
+
+func TestConfirmPricingSyncQuotesRequiresTwoIdenticalSnapshots(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-quotes?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	first := map[string]any{
+		"model_ratio":      map[string]any{"model-a": 2.0},
+		"completion_ratio": map[string]any{"model-a": 3.0},
+	}
+	confirmed, err := confirmPricingSyncQuotes(8, first, 100)
+	require.NoError(t, err)
+	require.Empty(t, confirmed)
+
+	confirmed, err = confirmPricingSyncQuotes(8, first, 101)
+	require.NoError(t, err)
+	require.Equal(t, 2.0, valueMap(confirmed["model_ratio"])["model-a"])
+
+	changed := map[string]any{
+		"model_ratio":      map[string]any{"model-a": 4.0},
+		"completion_ratio": map[string]any{"model-a": 3.0},
+	}
+	confirmed, err = confirmPricingSyncQuotes(8, changed, 102)
+	require.NoError(t, err)
+	require.Empty(t, confirmed)
+}
+
+func TestConfirmPricingSyncQuotesTreatsZeroBaseAsMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-zero?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, db.Create(&model.PricingSyncQuote{
+		ChannelID: 8, ModelName: "model-a", Confirmations: 2,
+		Data: `{"model_ratio":2,"completion_ratio":3}`,
+	}).Error)
+
+	zero := map[string]any{
+		"model_ratio":      map[string]any{"model-a": 0.0},
+		"completion_ratio": map[string]any{"model-a": 3.0},
+	}
+	_, err = confirmPricingSyncQuotes(8, zero, 100)
+	require.NoError(t, err)
+	_, err = confirmPricingSyncQuotes(8, zero, 101)
+	require.NoError(t, err)
+
+	var quote model.PricingSyncQuote
+	require.NoError(t, db.First(&quote, "channel_id = ? AND model_name = ?", 8, "model-a").Error)
+	require.Equal(t, 2, quote.MissingCount)
+	require.Zero(t, quote.Confirmations)
+}
+
+func TestPricingSyncMissingModelsRequiresOwnedAbsentPrice(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-missing?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, db.Create(&model.PricingSyncQuote{
+		ChannelID: 8, ModelName: "model-a", MissingCount: 2,
+	}).Error)
+
+	missing, err := pricingSyncMissingModels(
+		[]int{8},
+		map[string]model.PricingSyncModelState{
+			"model-a": {
+				ModelName: "model-a", Mode: model.PricingSyncModelModeGeneral,
+				Provenance: "[8]",
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Contains(t, missing, "model-a")
+}
+
+func TestPricingSyncMissingModelsDoesNotFallbackFromLostProvenance(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-missing-provenance?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, db.Create(&model.PricingSyncQuote{
+		ChannelID: 8, ModelName: "model-a", MissingCount: 2,
+	}).Error)
+	require.NoError(t, db.Create(&model.PricingSyncQuote{
+		ChannelID: 9, ModelName: "model-a", Confirmations: 2,
+	}).Error)
+
+	missing, err := pricingSyncMissingModels(
+		[]int{8, 9},
+		map[string]model.PricingSyncModelState{
+			"model-a": {
+				ModelName: "model-a", Mode: model.PricingSyncModelModeGeneral,
+				Provenance: "[8,9]",
+			},
+		},
+	)
+
+	require.NoError(t, err)
+	require.Contains(t, missing, "model-a")
+}
+
+func TestRemoveUnavailablePricingSyncModelsDropsFallbackSet(t *testing.T) {
+	patches := map[string]model.JSONObjectPatch{
+		"ModelPrice": {
+			Set: map[string]any{"model-a": 0.5, "model-b": 1.0},
+		},
+	}
+
+	removeUnavailablePricingSyncModels(patches, map[string]struct{}{"model-a": {}})
+
+	require.NotContains(t, patches["ModelPrice"].Set, "model-a")
+	require.Equal(t, 1.0, patches["ModelPrice"].Set["model-b"])
+	require.Contains(t, patches["ModelPrice"].Delete, "model-a")
+}
+
+func TestPricingSyncSourceWritesRequireCurrentConfiguration(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-source-version?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.PricingSyncSource{},
+		&model.PricingSyncQuote{},
+	))
+	require.NoError(t, db.Create(&model.Option{Key: "PricingSyncConfigVersion", Value: "2"}).Error)
+	current := model.PricingSyncSource{
+		ChannelID: 8, Enabled: true, Endpoint: "/api/pricing", IntervalSeconds: 60,
+	}
+	require.NoError(t, db.Create(&current).Error)
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+
+	stale := current
+	stale.Endpoint = "/api/ratio_config"
+	require.Error(t, updatePricingSyncSourceIfCurrent(stale, 2, map[string]any{"last_attempt_at": 100}))
+	_, err = confirmPricingSyncQuotesIfCurrent(
+		current,
+		map[string]any{"model_price": map[string]any{"model-a": 1.0}},
+		100,
+		1,
+	)
+	require.Error(t, err)
+
+	var source model.PricingSyncSource
+	require.NoError(t, db.First(&source, "channel_id = ?", 8).Error)
+	require.Zero(t, source.LastAttemptAt)
+	var quoteCount int64
+	require.NoError(t, db.Model(&model.PricingSyncQuote{}).Count(&quoteCount).Error)
+	require.Zero(t, quoteCount)
+}
+
+func TestPricingSyncAppliedStatesTracksRealConflictsWithoutPricePatch(t *testing.T) {
+	preferences := map[string]model.PricingSyncModelState{
+		"same": {ModelName: "same", Mode: model.PricingSyncModelModeGeneral, Status: model.PricingSyncModelStatusStale},
+		"diff": {ModelName: "diff", Mode: model.PricingSyncModelModeGeneral},
+	}
+	states := pricingSyncAppliedStates(nil, nil, nil, []map[string]any{
+		{"model_price": map[string]any{"same": 1.0, "diff": 1.0}},
+		{"model_price": map[string]any{"same": 1.0, "diff": 2.0}},
+	}, []int{10, 20}, preferences, 100)
+	byName := lo.SliceToMap(states, func(state model.PricingSyncModelState) (string, model.PricingSyncModelState) {
+		return state.ModelName, state
+	})
+
+	require.Equal(t, model.PricingSyncModelStatusReady, byName["same"].Status)
+	require.Equal(t, "[10,20]", byName["same"].Provenance)
+	require.Equal(t, model.PricingSyncModelStatusConflict, byName["diff"].Status)
+	require.NotEmpty(t, byName["diff"].ConflictDetails)
+}
+
+func TestPricingSyncAppliedStatesKeepsAndClearsStaleStatus(t *testing.T) {
+	preferences := map[string]model.PricingSyncModelState{
+		"model-a": {ModelName: "model-a", Mode: model.PricingSyncModelModeGeneral},
+	}
+	upstreams := []map[string]any{
+		{"model_price": map[string]any{"model-a": 1.0}},
+	}
+
+	stale := pricingSyncAppliedStates(nil, nil, map[int]struct{}{8: {}}, upstreams, []int{8}, preferences, 100)
+	require.Len(t, stale, 1)
+	require.Equal(t, model.PricingSyncModelStatusStale, stale[0].Status)
+
+	recovered := pricingSyncAppliedStates(nil, nil, nil, upstreams, []int{8}, preferences, 101)
+	require.Len(t, recovered, 1)
+	require.Equal(t, model.PricingSyncModelStatusReady, recovered[0].Status)
+}
+
+func TestPricingSyncIncompatibleStatesCreatesInitialConflict(t *testing.T) {
+	states := pricingSyncIncompatibleStates(
+		map[string]any{},
+		[]map[string]any{
+			{"model_price": map[string]any{"model-a": 1.0}},
+			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
+		},
+		[]int{8, 9},
+		nil,
+		nil,
+		100,
+	)
+
+	require.Len(t, states, 1)
+	require.Equal(t, "model-a", states[0].ModelName)
+	require.Equal(t, model.PricingSyncModelModeGeneral, states[0].Mode)
+	require.Equal(t, model.PricingSyncModelStatusConflict, states[0].Status)
+	require.JSONEq(t, `[8,9]`, states[0].Provenance)
+	require.NotEmpty(t, states[0].ConflictDetails)
 }
 
 func TestPricingStepRatiosExpr(t *testing.T) {

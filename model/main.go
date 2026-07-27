@@ -299,6 +299,9 @@ func migrateDB() error {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&BillingOutbox{},
+		&PricingSyncSource{},
+		&PricingSyncQuote{},
+		&PricingSyncModelState{},
 		&CasbinRule{},
 		&AuthzRole{},
 	)
@@ -358,6 +361,9 @@ func migrateDBFast() error {
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
 		{&BillingOutbox{}, "BillingOutbox"},
+		{&PricingSyncSource{}, "PricingSyncSource"},
+		{&PricingSyncQuote{}, "PricingSyncQuote"},
+		{&PricingSyncModelState{}, "PricingSyncModelState"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

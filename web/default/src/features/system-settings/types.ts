@@ -515,3 +515,51 @@ export type UpstreamRatiosResponse = {
     test_results: TestResult[]
   }
 }
+
+export type PricingSyncStrategy = 'highest' | 'lowest' | 'average'
+
+export type PricingSyncSource = {
+  channel_id: number
+  enabled: boolean
+  endpoint: string
+  interval_seconds: number
+  last_success_at?: number
+  last_error?: string
+}
+
+export type PricingSyncConfig = {
+  strategy: PricingSyncStrategy
+  sources: PricingSyncSource[]
+  version: number
+}
+
+export type PricingSyncConfigResponse = {
+  success: boolean
+  message: string
+  data: PricingSyncConfig
+}
+
+export type PricingSyncModelState = {
+  model_name: string
+  mode: 'manual' | 'general' | 'channel'
+  channel_id: number
+  status: 'ready' | 'conflict' | 'stale' | 'unavailable'
+  conflict_details?: string
+  last_applied_at?: number
+}
+
+export type PricingSyncModelStateResponse = {
+  success: boolean
+  message: string
+  data: PricingSyncModelState
+}
+
+export type PricingSyncModelPreference = Pick<
+  PricingSyncModelState,
+  'model_name' | 'mode' | 'channel_id'
+>
+
+export type PricingSyncPatch = {
+  set?: Record<string, number | string>
+  delete?: string[]
+}

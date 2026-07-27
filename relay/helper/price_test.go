@@ -62,6 +62,35 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
 
+func TestHasModelBillingConfigRequiresPositiveBasePrice(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	oldRatio := ratio_setting.ModelRatio2JSONString()
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(oldRatio))
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"zero-price":0,"positive-price":0.01}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"zero-ratio":0,"positive-ratio":2}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"tiered-price":"tiered_expr","invalid-tiered":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"tiered-price":"tier(\"base\", p * 1)","invalid-tiered":"not valid +++"}`,
+	}))
+
+	require.False(t, HasModelBillingConfig("zero-price"))
+	require.True(t, HasModelBillingConfig("positive-price"))
+	require.False(t, HasModelBillingConfig("zero-ratio"))
+	require.True(t, HasModelBillingConfig("positive-ratio"))
+	require.True(t, HasModelBillingConfig("tiered-price"))
+	require.False(t, HasModelBillingConfig("invalid-tiered"))
+}
+
 func TestBuildAutoRouteStateReservesMostExpensiveEffectiveGroup(t *testing.T) {
 	oldPricingGroups := ratio_setting.PricingGroups2JSONString()
 	oldGroupGroupRatio := ratio_setting.GroupGroupRatio2JSONString()

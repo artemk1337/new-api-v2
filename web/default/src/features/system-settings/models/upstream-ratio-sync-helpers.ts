@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { RatioType } from '../types'
+import type { PricingSyncPatch, RatioType } from '../types'
 import { RATIO_TYPE_OPTIONS } from './constants'
 
 export type RatioDifferenceEntry = {
@@ -55,6 +55,131 @@ export const NUMERIC_SYNC_FIELDS = new Set<string>([
   ...RATIO_SYNC_FIELDS,
   'model_price',
 ])
+
+const RATIO_OPTION_KEYS = [
+  'ModelRatio',
+  'CompletionRatio',
+  'CacheRatio',
+  'CreateCacheRatio',
+  'ImageRatio',
+  'AudioRatio',
+  'AudioCompletionRatio',
+]
+
+const TIERED_OPTION_KEYS = [
+  'billing_setting.billing_mode',
+  'billing_setting.billing_expr',
+]
+
+const PRICING_FORM_OPTION_KEYS: Record<string, string> = {
+  ModelPrice: 'ModelPrice',
+  ModelRatio: 'ModelRatio',
+  CacheRatio: 'CacheRatio',
+  CreateCacheRatio: 'CreateCacheRatio',
+  CompletionRatio: 'CompletionRatio',
+  ImageRatio: 'ImageRatio',
+  AudioRatio: 'AudioRatio',
+  AudioCompletionRatio: 'AudioCompletionRatio',
+  BillingMode: 'billing_setting.billing_mode',
+  BillingExpr: 'billing_setting.billing_expr',
+}
+
+export function buildPricingMapDiffPatches(
+  before: Record<string, string>,
+  after: Record<string, string>
+): Record<string, PricingSyncPatch> {
+  const patches: Record<string, PricingSyncPatch> = {}
+
+  for (const [formKey, optionKey] of Object.entries(PRICING_FORM_OPTION_KEYS)) {
+    const previous = JSON.parse(before[formKey] || '{}') as Record<
+      string,
+      number | string
+    >
+    const next = JSON.parse(after[formKey] || '{}') as Record<
+      string,
+      number | string
+    >
+    const set: Record<string, number | string> = {}
+    const deleted: string[] = []
+
+    for (const model of Object.keys(previous)) {
+      if (!(model in next)) deleted.push(model)
+    }
+    for (const [model, value] of Object.entries(next)) {
+      if (!(model in previous) || previous[model] !== value) set[model] = value
+    }
+    if (Object.keys(set).length > 0 || deleted.length > 0) {
+      patches[optionKey] = {
+        ...(Object.keys(set).length > 0 ? { set } : {}),
+        ...(deleted.length > 0 ? { delete: deleted } : {}),
+      }
+    }
+  }
+
+  return patches
+}
+
+function optionKeyBySyncField(ratioType: string): string {
+  const explicit: Record<string, string> = {
+    billing_mode: 'billing_setting.billing_mode',
+    billing_expr: 'billing_setting.billing_expr',
+  }
+  if (explicit[ratioType]) return explicit[ratioType]
+  return ratioType
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('')
+}
+
+export function buildPricingSyncPatches(
+  resolutions: ResolutionsMap
+): Record<string, PricingSyncPatch> {
+  const patches: Record<string, PricingSyncPatch> = {}
+  const deleteModel = (optionKey: string, model: string) => {
+    const patch = patches[optionKey] ?? {}
+    patch.delete = [...(patch.delete ?? []), model]
+    patches[optionKey] = patch
+  }
+  const setModel = (
+    optionKey: string,
+    model: string,
+    value: number | string
+  ) => {
+    const patch = patches[optionKey] ?? {}
+    patch.set = { ...patch.set, [model]: value }
+    patches[optionKey] = patch
+  }
+
+  Object.entries(resolutions).forEach(([model, ratios]) => {
+    const selectedTypes = Object.keys(ratios)
+    const hasPrice = selectedTypes.includes('model_price')
+    const hasRatio = selectedTypes.some((field) =>
+      RATIO_SYNC_FIELDS.includes(field as RatioType)
+    )
+
+    if (hasPrice) {
+      for (const key of [...RATIO_OPTION_KEYS, ...TIERED_OPTION_KEYS]) {
+        deleteModel(key, model)
+      }
+    } else if (hasRatio) {
+      deleteModel('ModelPrice', model)
+      for (const key of TIERED_OPTION_KEYS) deleteModel(key, model)
+    } else {
+      deleteModel('ModelPrice', model)
+      for (const key of RATIO_OPTION_KEYS) deleteModel(key, model)
+    }
+
+    Object.entries(ratios).forEach(([ratioType, value]) => {
+      setModel(
+        optionKeyBySyncField(ratioType),
+        model,
+        NUMERIC_SYNC_FIELDS.has(ratioType) ? Number(value) : value
+      )
+    })
+  })
+
+  return patches
+}
 
 export function getSyncFieldLabel(
   ratioType: string,

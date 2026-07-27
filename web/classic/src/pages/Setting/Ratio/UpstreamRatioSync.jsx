@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Button,
   Table,
@@ -47,9 +47,30 @@ import {
   IllustrationNoResult,
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
-import ChannelSelectorModal from '../../../components/settings/ChannelSelectorModal';
-
 const PRICING_ENDPOINT = '/api/pricing';
+const RATIO_CONFIG_ENDPOINT = '/api/ratio_config';
+const OPENROUTER_ENDPOINT = 'openrouter';
+const OFFICIAL_CHANNEL_ID = -100;
+const MODELS_DEV_PRESET_ID = -101;
+const OFFICIAL_CHANNEL_ENDPOINT =
+  'https://basellm.github.io/llm-metadata/api/newapi/ratio_config-v1-base.json';
+const MODELS_DEV_PRESET_ENDPOINT = 'https://models.dev/api.json';
+const OPENROUTER_CHANNEL_TYPE = 20;
+
+const syncIntervals = [
+  { value: 0, label: 'Не обновлять автоматически' },
+  { value: 60, label: '1 минута' },
+  { value: 600, label: '10 минут' },
+  { value: 1800, label: '30 минут' },
+  { value: 3600, label: '1 час' },
+];
+
+function defaultEndpointForChannel(channel) {
+  if (channel.id === OFFICIAL_CHANNEL_ID) return OFFICIAL_CHANNEL_ENDPOINT;
+  if (channel.id === MODELS_DEV_PRESET_ID) return MODELS_DEV_PRESET_ENDPOINT;
+  if (channel.type === OPENROUTER_CHANNEL_TYPE) return OPENROUTER_ENDPOINT;
+  return PRICING_ENDPOINT;
+}
 
 function ConflictConfirmModal({ t, visible, items, loading, onOk, onCancel }) {
   const isMobile = useIsMobile();
@@ -91,15 +112,18 @@ function ConflictConfirmModal({ t, visible, items, loading, onOk, onCancel }) {
 
 export default function UpstreamRatioSync(props) {
   const { t } = useTranslation();
-  const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const isMobile = useIsMobile();
 
-  // 渠道选择相关
   const [allChannels, setAllChannels] = useState([]);
-  const [selectedChannelIds, setSelectedChannelIds] = useState([]);
+  const [channelsLoaded, setChannelsLoaded] = useState(false);
+  const [syncConfig, setSyncConfig] = useState({
+    strategy: 'highest',
+    sources: [],
+    version: 0,
+  });
 
   // 差异数据和测试结果
   const [differences, setDifferences] = useState({});
@@ -122,11 +146,14 @@ export default function UpstreamRatioSync(props) {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [conflictItems, setConflictItems] = useState([]); // {channel, model, current, newVal, ratioType}
 
-  const channelSelectorRef = React.useRef(null);
-
   useEffect(() => {
     setCurrentPage(1);
   }, [ratioTypeFilter, searchKeyword]);
+
+  useEffect(() => {
+    fetchAllChannels();
+    fetchSyncConfig();
+  }, []);
 
   const fetchAllChannels = async () => {
     setLoading(true);
@@ -136,15 +163,7 @@ export default function UpstreamRatioSync(props) {
       if (res.data.success) {
         const channels = res.data.data || [];
 
-        const transferData = channels.map((channel) => ({
-          key: channel.id,
-          label: channel.name,
-          value: channel.id,
-          disabled: false,
-          _originalData: channel,
-        }));
-
-        setAllChannels(transferData);
+        setAllChannels(channels);
       } else {
         showError(res.data.message);
       }
@@ -152,31 +171,94 @@ export default function UpstreamRatioSync(props) {
       showError(t('获取渠道失败：') + error.message);
     } finally {
       setLoading(false);
+      setChannelsLoaded(true);
     }
   };
 
-  const confirmChannelSelection = () => {
-    const selected = allChannels
-      .filter((ch) => selectedChannelIds.includes(ch.value))
-      .map((ch) => ch._originalData);
+  const fetchSyncConfig = async () => {
+    setConfigLoading(true);
+    try {
+      const res = await API.get('/api/ratio_sync/config');
+      if (res.data.success) {
+        setSyncConfig({
+          strategy: res.data.data?.strategy || 'highest',
+          sources: res.data.data?.sources || [],
+          version: res.data.data?.version || 0,
+        });
+      } else {
+        showError(res.data.message);
+      }
+    } catch (error) {
+      showError(t('获取同步设置失败：') + error.message);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
 
-    if (selected.length === 0) {
+  const sourceForChannel = (channel) =>
+    syncConfig.sources.find((source) => source.channel_id === channel.id);
+
+  const updateSource = (channel, patch) => {
+    const current = sourceForChannel(channel) || {
+      channel_id: channel.id,
+      enabled: false,
+      endpoint: defaultEndpointForChannel(channel),
+      interval_seconds: 0,
+    };
+    setSyncConfig((prev) => ({
+      ...prev,
+      sources: [
+        ...prev.sources.filter((source) => source.channel_id !== channel.id),
+        { ...current, ...patch },
+      ],
+    }));
+  };
+
+  const saveSyncConfig = async () => {
+    setConfigLoading(true);
+    try {
+      const config = {
+        ...syncConfig,
+        sources: syncConfig.sources.filter((source) =>
+          allChannels.some((channel) => channel.id === source.channel_id),
+        ),
+      };
+      const { version, ...payload } = config;
+      const res = await API.put('/api/ratio_sync/config', {
+        ...payload,
+        expected_version: version,
+      });
+      if (!res.data.success) {
+        showError(res.data.message || t('保存失败'));
+        return;
+      }
+      showSuccess(t('同步设置已保存'));
+      fetchSyncConfig();
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        await fetchSyncConfig();
+      }
+      showError(t('保存失败：') + error.message);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const fetchRatiosFromChannels = async () => {
+    const channelList = allChannels.filter(
+      (channel) => sourceForChannel(channel)?.enabled,
+    );
+    if (channelList.length === 0) {
       showWarning(t('请至少选择一个渠道'));
       return;
     }
-
-    setModalVisible(false);
-    fetchRatiosFromChannels(selected);
-  };
-
-  const fetchRatiosFromChannels = async (channelList) => {
     setSyncLoading(true);
 
     const upstreams = channelList.map((ch) => ({
       id: ch.id,
       name: ch.name,
       base_url: ch.base_url,
-      endpoint: PRICING_ENDPOINT,
+      endpoint: sourceForChannel(ch)?.endpoint || defaultEndpointForChannel(ch),
     }));
 
     const payload = {
@@ -487,21 +569,29 @@ export default function UpstreamRatioSync(props) {
 
   const performSync = useCallback(
     async (currentRatios) => {
-      const finalRatios = {
-        ModelRatio: { ...currentRatios.ModelRatio },
-        CompletionRatio: { ...currentRatios.CompletionRatio },
-        CacheRatio: { ...currentRatios.CacheRatio },
-        CreateCacheRatio: { ...currentRatios.CreateCacheRatio },
-        ImageRatio: { ...currentRatios.ImageRatio },
-        AudioRatio: { ...currentRatios.AudioRatio },
-        AudioCompletionRatio: { ...currentRatios.AudioCompletionRatio },
-        ModelPrice: { ...currentRatios.ModelPrice },
-        'billing_setting.billing_mode': {
-          ...currentRatios['billing_setting.billing_mode'],
-        },
-        'billing_setting.billing_expr': {
-          ...currentRatios['billing_setting.billing_expr'],
-        },
+      const patches = {};
+      const ratioOptionKeys = [
+        'ModelRatio',
+        'CompletionRatio',
+        'CacheRatio',
+        'CreateCacheRatio',
+        'ImageRatio',
+        'AudioRatio',
+        'AudioCompletionRatio',
+      ];
+      const tieredOptionKeys = [
+        'billing_setting.billing_mode',
+        'billing_setting.billing_expr',
+      ];
+      const deleteModel = (optionKey, model) => {
+        const patch = patches[optionKey] || {};
+        patch.delete = [...(patch.delete || []), model];
+        patches[optionKey] = patch;
+      };
+      const setModel = (optionKey, model, value) => {
+        const patch = patches[optionKey] || {};
+        patch.set = { ...(patch.set || {}), [model]: value };
+        patches[optionKey] = patch;
       };
 
       Object.entries(resolutions).forEach(([model, ratios]) => {
@@ -512,23 +602,24 @@ export default function UpstreamRatioSync(props) {
         );
 
         if (hasPrice) {
-          delete finalRatios.ModelRatio[model];
-          delete finalRatios.CompletionRatio[model];
-          delete finalRatios.CacheRatio[model];
-          delete finalRatios.CreateCacheRatio[model];
-          delete finalRatios.ImageRatio[model];
-          delete finalRatios.AudioRatio[model];
-          delete finalRatios.AudioCompletionRatio[model];
-        }
-        if (hasRatio) {
-          delete finalRatios.ModelPrice[model];
+          for (const key of [...ratioOptionKeys, ...tieredOptionKeys]) {
+            deleteModel(key, model);
+          }
+        } else if (hasRatio) {
+          deleteModel('ModelPrice', model);
+          for (const key of tieredOptionKeys) deleteModel(key, model);
+        } else {
+          deleteModel('ModelPrice', model);
+          for (const key of ratioOptionKeys) deleteModel(key, model);
         }
 
         Object.entries(ratios).forEach(([ratioType, value]) => {
           const optionKey = optionKeyBySyncField(ratioType);
-          finalRatios[optionKey][model] = numericSyncFields.has(ratioType)
-            ? parseFloat(value)
-            : value;
+          setModel(
+            optionKey,
+            model,
+            numericSyncFields.has(ratioType) ? parseFloat(value) : value,
+          );
         });
       });
 
@@ -536,16 +627,9 @@ export default function UpstreamRatioSync(props) {
       showInfo(t('正在同步价格，请稍候'));
       let success = false;
       try {
-        const updates = Object.entries(finalRatios).map(([key, value]) =>
-          API.put('/api/option/', {
-            key,
-            value: JSON.stringify(value, null, 2),
-          }),
-        );
+        const result = await API.post('/api/ratio_sync/apply', { patches });
 
-        const results = await Promise.all(updates);
-
-        if (results.every((res) => res.data.success)) {
+        if (result.data.success) {
           showSuccess(t('同步成功'));
           props.refresh();
 
@@ -588,24 +672,181 @@ export default function UpstreamRatioSync(props) {
     return dataSource.slice(startIndex, endIndex);
   };
 
+  const renderSyncSources = () => {
+    const endpointOptions = [
+      { label: 'pricing', value: PRICING_ENDPOINT },
+      { label: 'ratio_config', value: RATIO_CONFIG_ENDPOINT },
+      { label: 'OpenRouter', value: OPENROUTER_ENDPOINT },
+      { label: t('自定义'), value: 'custom' },
+    ];
+    const knownEndpoints = endpointOptions
+      .filter((option) => option.value !== 'custom')
+      .map((option) => option.value);
+
+    return (
+      <Form.Section text={t('选择同步渠道')}>
+        <div className='mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between'>
+          <div className='text-sm text-gray-500'>{t('配置上游价格同步')}</div>
+          <div className='flex flex-col gap-2 sm:flex-row'>
+            <Select
+              value={syncConfig.strategy}
+              disabled={configLoading || syncLoading}
+              className='w-full sm:w-44'
+              onChange={(strategy) =>
+                setSyncConfig((prev) => ({ ...prev, strategy }))
+              }
+            >
+              <Select.Option value='highest'>{t('最高价格')}</Select.Option>
+              <Select.Option value='lowest'>{t('最低价格')}</Select.Option>
+              <Select.Option value='average'>{t('平均价格')}</Select.Option>
+            </Select>
+            <Button
+              type='primary'
+              loading={configLoading}
+              disabled={syncLoading || !channelsLoaded}
+              onClick={saveSyncConfig}
+            >
+              {t('保存设置')}
+            </Button>
+            <Button
+              icon={<RefreshCcw size={14} />}
+              loading={syncLoading}
+              disabled={configLoading || !channelsLoaded}
+              onClick={fetchRatiosFromChannels}
+            >
+              {t('检查价格')}
+            </Button>
+          </div>
+        </div>
+        <Table
+          rowKey='id'
+          size='small'
+          loading={
+            !channelsLoaded || (configLoading && allChannels.length === 0)
+          }
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+          scroll={{ x: 'max-content' }}
+          dataSource={allChannels}
+          columns={[
+            {
+              title: t('启用'),
+              width: 72,
+              render: (_, channel) => {
+                const source = sourceForChannel(channel);
+                return (
+                  <Checkbox
+                    checked={source?.enabled || false}
+                    disabled={configLoading || syncLoading}
+                    onChange={(event) =>
+                      updateSource(channel, { enabled: event.target.checked })
+                    }
+                  />
+                );
+              },
+            },
+            { title: t('渠道'), dataIndex: 'name', width: 180 },
+            {
+              title: t('源地址'),
+              dataIndex: 'base_url',
+              width: 280,
+              render: (url) => (
+                <Tooltip content={url}>
+                  <span className='inline-block max-w-[260px] truncate font-mono text-xs'>
+                    {url}
+                  </span>
+                </Tooltip>
+              ),
+            },
+            {
+              title: t('状态'),
+              dataIndex: 'status',
+              width: 110,
+              render: (status) => (
+                <Tag color={status === 1 ? 'green' : 'grey'} shape='circle'>
+                  {status === 1 ? t('已启用') : t('未启用')}
+                </Tag>
+              ),
+            },
+            {
+              title: t('同步接口'),
+              width: 260,
+              render: (_, channel) => {
+                const source = sourceForChannel(channel);
+                const endpoint =
+                  source?.endpoint || defaultEndpointForChannel(channel);
+                const isCustom = !knownEndpoints.includes(endpoint);
+                return (
+                  <div className='flex gap-2'>
+                    <Select
+                      value={isCustom ? 'custom' : endpoint}
+                      disabled={
+                        configLoading || syncLoading || !source?.enabled
+                      }
+                      className='w-32'
+                      onChange={(value) =>
+                        updateSource(channel, {
+                          endpoint: value === 'custom' ? '' : value,
+                        })
+                      }
+                    >
+                      {endpointOptions.map((option) => (
+                        <Select.Option key={option.value} value={option.value}>
+                          {option.label}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                    {isCustom && (
+                      <Input
+                        value={endpoint}
+                        placeholder='/api/pricing'
+                        disabled={
+                          configLoading || syncLoading || !source?.enabled
+                        }
+                        onChange={(value) =>
+                          updateSource(channel, { endpoint: value })
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              },
+            },
+            {
+              title: t('自动更新'),
+              width: 180,
+              render: (_, channel) => {
+                const source = sourceForChannel(channel);
+                return (
+                  <Select
+                    value={String(source?.interval_seconds || 0)}
+                    disabled={configLoading || syncLoading || !source?.enabled}
+                    className='w-36'
+                    onChange={(value) =>
+                      updateSource(channel, { interval_seconds: Number(value) })
+                    }
+                  >
+                    {syncIntervals.map((option) => (
+                      <Select.Option
+                        key={option.value}
+                        value={String(option.value)}
+                      >
+                        {t(option.label)}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                );
+              },
+            },
+          ]}
+        />
+      </Form.Section>
+    );
+  };
+
   const renderHeader = () => (
     <div className='flex flex-col w-full'>
       <div className='flex flex-col md:flex-row justify-between items-center gap-4 w-full'>
         <div className='flex flex-col md:flex-row gap-2 w-full md:w-auto order-2 md:order-1'>
-          <Button
-            icon={<RefreshCcw size={14} />}
-            className='w-full md:w-auto mt-2'
-            disabled={loading || syncLoading || confirmLoading}
-            onClick={() => {
-              setModalVisible(true);
-              if (allChannels.length === 0) {
-                fetchAllChannels();
-              }
-            }}
-          >
-            {t('选择同步渠道')}
-          </Button>
-
           {(() => {
             const hasSelections = Object.keys(resolutions).length > 0;
 
@@ -1015,29 +1256,12 @@ export default function UpstreamRatioSync(props) {
     );
   };
 
-  const handleModalClose = () => {
-    setModalVisible(false);
-    if (channelSelectorRef.current) {
-      channelSelectorRef.current.resetPagination();
-    }
-  };
-
   return (
     <>
+      {renderSyncSources()}
       <Form.Section text={renderHeader()}>
         {renderDifferenceTable()}
       </Form.Section>
-
-      <ChannelSelectorModal
-        ref={channelSelectorRef}
-        t={t}
-        visible={modalVisible}
-        onCancel={handleModalClose}
-        onOk={confirmChannelSelection}
-        allChannels={allChannels}
-        selectedChannelIds={selectedChannelIds}
-        setSelectedChannelIds={setSelectedChannelIds}
-      />
 
       <ConflictConfirmModal
         t={t}

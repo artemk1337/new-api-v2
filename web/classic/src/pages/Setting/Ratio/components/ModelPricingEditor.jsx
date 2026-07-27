@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Banner,
   Button,
@@ -28,6 +28,7 @@ import {
   Modal,
   Radio,
   RadioGroup,
+  Select,
   Space,
   Switch,
   Table,
@@ -41,6 +42,7 @@ import {
   IconSearch,
 } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
+import { API, showError } from '../../../../helpers';
 import {
   PAGE_SIZE,
   PRICE_SUFFIX,
@@ -50,6 +52,10 @@ import {
 } from '../hooks/useModelPricingEditorState';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
 import TieredPricingEditor from './TieredPricingEditor';
+import {
+  createPricingSyncSourceDraft,
+  reconcilePricingSyncSourceDraft,
+} from '../pricingSyncSourceDraft';
 
 const { Text } = Typography;
 const EMPTY_CANDIDATE_MODEL_NAMES = [];
@@ -102,6 +108,10 @@ export default function ModelPricingEditor({
   const [addVisible, setAddVisible] = useState(false);
   const [batchVisible, setBatchVisible] = useState(false);
   const [newModelName, setNewModelName] = useState('');
+  const [pricingSyncSources, setPricingSyncSources] = useState([]);
+  const [pricingSyncSourceDraft, setPricingSyncSourceDraft] = useState(() =>
+    createPricingSyncSourceDraft(),
+  );
 
   const {
     selectedModel,
@@ -138,14 +148,75 @@ export default function ModelPricingEditor({
     filterMode,
   });
 
-  const getExprModeLabel = useCallback((model) => {
-    if (model?.billingMode !== 'tiered_expr') {
-      return '';
+  useEffect(() => {
+    setPricingSyncSourceDraft((current) =>
+      reconcilePricingSyncSourceDraft(current, selectedModelName),
+    );
+    if (!selectedModelName) return undefined;
+
+    let cancelled = false;
+    Promise.all([
+      API.get('/api/ratio_sync/config'),
+      API.get('/api/ratio_sync/model-preference', {
+        params: { model: selectedModelName },
+      }),
+    ])
+      .then(([configResponse, stateResponse]) => {
+        if (cancelled) return;
+        const sources = (configResponse?.data?.data?.sources || []).filter(
+          (source) => source.enabled,
+        );
+        const state = stateResponse?.data?.data;
+        setPricingSyncSources(sources);
+        const serverValue =
+          state?.mode === 'channel'
+            ? `channel:${state.channel_id}`
+            : state?.mode || 'manual';
+        setPricingSyncSourceDraft((current) =>
+          reconcilePricingSyncSourceDraft(
+            current,
+            selectedModelName,
+            serverValue,
+          ),
+        );
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          showError(error?.message || t('加载失败'));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedModelName, t]);
+
+  const handleSave = useCallback(async () => {
+    let preference;
+    if (pricingSyncSourceDraft.dirty && selectedModelName) {
+      const [mode, channelID] = pricingSyncSourceDraft.value.split(':');
+      preference = {
+        model_name: selectedModelName,
+        mode,
+        channel_id: channelID ? Number(channelID) : 0,
+      };
     }
-    return (model.billingExpr || '').includes('tier(')
-      ? t('阶梯计费')
-      : t('表达式计费');
-  }, [t]);
+    const saved = await handleSubmit(preference);
+    if (saved && preference) {
+      setPricingSyncSourceDraft((current) => ({ ...current, dirty: false }));
+    }
+  }, [handleSubmit, pricingSyncSourceDraft, selectedModelName]);
+
+  const getExprModeLabel = useCallback(
+    (model) => {
+      if (model?.billingMode !== 'tiered_expr') {
+        return '';
+      }
+      return (model.billingExpr || '').includes('tier(')
+        ? t('阶梯计费')
+        : t('表达式计费');
+    },
+    [t],
+  );
 
   const columns = useMemo(
     () => [
@@ -267,7 +338,7 @@ export default function ModelPricingEditor({
             type='primary'
             icon={<IconSave />}
             loading={loading}
-            onClick={handleSubmit}
+            onClick={handleSave}
             style={isMobile ? { width: '100%' } : undefined}
           >
             {t('应用更改')}
@@ -278,7 +349,9 @@ export default function ModelPricingEditor({
             style={isMobile ? { width: '100%' } : undefined}
           >
             {t('批量应用当前模型价格')}
-            {selectedModelNames.length > 0 ? ` (${selectedModelNames.length})` : ''}
+            {selectedModelNames.length > 0
+              ? ` (${selectedModelNames.length})`
+              : ''}
           </Button>
           <Input
             prefix={<IconSearch />}
@@ -405,12 +478,49 @@ export default function ModelPricingEditor({
               <div>
                 <div className='mb-4'>
                   <div className='mb-2 font-medium text-gray-700'>
+                    {t('选择同步来源')}
+                  </div>
+                  <Select
+                    value={
+                      pricingSyncSourceDraft.modelName === selectedModelName
+                        ? pricingSyncSourceDraft.value
+                        : 'manual'
+                    }
+                    style={{ width: '100%' }}
+                    onChange={(value) => {
+                      setPricingSyncSourceDraft({
+                        modelName: selectedModelName,
+                        value,
+                        dirty: true,
+                      });
+                    }}
+                  >
+                    <Select.Option value='manual'>
+                      {t('手动编辑')}
+                    </Select.Option>
+                    <Select.Option value='general'>
+                      {t('全局设置')}
+                    </Select.Option>
+                    {pricingSyncSources.map((source) => (
+                      <Select.Option
+                        key={source.channel_id}
+                        value={`channel:${source.channel_id}`}
+                      >
+                        #{source.channel_id}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </div>
+                <div className='mb-4'>
+                  <div className='mb-2 font-medium text-gray-700'>
                     {t('计费方式')}
                   </div>
                   <RadioGroup
                     type='button'
                     value={selectedModel.billingMode}
-                    onChange={(event) => handleBillingModeChange(event.target.value)}
+                    onChange={(event) =>
+                      handleBillingModeChange(event.target.value)
+                    }
                   >
                     <Radio value='per-token'>{t('按量计费')}</Radio>
                     <Radio value='per-request'>{t('按次计费')}</Radio>
@@ -446,7 +556,9 @@ export default function ModelPricingEditor({
                     value={selectedModel.fixedPrice}
                     placeholder={t('输入每次调用价格')}
                     suffix={t('$/次')}
-                    onChange={(value) => handleNumericFieldChange('fixedPrice', value)}
+                    onChange={(value) =>
+                      handleNumericFieldChange('fixedPrice', value)
+                    }
                     extraText={t('适合 MJ / 任务类等按次收费模型。')}
                   />
                 ) : selectedModel.billingMode === 'tiered_expr' ? (
@@ -471,7 +583,9 @@ export default function ModelPricingEditor({
                         label={t('输入价格')}
                         value={selectedModel.inputPrice}
                         placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('inputPrice', value)}
+                        onChange={(value) =>
+                          handleNumericFieldChange('inputPrice', value)
+                        }
                       />
                       {selectedModel.completionRatioLocked ? (
                         <Banner
@@ -505,12 +619,18 @@ export default function ModelPricingEditor({
                             )}
                             disabled={selectedModel.completionRatioLocked}
                             onChange={(checked) =>
-                              handleOptionalFieldToggle('completionPrice', checked)
+                              handleOptionalFieldToggle(
+                                'completionPrice',
+                                checked,
+                              )
                             }
                           />
                         }
                         hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'completionPrice')
+                          !isOptionalFieldEnabled(
+                            selectedModel,
+                            'completionPrice',
+                          )
                         }
                         disabled={
                           !hasValue(selectedModel.inputPrice) ||
@@ -521,7 +641,8 @@ export default function ModelPricingEditor({
                             ? t(
                                 '后端固定倍率：{{ratio}}。该字段仅展示换算后的价格。',
                                 {
-                                  ratio: selectedModel.lockedCompletionRatio || '-',
+                                  ratio:
+                                    selectedModel.lockedCompletionRatio || '-',
                                 },
                               )
                             : !isOptionalFieldEnabled(
@@ -536,17 +657,24 @@ export default function ModelPricingEditor({
                         label={t('缓存读取价格')}
                         value={selectedModel.cachePrice}
                         placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('cachePrice', value)}
+                        onChange={(value) =>
+                          handleNumericFieldChange('cachePrice', value)
+                        }
                         headerAction={
                           <Switch
                             size='small'
-                            checked={isOptionalFieldEnabled(selectedModel, 'cachePrice')}
+                            checked={isOptionalFieldEnabled(
+                              selectedModel,
+                              'cachePrice',
+                            )}
                             onChange={(checked) =>
                               handleOptionalFieldToggle('cachePrice', checked)
                             }
                           />
                         }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'cachePrice')}
+                        hidden={
+                          !isOptionalFieldEnabled(selectedModel, 'cachePrice')
+                        }
                         disabled={!hasValue(selectedModel.inputPrice)}
                         extraText={
                           !isOptionalFieldEnabled(selectedModel, 'cachePrice')
@@ -569,12 +697,18 @@ export default function ModelPricingEditor({
                               'createCachePrice',
                             )}
                             onChange={(checked) =>
-                              handleOptionalFieldToggle('createCachePrice', checked)
+                              handleOptionalFieldToggle(
+                                'createCachePrice',
+                                checked,
+                              )
                             }
                           />
                         }
                         hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'createCachePrice')
+                          !isOptionalFieldEnabled(
+                            selectedModel,
+                            'createCachePrice',
+                          )
                         }
                         disabled={!hasValue(selectedModel.inputPrice)}
                         extraText={
@@ -605,17 +739,24 @@ export default function ModelPricingEditor({
                         label={t('图片输入价格')}
                         value={selectedModel.imagePrice}
                         placeholder={t('输入 $/1M tokens')}
-                        onChange={(value) => handleNumericFieldChange('imagePrice', value)}
+                        onChange={(value) =>
+                          handleNumericFieldChange('imagePrice', value)
+                        }
                         headerAction={
                           <Switch
                             size='small'
-                            checked={isOptionalFieldEnabled(selectedModel, 'imagePrice')}
+                            checked={isOptionalFieldEnabled(
+                              selectedModel,
+                              'imagePrice',
+                            )}
                             onChange={(checked) =>
                               handleOptionalFieldToggle('imagePrice', checked)
                             }
                           />
                         }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'imagePrice')}
+                        hidden={
+                          !isOptionalFieldEnabled(selectedModel, 'imagePrice')
+                        }
                         disabled={!hasValue(selectedModel.inputPrice)}
                         extraText={
                           !isOptionalFieldEnabled(selectedModel, 'imagePrice')
@@ -638,11 +779,19 @@ export default function ModelPricingEditor({
                               'audioInputPrice',
                             )}
                             onChange={(checked) =>
-                              handleOptionalFieldToggle('audioInputPrice', checked)
+                              handleOptionalFieldToggle(
+                                'audioInputPrice',
+                                checked,
+                              )
                             }
                           />
                         }
-                        hidden={!isOptionalFieldEnabled(selectedModel, 'audioInputPrice')}
+                        hidden={
+                          !isOptionalFieldEnabled(
+                            selectedModel,
+                            'audioInputPrice',
+                          )
+                        }
                         disabled={!hasValue(selectedModel.inputPrice)}
                         extraText={
                           !isOptionalFieldEnabled(
@@ -667,17 +816,25 @@ export default function ModelPricingEditor({
                               selectedModel,
                               'audioOutputPrice',
                             )}
-                            disabled={!isOptionalFieldEnabled(
-                              selectedModel,
-                              'audioInputPrice',
-                            )}
+                            disabled={
+                              !isOptionalFieldEnabled(
+                                selectedModel,
+                                'audioInputPrice',
+                              )
+                            }
                             onChange={(checked) =>
-                              handleOptionalFieldToggle('audioOutputPrice', checked)
+                              handleOptionalFieldToggle(
+                                'audioOutputPrice',
+                                checked,
+                              )
                             }
                           />
                         }
                         hidden={
-                          !isOptionalFieldEnabled(selectedModel, 'audioOutputPrice')
+                          !isOptionalFieldEnabled(
+                            selectedModel,
+                            'audioOutputPrice',
+                          )
                         }
                         disabled={!hasValue(selectedModel.audioInputPrice)}
                         extraText={

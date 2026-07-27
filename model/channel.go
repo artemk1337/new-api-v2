@@ -633,22 +633,18 @@ func BatchDeleteChannels(ids []int) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	// 使用事务 分批删除channel表和abilities表
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	for _, chunk := range lo.Chunk(ids, 200) {
-		if err := tx.Where("id in (?)", chunk).Delete(&Channel{}).Error; err != nil {
-			tx.Rollback()
-			return err
+	err := disablePricingSyncSourcesWithMutation(ids, func(tx *gorm.DB) error {
+		for _, chunk := range lo.Chunk(ids, 200) {
+			if err := tx.Where("id in (?)", chunk).Delete(&Channel{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-	if err := tx.Commit().Error; err != nil {
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 	InvalidatePricingCache()
@@ -792,13 +788,17 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	var err error
-	err = DB.Delete(channel).Error
+	err := disablePricingSyncSourcesWithMutation([]int{channel.Id}, func(tx *gorm.DB) error {
+		if err := tx.Delete(channel).Error; err != nil {
+			return err
+		}
+		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
+	})
 	if err != nil {
 		return err
 	}
-	err = channel.DeleteAbilities()
-	return err
+	InvalidatePricingCache()
+	return nil
 }
 
 var channelStatusLock sync.Mutex
@@ -1082,13 +1082,71 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	ids := make([]int, 0)
+	if err := DB.Model(&Channel{}).Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var rowsAffected int64
+	err := disablePricingSyncSourcesWithMutationChecked(ids, func(tx *gorm.DB) error {
+		var current []Channel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Find(&current).Error; err != nil {
+			return err
+		}
+		if len(current) != len(ids) {
+			return errors.New("channel status changed; retry deletion")
+		}
+		for _, channel := range current {
+			if int64(channel.Status) != status {
+				return errors.New("channel status changed; retry deletion")
+			}
+		}
+		return nil
+	}, func(tx *gorm.DB) error {
+		result := tx.Where("id IN ?", ids).Delete(&Channel{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return rowsAffected, nil
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	ids := make([]int, 0)
+	if err := DB.Model(&Channel{}).Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var rowsAffected int64
+	err := disablePricingSyncSourcesWithMutationChecked(ids, func(tx *gorm.DB) error {
+		var current []Channel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Find(&current).Error; err != nil {
+			return err
+		}
+		if len(current) != len(ids) {
+			return errors.New("channel status changed; retry deletion")
+		}
+		for _, channel := range current {
+			if channel.Status != common.ChannelStatusAutoDisabled && channel.Status != common.ChannelStatusManuallyDisabled {
+				return errors.New("channel status changed; retry deletion")
+			}
+		}
+		return nil
+	}, func(tx *gorm.DB) error {
+		result := tx.Where("id IN ?", ids).Delete(&Channel{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return rowsAffected, nil
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {

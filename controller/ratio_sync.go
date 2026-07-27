@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -928,4 +929,217 @@ func GetSyncableChannels(c *gin.Context) {
 		"message": "",
 		"data":    syncableChannels,
 	})
+}
+
+func GetPricingSyncConfig(c *gin.Context) {
+	// Read the version first. Configuration writes bump it in the same
+	// transaction as the source update, so a concurrent write cannot produce a
+	// response with a new version and an old source snapshot.
+	version, err := model.GetPricingSyncConfigVersion()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	sources, err := model.GetPricingSyncSources()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"strategy": model.GetPricingSyncStrategy(),
+			"sources":  sources,
+			"version":  version,
+		},
+	})
+}
+
+func UpdatePricingSyncConfig(c *gin.Context) {
+	request := dto.PricingSyncConfigRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid pricing sync configuration"})
+		return
+	}
+	if request.ExpectedVersion == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing sync configuration version is required"})
+		return
+	}
+	strategy := strings.TrimSpace(request.Strategy)
+	if strategy == "" {
+		strategy = model.PricingSyncStrategyHighest
+	}
+	if strategy != model.PricingSyncStrategyHighest && strategy != model.PricingSyncStrategyLowest && strategy != model.PricingSyncStrategyAverage {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unsupported pricing sync strategy"})
+		return
+	}
+
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	known := make(map[int]struct{}, len(channels)+2)
+	for _, channel := range channels {
+		known[channel.Id] = struct{}{}
+	}
+	known[officialRatioPresetID] = struct{}{}
+	known[modelsDevPresetID] = struct{}{}
+
+	previousSources, err := model.GetPricingSyncSources()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	sources := make([]model.PricingSyncSource, 0, len(request.Sources))
+	for _, source := range request.Sources {
+		if _, ok := known[source.ChannelID]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unknown pricing sync channel"})
+			return
+		}
+		sources = append(sources, model.PricingSyncSource{
+			ChannelID:       source.ChannelID,
+			Enabled:         source.Enabled,
+			Endpoint:        source.Endpoint,
+			IntervalSeconds: source.IntervalSeconds,
+		})
+	}
+	newSources := make(map[int]model.PricingSyncSource, len(sources))
+	for _, source := range sources {
+		newSources[source.ChannelID] = source
+	}
+	removedSourceIDs := make([]int, 0)
+	for _, source := range previousSources {
+		next, ok := newSources[source.ChannelID]
+		if !ok || (source.Enabled && !next.Enabled) {
+			removedSourceIDs = append(removedSourceIDs, source.ChannelID)
+		}
+	}
+	if err := model.SavePricingSyncConfigurationIfVersion(sources, strategy, removedSourceIDs, previousSources, *request.ExpectedVersion); err != nil {
+		if errors.Is(err, model.ErrPricingSyncConfigurationChanged) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+func GetPricingSyncModelPreference(c *gin.Context) {
+	modelName := c.Query("model")
+	if modelName == "" {
+		modelName = c.Param("model")
+	}
+	state, err := model.GetPricingSyncModelState(modelName)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": state})
+}
+
+func UpdatePricingSyncModelPreference(c *gin.Context) {
+	request := dto.PricingSyncModelPreferenceRequest{}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "invalid pricing sync model preference"})
+		return
+	}
+	state := model.PricingSyncModelState{
+		ModelName: strings.TrimSpace(request.ModelName),
+		Mode:      request.Mode,
+		ChannelID: request.ChannelID,
+		Status:    model.PricingSyncModelStatusReady,
+	}
+	if state.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing preference model is required"})
+		return
+	}
+	if state.Mode != model.PricingSyncModelModeManual &&
+		state.Mode != model.PricingSyncModelModeGeneral &&
+		state.Mode != model.PricingSyncModelModeChannel {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unsupported pricing sync model mode"})
+		return
+	}
+	if err := model.ApplyPricingSyncUpdateWithPreferences(nil, []model.PricingSyncModelPreferenceInput{{
+		ModelName: state.ModelName,
+		Mode:      state.Mode,
+		ChannelID: state.ChannelID,
+	}}); err != nil {
+		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+}
+
+// ApplyPricingSyncPatches applies selected pricing patches and/or source
+// preferences in one pricing transaction.
+func ApplyPricingSyncPatches(c *gin.Context) {
+	request := struct {
+		Patches     map[string]model.JSONObjectPatch        `json:"patches"`
+		Preferences []dto.PricingSyncModelPreferenceRequest `json:"preferences,omitempty"`
+	}{}
+	if err := c.ShouldBindJSON(&request); err != nil || (len(request.Patches) == 0 && len(request.Preferences) == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing patches or preferences are required"})
+		return
+	}
+	modelNames := make(map[string]struct{})
+	for _, patch := range request.Patches {
+		for name := range patch.Set {
+			modelNames[name] = struct{}{}
+		}
+		for _, name := range patch.Delete {
+			modelNames[name] = struct{}{}
+		}
+	}
+	preferences := make(map[string]dto.PricingSyncModelPreferenceRequest, len(request.Preferences))
+	preferenceInputs := make([]model.PricingSyncModelPreferenceInput, 0, len(request.Preferences)+len(modelNames))
+	for _, preference := range request.Preferences {
+		preference.ModelName = strings.TrimSpace(preference.ModelName)
+		if preference.ModelName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing preference model is required"})
+			return
+		}
+		if _, duplicate := preferences[preference.ModelName]; duplicate {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "duplicate pricing model preference"})
+			return
+		}
+		switch preference.Mode {
+		case model.PricingSyncModelModeManual, model.PricingSyncModelModeGeneral:
+			preference.ChannelID = 0
+		case model.PricingSyncModelModeChannel:
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unsupported pricing sync model mode"})
+			return
+		}
+		preferences[preference.ModelName] = preference
+		preferenceInputs = append(preferenceInputs, model.PricingSyncModelPreferenceInput{
+			ModelName: preference.ModelName,
+			Mode:      preference.Mode,
+			ChannelID: preference.ChannelID,
+		})
+		modelNames[preference.ModelName] = struct{}{}
+	}
+	for name := range modelNames {
+		if _, ok := preferences[name]; !ok {
+			preferenceInputs = append(preferenceInputs, model.PricingSyncModelPreferenceInput{
+				ModelName: name,
+				Mode:      model.PricingSyncModelModeManual,
+			})
+		}
+	}
+	if err := model.ApplyPricingSyncUpdateWithPreferences(request.Patches, preferenceInputs); err != nil {
+		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 }

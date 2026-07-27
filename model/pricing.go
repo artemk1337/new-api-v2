@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -295,6 +296,9 @@ func updatePricing() {
 
 	pricingMap = make([]Pricing, 0)
 	for model, groups := range modelGroupsMap {
+		if !hasAvailableModelPricing(model) {
+			continue
+		}
 		pricing := Pricing{
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
@@ -366,6 +370,31 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func hasAvailableModelPricing(modelName string) bool {
+	if price, ok := ratio_setting.GetModelPrice(modelName, false); ok && price > 0 {
+		return true
+	}
+	formattedName := ratio_setting.FormatMatchingModelName(modelName)
+	ratioMap := ratio_setting.GetModelRatioCopy()
+	if ratio, ok := ratioMap[formattedName]; ok && ratio > 0 {
+		return true
+	}
+	if strings.HasSuffix(formattedName, ratio_setting.CompactModelSuffix) {
+		if ratio, ok := ratioMap[ratio_setting.CompactWildcardModelKey]; ok && ratio > 0 {
+			return true
+		}
+	}
+	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeTieredExpr {
+		return false
+	}
+	expr, ok := billing_setting.GetBillingExpr(modelName)
+	if !ok || strings.TrimSpace(expr) == "" {
+		return false
+	}
+	_, err := billingexpr.CompileFromCache(expr)
+	return err == nil
 }
 
 // GetSupportedEndpointMap 返回全局端点到路径的映射

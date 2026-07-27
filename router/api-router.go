@@ -231,6 +231,12 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
+			ratioSyncRoute.POST("/apply", controller.ApplyPricingSyncPatches)
+			ratioSyncRoute.GET("/config", controller.GetPricingSyncConfig)
+			ratioSyncRoute.PUT("/config", controller.UpdatePricingSyncConfig)
+			ratioSyncRoute.GET("/model-preference", controller.GetPricingSyncModelPreference)
+			ratioSyncRoute.GET("/model-preference/:model", controller.GetPricingSyncModelPreference)
+			ratioSyncRoute.PUT("/model-preference", controller.UpdatePricingSyncModelPreference)
 		}
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)

@@ -53,6 +53,9 @@ func TestMain(m *testing.M) {
 		&SystemTask{},
 		&SystemTaskLock{},
 		&BillingOutbox{},
+		&PricingSyncSource{},
+		&PricingSyncQuote{},
+		&PricingSyncModelState{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}
@@ -81,6 +84,9 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM system_task_locks")
 		DB.Exec("DELETE FROM system_tasks")
 		DB.Exec("DELETE FROM billing_outboxes")
+		DB.Exec("DELETE FROM pricing_sync_sources")
+		DB.Exec("DELETE FROM pricing_sync_quotes")
+		DB.Exec("DELETE FROM pricing_sync_model_states")
 	})
 }
 

@@ -225,7 +225,8 @@ const buildModelState = (name, sourceMaps) => {
 
 export const isBasePricingUnset = (model) =>
   model.billingMode !== 'tiered_expr' &&
-  !hasValue(model.fixedPrice) && !hasValue(model.inputPrice);
+  !hasValue(model.fixedPrice) &&
+  !hasValue(model.inputPrice);
 
 export const getModelWarnings = (model, t) => {
   if (!model) {
@@ -291,8 +292,8 @@ export const getModelWarnings = (model, t) => {
 export const buildSummaryText = (model, t) => {
   const requestRuleSuffix =
     model.billingMode === 'tiered_expr' && model.requestRuleExpr
-    ? `，${t('请求规则')}`
-    : '';
+      ? `，${t('请求规则')}`
+      : '';
   if (model.billingMode === 'tiered_expr') {
     const expr = model.billingExpr;
     if (!expr) return `${t('表达式计费')}${requestRuleSuffix}`;
@@ -646,8 +647,12 @@ export function useModelPricingEditorState({
       ImageRatio: parseOptionJSON(options.ImageRatio),
       AudioRatio: parseOptionJSON(options.AudioRatio),
       AudioCompletionRatio: parseOptionJSON(options.AudioCompletionRatio),
-      ModelBillingMode: parseOptionJSON(options['billing_setting.billing_mode']),
-      ModelBillingExpr: parseOptionJSON(options['billing_setting.billing_expr']),
+      ModelBillingMode: parseOptionJSON(
+        options['billing_setting.billing_mode'],
+      ),
+      ModelBillingExpr: parseOptionJSON(
+        options['billing_setting.billing_expr'],
+      ),
     };
 
     const names = new Set([
@@ -1020,7 +1025,7 @@ export function useModelPricingEditorState({
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (preference) => {
     setLoading(true);
     try {
       const output = {
@@ -1046,8 +1051,10 @@ export function useModelPricingEditorState({
             model.requestRuleExpr,
           );
           if (finalBillingExpr) {
-            tieredOutput['billing_setting.billing_mode'][model.name] = 'tiered_expr';
-            tieredOutput['billing_setting.billing_expr'][model.name] = finalBillingExpr;
+            tieredOutput['billing_setting.billing_mode'][model.name] =
+              'tiered_expr';
+            tieredOutput['billing_setting.billing_expr'][model.name] =
+              finalBillingExpr;
           }
         }
 
@@ -1069,33 +1076,47 @@ export function useModelPricingEditorState({
         }
       }
 
-      const requestQueue = [
-        ...Object.entries(output).map(([key, value]) =>
-          API.put('/api/option/', {
-            key,
-            value: JSON.stringify(value, null, 2),
-          }),
-        ),
-        ...Object.entries(tieredOutput).map(([key, value]) =>
-          API.put('/api/option/', {
-            key,
-            value: JSON.stringify(value, null, 2),
-          }),
-        ),
-      ];
+      const patches = {};
+      for (const [key, value] of Object.entries({
+        ...output,
+        ...tieredOutput,
+      })) {
+        const current = JSON.parse(options[key] || '{}');
+        const set = {};
+        const deleted = [];
+        for (const modelName of Object.keys(current)) {
+          if (!(modelName in value)) deleted.push(modelName);
+        }
+        for (const [modelName, nextValue] of Object.entries(value)) {
+          if (!(modelName in current) || current[modelName] !== nextValue) {
+            set[modelName] = nextValue;
+          }
+        }
+        if (Object.keys(set).length > 0 || deleted.length > 0) {
+          patches[key] = {
+            ...(Object.keys(set).length > 0 ? { set } : {}),
+            ...(deleted.length > 0 ? { delete: deleted } : {}),
+          };
+        }
+      }
 
-      const results = await Promise.all(requestQueue);
-      for (const res of results) {
-        if (!res?.data?.success) {
-          throw new Error(res?.data?.message || t('保存失败，请重试'));
+      if (Object.keys(patches).length > 0 || preference) {
+        const result = await API.post('/api/ratio_sync/apply', {
+          patches,
+          preferences: preference ? [preference] : [],
+        });
+        if (!result?.data?.success) {
+          throw new Error(result?.data?.message || t('保存失败，请重试'));
         }
       }
 
       showSuccess(t('保存成功'));
       await refresh();
+      return true;
     } catch (error) {
       console.error('保存失败:', error);
       showError(error.message || t('保存失败，请重试'));
+      return false;
     } finally {
       setLoading(false);
     }

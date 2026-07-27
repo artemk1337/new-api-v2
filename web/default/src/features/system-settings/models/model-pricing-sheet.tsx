@@ -1,3 +1,5 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import { AlertTriangle, Save } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -22,13 +24,13 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Save } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
+import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -60,7 +62,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { sideDrawerContentClassName } from '@/components/drawer-layout'
+import { cn } from '@/lib/utils'
+
+import type { PricingSyncModelPreference } from '../types'
 import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
@@ -79,6 +83,10 @@ import {
 } from './model-pricing-core'
 import { PriceInput, PriceLane } from './model-pricing-inputs'
 import { formatPricingNumber } from './pricing-format'
+import {
+  PricingSyncModelSource,
+  type PricingSyncModelSourceHandle,
+} from './pricing-sync-model-source'
 import { TieredPricingEditor } from './tiered-pricing-editor'
 
 export type { ModelRatioData } from './model-pricing-core'
@@ -87,7 +95,9 @@ type ModelPricingSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   editData?: ModelRatioData | null
-  onSave?: () => void | Promise<void>
+  onSave?: (
+    preference?: PricingSyncModelPreference
+  ) => boolean | void | Promise<boolean | void>
   isSaving?: boolean
 }
 
@@ -154,6 +164,7 @@ export const ModelPricingEditorPanel = forwardRef<
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
   const [editorReloadToken, setEditorReloadToken] = useState(0)
+  const pricingSyncSourceRef = useRef<PricingSyncModelSourceHandle>(null)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -186,13 +197,13 @@ export const ModelPricingEditorPanel = forwardRef<
         audioRatio: editData.audioRatio || '',
         audioCompletionRatio: editData.audioCompletionRatio || '',
       })
-      setPricingMode(
-        editData.billingMode === 'tiered_expr'
-          ? 'tiered_expr'
-          : editData.price
-            ? 'per-request'
-            : 'per-token'
-      )
+      if (editData.billingMode === 'tiered_expr') {
+        setPricingMode('tiered_expr')
+      } else if (editData.price) {
+        setPricingMode('per-request')
+      } else {
+        setPricingMode('per-token')
+      }
       setBillingExpr(editData.billingExpr || '')
       setRequestRuleExpr(editData.requestRuleExpr || '')
     } else {
@@ -537,6 +548,12 @@ export const ModelPricingEditorPanel = forwardRef<
                   )}
                 />
 
+                <PricingSyncModelSource
+                  ref={pricingSyncSourceRef}
+                  modelName={watchedValues.name}
+                  disabled={isSaving}
+                />
+
                 <Tabs
                   value={pricingMode}
                   onValueChange={handleModeChange}
@@ -684,7 +701,15 @@ export const ModelPricingEditorPanel = forwardRef<
                 {onSave && (
                   <Button
                     type='button'
-                    onClick={onSave}
+                    onClick={async () => {
+                      const preference =
+                        pricingSyncSourceRef.current?.getDraft() ?? undefined
+                      const saved = await onSave(preference)
+                      if (saved === false) return
+                      if (preference) {
+                        pricingSyncSourceRef.current?.markDraftSaved()
+                      }
+                    }}
                     disabled={isSaving}
                     className='w-full sm:w-auto'
                   >

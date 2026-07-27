@@ -68,6 +68,9 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	unlockPricing := ratio_setting.LockPricingConfigRead()
 	defer unlockPricing()
+	if !HasModelBillingConfig(info.OriginModelName) {
+		return types.PriceData{}, modelPriceNotConfiguredError(info.OriginModelName, info.UserId)
+	}
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
@@ -274,6 +277,9 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	unlockPricing := ratio_setting.LockPricingConfigRead()
 	defer unlockPricing()
+	if !HasModelBillingConfig(info.OriginModelName) {
+		return types.PriceData{}, modelPriceNotConfiguredError(info.OriginModelName, info.UserId)
+	}
 	groupRatioInfo := HandleGroupRatio(c, info)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
@@ -334,17 +340,28 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 }
 
 func HasModelBillingConfig(modelName string) bool {
-	if _, ok := ratio_setting.GetModelPrice(modelName, false); ok {
+	if price, ok := ratio_setting.GetModelPrice(modelName, false); ok && price > 0 {
 		return true
 	}
-	if _, ok, _ := ratio_setting.GetModelRatio(modelName); ok {
+	formattedName := ratio_setting.FormatMatchingModelName(modelName)
+	ratioMap := ratio_setting.GetModelRatioCopy()
+	if ratio, ok := ratioMap[formattedName]; ok && ratio > 0 {
 		return true
+	}
+	if strings.HasSuffix(formattedName, ratio_setting.CompactModelSuffix) {
+		if ratio, ok := ratioMap[ratio_setting.CompactWildcardModelKey]; ok && ratio > 0 {
+			return true
+		}
 	}
 	if billing_setting.GetBillingMode(modelName) != billing_setting.BillingModeTieredExpr {
 		return false
 	}
 	expr, ok := billing_setting.GetBillingExpr(modelName)
-	return ok && strings.TrimSpace(expr) != ""
+	if !ok || strings.TrimSpace(expr) == "" {
+		return false
+	}
+	_, err := billingexpr.CompileFromCache(expr)
+	return err == nil
 }
 
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo) (types.PriceData, error) {

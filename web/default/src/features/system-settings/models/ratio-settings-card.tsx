@@ -16,23 +16,27 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import * as z from 'zod'
+
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { resetModelRatios } from '../api'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+import { applyPricingSyncPatches, resetModelRatios } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import type { PricingSyncModelPreference, PricingSyncPatch } from '../types'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
+import { buildPricingMapDiffPatches } from './upstream-ratio-sync-helpers'
 import {
   formatJsonForTextarea,
   type JsonValidationError,
@@ -56,18 +60,18 @@ function formatJsonValidationError(
     )
   }
 
-  const parts = [
-    error.line && error.column
-      ? t('JSON is invalid at line {{line}}, column {{column}}.', {
-          line: error.line,
-          column: error.column,
-        })
-      : error.position !== undefined
-        ? t('JSON is invalid at position {{position}}.', {
-            position: error.position,
-          })
-        : t('JSON is invalid. Please check the syntax.'),
-  ]
+  let message = t('JSON is invalid. Please check the syntax.')
+  if (error.line && error.column) {
+    message = t('JSON is invalid at line {{line}}, column {{column}}.', {
+      line: error.line,
+      column: error.column,
+    })
+  } else if (error.position !== undefined) {
+    message = t('JSON is invalid at position {{position}}.', {
+      position: error.position,
+    })
+  }
+  const parts = [message]
 
   if (error.missingCommaLine) {
     parts.push(
@@ -163,6 +167,21 @@ export function RatioSettingsCard({
     },
     onError: (error: Error) => {
       toast.error(error.message || t('Failed to reset model ratios'))
+    },
+  })
+  const applyModelPricingMutation = useMutation({
+    mutationFn: ({
+      patches,
+      preferences,
+    }: {
+      patches: Record<string, PricingSyncPatch>
+      preferences?: PricingSyncModelPreference[]
+    }) => applyPricingSyncPatches(patches, preferences),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to update setting'))
     },
   })
 
@@ -296,7 +315,10 @@ export function RatioSettingsCard({
   }, [groupDefaults, groupForm])
 
   const saveModelRatios = useCallback(
-    async (values: ModelFormValues) => {
+    async (
+      values: ModelFormValues,
+      preference?: PricingSyncModelPreference
+    ) => {
       const normalized = {
         ModelPrice: normalizeJsonString(values.ModelPrice),
         ModelRatio: normalizeJsonString(values.ModelRatio),
@@ -311,31 +333,48 @@ export function RatioSettingsCard({
         BillingExpr: normalizeJsonString(values.BillingExpr),
       }
 
-      const apiKeyMap: Record<string, string> = {
-        BillingMode: 'billing_setting.billing_mode',
-        BillingExpr: 'billing_setting.billing_expr',
-      }
-
       const updates = (
         Object.keys(normalized) as Array<keyof ModelFormValues>
       ).filter(
         (key) => normalized[key] !== modelNormalizedDefaults.current[key]
       )
 
-      if (updates.length === 0) {
+      if (updates.length === 0 && !preference) {
         toast.info(t('No model price changes to save'))
         return
       }
 
-      for (const key of updates) {
-        const apiKey = apiKeyMap[key as string] || (key as string)
-        await updateOption.mutateAsync({ key: apiKey, value: normalized[key] })
+      const pricingBefore = Object.fromEntries(
+        Object.entries(modelNormalizedDefaults.current).filter(
+          ([key]) => key !== 'ExposeRatioEnabled'
+        )
+      ) as Record<string, string>
+      const pricingAfter = Object.fromEntries(
+        Object.entries(normalized).filter(
+          ([key]) => key !== 'ExposeRatioEnabled'
+        )
+      ) as Record<string, string>
+      const pricingPatches = buildPricingMapDiffPatches(
+        pricingBefore,
+        pricingAfter
+      )
+      if (Object.keys(pricingPatches).length > 0 || preference) {
+        await applyModelPricingMutation.mutateAsync({
+          patches: pricingPatches,
+          preferences: preference ? [preference] : undefined,
+        })
+      }
+      if (updates.includes('ExposeRatioEnabled')) {
+        await updateOption.mutateAsync({
+          key: 'ExposeRatioEnabled',
+          value: normalized.ExposeRatioEnabled,
+        })
       }
 
       modelNormalizedDefaults.current = normalized
       setSavedModelValues(normalized)
     },
-    [t, updateOption]
+    [applyModelPricingMutation, t, updateOption]
   )
 
   const saveGroupRatios = useCallback(
@@ -406,7 +445,9 @@ export function RatioSettingsCard({
           savedValues={savedModelValues}
           onSave={saveModelRatios}
           onReset={handleResetRatios}
-          isSaving={updateOption.isPending}
+          isSaving={
+            updateOption.isPending || applyModelPricingMutation.isPending
+          }
           isResetting={resetMutation.isPending}
         />
       )

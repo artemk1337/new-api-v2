@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { memo, useCallback, useRef, useState } from 'react'
-import { type UseFormReturn } from 'react-hook-form'
 import { Code2, Eye, RotateCcw, Save } from 'lucide-react'
+import { memo, useCallback, useRef, useState } from 'react'
+import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+
+import { JsonCodeEditor } from '@/components/json-code-editor'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -31,12 +33,13 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
-import { JsonCodeEditor } from '@/components/json-code-editor'
+
 import {
   SettingsForm,
   SettingsSwitchContent,
   SettingsSwitchItem,
 } from '../components/settings-form-layout'
+import type { PricingSyncModelPreference } from '../types'
 import {
   ModelRatioVisualEditor,
   type ModelRatioVisualEditorHandle,
@@ -59,7 +62,10 @@ type ModelFormValues = {
 type ModelRatioFormProps = {
   form: UseFormReturn<ModelFormValues>
   savedValues: ModelFormValues
-  onSave: (values: ModelFormValues) => Promise<void>
+  onSave: (
+    values: ModelFormValues,
+    preference?: PricingSyncModelPreference
+  ) => Promise<void>
   onReset: () => void
   isSaving: boolean
   isResetting: boolean
@@ -181,14 +187,22 @@ export const ModelRatioForm = memo(function ModelRatioForm({
     setEditMode((prev) => (prev === 'visual' ? 'json' : 'visual'))
   }, [])
 
-  const handleSave = useCallback(async () => {
-    if (editMode === 'visual') {
-      const committed = await visualEditorRef.current?.commitOpenEditor()
-      if (committed === false) return
-    }
+  const handleSave = useCallback(
+    async (preference?: PricingSyncModelPreference) => {
+      if (editMode === 'visual') {
+        const committed = await visualEditorRef.current?.commitOpenEditor()
+        if (committed === false) return false
+      }
 
-    await form.handleSubmit(onSave)()
-  }, [editMode, form, onSave])
+      let saved = false
+      await form.handleSubmit(async (values) => {
+        await onSave(values, preference)
+        saved = true
+      })()
+      return saved
+    },
+    [editMode, form, onSave]
+  )
 
   return (
     <div className='space-y-6'>
@@ -207,7 +221,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
           <Button
             type='button'
             size='sm'
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={isSaving}
           >
             <Save data-icon='inline-start' />
@@ -291,7 +305,9 @@ export const ModelRatioForm = memo(function ModelRatioForm({
             />
           </div>
         ) : (
-          <SettingsForm onSubmit={form.handleSubmit(onSave)}>
+          <SettingsForm
+            onSubmit={form.handleSubmit((values) => onSave(values))}
+          >
             <div className='grid min-w-0 gap-x-5 gap-y-8 lg:grid-cols-2 2xl:grid-cols-3'>
               {modelJsonFields.map((config) => (
                 <ModelJsonTextareaField

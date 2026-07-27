@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+
 import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
@@ -31,6 +32,12 @@ import type {
   UpdateOptionResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
+  PricingSyncConfig,
+  PricingSyncConfigResponse,
+  PricingSyncModelState,
+  PricingSyncModelPreference,
+  PricingSyncModelStateResponse,
+  PricingSyncPatch,
 } from './types'
 
 export async function getSystemOptions() {
@@ -39,7 +46,12 @@ export async function getSystemOptions() {
 }
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
-  const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  const res = await api.put<UpdateOptionResponse>('/api/option/', request, {
+    skipBusinessError: true,
+  })
+  if (!res.data.success) {
+    throw new Error(res.data.message || 'Failed to update setting')
+  }
   return res.data
 }
 
@@ -137,5 +149,62 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
     '/api/ratio_sync/fetch',
     request
   )
+  return res.data
+}
+
+export async function getPricingSyncConfig() {
+  const res = await api.get<PricingSyncConfigResponse>('/api/ratio_sync/config')
+  return res.data
+}
+
+export async function updatePricingSyncConfig(config: PricingSyncConfig) {
+  const { version, ...payload } = config
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/ratio_sync/config',
+    { ...payload, expected_version: version },
+    { skipBusinessError: true }
+  )
+  if (!res.data.success) {
+    throw new Error(res.data.message || 'Failed to save settings')
+  }
+  return res.data
+}
+
+export async function getPricingSyncModelState(model: string) {
+  const res = await api.get<PricingSyncModelStateResponse>(
+    '/api/ratio_sync/model-preference',
+    { params: { model } }
+  )
+  return res.data
+}
+
+export async function updatePricingSyncModelState(
+  state: Pick<PricingSyncModelState, 'model_name' | 'mode' | 'channel_id'>
+) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/ratio_sync/model-preference',
+    state,
+    { skipBusinessError: true }
+  )
+  if (!res.data.success) {
+    throw new Error(
+      res.data.message || 'Failed to save price synchronization source'
+    )
+  }
+  return res.data
+}
+
+export async function applyPricingSyncPatches(
+  patches: Record<string, PricingSyncPatch>,
+  preferences: PricingSyncModelPreference[] = []
+) {
+  const res = await api.post<UpdateOptionResponse>(
+    '/api/ratio_sync/apply',
+    { patches, preferences },
+    { skipBusinessError: true }
+  )
+  if (!res.data.success) {
+    throw new Error(res.data.message || 'Failed to apply pricing changes')
+  }
   return res.data
 }

@@ -16,8 +16,10 @@ import (
 func TestGetPricingUsesSelectablePricingGroups(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	originalGroups := ratio_setting.PricingGroups2JSONString()
+	originalModelPrice := ratio_setting.ModelPrice2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrice))
 		model.InvalidatePricingCache()
 	})
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[
@@ -25,6 +27,7 @@ func TestGetPricingUsesSelectablePricingGroups(t *testing.T) {
 		{"id":7,"name":"sale","ratio":0.3,"selectable":true,"description":"Sale"},
 		{"id":8,"name":"internal","ratio":1,"selectable":false,"description":"Internal"}
 	]`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"sale-model":0.01}`))
 	require.NoError(t, db.Create(&model.Channel{Id: 1, Name: "pricing", Key: "key", Models: "sale-model,internal-model", Group: "7", Status: common.ChannelStatusEnabled}).Error)
 	require.NoError(t, db.Create(&[]model.Ability{
 		{Group: "7", Model: "sale-model", ChannelId: 1, Enabled: true},

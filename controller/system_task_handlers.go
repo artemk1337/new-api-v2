@@ -137,13 +137,13 @@ type pricingSyncHandler struct{}
 func (pricingSyncHandler) Type() string { return model.SystemTaskTypePricingSync }
 
 func (pricingSyncHandler) Enabled() bool {
-	return common.GetEnvOrDefaultBool("UPSTREAM_PRICING_SYNC_TASK_ENABLED", false)
+	return model.GetPricingSyncMinimumInterval() > 0
 }
 
 func (pricingSyncHandler) Interval() time.Duration {
-	seconds := common.GetEnvOrDefault("UPSTREAM_PRICING_SYNC_TASK_INTERVAL_SECONDS", 60)
-	if seconds < 1 {
-		seconds = 60
+	seconds := model.GetPricingSyncMinimumInterval()
+	if seconds == 0 {
+		return time.Minute
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -151,10 +151,6 @@ func (pricingSyncHandler) Interval() time.Duration {
 func (pricingSyncHandler) NewPayload() any { return nil }
 
 func (pricingSyncHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
-	if !(pricingSyncHandler{}).Enabled() {
-		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, upstreamPricingSyncSummary{}, nil)
-		return
-	}
 	previousHash := ""
 	previousTask, err := model.GetPreviousSystemTask(model.SystemTaskTypePricingSync, task.ID)
 	if err != nil {

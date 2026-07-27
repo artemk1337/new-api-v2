@@ -395,8 +395,16 @@ func TestNormalizeChannelPricingGroupsRebuildsIncompleteAbilities(t *testing.T) 
 
 func TestUpdatePricingGroupsInvalidatesPricingCacheRefs(t *testing.T) {
 	truncateTables(t)
-
 	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+		"ModelPrice": {Set: map[string]any{"gpt-cache-ref": 1}},
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+			"ModelPrice": {Delete: []string{"gpt-cache-ref"}},
+		}))
+	})
+
 	require.NoError(t, DB.Where("key = ?", "PricingGroups").Delete(&Option{}).Error)
 	InvalidatePricingCache()
 
@@ -448,6 +456,15 @@ func TestUpdatePricingGroupsInvalidatesPricingCacheRefs(t *testing.T) {
 
 func TestChannelUpdateInvalidatesPricingCache(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+		"ModelPrice": {Set: map[string]any{"cached-model": 1, "new-model": 1}},
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+			"ModelPrice": {Delete: []string{"cached-model", "new-model"}},
+		}))
+	})
 	InvalidatePricingCache()
 	t.Cleanup(InvalidatePricingCache)
 
@@ -475,6 +492,15 @@ func TestChannelUpdateInvalidatesPricingCache(t *testing.T) {
 
 func TestChannelStatusChangesInvalidatePricingCache(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+		"ModelPrice": {Set: map[string]any{"status-model": 1}},
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+			"ModelPrice": {Delete: []string{"status-model"}},
+		}))
+	})
 	InvalidatePricingCache()
 	t.Cleanup(InvalidatePricingCache)
 

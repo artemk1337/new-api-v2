@@ -38,3 +38,22 @@ type SyncableChannel struct {
 	Status  int    `json:"status"`
 	Type    int    `json:"type"`
 }
+
+type PricingSyncSource struct {
+	ChannelID       int    `json:"channel_id"`
+	Enabled         bool   `json:"enabled"`
+	Endpoint        string `json:"endpoint"`
+	IntervalSeconds int    `json:"interval_seconds"`
+}
+
+type PricingSyncConfigRequest struct {
+	Strategy        string              `json:"strategy"`
+	Sources         []PricingSyncSource `json:"sources"`
+	ExpectedVersion *int64              `json:"expected_version"`
+}
+
+type PricingSyncModelPreferenceRequest struct {
+	ModelName string `json:"model_name"`
+	Mode      string `json:"mode"`
+	ChannelID int    `json:"channel_id"`
+}

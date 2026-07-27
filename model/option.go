@@ -28,8 +28,8 @@ type Option struct {
 // JSONObjectPatch describes changes to one JSON-object option. Set values are
 // applied after Delete, so Set wins when a field is present in both lists.
 type JSONObjectPatch struct {
-	Set    map[string]any
-	Delete []string
+	Set    map[string]any `json:"set,omitempty"`
+	Delete []string       `json:"delete,omitempty"`
 }
 
 var optionUpdateMutex sync.Mutex
@@ -50,6 +50,11 @@ var jsonObjectPatchOptionKeys = map[string]struct{}{
 	"AudioCompletionRatio":         {},
 	"billing_setting.billing_mode": {},
 	"billing_setting.billing_expr": {},
+}
+
+func IsModelPricingOption(key string) bool {
+	_, ok := jsonObjectPatchOptionKeys[key]
+	return ok
 }
 
 func AllOption() ([]*Option, error) {
@@ -195,6 +200,7 @@ func InitOptionMap() {
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
 	common.OptionMap["AudioRatio"] = ratio_setting.AudioRatio2JSONString()
 	common.OptionMap["AudioCompletionRatio"] = ratio_setting.AudioCompletionRatio2JSONString()
+	common.OptionMap["PricingSyncStrategy"] = PricingSyncStrategyHighest
 	common.OptionMap["TopUpLink"] = common.TopUpLink
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
@@ -497,65 +503,192 @@ func UpdateOptionsBulk(values map[string]string) error {
 // latest values stored in the database and persists all resulting options
 // together. A missing option is treated as an empty JSON object.
 func ApplyJSONOptionPatches(patches map[string]JSONObjectPatch) error {
+	return ApplyJSONOptionPatchesWithTx(patches, nil)
+}
+
+// ApplyJSONOptionPatchesWithTx persists pricing patches and related metadata in
+// one database transaction. The callback must only write database state; the
+// in-memory pricing maps are refreshed after the transaction commits.
+func ApplyJSONOptionPatchesWithTx(patches map[string]JSONObjectPatch, update func(*gorm.DB) error) error {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
 
-	if len(patches) == 0 {
+	if len(patches) == 0 && update == nil {
 		return nil
 	}
+	var (
+		values map[string]string
+		keys   []string
+	)
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		values, keys, err = applyJSONOptionPatchesInTx(tx, patches, update)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return refreshJSONOptionPatchRuntime(keys, values)
+}
+
+func applyJSONOptionPatchesInTx(tx *gorm.DB, patches map[string]JSONObjectPatch, update func(*gorm.DB) error) (map[string]string, []string, error) {
 	values := make(map[string]string, len(patches))
 	keys := make([]string, 0, len(patches))
 	for key := range patches {
 		if _, ok := jsonObjectPatchOptionKeys[key]; !ok {
-			return errors.New("JSON option patch is only supported for model pricing options: " + key)
+			return nil, nil, errors.New("JSON option patch is only supported for model pricing options: " + key)
 		}
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		options := make(map[string]Option, len(keys))
-		for _, optionKey := range keys {
-			option := Option{Key: optionKey, Value: "{}"}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
-				return err
-			}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", optionKey).Error; err != nil {
-				return err
-			}
-
-			current := make(map[string]any)
-			if err := common.UnmarshalJsonStr(option.Value, &current); err != nil {
-				return err
-			}
-			if current == nil {
-				return errors.New("option " + optionKey + " must contain a JSON object")
-			}
-			patch := patches[optionKey]
-			for _, field := range patch.Delete {
-				delete(current, field)
-			}
-			for field, value := range patch.Set {
-				current[field] = value
-			}
-			encoded, err := common.Marshal(current)
-			if err != nil {
-				return err
-			}
-			value := string(encoded)
-			if err := validateOptionValue(optionKey, value); err != nil {
-				return err
-			}
-			value, err = normalizeOptionValueForSave(optionKey, value)
-			if err != nil {
-				return err
-			}
-			option.Value = value
-			options[optionKey] = option
-			values[optionKey] = value
+	options := make(map[string]Option, len(keys))
+	for _, optionKey := range keys {
+		option := Option{Key: optionKey, Value: "{}"}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+			return nil, nil, err
 		}
-		for _, optionKey := range keys {
-			option := options[optionKey]
-			if err := tx.Save(&option).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", optionKey).Error; err != nil {
+			return nil, nil, err
+		}
+
+		current := make(map[string]any)
+		if err := common.UnmarshalJsonStr(option.Value, &current); err != nil {
+			return nil, nil, err
+		}
+		if current == nil {
+			return nil, nil, errors.New("option " + optionKey + " must contain a JSON object")
+		}
+		patch := patches[optionKey]
+		for _, field := range patch.Delete {
+			delete(current, field)
+		}
+		for field, value := range patch.Set {
+			current[field] = value
+		}
+		encoded, err := common.Marshal(current)
+		if err != nil {
+			return nil, nil, err
+		}
+		value := string(encoded)
+		if err := validateOptionValue(optionKey, value); err != nil {
+			return nil, nil, err
+		}
+		value, err = normalizeOptionValueForSave(optionKey, value)
+		if err != nil {
+			return nil, nil, err
+		}
+		option.Value = value
+		options[optionKey] = option
+		values[optionKey] = value
+	}
+	for _, optionKey := range keys {
+		option := options[optionKey]
+		if err := tx.Save(&option).Error; err != nil {
+			return nil, nil, err
+		}
+	}
+	if update != nil {
+		if err := update(tx); err != nil {
+			return nil, nil, err
+		}
+	}
+	return values, keys, nil
+}
+
+func refreshJSONOptionPatchRuntime(keys []string, values map[string]string) error {
+	unlockPricing := ratio_setting.LockPricingConfigWrite()
+	defer unlockPricing()
+	for _, optionKey := range keys {
+		if err := updateOptionMapFromDatabase(optionKey, values[optionKey]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func UpdatePricingOptionManual(key, value string) error {
+	if _, ok := jsonObjectPatchOptionKeys[key]; !ok {
+		return errors.New("manual pricing update requires a model pricing option")
+	}
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+
+	if err := validateOptionValue(key, value); err != nil {
+		return err
+	}
+	switch key {
+	case "ModelRatio", "ModelPrice", "CompletionRatio", "CacheRatio", "CreateCacheRatio",
+		"ImageRatio", "AudioRatio", "AudioCompletionRatio":
+		values := make(map[string]float64)
+		if err := common.UnmarshalJsonStr(value, &values); err != nil {
+			return err
+		}
+	case "billing_setting.billing_mode":
+		values := make(map[string]string)
+		if err := common.UnmarshalJsonStr(value, &values); err != nil {
+			return err
+		}
+		for _, mode := range values {
+			if mode != billing_setting.BillingModeRatio && mode != billing_setting.BillingModeTieredExpr {
+				return errors.New("unsupported billing mode")
+			}
+		}
+	case "billing_setting.billing_expr":
+		values := make(map[string]string)
+		if err := common.UnmarshalJsonStr(value, &values); err != nil {
+			return err
+		}
+		for _, expr := range values {
+			if strings.TrimSpace(expr) == "" || billing_setting.SmokeTestExpr(expr) != nil {
+				return errors.New("invalid billing expression")
+			}
+		}
+	}
+	normalized, err := normalizeOptionValueForSave(key, value)
+	if err != nil {
+		return err
+	}
+	value = normalized
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		option := Option{Key: key, Value: "{}"}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", key).Error; err != nil {
+			return err
+		}
+		before := make(map[string]any)
+		after := make(map[string]any)
+		if err := common.UnmarshalJsonStr(option.Value, &before); err != nil {
+			return err
+		}
+		if err := common.UnmarshalJsonStr(value, &after); err != nil {
+			return err
+		}
+		changed := make(map[string]struct{})
+		for name, previous := range before {
+			if next, ok := after[name]; !ok || common.Interface2String(next) != common.Interface2String(previous) {
+				changed[name] = struct{}{}
+			}
+		}
+		for name, next := range after {
+			if previous, ok := before[name]; !ok || common.Interface2String(next) != common.Interface2String(previous) {
+				changed[name] = struct{}{}
+			}
+		}
+		option.Value = value
+		if err := tx.Save(&option).Error; err != nil {
+			return err
+		}
+		for modelName := range changed {
+			state := PricingSyncModelState{ModelName: modelName, Mode: PricingSyncModelModeManual, Status: PricingSyncModelStatusReady}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "model_name"}},
+				DoUpdates: clause.Assignments(map[string]any{
+					"mode": PricingSyncModelModeManual, "channel_id": 0,
+					"provenance": "", "conflict_details": "", "status": PricingSyncModelStatusReady,
+				}),
+			}).Create(&state).Error; err != nil {
 				return err
 			}
 		}
@@ -566,12 +699,7 @@ func ApplyJSONOptionPatches(patches map[string]JSONObjectPatch) error {
 	}
 	unlockPricing := ratio_setting.LockPricingConfigWrite()
 	defer unlockPricing()
-	for _, optionKey := range keys {
-		if err := updateOptionMapFromDatabase(optionKey, values[optionKey]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return updateOptionMapFromDatabase(key, value)
 }
 
 func updateOptionsBulkLocked(values map[string]string) error {

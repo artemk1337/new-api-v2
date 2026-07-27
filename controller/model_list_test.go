@@ -326,15 +326,10 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Equal(t, "tiered_expr", visiblePricing.BillingMode)
 	require.NotEmpty(t, visiblePricing.BillingExpr)
 
-	emptyExprPricing, ok := pricingByName["zz-tiered-empty-expr-model"]
-	require.True(t, ok)
-	require.Empty(t, emptyExprPricing.BillingMode)
-	require.Empty(t, emptyExprPricing.BillingExpr)
-
-	missingExprPricing, ok := pricingByName["zz-tiered-missing-expr-model"]
-	require.True(t, ok)
-	require.Empty(t, missingExprPricing.BillingMode)
-	require.Empty(t, missingExprPricing.BillingExpr)
+	_, ok = pricingByName["zz-tiered-empty-expr-model"]
+	require.False(t, ok)
+	_, ok = pricingByName["zz-tiered-missing-expr-model"]
+	require.False(t, ok)
 }
 
 func TestListModelsAppliesAutoCandidateSubsetBeforeTokenModelLimits(t *testing.T) {
@@ -379,9 +374,7 @@ func TestListModelsAppliesAutoCandidateSubsetBeforeTokenModelLimits(t *testing.T
 
 	ListModels(ctx, constant.ChannelTypeOpenAI)
 
-	require.Equal(t, map[string]struct{}{
-		"zz-auto-expensive-limited": {},
-	}, decodeListModelsResponse(t, recorder))
+	require.Empty(t, decodeListModelsResponse(t, recorder))
 }
 
 func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {

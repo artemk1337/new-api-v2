@@ -1,3 +1,5 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckSquare, RefreshCcw } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,23 +19,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, RefreshCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
 import { Button } from '@/components/ui/button'
+
 import {
   fetchUpstreamRatios,
+  applyPricingSyncPatches,
+  getPricingSyncConfig,
   getUpstreamChannels,
-  updateSystemOption,
+  updatePricingSyncConfig,
 } from '../api'
 import type {
   DifferencesMap,
   RatioType,
+  PricingSyncConfig,
   UpstreamChannel,
   UpstreamConfig,
 } from '../types'
-import { ChannelSelectorDialog } from './channel-selector-dialog'
 import {
   ConflictConfirmDialog,
   type ConflictItem,
@@ -47,8 +51,9 @@ import {
   OPENROUTER_CHANNEL_TYPE,
   OPENROUTER_ENDPOINT,
 } from './constants'
+import { PricingSyncSources } from './pricing-sync-sources'
 import {
-  NUMERIC_SYNC_FIELDS,
+  buildPricingSyncPatches,
   RATIO_SYNC_FIELDS,
   getPreferredSyncField,
   type ResolutionsMap,
@@ -89,22 +94,13 @@ function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
 }
 
 function getBillingCategory(ratioType: string): 'price' | 'ratio' | 'tiered' {
-  if (ratioType === 'model_price') return 'price'
-  if (ratioType === 'billing_mode' || ratioType === 'billing_expr')
-    return 'tiered'
-  return 'ratio'
-}
-
-function optionKeyBySyncField(ratioType: string): string {
-  const explicit: Record<string, string> = {
-    billing_mode: 'billing_setting.billing_mode',
-    billing_expr: 'billing_setting.billing_expr',
+  if (ratioType === 'model_price') {
+    return 'price'
   }
-  if (explicit[ratioType]) return explicit[ratioType]
-  return ratioType
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join('')
+  if (ratioType === 'billing_mode' || ratioType === 'billing_expr') {
+    return 'tiered'
+  }
+  return 'ratio'
 }
 
 function parseJsonRecord<T>(raw: string | undefined | null): Record<string, T> {
@@ -142,12 +138,12 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
-  const [channelDialogOpen, setChannelDialogOpen] = useState(false)
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
-  const [selectedChannelIds, setSelectedChannelIds] = useState<number[]>([])
-  const [channelEndpoints, setChannelEndpoints] = useState<
-    Record<number, string>
-  >({})
+  const [syncConfig, setSyncConfig] = useState<PricingSyncConfig>({
+    strategy: 'highest',
+    sources: [],
+    version: 0,
+  })
   const [differences, setDifferences] = useState<DifferencesMap>({})
   const [resolutions, setResolutions] = useState<ResolutionsMap>({})
   const [conflictItems, setConflictItems] = useState<ConflictItem[]>([])
@@ -156,7 +152,11 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   const { data: channelsData } = useQuery({
     queryKey: ['upstream-channels'],
     queryFn: getUpstreamChannels,
-    enabled: channelDialogOpen,
+  })
+
+  const { data: syncConfigData } = useQuery({
+    queryKey: ['pricing-sync-config'],
+    queryFn: getPricingSyncConfig,
   })
 
   // Memoize the channels list so the effect below only re-runs when the query
@@ -165,19 +165,8 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   const channels = useMemo(() => channelsData?.data ?? [], [channelsData?.data])
 
   useEffect(() => {
-    if (channels.length === 0) return
-    setChannelEndpoints((prev) => {
-      let mutated = false
-      const next = { ...prev }
-      for (const channel of channels) {
-        if (!next[channel.id]) {
-          next[channel.id] = getDefaultEndpointForChannel(channel)
-          mutated = true
-        }
-      }
-      return mutated ? next : prev
-    })
-  }, [channels])
+    if (syncConfigData?.success) setSyncConfig(syncConfigData.data)
+  }, [syncConfigData])
 
   const fetchMutation = useMutation({
     mutationFn: fetchUpstreamRatios,
@@ -226,11 +215,12 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   })
 
   const { mutate: syncMutate, isPending: isSyncPending } = useMutation({
-    mutationFn: async (updates: Array<{ key: string; value: string }>) => {
-      for (const update of updates) {
-        await updateSystemOption(update)
-      }
-    },
+    mutationFn: (
+      patches: Record<
+        string,
+        { set?: Record<string, number | string>; delete?: string[] }
+      >
+    ) => applyPricingSyncPatches(patches),
     onSuccess: () => {
       toast.success(t('Prices synced successfully'))
       queryClient.invalidateQueries({ queryKey: ['system-options'] })
@@ -257,13 +247,11 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     },
   })
 
-  const handleOpenChannelDialog = () => {
-    setChannelDialogOpen(true)
-  }
-
-  const handleConfirmChannelSelection = (selectedIds: number[]) => {
+  const handleFetchConfiguredSources = () => {
     const selectedChannels = channels.filter((ch) =>
-      selectedIds.includes(ch.id)
+      syncConfig.sources.some(
+        (source) => source.channel_id === ch.id && source.enabled
+      )
     )
 
     if (selectedChannels.length === 0) {
@@ -275,11 +263,36 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       id: ch.id,
       name: ch.name,
       base_url: ch.base_url,
-      endpoint: channelEndpoints[ch.id] || DEFAULT_ENDPOINT,
+      endpoint:
+        syncConfig.sources.find((source) => source.channel_id === ch.id)
+          ?.endpoint || getDefaultEndpointForChannel(ch),
     }))
 
     fetchMutation.mutate({ upstreams, timeout: 10 })
   }
+
+  const saveConfigMutation = useMutation({
+    mutationFn: () => updatePricingSyncConfig(syncConfig),
+    onSuccess: () => {
+      toast.success(t('Synchronization settings saved'))
+      queryClient.invalidateQueries({ queryKey: ['pricing-sync-config'] })
+    },
+    onError: (error: unknown) => {
+      const status =
+        typeof error === 'object' &&
+        error !== null &&
+        'response' in error &&
+        (error as { response?: { status?: number } }).response?.status
+      if (status === 409) {
+        void queryClient.invalidateQueries({
+          queryKey: ['pricing-sync-config'],
+        })
+      }
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to save settings')
+      )
+    },
+  })
 
   const handleSelectValue = useCallback(
     (
@@ -304,7 +317,7 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       const category = getBillingCategory(finalType)
 
       setResolutions((prev) => {
-        const newModelRes = { ...(prev[model] || {}) }
+        const newModelRes = { ...prev[model] }
 
         // Clear conflicting categories
         Object.keys(newModelRes).forEach((rt) => {
@@ -382,72 +395,22 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       currentRatios.ImageRatio[model] !== undefined ||
       currentRatios.AudioRatio[model] !== undefined ||
       currentRatios.AudioCompletionRatio[model] !== undefined
-    )
+    ) {
       return 'ratio'
+    }
     return null
   }
 
-  const performSync = useCallback(
-    async (currentRatios: ParsedRatios): Promise<boolean> => {
-      const finalRatios: Record<string, Record<string, number | string>> = {
-        ModelRatio: { ...currentRatios.ModelRatio },
-        CompletionRatio: { ...currentRatios.CompletionRatio },
-        CacheRatio: { ...currentRatios.CacheRatio },
-        CreateCacheRatio: { ...currentRatios.CreateCacheRatio },
-        ImageRatio: { ...currentRatios.ImageRatio },
-        AudioRatio: { ...currentRatios.AudioRatio },
-        AudioCompletionRatio: { ...currentRatios.AudioCompletionRatio },
-        ModelPrice: { ...currentRatios.ModelPrice },
-        'billing_setting.billing_mode': {
-          ...currentRatios['billing_setting.billing_mode'],
-        },
-        'billing_setting.billing_expr': {
-          ...currentRatios['billing_setting.billing_expr'],
-        },
-      }
+  const performSync = useCallback(async (): Promise<boolean> => {
+    const patches = buildPricingSyncPatches(resolutions)
 
-      Object.entries(resolutions).forEach(([model, ratios]) => {
-        const selectedTypes = Object.keys(ratios)
-        const hasPrice = selectedTypes.includes('model_price')
-        const hasRatio = selectedTypes.some((rt) =>
-          RATIO_SYNC_FIELDS.includes(rt as RatioType)
-        )
-
-        if (hasPrice) {
-          delete finalRatios.ModelRatio[model]
-          delete finalRatios.CompletionRatio[model]
-          delete finalRatios.CacheRatio[model]
-          delete finalRatios.CreateCacheRatio[model]
-          delete finalRatios.ImageRatio[model]
-          delete finalRatios.AudioRatio[model]
-          delete finalRatios.AudioCompletionRatio[model]
-        }
-        if (hasRatio) {
-          delete finalRatios.ModelPrice[model]
-        }
-
-        Object.entries(ratios).forEach(([ratioType, value]) => {
-          const optionKey = optionKeyBySyncField(ratioType)
-          finalRatios[optionKey][model] = NUMERIC_SYNC_FIELDS.has(ratioType)
-            ? Number(value)
-            : value
-        })
+    return new Promise<boolean>((resolve) => {
+      syncMutate(patches, {
+        onSuccess: () => resolve(true),
+        onError: () => resolve(false),
       })
-
-      const updates = Object.entries(finalRatios).map(([key, value]) => ({
-        key,
-        value: JSON.stringify(value, null, 2),
-      }))
-
-      return new Promise<boolean>((resolve) => {
-        syncMutate(updates, {
-          onSuccess: () => resolve(true),
-          onError: () => resolve(false),
-        })
-      })
-    },
-    [resolutions, syncMutate]
-  )
+    })
+  }, [resolutions, syncMutate])
 
   const findSourceChannel = (
     model: string,
@@ -512,13 +475,13 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     }
 
     toast.info(t('Syncing prices, please wait...'))
-    performSync(currentRatios)
+    performSync()
   }
 
   const handleConfirmConflict = async () => {
     setConfirmLoading(true)
     try {
-      const success = await performSync(parsedRatios)
+      const success = await performSync()
       if (success) {
         setConflictDialogOpen(false)
       }
@@ -528,15 +491,27 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   }
 
   const hasSelections = Object.keys(resolutions).length > 0
-  const isLoading = fetchMutation.isPending || isSyncPending || confirmLoading
+  const isLoading =
+    fetchMutation.isPending ||
+    isSyncPending ||
+    confirmLoading ||
+    saveConfigMutation.isPending
 
   return (
     <div className='space-y-4'>
+      <PricingSyncSources
+        channels={channels}
+        value={syncConfig}
+        disabled={isLoading}
+        onChange={setSyncConfig}
+        onSave={() => saveConfigMutation.mutate()}
+      />
+
       <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
         <div className='flex flex-col gap-2 sm:flex-row'>
-          <Button onClick={handleOpenChannelDialog} disabled={isLoading}>
+          <Button onClick={handleFetchConfiguredSources} disabled={isLoading}>
             <RefreshCcw className='mr-2 h-4 w-4' />
-            {t('Select Sync Channels')}
+            {t('Check prices')}
           </Button>
           <Button
             variant='secondary'
@@ -559,17 +534,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         isSyncing={fetchMutation.isPending}
         onSelectValue={handleSelectValue}
         onUnselectValue={handleUnselectValue}
-      />
-
-      <ChannelSelectorDialog
-        open={channelDialogOpen}
-        onOpenChange={setChannelDialogOpen}
-        channels={channels}
-        selectedChannelIds={selectedChannelIds}
-        onSelectedChannelIdsChange={setSelectedChannelIds}
-        channelEndpoints={channelEndpoints}
-        onChannelEndpointsChange={setChannelEndpoints}
-        onConfirm={handleConfirmChannelSelection}
       />
 
       <ConflictConfirmDialog
