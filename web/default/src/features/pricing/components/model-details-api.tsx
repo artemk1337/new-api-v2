@@ -44,7 +44,10 @@ import {
   formatRateLimit,
   type SupportedParameter,
 } from '../lib/mock-stats'
-import { replaceModelInPath } from '../lib/model-helpers'
+import {
+  getPricingGroupDisplayName,
+  replaceModelInPath,
+} from '../lib/model-helpers'
 import type { PricingModel } from '../types'
 
 // ---------------------------------------------------------------------------
@@ -684,7 +687,8 @@ function RateLimitsSection(props: { model: PricingModel }) {
             header: t('Group'),
             className: 'h-9',
             cellClassName: 'py-2 font-mono',
-            cell: (limit) => limit.group,
+            cell: (limit) =>
+              getPricingGroupDisplayName(props.model, limit.group),
           },
           {
             id: 'rpm',

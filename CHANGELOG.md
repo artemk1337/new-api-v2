@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.70
+
+- Displayed group names instead of technical IDs in the model rate-limits table.
+
 ## v1.1.69
 
 - Fixed the displayed Auto group chain on model pricing pages so it follows the effective price order used for routing.
