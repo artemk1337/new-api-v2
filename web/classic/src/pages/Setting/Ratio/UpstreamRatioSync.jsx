@@ -42,7 +42,6 @@ import {
   stringToColor,
 } from '../../../helpers';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
-import { DEFAULT_ENDPOINT } from '../../../constants';
 import { useTranslation } from 'react-i18next';
 import {
   IllustrationNoResult,
@@ -50,15 +49,7 @@ import {
 } from '@douyinfe/semi-illustrations';
 import ChannelSelectorModal from '../../../components/settings/ChannelSelectorModal';
 
-const OFFICIAL_RATIO_PRESET_ID = -100;
-const OFFICIAL_RATIO_PRESET_NAME = '官方倍率预设';
-const OFFICIAL_RATIO_PRESET_BASE_URL = 'https://basellm.github.io';
-const OFFICIAL_RATIO_PRESET_ENDPOINT =
-  '/llm-metadata/api/newapi/ratio_config-v1-base.json';
-const MODELS_DEV_PRESET_ID = -101;
-const MODELS_DEV_PRESET_NAME = 'models.dev 价格预设';
-const MODELS_DEV_PRESET_BASE_URL = 'https://models.dev';
-const MODELS_DEV_PRESET_ENDPOINT = 'https://models.dev/api.json';
+const PRICING_ENDPOINT = '/api/pricing';
 
 function ConflictConfirmModal({ t, visible, items, loading, onOk, onCancel }) {
   const isMobile = useIsMobile();
@@ -110,9 +101,6 @@ export default function UpstreamRatioSync(props) {
   const [allChannels, setAllChannels] = useState([]);
   const [selectedChannelIds, setSelectedChannelIds] = useState([]);
 
-  // 渠道端点配置
-  const [channelEndpoints, setChannelEndpoints] = useState({}); // { channelId: endpoint }
-
   // 差异数据和测试结果
   const [differences, setDifferences] = useState({});
   const [resolutions, setResolutions] = useState({});
@@ -157,38 +145,6 @@ export default function UpstreamRatioSync(props) {
         }));
 
         setAllChannels(transferData);
-
-        // 合并已有 endpoints，避免每次打开弹窗都重置
-        setChannelEndpoints((prev) => {
-          const merged = { ...prev };
-          transferData.forEach((channel) => {
-            const id = channel.key;
-            const base = channel._originalData?.base_url || '';
-            const name = channel.label || '';
-            const channelType = channel._originalData?.type;
-            const isOfficialRatioPreset =
-              id === OFFICIAL_RATIO_PRESET_ID ||
-              base === OFFICIAL_RATIO_PRESET_BASE_URL ||
-              name === OFFICIAL_RATIO_PRESET_NAME;
-            const isModelsDevPreset =
-              id === MODELS_DEV_PRESET_ID ||
-              base === MODELS_DEV_PRESET_BASE_URL ||
-              name === MODELS_DEV_PRESET_NAME;
-            const isOpenRouter = channelType === 20;
-            if (!merged[id]) {
-              if (isModelsDevPreset) {
-                merged[id] = MODELS_DEV_PRESET_ENDPOINT;
-              } else if (isOfficialRatioPreset) {
-                merged[id] = OFFICIAL_RATIO_PRESET_ENDPOINT;
-              } else if (isOpenRouter) {
-                merged[id] = 'openrouter';
-              } else {
-                merged[id] = DEFAULT_ENDPOINT;
-              }
-            }
-          });
-          return merged;
-        });
       } else {
         showError(res.data.message);
       }
@@ -220,7 +176,7 @@ export default function UpstreamRatioSync(props) {
       id: ch.id,
       name: ch.name,
       base_url: ch.base_url,
-      endpoint: channelEndpoints[ch.id] || DEFAULT_ENDPOINT,
+      endpoint: PRICING_ENDPOINT,
     }));
 
     const payload = {
@@ -1059,10 +1015,6 @@ export default function UpstreamRatioSync(props) {
     );
   };
 
-  const updateChannelEndpoint = useCallback((channelId, endpoint) => {
-    setChannelEndpoints((prev) => ({ ...prev, [channelId]: endpoint }));
-  }, []);
-
   const handleModalClose = () => {
     setModalVisible(false);
     if (channelSelectorRef.current) {
@@ -1085,8 +1037,6 @@ export default function UpstreamRatioSync(props) {
         allChannels={allChannels}
         selectedChannelIds={selectedChannelIds}
         setSelectedChannelIds={setSelectedChannelIds}
-        channelEndpoints={channelEndpoints}
-        updateChannelEndpoint={updateChannelEndpoint}
       />
 
       <ConflictConfirmModal

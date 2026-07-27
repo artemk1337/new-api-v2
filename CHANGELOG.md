@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.67
+
+- Restricted manual upstream pricing synchronization to the Yunwu-compatible `/api/pricing` format and removed misleading endpoint-type choices from the channel selector.
+
 ## v1.1.66
 
 - Added a guarded one-minute upstream pricing synchronization task for allowlisted Yunwu channels: it applies only unanimous model prices after two identical checks and reports unsupported or conflicting models.

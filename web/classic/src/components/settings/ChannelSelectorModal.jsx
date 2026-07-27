@@ -24,15 +24,7 @@ import React, {
   useImperativeHandle,
 } from 'react';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
-import {
-  Modal,
-  Table,
-  Input,
-  Space,
-  Highlight,
-  Select,
-  Tag,
-} from '@douyinfe/semi-ui';
+import { Modal, Table, Input, Space, Highlight, Tag } from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 
 const OFFICIAL_RATIO_PRESET_ID = -100;
@@ -51,8 +43,6 @@ const ChannelSelectorModal = forwardRef(
       allChannels,
       selectedChannelIds,
       setSelectedChannelIds,
-      channelEndpoints,
-      updateChannelEndpoint,
       t,
     },
     ref,
@@ -113,66 +103,6 @@ const ChannelSelectorModal = forwardRef(
       (currentPage - 1) * pageSize,
       currentPage * pageSize,
     );
-
-    const updateEndpoint = (channelId, endpoint) => {
-      if (typeof updateChannelEndpoint === 'function') {
-        updateChannelEndpoint(channelId, endpoint);
-      }
-    };
-
-    const renderEndpointCell = (text, record) => {
-      const channelId = record.key || record.value;
-      const currentEndpoint = channelEndpoints[channelId] || '';
-
-      const getEndpointType = (ep) => {
-        if (ep === '/api/ratio_config') return 'ratio_config';
-        if (ep === '/api/pricing') return 'pricing';
-        if (ep === 'openrouter') return 'openrouter';
-        return 'custom';
-      };
-
-      const currentType = getEndpointType(currentEndpoint);
-
-      const handleTypeChange = (val) => {
-        if (val === 'ratio_config') {
-          updateEndpoint(channelId, '/api/ratio_config');
-        } else if (val === 'pricing') {
-          updateEndpoint(channelId, '/api/pricing');
-        } else if (val === 'openrouter') {
-          updateEndpoint(channelId, 'openrouter');
-        } else {
-          if (currentType !== 'custom') {
-            updateEndpoint(channelId, '');
-          }
-        }
-      };
-
-      return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Select
-            size='small'
-            value={currentType}
-            onChange={handleTypeChange}
-            style={{ width: 120 }}
-            optionList={[
-              { label: 'pricing', value: 'pricing' },
-              { label: 'ratio_config', value: 'ratio_config' },
-              { label: 'OpenRouter', value: 'openrouter' },
-              { label: 'custom', value: 'custom' },
-            ]}
-          />
-          {currentType === 'custom' && (
-            <Input
-              size='small'
-              value={currentEndpoint}
-              onChange={(val) => updateEndpoint(channelId, val)}
-              placeholder='/your/endpoint'
-              style={{ width: 160, fontSize: 12 }}
-            />
-          )}
-        </div>
-      );
-    };
 
     const renderStatusCell = (record) => {
       const status = record?._originalData?.status || 0;
@@ -248,7 +178,7 @@ const ChannelSelectorModal = forwardRef(
         title: t('同步接口'),
         dataIndex: 'endpoint',
         fixed: 'right',
-        render: renderEndpointCell,
+        render: () => 'pricing',
       },
     ];
 
