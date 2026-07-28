@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.71
+
+- Renamed the header documentation link in Russian from «Документы» to «Документация».
+
 ## v1.1.70
 
 - Displayed group names instead of technical IDs in the model rate-limits table.
