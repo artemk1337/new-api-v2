@@ -25,7 +25,6 @@ import type { UpdateOptionRequest } from '../types'
 
 // Configuration keys that require status refresh
 const statusRelatedKeys = new Set([
-  'theme.frontend',
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'Notice',

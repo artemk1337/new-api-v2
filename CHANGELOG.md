@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.73
+
+- Removed the legacy frontend and its runtime theme switcher; the platform now serves only the default interface.
+- Simplified Docker, local development, Electron, and release builds to build one frontend only.
+- Removed obsolete frontend-theme settings and the legacy synchronous log-cleanup endpoint.
+
 ## v1.1.72
 
 - Added reasoning-output pricing to synchronized Yunwu tier contracts, including OpenAI, Gemini, Responses, and realtime usage normalization.
