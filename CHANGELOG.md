@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.74
+
+- Replaced the Chinese channel-test log labels with the English `Model test` text.
+
 ## v1.1.73
 
 - Removed the legacy frontend and its runtime theme switcher; the platform now serves only the default interface.
