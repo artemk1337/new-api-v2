@@ -290,7 +290,7 @@ export default function UpstreamRatioSync(props) {
       );
       if (warningResults.length > 0) {
         const warningMsg = warningResults
-          .map((r) => `${r.name}: ${r.warnings?.join(', ')}`)
+          .map((r) => `${r.name}: ${r.warnings?.length ?? 0}`)
           .join('; ');
         showWarning(
           t('Unsupported or invalid pricing skipped: {{warningMsg}}', {
@@ -976,7 +976,10 @@ export default function UpstreamRatioSync(props) {
     };
 
     const renderCurrentFields = (record) => {
-      const fields = getOrderedRatioTypes(record.ratioTypes);
+      const fields = getOrderedRatioTypes(record.ratioTypes).filter(
+        (ratioType) =>
+          ratioType !== 'billing_mode' || !record.ratioTypes.billing_expr,
+      );
       return (
         <div className='flex min-w-[260px] flex-col gap-2'>
           {fields.map((ratioType) => (

@@ -34,6 +34,9 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	ai := float64(usage.PromptTokensDetails.AudioTokens)
 	imgO := float64(usage.CompletionTokenDetails.ImageTokens)
 	ao := float64(usage.CompletionTokenDetails.AudioTokens)
+	rt := float64(usage.CompletionTokenDetails.ReasoningTokens)
+	unknown := 0.0
+	fallback := false
 
 	// len = total input context length for tier condition evaluation.
 	// Non-Claude: prompt_tokens already includes everything.
@@ -66,6 +69,18 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 			c -= ao
 		}
 	}
+	if usedVars["rt"] {
+		if usage.CompletionTokenDetails.ReasoningTokensPresent {
+			c -= rt
+		} else {
+			// Keep both possible allocations so settlement can charge the
+			// higher applicable output rate when the counter is absent.
+			rt = c
+			unknown = c
+			c = 0
+			fallback = true
+		}
+	}
 
 	if p < 0 {
 		p = 0
@@ -74,17 +89,24 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		c = 0
 	}
 
+	return buildTieredTokenParams(p, c, inputLen, cr, cc5m, cc1h, img, imgO, ai, ao, rt, unknown, fallback)
+}
+
+func buildTieredTokenParams(p, c, inputLen, cr, cc5m, cc1h, img, imgO, ai, ao, rt, unknown float64, fallback bool) billingexpr.TokenParams {
 	return billingexpr.TokenParams{
-		P:    p,
-		C:    c,
-		Len:  inputLen,
-		CR:   cr,
-		CC:   cc5m,
-		CC1h: cc1h,
-		Img:  img,
-		ImgO: imgO,
-		AI:   ai,
-		AO:   ao,
+		P:                       p,
+		C:                       c,
+		Len:                     inputLen,
+		CR:                      cr,
+		CC:                      cc5m,
+		CC1h:                    cc1h,
+		Img:                     img,
+		ImgO:                    imgO,
+		AI:                      ai,
+		AO:                      ao,
+		RT:                      rt,
+		ReasoningTokensUnknown:  unknown,
+		ReasoningTokensFallback: fallback,
 	}
 }
 
@@ -96,6 +118,9 @@ func BuildRealtimeTieredTokenParams(usage *dto.RealtimeUsage, usedVars map[strin
 	cr := float64(usage.InputTokenDetails.CachedTokens)
 	ai := float64(usage.InputTokenDetails.AudioTokens)
 	ao := float64(usage.OutputTokenDetails.AudioTokens)
+	rt := float64(usage.OutputTokenDetails.ReasoningTokens)
+	unknown := 0.0
+	fallback := false
 	if usedVars["cr"] {
 		p -= cr
 	}
@@ -105,19 +130,36 @@ func BuildRealtimeTieredTokenParams(usage *dto.RealtimeUsage, usedVars map[strin
 	if usedVars["ao"] {
 		c -= ao
 	}
+	if usedVars["rt"] {
+		if usage.OutputTokenDetails.ReasoningTokensPresent {
+			c -= rt
+		} else {
+			rt = c
+			unknown = c
+			c = 0
+			fallback = true
+		}
+	}
 	if p < 0 {
 		p = 0
 	}
 	if c < 0 {
 		c = 0
 	}
+	return buildRealtimeTieredTokenParams(p, c, float64(usage.InputTokens), cr, ai, ao, rt, unknown, fallback)
+}
+
+func buildRealtimeTieredTokenParams(p, c, inputLen, cr, ai, ao, rt, unknown float64, fallback bool) billingexpr.TokenParams {
 	return billingexpr.TokenParams{
-		P:   p,
-		C:   c,
-		Len: float64(usage.InputTokens),
-		CR:  cr,
-		AI:  ai,
-		AO:  ao,
+		P:                       p,
+		C:                       c,
+		Len:                     inputLen,
+		CR:                      cr,
+		AI:                      ai,
+		AO:                      ao,
+		RT:                      rt,
+		ReasoningTokensUnknown:  unknown,
+		ReasoningTokensFallback: fallback,
 	}
 }
 
@@ -143,6 +185,37 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 			quota = snap.EstimatedQuotaAfterGroup
 		}
 		return true, quota, nil
+	}
+	if params.ReasoningTokensFallback {
+		unknown := params.ReasoningTokensUnknown
+		if unknown <= 0 {
+			unknown = params.RT
+		}
+		known := params
+		known.RT -= unknown
+		known.ReasoningTokensUnknown = 0
+		known.ReasoningTokensFallback = false
+		reasoning := known
+		reasoning.RT += unknown
+		completion := known
+		completion.C += unknown
+		reasoningResult, reasoningErr := billingexpr.ComputeTieredQuotaWithRequest(snap, reasoning, requestInput)
+		completionResult, completionErr := billingexpr.ComputeTieredQuotaWithRequest(snap, completion, requestInput)
+		if reasoningErr != nil || completionErr != nil {
+			safeQuota := tr.ActualQuotaAfterGroup
+			if snap.EstimatedQuotaAfterGroup > safeQuota {
+				safeQuota = snap.EstimatedQuotaAfterGroup
+			}
+			if relayInfo.FinalPreConsumedQuota > safeQuota {
+				safeQuota = relayInfo.FinalPreConsumedQuota
+			}
+			return true, safeQuota, nil
+		}
+		if completionResult.ActualQuotaAfterGroup > reasoningResult.ActualQuotaAfterGroup {
+			tr = completionResult
+		} else {
+			tr = reasoningResult
+		}
 	}
 
 	return true, tr.ActualQuotaAfterGroup, &tr

@@ -45,6 +45,7 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `c` | 输出 token 数。**自动排除**表达式中单独计价的子类别（见下方说明） |
 | `img_o` | 图片输出 token 数 |
 | `ao` | 音频输出 token 数 |
+| `rt` | 推理（reasoning）输出 token 数 |
 
 #### `p` 和 `c` 的自动排除机制
 
@@ -68,6 +69,12 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 |--------|---------|------|
 | `p * 3 + c * 15` | 500 | 没用 `ao`，音频输出包含在 `c` 里按 $15 计费 |
 | `p * 3 + c * 15 + ao * 50` | 400 | 用了 `ao`，音频 100 从 `c` 中扣除按 $50 计费 |
+
+`rt` follows the same rule: when it is present, reasoning tokens are removed
+from `c` and priced separately. This requires the upstream to return
+`reasoning_tokens`. If that field is omitted at settlement, the gateway
+evaluates both possible output allocations and keeps the higher applicable
+cost rather than under-billing.
 
 > **注意：** 这个自动排除仅针对 GPT/OpenAI 格式的 API（prompt_tokens 包含所有子类别）。Claude 格式的 API（input_tokens 本身就只包含纯文本）不做任何减法。系统根据上游返回格式自动判断，表达式作者无需关心。
 

@@ -86,6 +86,17 @@ func TestTryTieredSettleUsesFrozenRequestInput(t *testing.T) {
 	}
 }
 
+func TestTryTieredSettleMissingReasoningCounterUsesHigherRate(t *testing.T) {
+	info := makeRelayInfo(`tier("default", p + c * 10 + rt * 2)`, 1, 0, 0)
+	usage := &dto.Usage{CompletionTokens: 600}
+	params := BuildTieredTokenParams(usage, false, map[string]bool{"rt": true})
+
+	ok, quota, _ := TryTieredSettle(info, params)
+	require.True(t, ok)
+	// 600 completion tokens at c*10, not the cheaper rt*2 fallback.
+	require.Equal(t, billingexpr.QuotaRound(float64(600*10)/1_000_000*testQuotaPerUnit), quota)
+}
+
 func TestTryTieredSettleFallsBackToFrozenPreConsumeOnExprError(t *testing.T) {
 	relayInfo := &relaycommon.RelayInfo{
 		FinalPreConsumedQuota: 321,
@@ -540,6 +551,36 @@ func TestBuildTieredTokenParams_GPT_AudioOutput(t *testing.T) {
 	if math.Abs(got-want) > 0.01 {
 		t.Fatalf("quota = %f, want %f", got, want)
 	}
+}
+
+func TestBuildTieredTokenParams_GPT_WithReasoningOutput(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 600,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ReasoningTokens:        100,
+			ReasoningTokensPresent: true,
+			TextTokens:             500,
+		},
+	}
+	expr := `tier("base", p * 2 + c * 10 + rt * 40)`
+	params := BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expr))
+
+	require.Equal(t, 500.0, params.C)
+	require.Equal(t, 100.0, params.RT)
+	cost, _, err := billingexpr.RunExpr(expr, params)
+	require.NoError(t, err)
+	require.Equal(t, 11_000.0, cost)
+}
+
+func TestBuildTieredTokenParams_GPT_MissingReasoningCounterUsesMaximumRate(t *testing.T) {
+	usage := &dto.Usage{PromptTokens: 1000, CompletionTokens: 600}
+	expr := `tier("base", p * 2 + c * 10 + rt * 40)`
+
+	params := BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expr))
+
+	require.Equal(t, 0.0, params.C)
+	require.Equal(t, 600.0, params.RT)
 }
 
 func TestBuildTieredTokenParams_GPT_AudioOutputNoVar(t *testing.T) {

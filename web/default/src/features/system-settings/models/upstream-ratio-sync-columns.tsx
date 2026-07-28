@@ -31,6 +31,7 @@ import { BadgeCell } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import type { RatioType } from '../types'
 import {
+  getDisplaySyncFields,
   getOrderedRatioTypes,
   getPreferredSyncField,
   getSyncFieldLabel,
@@ -90,7 +91,7 @@ export function useUpstreamRatioSyncColumns(
         id: 'current',
         header: t('Current Price'),
         cell: ({ row }) => {
-          const fields = getOrderedRatioTypes(
+          const fields = getDisplaySyncFields(
             row.original.ratioTypes,
             ratioTypeFilter
           )

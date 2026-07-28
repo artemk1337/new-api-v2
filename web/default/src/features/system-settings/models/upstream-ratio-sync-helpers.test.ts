@@ -22,6 +22,7 @@ import { describe, test } from 'node:test'
 import {
   buildPricingMapDiffPatches,
   buildPricingSyncPatches,
+  getDisplaySyncFields,
 } from './upstream-ratio-sync-helpers.ts'
 
 const ratioOptionKeys = [
@@ -35,6 +36,15 @@ const ratioOptionKeys = [
 ]
 
 describe('pricing sync category patches', () => {
+  test('hides derived billing mode when expression pricing is available', () => {
+    const fields = getDisplaySyncFields({
+      billing_mode: { current: null, upstreams: {}, confidence: {} },
+      billing_expr: { current: null, upstreams: {}, confidence: {} },
+    })
+
+    assert.deepEqual(fields, ['billing_expr'])
+  })
+
   test('fixed price removes ratio and tiered contracts', () => {
     const patches = buildPricingSyncPatches({
       'model-a': { model_price: 0.25 },

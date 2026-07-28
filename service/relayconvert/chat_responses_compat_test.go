@@ -115,6 +115,18 @@ func TestResponsesResponseToChatCompletionsPreservesReasoningSummary(t *testing.
 	assert.Equal(t, "final", chat.Choices[0].Message.StringContent())
 }
 
+func TestUsageFromResponsesUsagePreservesExplicitZeroReasoningTokens(t *testing.T) {
+	usage := UsageFromResponsesUsage(&dto.Usage{
+		OutputTokens: 10,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ReasoningTokensPresent: true,
+		},
+	})
+
+	require.True(t, usage.CompletionTokenDetails.ReasoningTokensPresent)
+	assert.Zero(t, usage.CompletionTokenDetails.ReasoningTokens)
+}
+
 func TestResponsesFinishReasonFromIncompleteStatus(t *testing.T) {
 	tests := []struct {
 		name   string

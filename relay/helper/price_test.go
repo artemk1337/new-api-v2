@@ -62,6 +62,40 @@ func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
 	require.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.QuotaPerUnit)
 }
 
+func TestModelPriceHelperTieredReservesReasoningAsMaximumCompletion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"reasoning-test-model":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"reasoning-test-model":"tier(\"base\", p * 1 + c * 10 + rt * 2)"}`,
+	}))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{OriginModelName: "reasoning-test-model"}
+
+	priceData, err := modelPriceHelperTiered(
+		ctx,
+		info,
+		100,
+		&types.TokenCountMeta{MaxTokens: 10},
+		types.GroupRatioInfo{GroupRatio: 1},
+	)
+
+	require.NoError(t, err)
+	// Reserve the higher possible output rate: (100 + 10*10) / 1M * quota.
+	require.Equal(t, billingexpr.QuotaRound(200.0/1_000_000*common.QuotaPerUnit), priceData.QuotaToPreConsume)
+	require.NotNil(t, info.TieredBillingSnapshot)
+}
+
 func TestHasModelBillingConfigRequiresPositiveBasePrice(t *testing.T) {
 	oldPrice := ratio_setting.ModelPrice2JSONString()
 	oldRatio := ratio_setting.ModelRatio2JSONString()

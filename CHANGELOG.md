@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.72
+
+- Added reasoning-output pricing to synchronized Yunwu tier contracts, including OpenAI, Gemini, Responses, and realtime usage normalization.
+- Made reasoning settlement conservative when upstream usage omits the reasoning-token split, with AST validation that prevents unsafe billing expressions.
+- Added reasoning pricing controls and accurate cost previews to both admin interfaces while preserving explicit zero-price lanes and warning before unsupported visual conversions.
+
 ## v1.1.71
 
 - Renamed the header documentation link in Russian from «Документы» to «Документация».

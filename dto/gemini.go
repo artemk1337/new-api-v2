@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 
@@ -44,9 +45,9 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 }
 
 type ToolConfig struct {
-	FunctionCallingConfig *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
-	RetrievalConfig       *RetrievalConfig       `json:"retrievalConfig,omitempty"`
-	IncludeServerSideToolInvocations *bool       `json:"includeServerSideToolInvocations,omitempty"`
+	FunctionCallingConfig            *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+	RetrievalConfig                  *RetrievalConfig       `json:"retrievalConfig,omitempty"`
+	IncludeServerSideToolInvocations *bool                  `json:"includeServerSideToolInvocations,omitempty"`
 }
 
 type FunctionCallingConfig struct {
@@ -466,10 +467,27 @@ type GeminiUsageMetadata struct {
 	CandidatesTokenCount       int                         `json:"candidatesTokenCount"`
 	TotalTokenCount            int                         `json:"totalTokenCount"`
 	ThoughtsTokenCount         int                         `json:"thoughtsTokenCount"`
+	ThoughtsTokenCountPresent  bool                        `json:"-"`
 	CachedContentTokenCount    int                         `json:"cachedContentTokenCount"`
 	PromptTokensDetails        []GeminiPromptTokensDetails `json:"promptTokensDetails"`
 	ToolUsePromptTokensDetails []GeminiPromptTokensDetails `json:"toolUsePromptTokensDetails"`
 	CandidatesTokensDetails    []GeminiPromptTokensDetails `json:"candidatesTokensDetails"`
+}
+
+func (m *GeminiUsageMetadata) UnmarshalJSON(data []byte) error {
+	type alias GeminiUsageMetadata
+	var decoded alias
+	if err := common.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := common.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*m = GeminiUsageMetadata(decoded)
+	raw, present := fields["thoughtsTokenCount"]
+	m.ThoughtsTokenCountPresent = present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+	return nil
 }
 
 type GeminiPromptTokensDetails struct {

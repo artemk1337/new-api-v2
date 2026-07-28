@@ -65,6 +65,14 @@ func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.
 	require.Equal(t, 2209, usage.CompletionTokens)
 	require.Equal(t, 20689, usage.TotalTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
+	require.True(t, usage.CompletionTokenDetails.ReasoningTokensPresent)
+}
+
+func TestGeminiExplicitZeroThoughtsTokenCountIsPresent(t *testing.T) {
+	var metadata dto.GeminiUsageMetadata
+	require.NoError(t, common.Unmarshal([]byte(`{"thoughtsTokenCount":0}`), &metadata))
+	require.True(t, metadata.ThoughtsTokenCountPresent)
+	require.Equal(t, 0, metadata.ThoughtsTokenCount)
 }
 
 func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {

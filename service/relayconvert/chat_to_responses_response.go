@@ -119,7 +119,8 @@ func UsageFromChatUsage(src *dto.Usage) *dto.Usage {
 		details := src.PromptTokensDetails
 		usage.InputTokensDetails = &details
 	}
-	if src.CompletionTokenDetails.ReasoningTokens != 0 ||
+	if src.CompletionTokenDetails.ReasoningTokensPresent ||
+		src.CompletionTokenDetails.ReasoningTokens != 0 ||
 		src.CompletionTokenDetails.TextTokens != 0 ||
 		src.CompletionTokenDetails.AudioTokens != 0 ||
 		src.CompletionTokenDetails.ImageTokens != 0 {

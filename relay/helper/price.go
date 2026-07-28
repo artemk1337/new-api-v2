@@ -360,6 +360,9 @@ func HasModelBillingConfig(modelName string) bool {
 	if !ok || strings.TrimSpace(expr) == "" {
 		return false
 	}
+	if !billingexpr.ReasoningSplitIsSafe(expr) {
+		return false
+	}
 	_, err := billingexpr.CompileFromCache(expr)
 	return err == nil
 }
@@ -368,6 +371,9 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	exprStr, ok := billing_setting.GetBillingExpr(info.OriginModelName)
 	if !ok {
 		return types.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
+	}
+	if !billingexpr.ReasoningSplitIsSafe(exprStr) {
+		return types.PriceData{}, fmt.Errorf("model %s uses unsupported reasoning pricing expression", info.OriginModelName)
 	}
 
 	estimatedCompletionTokens := 0
@@ -380,13 +386,32 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		return types.PriceData{}, err
 	}
 
-	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{
+	estimatedParams := billingexpr.TokenParams{
 		P:   float64(promptTokens),
 		C:   float64(estimatedCompletionTokens),
 		Len: float64(promptTokens),
-	}, requestInput)
+	}
+	if billingexpr.UsedVars(exprStr)["rt"] {
+		// Reasoning tokens are only known after the upstream response. Reserve
+		// the whole estimated completion as reasoning, then settle by actual use.
+		estimatedParams.C = 0
+		estimatedParams.RT = float64(estimatedCompletionTokens)
+	}
+	rawCost, trace, err := billingexpr.RunExprWithRequest(exprStr, estimatedParams, requestInput)
 	if err != nil {
 		return types.PriceData{}, fmt.Errorf("model %s tiered expr run failed: %w", info.OriginModelName, err)
+	}
+	if billingexpr.UsedVars(exprStr)["rt"] {
+		completionParams := estimatedParams
+		completionParams.C = float64(estimatedCompletionTokens)
+		completionParams.RT = 0
+		completionCost, completionTrace, completionErr := billingexpr.RunExprWithRequest(exprStr, completionParams, requestInput)
+		if completionErr != nil {
+			return types.PriceData{}, fmt.Errorf("model %s tiered expr completion estimate failed: %w", info.OriginModelName, completionErr)
+		}
+		if completionCost > rawCost {
+			rawCost, trace = completionCost, completionTrace
+		}
 	}
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.

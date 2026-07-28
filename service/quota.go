@@ -98,6 +98,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	textOutTokens := usage.OutputTokenDetails.TextTokens
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
+	reasoningOutTokens := usage.OutputTokenDetails.ReasoningTokens
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{
 			TextTokens:  textInputTokens,
@@ -120,7 +121,8 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		textInputTokens > 0 ||
 		textOutTokens > 0 ||
 		audioInputTokens > 0 ||
-		audioOutTokens > 0
+		audioOutTokens > 0 ||
+		reasoningOutTokens > 0
 	if !hasUsage {
 		return nil
 	}
@@ -134,6 +136,10 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 		relayInfo.RealtimeTieredTokenParams.CR += params.CR
 		relayInfo.RealtimeTieredTokenParams.AI += params.AI
 		relayInfo.RealtimeTieredTokenParams.AO += params.AO
+		relayInfo.RealtimeTieredTokenParams.RT += params.RT
+		relayInfo.RealtimeTieredTokenParams.ReasoningTokensUnknown += params.ReasoningTokensUnknown
+		relayInfo.RealtimeTieredTokenParams.ReasoningTokensFallback =
+			relayInfo.RealtimeTieredTokenParams.ReasoningTokensFallback || params.ReasoningTokensFallback
 		if tieredOK, tieredQuota, _ := TryTieredSettle(relayInfo, relayInfo.RealtimeTieredTokenParams); tieredOK {
 			quota = tieredQuota
 		}

@@ -505,6 +505,65 @@ func TestPreWssConsumeQuotaUsesCumulativeTieredUsage(t *testing.T) {
 	require.Equal(t, 146, settler.reserve)
 }
 
+func TestPreWssConsumeQuotaAccumulatesReasoningOutput(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := makeRelayInfo(`tier("default", rt * 10)`, 1, 0, 0)
+	settler := &autoTestSettler{info: info}
+	info.Billing = settler
+
+	usage := &dto.RealtimeUsage{
+		OutputTokens: 10,
+		OutputTokenDetails: dto.OutputTokenDetails{
+			ReasoningTokens:        10,
+			ReasoningTokensPresent: true,
+		},
+	}
+
+	require.NoError(t, PreWssConsumeQuota(ctx, info, usage))
+	require.Equal(t, 10.0, info.RealtimeTieredTokenParams.RT)
+	require.Equal(t, 50, info.RealtimeConsumedQuota)
+	require.Equal(t, 50, settler.reserve)
+}
+
+func TestPreWssConsumeQuotaPreservesMissingReasoningFallbackAcrossChunks(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := makeRelayInfo(`tier("default", c * 10 + rt * 2)`, 1, 0, 0)
+	settler := &autoTestSettler{info: info}
+	info.Billing = settler
+
+	for range 2 {
+		usage := &dto.RealtimeUsage{OutputTokens: 10}
+		require.NoError(t, PreWssConsumeQuota(ctx, info, usage))
+	}
+
+	require.True(t, info.RealtimeTieredTokenParams.ReasoningTokensFallback)
+	require.Equal(t, 20.0, info.RealtimeTieredTokenParams.ReasoningTokensUnknown)
+	// Missing reasoning counters must use the higher c*10 rate for 20 tokens.
+	require.Equal(t, 100, info.RealtimeConsumedQuota)
+}
+
+func TestPreWssConsumeQuotaKeepsKnownReasoningWhenLaterChunkOmitsCounter(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := makeRelayInfo(`tier("default", c * 10 + rt * 2)`, 1, 0, 0)
+	settler := &autoTestSettler{info: info}
+	info.Billing = settler
+
+	require.NoError(t, PreWssConsumeQuota(ctx, info, &dto.RealtimeUsage{
+		OutputTokens: 10,
+		OutputTokenDetails: dto.OutputTokenDetails{
+			ReasoningTokens:        5,
+			ReasoningTokensPresent: true,
+		},
+	}))
+	require.NoError(t, PreWssConsumeQuota(ctx, info, &dto.RealtimeUsage{OutputTokens: 10}))
+
+	// Known C=5/RT=5 plus unknown output=10; worst case is C=15, RT=5.
+	require.Equal(t, 5.0, info.RealtimeTieredTokenParams.C)
+	require.Equal(t, 15.0, info.RealtimeTieredTokenParams.RT)
+	require.Equal(t, 10.0, info.RealtimeTieredTokenParams.ReasoningTokensUnknown)
+	require.Equal(t, 80, info.RealtimeConsumedQuota)
+}
+
 func TestChargedAttemptQuotaDoesNotReplaceKnownZeroWithEstimate(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		AttemptActualQuotaKnown: true,

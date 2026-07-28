@@ -151,6 +151,8 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						usage.InputTokenDetails.TextTokens += realtimeUsage.InputTokenDetails.TextTokens
 						usage.OutputTokenDetails.AudioTokens += realtimeUsage.OutputTokenDetails.AudioTokens
 						usage.OutputTokenDetails.TextTokens += realtimeUsage.OutputTokenDetails.TextTokens
+						usage.OutputTokenDetails.ReasoningTokens += realtimeUsage.OutputTokenDetails.ReasoningTokens
+						usage.OutputTokenDetails.ReasoningTokensPresent = usage.OutputTokenDetails.ReasoningTokensPresent || realtimeUsage.OutputTokenDetails.ReasoningTokensPresent
 						consumeErr := preConsumeUsage(c, info, usage, sumUsage)
 						*localUsage = dto.RealtimeUsage{}
 						sumUsageSnapshot := *sumUsage
@@ -275,6 +277,8 @@ func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.R
 	totalUsage.InputTokenDetails.AudioTokens += currentUsage.InputTokenDetails.AudioTokens
 	totalUsage.OutputTokenDetails.TextTokens += currentUsage.OutputTokenDetails.TextTokens
 	totalUsage.OutputTokenDetails.AudioTokens += currentUsage.OutputTokenDetails.AudioTokens
+	totalUsage.OutputTokenDetails.ReasoningTokens += currentUsage.OutputTokenDetails.ReasoningTokens
+	totalUsage.OutputTokenDetails.ReasoningTokensPresent = totalUsage.OutputTokenDetails.ReasoningTokensPresent || currentUsage.OutputTokenDetails.ReasoningTokensPresent
 	*usage = dto.RealtimeUsage{}
 	return service.PreWssConsumeQuota(ctx, info, &currentUsage)
 }

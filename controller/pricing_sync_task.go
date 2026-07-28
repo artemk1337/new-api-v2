@@ -280,8 +280,8 @@ func validOptionalPricingRatios(item upstreamPricingItem) bool {
 // pricingStepRatiosExpr maps Yunwu's context pricing steps to the existing
 // billing expression contract. A step is an upper bound; the final step is the
 // fallback so usage beyond the published maximum is still charged predictably.
-// Thinking steps are deliberately not converted: the upstream response does
-// not expose a separately billable thinking-token count to this gateway.
+// Thinking output is represented by the rt billing variable when the upstream
+// contract provides a separate completion-thinking ratio.
 func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 	if item.QuotaType == 1 || len(item.StepRatios) == 0 ||
 		!nonNegativeFinite(item.ModelRatio) || !nonNegativeFinite(item.CompletionRatio) ||
@@ -310,7 +310,7 @@ func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 		if step.StepSize <= 0 || !nonNegativeFinite(step.PromptStepRatio) || !nonNegativeFinite(step.CompletionStepRatio) ||
 			!nonNegativeFinite(step.CacheStepRatio) || step.CompletionStepSize == 0 || step.CompletionStepSize < -1 ||
 			!nonNegativeFinite(step.PromptThinkingStepRatio) || !nonNegativeFinite(step.CompletionThinkingStepRatio) ||
-			step.PromptThinkingStepRatio != 0 || step.CompletionThinkingStepRatio != 0 {
+			(step.PromptThinkingStepRatio != 0 && step.PromptThinkingStepRatio != step.PromptStepRatio) {
 			return "", false
 		}
 		if index > 0 {
@@ -336,6 +336,10 @@ func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 		cost += " + ai * " + strconv.FormatFloat(audioInputPrice, 'f', -1, 64)
 		audioOutputPrice := item.ModelRatio * audioRatio * audioCompletionRatio * 2 * step.CompletionStepRatio
 		cost += " + ao * " + strconv.FormatFloat(audioOutputPrice, 'f', -1, 64)
+		if step.CompletionThinkingStepRatio != 0 {
+			reasoningPrice := item.ModelRatio * item.CompletionRatio * 2 * step.CompletionThinkingStepRatio
+			cost += " + rt * " + strconv.FormatFloat(reasoningPrice, 'f', -1, 64)
+		}
 		tier := "tier(\"step_" + strconv.Itoa(index+1) + "\", " + cost + ")"
 		if index == len(steps)-1 {
 			parts = append(parts, tier)
@@ -343,7 +347,7 @@ func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 		}
 		condition := "len <= " + strconv.Itoa(step.StepSize)
 		if step.CompletionStepSize > 0 {
-			completionLength := "c + ao"
+			completionLength := "c + ao + rt"
 			condition += " && " + completionLength + " <= " + strconv.Itoa(step.CompletionStepSize)
 		}
 		parts = append(parts, condition+" ? "+tier+" : ")

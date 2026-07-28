@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -261,10 +262,27 @@ type InputTokenDetails struct {
 }
 
 type OutputTokenDetails struct {
-	TextTokens      int `json:"text_tokens"`
-	AudioTokens     int `json:"audio_tokens"`
-	ImageTokens     int `json:"image_tokens"`
-	ReasoningTokens int `json:"reasoning_tokens"`
+	TextTokens             int  `json:"text_tokens"`
+	AudioTokens            int  `json:"audio_tokens"`
+	ImageTokens            int  `json:"image_tokens"`
+	ReasoningTokens        int  `json:"reasoning_tokens"`
+	ReasoningTokensPresent bool `json:"-"`
+}
+
+func (details *OutputTokenDetails) UnmarshalJSON(data []byte) error {
+	type outputTokenDetails OutputTokenDetails
+	var decoded outputTokenDetails
+	if err := common.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*details = OutputTokenDetails(decoded)
+	var fields map[string]json.RawMessage
+	if err := common.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	raw, present := fields["reasoning_tokens"]
+	details.ReasoningTokensPresent = present && !bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+	return nil
 }
 
 type OpenAIResponsesResponse struct {

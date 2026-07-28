@@ -203,6 +203,17 @@ export function getOrderedRatioTypes(
   return ordered.filter((f) => f === filter)
 }
 
+// billing_mode is derived from billing_expr and is not a separate price for
+// an administrator to compare or select.
+export function getDisplaySyncFields(
+  ratioTypes: Partial<Record<RatioType, RatioDifferenceEntry>>,
+  filter?: string
+): RatioType[] {
+  const fields = getOrderedRatioTypes(ratioTypes, filter)
+  if (!fields.includes('billing_expr')) return fields
+  return fields.filter((field) => field !== 'billing_mode')
+}
+
 export function getPreferredSyncField(
   ratioTypes: Partial<Record<RatioType, RatioDifferenceEntry>>,
   ratioType: RatioType,

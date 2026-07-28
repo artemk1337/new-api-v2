@@ -41,6 +41,8 @@ export type VisualTier = {
   image_output_unit_cost?: number
   audio_input_unit_cost?: number
   audio_output_unit_cost?: number
+  reasoning_output_unit_cost?: number
+  explicitExtraFields?: string[]
   [field: string]: unknown
 }
 
@@ -75,6 +77,7 @@ export function normalizeVisualTier(
     image_output_unit_cost: Number(tier.image_output_unit_cost) || 0,
     audio_input_unit_cost: Number(tier.audio_input_unit_cost) || 0,
     audio_output_unit_cost: Number(tier.audio_output_unit_cost) || 0,
+    reasoning_output_unit_cost: Number(tier.reasoning_output_unit_cost) || 0,
   }
 }
 
@@ -120,7 +123,9 @@ function buildTierBodyExpr(tier: VisualTier): string {
   parts.push(`c * ${oc}`)
   for (const cv of BILLING_CACHE_VAR_MAP) {
     const v = Number((tier as Record<string, unknown>)[cv.field]) || 0
-    if (v !== 0) parts.push(`${cv.exprVar} * ${v}`)
+    if (v !== 0 || tier.explicitExtraFields?.includes(cv.field)) {
+      parts.push(`${cv.exprVar} * ${v}`)
+    }
   }
   return parts.join(' + ')
 }
@@ -186,7 +191,16 @@ export function tryParseVisualConfig(
       }
       BILLING_CACHE_VAR_MAP.forEach((cv, i) => {
         const val = simple[4 + i]
-        if (val != null) tier[cv.field] = Number(val)
+        if (val != null) {
+          const price = Number(val)
+          tier[cv.field] = price
+          if (price === 0) {
+            const fields =
+              (tier.explicitExtraFields as string[] | undefined) ?? []
+            fields.push(cv.field)
+            tier.explicitExtraFields = fields
+          }
+        }
       })
       return normalizeVisualConfig({
         tiers: [normalizeVisualTier(tier as Partial<VisualTier>)],
@@ -201,8 +215,12 @@ export function tryParseVisualConfig(
       'g'
     )
     const tiers: VisualTier[] = []
+    let cursor = 0
     let match: RegExpExecArray | null
     while ((match = tierRe.exec(body)) !== null) {
+      const separator = body.slice(cursor, match.index).trim()
+      if (separator !== (tiers.length === 0 ? '' : ':')) return null
+      cursor = match.index + match[0].length
       const condStr = match[1] || ''
       const conditions: TierConditionInput[] = []
       if (condStr) {
@@ -226,18 +244,23 @@ export function tryParseVisualConfig(
       const m = match
       BILLING_CACHE_VAR_MAP.forEach((cv, i) => {
         const val = m[5 + i]
-        if (val != null) tier[cv.field] = Number(val)
+        if (val != null) {
+          const price = Number(val)
+          tier[cv.field] = price
+          if (price === 0) {
+            const fields =
+              (tier.explicitExtraFields as string[] | undefined) ?? []
+            fields.push(cv.field)
+            tier.explicitExtraFields = fields
+          }
+        }
       })
       tiers.push(normalizeVisualTier(tier as Partial<VisualTier>))
     }
     if (tiers.length === 0) return null
+    if (body.slice(cursor).trim() !== '') return null
 
-    const cfg = normalizeVisualConfig({ tiers })
-    const regenerated = generateExprFromVisualConfig(cfg)
-    if (regenerated.replace(/\s+/g, '') !== body.replace(/\s+/g, '')) {
-      return null
-    }
-    return cfg
+    return normalizeVisualConfig({ tiers })
   } catch {
     return null
   }
@@ -255,6 +278,7 @@ const ESTIMATOR_VARS = [
   { var: 'img_o', stateKey: 'imageOutputTokens' },
   { var: 'ai', stateKey: 'audioInputTokens' },
   { var: 'ao', stateKey: 'audioOutputTokens' },
+  { var: 'rt', stateKey: 'reasoningOutputTokens' },
 ] as const
 
 export type ExtraTokenValues = Record<
@@ -286,11 +310,15 @@ export function evalExprLocally(
     const cacheReadTokens = extraTokenValues.cacheReadTokens || 0
     const cacheCreateTokens = extraTokenValues.cacheCreateTokens || 0
     const cacheCreate1hTokens = extraTokenValues.cacheCreate1hTokens || 0
+    const reasoningOutputTokens = extraTokenValues.reasoningOutputTokens || 0
     const len =
       promptTokens + cacheReadTokens + cacheCreateTokens + cacheCreate1hTokens
+    const outputTokens = /\brt\b/.test(exprStr)
+      ? Math.max(0, completionTokens - reasoningOutputTokens)
+      : completionTokens
     const env: Record<string, unknown> = {
       p: promptTokens,
-      c: completionTokens,
+      c: outputTokens,
       len,
       tier: tierFn,
       max: Math.max,

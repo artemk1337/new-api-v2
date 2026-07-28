@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -682,6 +683,33 @@ func TestUnsupportedPricingStepsDoNotFallBackToBaseRatio(t *testing.T) {
 	require.NotContains(t, valueMap(data["completion_ratio"]), "thinking-model")
 }
 
+func TestPricingStepsWithReasoningOutputConvertToTieredExpression(t *testing.T) {
+	data, unsupported := upstreamPricingItemsToSyncData([]upstreamPricingItem{{
+		ModelName:       "qwen-model",
+		ModelRatio:      0.4,
+		CompletionRatio: 2.5,
+		StepRatios: []upstreamPricingStep{{
+			StepSize:                    128000,
+			CompletionStepSize:          -1,
+			PromptStepRatio:             1,
+			CompletionStepRatio:         1,
+			PromptThinkingStepRatio:     1,
+			CompletionThinkingStepRatio: 4,
+		}},
+	}})
+
+	require.Empty(t, unsupported)
+	require.Equal(t, billing_setting.BillingModeTieredExpr, valueMap(data[billing_setting.BillingModeField])["qwen-model"])
+	expr, ok := valueMap(data[billing_setting.BillingExprField])["qwen-model"].(string)
+	require.True(t, ok)
+	require.Contains(t, expr, "p * 0.8")
+	require.Contains(t, expr, "c * 2")
+	require.Less(t, strings.Index(expr, "cr *"), strings.Index(expr, "rt * 8"))
+	require.Less(t, strings.Index(expr, "cc *"), strings.Index(expr, "rt * 8"))
+	require.Less(t, strings.Index(expr, "ao *"), strings.Index(expr, "rt * 8"))
+	require.Contains(t, expr, "rt * 8")
+}
+
 func TestPricingStepRatiosExprRejectsInvalidOrder(t *testing.T) {
 	validStep := func(stepSize, completionStepSize int) upstreamPricingStep {
 		return upstreamPricingStep{
@@ -733,7 +761,7 @@ func TestPricingStepRatiosExprUsesTotalAudioOutputForTierCondition(t *testing.T)
 	})
 
 	require.True(t, ok)
-	require.Contains(t, exprText, "c + ao <= 100")
+	require.Contains(t, exprText, "c + ao + rt <= 100")
 	_, trace, err := billingexpr.RunExpr(exprText, billingexpr.TokenParams{C: 80, AO: 30, Len: 100})
 	require.NoError(t, err)
 	require.Equal(t, "step_2", trace.MatchedTier)

@@ -191,7 +191,7 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       )
       if (warningResults.length > 0) {
         const warningMsg = warningResults
-          .map((r) => `${r.name}: ${r.warnings?.join(', ')}`)
+          .map((r) => `${r.name}: ${r.warnings?.length ?? 0}`)
           .join('; ')
         toast.warning(
           t('Unsupported or invalid pricing skipped: {{warningMsg}}', {

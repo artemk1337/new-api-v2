@@ -1023,6 +1023,7 @@ func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackProm
 		TotalTokens:      metadata.TotalTokenCount,
 	}
 	usage.CompletionTokenDetails.ReasoningTokens = metadata.ThoughtsTokenCount
+	usage.CompletionTokenDetails.ReasoningTokensPresent = metadata.ThoughtsTokenCountPresent || metadata.ThoughtsTokenCount > 0
 	usage.PromptTokensDetails.CachedTokens = metadata.CachedContentTokenCount
 
 	for _, detail := range metadata.PromptTokensDetails {

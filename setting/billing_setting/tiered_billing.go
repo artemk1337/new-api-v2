@@ -95,6 +95,9 @@ func SmokeTestExpr(exprStr string) error {
 }
 
 func smokeTestExpr(exprStr string) error {
+	if !billingexpr.ReasoningSplitIsSafe(exprStr) {
+		return fmt.Errorf("reasoning pricing requires linear output terms and total-output conditions")
+	}
 	vectors := []billingexpr.TokenParams{
 		{P: 0, C: 0, Len: 0},
 		{P: 1000, C: 1000, Len: 1000},
@@ -107,6 +110,8 @@ func smokeTestExpr(exprStr string) error {
 		{ImgO: 1000, Len: 1000},
 		{AI: 1000, Len: 1000},
 		{AO: 1000, Len: 1000},
+		{RT: 1000, Len: 1000},
+		{C: 1000, RT: 1000, Len: 1000},
 	}
 	requests := []billingexpr.RequestInput{
 		{},

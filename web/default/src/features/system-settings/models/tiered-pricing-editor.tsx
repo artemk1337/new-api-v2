@@ -107,6 +107,9 @@ const CACHE_PRICE_VARS = BILLING_EXTRA_VARS.filter(
 const MEDIA_PRICE_VARS = BILLING_EXTRA_VARS.filter(
   (variable) => variable.group === 'media'
 )
+const REASONING_PRICE_VARS = BILLING_EXTRA_VARS.filter(
+  (variable) => variable.group === 'reasoning'
+)
 
 const CONDITION_INPUT_OPTIONS: {
   value: TierConditionInput['var']
@@ -592,11 +595,19 @@ function VisualTierCard({
     const fieldKey = variable.tierField as keyof VisualTier
     return unitCostToPrice((tier[fieldKey] as number | undefined) ?? 0) > 0
   })
+  const hasReasoningPricing = REASONING_PRICE_VARS.some((variable) => {
+    const fieldKey = variable.tierField as keyof VisualTier
+    return unitCostToPrice((tier[fieldKey] as number | undefined) ?? 0) > 0
+  })
   const [mediaOpen, setMediaOpen] = useState(hasMediaPricing)
+  const [reasoningOpen, setReasoningOpen] = useState(hasReasoningPricing)
 
   useEffect(() => {
     if (hasMediaPricing) setMediaOpen(true)
   }, [hasMediaPricing])
+  useEffect(() => {
+    if (hasReasoningPricing) setReasoningOpen(true)
+  }, [hasReasoningPricing])
 
   const renderPriceVariable = (
     variable: (typeof BILLING_EXTRA_VARS)[number]
@@ -757,6 +768,29 @@ function VisualTierCard({
         {mediaOpen && (
           <div className='flex flex-wrap gap-x-4 gap-y-2'>
             {MEDIA_PRICE_VARS.map(renderPriceVariable)}
+          </div>
+        )}
+      </div>
+
+      <div className='space-y-1.5'>
+        <Button
+          type='button'
+          variant='ghost'
+          size='sm'
+          className='h-7 px-2 text-xs'
+          onClick={() => setReasoningOpen((prev) => !prev)}
+        >
+          <ChevronDown
+            className={cn(
+              'mr-1 h-3 w-3 transition-transform',
+              reasoningOpen && 'rotate-180'
+            )}
+          />
+          {t('Reasoning pricing')}
+        </Button>
+        {reasoningOpen && (
+          <div className='flex flex-wrap gap-x-4 gap-y-2'>
+            {REASONING_PRICE_VARS.map(renderPriceVariable)}
           </div>
         )}
       </div>
@@ -1369,6 +1403,7 @@ function CostEstimator({ effectiveExpr }: EstimatorProps) {
     imageOutputTokens: 0,
     audioInputTokens: 0,
     audioOutputTokens: 0,
+    reasoningOutputTokens: 0,
   })
 
   const usesExtras = useMemo(
@@ -1493,6 +1528,7 @@ Output side:
 - c — output token count. Also auto-excludes sub-categories priced separately
 - img_o — image output token count
 - ao — audio output token count
+- rt — reasoning output token count
 
 ### p/c Auto-exclusion
 
@@ -1547,7 +1583,7 @@ len <= 128000
 3. Use len for tier conditions (not p), supports <, <=, >, >=
 4. Multi-tier uses nested ternary: cond1 ? tier(...) : (cond2 ? tier(...) : tier(...))
 5. Price coefficients are the provider's official $/1M tokens prices
-6. If cache/image/audio don't need separate pricing, omit those variables; their tokens are included in p/c automatically
+6. If cache/image/audio/reasoning don't need separate pricing, omit those variables; their tokens are included in p/c automatically
 
 Please generate a billing expression based on the model information and pricing requirements provided.`
 
@@ -1726,11 +1762,15 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
         const { billingExpr, requestRuleExpr: ruleStr } =
           splitBillingExprAndRequestRules(rawExpr)
         const parsed = tryParseVisualConfig(billingExpr)
-        if (parsed) {
-          setVisualConfig(parsed)
-        } else {
-          setVisualConfig(createDefaultVisualConfig())
+        if (!parsed) {
+          toast.error(
+            t(
+              'This expression is too complex for the visual editor. Please switch to expression mode to edit.'
+            )
+          )
+          return
         }
+        setVisualConfig(parsed)
         const parsedGroups = tryParseRequestRuleExpr(ruleStr)
         setRequestRuleGroups(parsedGroups || [])
         onRequestRuleExprChange(ruleStr)
@@ -1741,7 +1781,7 @@ export const TieredPricingEditor = memo(function TieredPricingEditor({
       }
       setEditorMode(next)
     },
-    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange]
+    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange, t]
   )
 
   const applyPreset = useCallback(

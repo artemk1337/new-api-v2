@@ -33,7 +33,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconCopy, IconDelete, IconPlus } from '@douyinfe/semi-icons';
 import { renderQuota } from '../../../../helpers/render';
-import { copy, showSuccess } from '../../../../helpers';
+import { copy, showError, showSuccess } from '../../../../helpers';
 import { BILLING_EXTRA_VARS, BILLING_CACHE_VAR_MAP, BILLING_CONDITION_VARS } from '../../../../constants';
 import {
   createEmptyCondition,
@@ -154,7 +154,9 @@ function buildTierBodyExpr(tier) {
   parts.push(`c * ${oc}`);
   for (const cv of CACHE_VAR_MAP) {
     const v = Number(tier[cv.field]) || 0;
-    if (v !== 0) parts.push(`${cv.exprVar} * ${v}`);
+    if (v !== 0 || tier.explicitExtraFields?.includes(cv.field)) {
+      parts.push(`${cv.exprVar} * ${v}`);
+    }
   }
   return parts.join(' + ');
 }
@@ -220,7 +222,13 @@ function tryParseVisualConfig(exprStr) {
       };
       CACHE_VAR_MAP.forEach((cv, i) => {
         const val = simple[4 + i];
-        if (val != null) tier[cv.field] = Number(val);
+        if (val != null) {
+          const price = Number(val);
+          tier[cv.field] = price;
+          if (price === 0) {
+            (tier.explicitExtraFields ??= []).push(cv.field);
+          }
+        }
       });
       return normalizeVisualConfig({ tiers: [normalizeVisualTier(tier)] });
     }
@@ -232,8 +240,12 @@ function tryParseVisualConfig(exprStr) {
       'g',
     );
     const tiers = [];
+    let cursor = 0;
     let match;
     while ((match = tierRe.exec(exprStr)) !== null) {
+      const separator = exprStr.slice(cursor, match.index).trim();
+      if (separator !== (tiers.length === 0 ? '' : ':')) return null;
+      cursor = match.index + match[0].length;
       const condStr = match[1] || '';
       const conditions = [];
       if (condStr) {
@@ -253,17 +265,20 @@ function tryParseVisualConfig(exprStr) {
       };
       CACHE_VAR_MAP.forEach((cv, i) => {
         const val = match[5 + i];
-        if (val != null) tier[cv.field] = Number(val);
+        if (val != null) {
+          const price = Number(val);
+          tier[cv.field] = price;
+          if (price === 0) {
+            (tier.explicitExtraFields ??= []).push(cv.field);
+          }
+        }
       });
       tiers.push(normalizeVisualTier(tier));
     }
     if (tiers.length === 0) return null;
+    if (exprStr.slice(cursor).trim() !== '') return null;
 
-    const cfg = normalizeVisualConfig({ tiers });
-    const regenerated = generateExprFromVisualConfig(cfg);
-    if (regenerated.replace(/\s+/g, '') !== exprStr.replace(/\s+/g, ''))
-      return null;
-    return cfg;
+    return normalizeVisualConfig({ tiers });
   } catch {
     return null;
   }
@@ -389,7 +404,8 @@ const CACHE_FIELDS_GENERIC = [
 
 function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
   const mediaFields = BILLING_EXTRA_VARS.filter((v) => v.group === 'media');
-  const hasAny = [...CACHE_FIELDS_TIMED, ...mediaFields.map((v) => v.tierField)].some(
+  const reasoningFields = BILLING_EXTRA_VARS.filter((v) => v.group === 'reasoning');
+  const hasAny = [...CACHE_FIELDS_TIMED, ...mediaFields.map((v) => v.tierField), ...reasoningFields.map((v) => v.tierField)].some(
     (f) => Number(tier[typeof f === 'string' ? f : f.field]) > 0,
   );
   const [expanded, setExpanded] = useState(hasAny);
@@ -473,6 +489,33 @@ function ExtendedPriceBlock({ tier, index, onUpdate, t }) {
             }}
           >
             {mediaFields.map((v) => ({ field: v.tierField, labelKey: v.label })).map((cf) => (
+              <div key={cf.field}>
+                <Text
+                  size='small'
+                  style={{ color: 'var(--semi-color-text-2)' }}
+                >
+                  {t(cf.labelKey)}
+                </Text>
+                <PriceInput
+                  unitCost={tier[cf.field]}
+                  field={cf.field}
+                  index={index}
+                  onUpdate={onUpdate}
+                />
+              </div>
+            ))}
+          </div>
+          <div className='text-xs text-gray-500 mb-2 mt-3'>
+            {t('推理输出价格（可选）')}
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 8,
+            }}
+          >
+            {reasoningFields.map((v) => ({ field: v.tierField, labelKey: v.label })).map((cf) => (
               <div key={cf.field}>
                 <Text
                   size='small'
@@ -975,7 +1018,10 @@ function evalExprLocally(exprStr, p, c, extraTokenValues) {
     const cacheCreateTokens = extraTokenValues.cacheCreateTokens || 0;
     const cacheCreate1hTokens = extraTokenValues.cacheCreate1hTokens || 0;
     const len = p + cacheReadTokens + cacheCreateTokens + cacheCreate1hTokens;
-    const env = { p, c, len, tier: tierFn, max: Math.max, min: Math.min, abs: Math.abs, ceil: Math.ceil, floor: Math.floor };
+    const outputTokens = /\brt\b/.test(exprStr)
+      ? Math.max(0, c - (extraTokenValues.reasoningOutputTokens || 0))
+      : c;
+    const env = { p, c: outputTokens, len, tier: tierFn, max: Math.max, min: Math.min, abs: Math.abs, ceil: Math.ceil, floor: Math.floor };
     for (const field of EXTRA_ESTIMATOR_FIELDS) {
       env[field.var] = extraTokenValues[field.stateKey] || 0;
     }
@@ -1386,6 +1432,7 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
   const [imageOutputTokens, setImageOutputTokens] = useState(0);
   const [audioInputTokens, setAudioInputTokens] = useState(0);
   const [audioOutputTokens, setAudioOutputTokens] = useState(0);
+  const [reasoningOutputTokens, setReasoningOutputTokens] = useState(0);
 
   const currentRequestRuleExpr = requestRuleExpr || '';
   const parsedRequestRuleGroups = useMemo(
@@ -1455,11 +1502,11 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
       if (newMode === 'visual') {
         const { billingExpr, requestRuleExpr: ruleStr } = splitBillingExprAndRequestRules(rawExpr);
         const parsed = tryParseVisualConfig(billingExpr);
-        if (parsed) {
-          setVisualConfig(parsed);
-        } else {
-          setVisualConfig(createDefaultVisualConfig());
+        if (!parsed) {
+          showError(t('当前表达式无法转换为可视化模式，请继续使用表达式模式'));
+          return;
         }
+        setVisualConfig(parsed);
         const parsedGroups = tryParseRequestRuleExpr(ruleStr);
         setRequestRuleGroups(parsedGroups || []);
         onRequestRuleExprChange(ruleStr);
@@ -1470,7 +1517,7 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
       }
       setEditorMode(newMode);
     },
-    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange],
+    [rawExpr, visualConfig, requestRuleGroups, onRequestRuleExprChange, t],
   );
 
   const applyPreset = useCallback(
@@ -1494,13 +1541,13 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
 
   const extraTokenValues = {
     cacheReadTokens, cacheCreateTokens, cacheCreate1hTokens,
-    imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens,
+    imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens, reasoningOutputTokens,
   };
   const extraTokenSetters = {
     cacheReadTokens: setCacheReadTokens, cacheCreateTokens: setCacheCreateTokens,
     cacheCreate1hTokens: setCacheCreate1hTokens, imageTokens: setImageTokens,
     imageOutputTokens: setImageOutputTokens, audioInputTokens: setAudioInputTokens,
-    audioOutputTokens: setAudioOutputTokens,
+    audioOutputTokens: setAudioOutputTokens, reasoningOutputTokens: setReasoningOutputTokens,
   };
 
   const evalResult = useMemo(() => {
@@ -1512,7 +1559,7 @@ export default function TieredPricingEditor({ model, onExprChange, requestRuleEx
     },
     [effectiveExpr, promptTokens, completionTokens,
       cacheReadTokens, cacheCreateTokens, cacheCreate1hTokens,
-      imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens],
+      imageTokens, imageOutputTokens, audioInputTokens, audioOutputTokens, reasoningOutputTokens],
   );
 
   return (
