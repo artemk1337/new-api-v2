@@ -303,6 +303,10 @@ func SetApiRouter(router *gin.Engine) {
 		systemInfoRoute.Use(middleware.RootAuth())
 		{
 			systemInfoRoute.GET("/instances", controller.ListSystemInstances)
+			systemInfoRoute.GET("/telemetry", controller.GetSystemTelemetry)
+			systemInfoRoute.GET("/telemetry-agent", controller.GetSystemTelemetryAgent)
+			systemInfoRoute.POST("/telemetry-agent/start", controller.StartSystemTelemetryAgent)
+			systemInfoRoute.POST("/telemetry-agent/stop", controller.StopSystemTelemetryAgent)
 		}
 
 		dataRoute := apiRouter.Group("/data")

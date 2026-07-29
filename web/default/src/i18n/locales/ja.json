@@ -5108,6 +5108,18 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "System telemetry": "システムテレメトリー",
+    "Host resource history and CPU leaders.": "ホストリソース履歴と CPU 使用量上位のプロセス。",
+    "Current top processes": "現在の上位プロセス",
+    "CPU leaders": "CPU 使用量上位",
+    "We could not load telemetry.": "テレメトリーを読み込めませんでした。",
+    "No telemetry data yet.": "テレメトリーデータはまだありません。",
+    "Last sample:": "最新サンプル：",
+    "Stop telemetry agent?": "テレメトリーエージェントを停止しますか？",
+    "The history remains available, but new host metrics will not be collected.": "履歴は引き続き利用できますが、新しいホストメトリクスは収集されません。",
+    "I/O wait": "I/O 待機",
+    "Load average": "平均負荷",
+    "Swap": "スワップ"
   }
 }

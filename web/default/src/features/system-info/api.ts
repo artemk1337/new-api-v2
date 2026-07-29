@@ -17,11 +17,47 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { SystemInstanceListResponse } from './types'
+
+import type {
+  SystemInstanceListResponse,
+  SystemTelemetryAgentResponse,
+  SystemTelemetryResponse,
+} from './types'
 
 export async function listSystemInstances() {
   const res = await api.get<SystemInstanceListResponse>(
     '/api/system-info/instances'
+  )
+  return res.data
+}
+
+export async function getSystemTelemetry(nodeName: string, hours: 1 | 6 | 24) {
+  const res = await api.get<SystemTelemetryResponse>(
+    '/api/system-info/telemetry',
+    {
+      params: { node_name: nodeName, hours },
+    }
+  )
+  return res.data
+}
+
+export async function getSystemTelemetryAgent() {
+  const res = await api.get<SystemTelemetryAgentResponse>(
+    '/api/system-info/telemetry-agent'
+  )
+  return res.data
+}
+
+export async function startSystemTelemetryAgent() {
+  const res = await api.post<SystemTelemetryAgentResponse>(
+    '/api/system-info/telemetry-agent/start'
+  )
+  return res.data
+}
+
+export async function stopSystemTelemetryAgent() {
+  const res = await api.delete<SystemTelemetryAgentResponse>(
+    '/api/system-info/telemetry-agent/stop'
   )
   return res.data
 }

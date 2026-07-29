@@ -17,10 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
+
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+
 import { SystemInstancesPanel } from './components/system-instances-panel'
 import { SystemTasksPanel } from './components/system-tasks-panel'
+import { SystemTelemetryPanel } from './components/system-telemetry-panel'
 
 export function SystemInfo() {
   const { t } = useTranslation()
@@ -38,6 +41,7 @@ export function SystemInfo() {
       <SectionPageLayout.Content>
         <div className='space-y-4'>
           <SystemInstancesPanel />
+          <SystemTelemetryPanel />
           <SystemTasksPanel />
         </div>
       </SectionPageLayout.Content>

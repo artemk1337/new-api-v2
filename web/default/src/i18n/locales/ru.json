@@ -5108,6 +5108,18 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "System telemetry": "Системная телеметрия",
+    "Host resource history and CPU leaders.": "История ресурсов хоста и лидеры по CPU.",
+    "Current top processes": "Текущие топ-процессы",
+    "CPU leaders": "Лидеры по CPU",
+    "We could not load telemetry.": "Не удалось загрузить телеметрию.",
+    "No telemetry data yet.": "Данных телеметрии пока нет.",
+    "Last sample:": "Последний семпл:",
+    "Stop telemetry agent?": "Остановить агент телеметрии?",
+    "The history remains available, but new host metrics will not be collected.": "История останется доступной, но новые метрики хоста собираться не будут.",
+    "I/O wait": "Ожидание I/O",
+    "Load average": "Средняя нагрузка",
+    "Swap": "Swap"
   }
 }

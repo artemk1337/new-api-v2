@@ -5108,6 +5108,18 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "System telemetry": "Télémétrie système",
+    "Host resource history and CPU leaders.": "Historique des ressources hôte et processus les plus actifs sur le CPU.",
+    "Current top processes": "Processus les plus actifs",
+    "CPU leaders": "Principaux consommateurs CPU",
+    "We could not load telemetry.": "Impossible de charger la télémétrie.",
+    "No telemetry data yet.": "Aucune donnée de télémétrie pour le moment.",
+    "Last sample:": "Dernier échantillon :",
+    "Stop telemetry agent?": "Arrêter l’agent de télémétrie ?",
+    "The history remains available, but new host metrics will not be collected.": "L’historique reste disponible, mais aucune nouvelle métrique hôte ne sera collectée.",
+    "I/O wait": "Attente E/S",
+    "Load average": "Charge moyenne",
+    "Swap": "Swap"
   }
 }

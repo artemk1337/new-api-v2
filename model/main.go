@@ -296,6 +296,7 @@ func migrateDB() error {
 		&UserOAuthBinding{},
 		&PerfMetric{},
 		&SystemInstance{},
+		&SystemTelemetrySample{},
 		&SystemTask{},
 		&SystemTaskLock{},
 		&BillingOutbox{},

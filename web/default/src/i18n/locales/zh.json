@@ -5108,6 +5108,18 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "System telemetry": "系统遥测",
+    "Host resource history and CPU leaders.": "主机资源历史和 CPU 负载进程。",
+    "Current top processes": "当前高负载进程",
+    "CPU leaders": "CPU 负载排行",
+    "We could not load telemetry.": "无法加载遥测数据。",
+    "No telemetry data yet.": "暂无遥测数据。",
+    "Last sample:": "最后一个样本：",
+    "Stop telemetry agent?": "停止遥测代理？",
+    "The history remains available, but new host metrics will not be collected.": "历史数据仍可用，但不会再收集新的主机指标。",
+    "I/O wait": "I/O 等待",
+    "Load average": "平均负载",
+    "Swap": "交换空间"
   }
 }

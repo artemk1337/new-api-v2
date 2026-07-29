@@ -77,3 +77,34 @@ export type SystemInstanceListResponse = {
   message: string
   data?: SystemInstance[]
 }
+
+export type SystemTelemetryProcess = {
+  pid: number
+  name: string
+  cpu_usage: number
+  rss_bytes: number
+}
+
+export type SystemTelemetrySample = {
+  node_name: string
+  collected_at: number
+  cpu_usage: number
+  memory_usage: number
+  swap_used_bytes: number
+  swap_usage: number
+  io_wait: number
+  load_average_1: number
+  disk_usage: number
+  top_processes: SystemTelemetryProcess[]
+}
+
+export type SystemTelemetryResponse = {
+  success: boolean
+  message: string
+  data?: SystemTelemetrySample[]
+}
+
+export type SystemTelemetryAgentResponse = {
+  running: boolean
+  message: string
+}

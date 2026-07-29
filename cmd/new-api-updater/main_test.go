@@ -369,3 +369,64 @@ func TestCleanupOldJobsKeepsRecentTerminalJobs(t *testing.T) {
 	assert.Contains(t, jobs, recentID)
 	assert.Contains(t, jobs, runningID)
 }
+
+func TestTelemetryAgentStatusTreatsMissingContainerAsStopped(t *testing.T) {
+	previousOutput := runCommandOutputFn
+	runCommandOutputFn = func(string, string, ...string) (string, error) {
+		return "", errors.New("No such object: new-api-system-telemetry-agent")
+	}
+	t.Cleanup(func() { runCommandOutputFn = previousOutput })
+
+	recorder := httptest.NewRecorder()
+	handleTelemetryAgent(recorder, httptest.NewRequest(http.MethodGet, "/telemetry-agent", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, `{"running":false,"message":""}`, recorder.Body.String())
+}
+
+func TestTelemetryAgentStartIsNoopWhenAlreadyRunning(t *testing.T) {
+	previousOutput := runCommandOutputFn
+	previousRun := runCommandFn
+	runCommandOutputFn = func(string, string, ...string) (string, error) {
+		return "running", nil
+	}
+	called := false
+	runCommandFn = func(string, string, ...string) error {
+		called = true
+		return nil
+	}
+	t.Cleanup(func() {
+		runCommandOutputFn = previousOutput
+		runCommandFn = previousRun
+	})
+
+	recorder := httptest.NewRecorder()
+	handleTelemetryAgent(recorder, httptest.NewRequest(http.MethodPost, "/telemetry-agent", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, `{"running":true,"message":"telemetry agent is already running"}`, recorder.Body.String())
+	assert.False(t, called)
+}
+
+func TestTelemetryAgentStopUsesFixedContainer(t *testing.T) {
+	previousOutput := runCommandOutputFn
+	previousRun := runCommandFn
+	runCommandOutputFn = func(string, string, ...string) (string, error) {
+		return "running", nil
+	}
+	runCommandFn = func(_ string, name string, args ...string) error {
+		require.Equal(t, "docker", name)
+		require.Equal(t, []string{"stop", "new-api-system-telemetry-agent"}, args)
+		return nil
+	}
+	t.Cleanup(func() {
+		runCommandOutputFn = previousOutput
+		runCommandFn = previousRun
+	})
+
+	recorder := httptest.NewRecorder()
+	handleTelemetryAgent(recorder, httptest.NewRequest(http.MethodDelete, "/telemetry-agent", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{"running":false,"message":"telemetry agent stopped"}`, recorder.Body.String())
+}

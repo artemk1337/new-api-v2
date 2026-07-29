@@ -47,6 +47,11 @@ type serviceStatusResponse struct {
 	} `json:"data"`
 }
 
+type telemetryAgentResponse struct {
+	Running bool   `json:"running"`
+	Message string `json:"message"`
+}
+
 type deployEnvSnapshot struct {
 	Content         []byte
 	Exists          bool
@@ -76,10 +81,85 @@ func main() {
 	})
 	http.HandleFunc("/update", handleUpdate)
 	http.HandleFunc("/jobs/", handleJobStatus)
+	http.HandleFunc("/telemetry-agent", handleTelemetryAgent)
 	log.Printf("new-api updater listening on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func handleTelemetryAgent(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		running, err := telemetryAgentRunning()
+		if err != nil {
+			writeAnyJSON(w, http.StatusInternalServerError, telemetryAgentResponse{Message: err.Error()})
+			return
+		}
+		writeAnyJSON(w, http.StatusOK, telemetryAgentResponse{Running: running})
+	case http.MethodPost:
+		running, err := telemetryAgentRunning()
+		if err != nil {
+			writeAnyJSON(w, http.StatusInternalServerError, telemetryAgentResponse{Message: err.Error()})
+			return
+		}
+		if running {
+			writeAnyJSON(w, http.StatusOK, telemetryAgentResponse{Running: true, Message: "telemetry agent is already running"})
+			return
+		}
+		if err := startTelemetryAgent(); err != nil {
+			writeAnyJSON(w, http.StatusInternalServerError, telemetryAgentResponse{Message: err.Error()})
+			return
+		}
+		writeAnyJSON(w, http.StatusOK, telemetryAgentResponse{Running: true, Message: "telemetry agent started"})
+	case http.MethodDelete:
+		running, err := telemetryAgentRunning()
+		if err != nil {
+			writeAnyJSON(w, http.StatusInternalServerError, telemetryAgentResponse{Message: err.Error()})
+			return
+		}
+		if !running {
+			writeAnyJSON(w, http.StatusOK, telemetryAgentResponse{Running: false, Message: "telemetry agent is already stopped"})
+			return
+		}
+		if err := runCommandFn("", "docker", "stop", telemetryAgentContainer()); err != nil {
+			writeAnyJSON(w, http.StatusInternalServerError, telemetryAgentResponse{Message: err.Error()})
+			return
+		}
+		writeAnyJSON(w, http.StatusOK, telemetryAgentResponse{Running: false, Message: "telemetry agent stopped"})
+	default:
+		writeAnyJSON(w, http.StatusMethodNotAllowed, telemetryAgentResponse{Message: "method not allowed"})
+	}
+}
+
+func telemetryAgentRunning() (bool, error) {
+	output, err := runCommandOutputFn("", "docker", "inspect", "-f", "{{if .State.Running}}running{{else}}stopped{{end}}", telemetryAgentContainer())
+	if err != nil {
+		if strings.Contains(err.Error(), "No such object") {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(output) == "running", nil
+}
+
+func startTelemetryAgent() error {
+	if err := runCommandFn("", "docker", "start", telemetryAgentContainer()); err == nil {
+		return nil
+	}
+	composeDir := env("UPDATER_COMPOSE_DIR", "/workspace")
+	envFile := env("UPDATER_ENV_FILE", filepath.Join(composeDir, ".env"))
+	composeFile := env("UPDATER_COMPOSE_FILE", filepath.Join(composeDir, "docker-compose.yml"))
+	projectName := composeProjectName(composeDir, envFile, env("UPDATER_SERVICE", "new-api"))
+	return runCommandFn(composeDir, "docker", composeArgs(projectName, envFile, composeFile, "up", "-d", "--no-deps", telemetryAgentService())...)
+}
+
+func telemetryAgentContainer() string {
+	return env("UPDATER_TELEMETRY_AGENT_CONTAINER", "new-api-system-telemetry-agent")
+}
+
+func telemetryAgentService() string {
+	return env("UPDATER_TELEMETRY_AGENT_SERVICE", "system-telemetry-agent")
 }
 
 func handleUpdate(w http.ResponseWriter, r *http.Request) {

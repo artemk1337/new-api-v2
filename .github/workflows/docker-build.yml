@@ -107,6 +107,23 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Build & push telemetry agent
+        id: build-telemetry-agent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.system-telemetry-agent
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${{ env.TAG }}-${{ matrix.arch }}
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:latest-${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
 
@@ -116,6 +133,9 @@ jobs:
       - name: Sign updater image with cosign
         run: cosign sign --yes ghcr.io/artemk1337/new-api-v2-updater@${{ steps.build-updater.outputs.digest }}
 
+      - name: Sign telemetry agent image with cosign
+        run: cosign sign --yes ghcr.io/artemk1337/new-api-v2-system-telemetry-agent@${{ steps.build-telemetry-agent.outputs.digest }}
+
       - name: Image summary
         run: |
           echo "### Docker Image Digest (${{ matrix.arch }})" >> $GITHUB_STEP_SUMMARY
@@ -124,6 +144,8 @@ jobs:
           echo "${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo "ghcr.io/artemk1337/new-api-v2-updater:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.build-updater.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.build-telemetry-agent.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   create_manifests:
@@ -156,6 +178,10 @@ jobs:
             -t ghcr.io/artemk1337/new-api-v2-updater:${TAG} \
             ghcr.io/artemk1337/new-api-v2-updater:${TAG}-amd64 \
             ghcr.io/artemk1337/new-api-v2-updater:${TAG}-arm64
+          docker buildx imagetools create \
+            -t ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${TAG} \
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${TAG}-amd64 \
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${TAG}-arm64
 
       - name: Create & push manifest (latest)
         run: |
@@ -167,6 +193,10 @@ jobs:
             -t ghcr.io/artemk1337/new-api-v2-updater:latest \
             ghcr.io/artemk1337/new-api-v2-updater:latest-amd64 \
             ghcr.io/artemk1337/new-api-v2-updater:latest-arm64
+          docker buildx imagetools create \
+            -t ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:latest \
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:latest-amd64 \
+            ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:latest-arm64
 
       - name: Manifest summary
         run: |
@@ -174,4 +204,5 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/artemk1337/new-api-v2:${TAG} >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/artemk1337/new-api-v2-updater:${TAG} >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${TAG} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY

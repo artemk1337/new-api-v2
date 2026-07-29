@@ -5108,6 +5108,18 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "System telemetry": "Dữ liệu đo hệ thống",
+    "Host resource history and CPU leaders.": "Lịch sử tài nguyên máy chủ và tiến trình dùng CPU nhiều nhất.",
+    "Current top processes": "Tiến trình hàng đầu hiện tại",
+    "CPU leaders": "Tiến trình dùng CPU nhiều nhất",
+    "We could not load telemetry.": "Không thể tải dữ liệu đo.",
+    "No telemetry data yet.": "Chưa có dữ liệu đo.",
+    "Last sample:": "Mẫu gần nhất:",
+    "Stop telemetry agent?": "Dừng tác nhân đo từ xa?",
+    "The history remains available, but new host metrics will not be collected.": "Lịch sử vẫn khả dụng nhưng sẽ không thu thập số liệu máy chủ mới.",
+    "I/O wait": "Chờ I/O",
+    "Load average": "Tải trung bình",
+    "Swap": "Swap"
   }
 }

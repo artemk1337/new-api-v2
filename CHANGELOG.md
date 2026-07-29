@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.75
+
+- Added an independent host telemetry agent that records CPU, memory, swap, I/O wait, load, disk usage, and the top three CPU-consuming processes every 10 seconds.
+- Added 24-hour telemetry history with hourly retention cleanup, Root-only API controls, and System Info charts for 1, 6, and 24-hour periods.
+- Added fixed updater-sidecar controls for starting and stopping the telemetry agent, plus release images for amd64 and arm64.
+
 ## v1.1.74
 
 - Replaced the Chinese channel-test log labels with the English `Model test` text.

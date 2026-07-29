@@ -5108,6 +5108,18 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "System telemetry": "System telemetry",
+    "Host resource history and CPU leaders.": "Host resource history and CPU leaders.",
+    "Current top processes": "Current top processes",
+    "CPU leaders": "CPU leaders",
+    "We could not load telemetry.": "We could not load telemetry.",
+    "No telemetry data yet.": "No telemetry data yet.",
+    "Last sample:": "Last sample:",
+    "Stop telemetry agent?": "Stop telemetry agent?",
+    "The history remains available, but new host metrics will not be collected.": "The history remains available, but new host metrics will not be collected.",
+    "I/O wait": "I/O wait",
+    "Load average": "Load average",
+    "Swap": "Swap"
   }
 }
