@@ -63,8 +63,15 @@ export function SystemTelemetryPanel() {
     queryKey: ['system-info', 'telemetry-agent'],
     queryFn: getSystemTelemetryAgent,
     staleTime: REFRESH_INTERVAL_MS,
-    refetchInterval: REFRESH_INTERVAL_MS,
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.status === 'error' ? false : REFRESH_INTERVAL_MS,
   })
+  const agentUnavailable = agentQuery.isError
+  const agentRunning = agentQuery.data?.running ?? false
+  let agentStatus = t('stopped')
+  if (agentUnavailable) agentStatus = t('Unavailable')
+  else if (agentRunning) agentStatus = t('running')
   const samples = telemetryQuery.data ?? []
   const latest = samples.at(-1)
   const leaders = useMemo(() => {
@@ -120,29 +127,28 @@ export function SystemTelemetryPanel() {
           </div>
         </div>
         <div className='flex items-center gap-2'>
-          <Badge variant='outline'>
-            {agentQuery.data?.running ? t('running') : t('stopped')}
-          </Badge>
-          {agentQuery.data?.running ? (
-            <Button
-              size='sm'
-              variant='outline'
-              onClick={() => setStopping(true)}
-              disabled={updating}
-            >
-              <Square data-icon='inline-start' />
-              {t('Stop')}
-            </Button>
-          ) : (
-            <Button
-              size='sm'
-              onClick={() => void updateAgent('start')}
-              disabled={updating}
-            >
-              <Play data-icon='inline-start' />
-              {t('Start')}
-            </Button>
-          )}
+          <Badge variant='outline'>{agentStatus}</Badge>
+          {!agentUnavailable &&
+            (agentRunning ? (
+              <Button
+                size='sm'
+                variant='outline'
+                onClick={() => setStopping(true)}
+                disabled={updating}
+              >
+                <Square data-icon='inline-start' />
+                {t('Stop')}
+              </Button>
+            ) : (
+              <Button
+                size='sm'
+                onClick={() => void updateAgent('start')}
+                disabled={updating}
+              >
+                <Play data-icon='inline-start' />
+                {t('Start')}
+              </Button>
+            ))}
         </div>
       </div>
       <div className='space-y-4 p-4 sm:p-5'>

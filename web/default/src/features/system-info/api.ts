@@ -43,7 +43,8 @@ export async function getSystemTelemetry(nodeName: string, hours: 1 | 6 | 24) {
 
 export async function getSystemTelemetryAgent() {
   const res = await api.get<SystemTelemetryAgentResponse>(
-    '/api/system-info/telemetry-agent'
+    '/api/system-info/telemetry-agent',
+    { skipErrorHandler: true }
   )
   return res.data
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.76
+
+- Stopped repeated telemetry-agent error notifications when its controller is unavailable or has not yet been upgraded.
+- Show the controller as unavailable and disable its controls until it can be reached.
+
 ## v1.1.75
 
 - Added an independent host telemetry agent that records CPU, memory, swap, I/O wait, load, disk usage, and the top three CPU-consuming processes every 10 seconds.
