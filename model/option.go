@@ -33,6 +33,11 @@ type JSONObjectPatch struct {
 }
 
 var optionUpdateMutex sync.Mutex
+var modelRequestRateLimitActivationNow = common.GetTimestamp
+
+func modelRequestRateLimitActivationDelay() int64 {
+	return int64(max(2*common.SyncFrequency, 2) + 5)
+}
 
 // jsonObjectPatchOptionKeys is intentionally limited to model-pricing maps.
 // Unlike a regular option update, patching an arbitrary JSON option cannot
@@ -188,6 +193,11 @@ func InitOptionMap() {
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
+	common.OptionMap[setting.ModelRequestRateLimitDurationOption] = setting.ModelRequestRateLimitDurationValue()
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivatedOption] = "false"
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivationAtOption] = "0"
+	common.OptionMap[setting.ModelRequestRateLimitDurationActiveOption] = "false"
+	common.OptionMap[setting.ModelRequestRateLimitDurationStagedOption] = "false"
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
@@ -252,8 +262,13 @@ func loadOptionsFromDatabaseLocked() {
 	}
 	hasPricingGroups := false
 	hasLegacyUsableGroups := false
+	hasModelRequestRateLimitDuration := false
+	modelRequestRateLimitDurationActivated := false
+	modelRequestRateLimitDurationActivationAt := int64(0)
 	legacyUsableGroupsValid := true
 	legacyGroupRatio := ""
+	modelRequestRateLimitDuration := ""
+	modelRequestRateLimitDurationMinutes := ""
 	legacyUsableGroups := make(map[string]string)
 	for _, option := range options {
 		switch option.Key {
@@ -267,6 +282,15 @@ func loadOptionsFromDatabaseLocked() {
 				common.SysLog("failed to read legacy user usable groups: " + err.Error())
 				legacyUsableGroupsValid = false
 			}
+		case setting.ModelRequestRateLimitDurationOption:
+			hasModelRequestRateLimitDuration = true
+			modelRequestRateLimitDuration = option.Value
+		case setting.ModelRequestRateLimitDurationLegacyOption:
+			modelRequestRateLimitDurationMinutes = option.Value
+		case setting.ModelRequestRateLimitDurationActivatedOption:
+			modelRequestRateLimitDurationActivated = option.Value == "true"
+		case setting.ModelRequestRateLimitDurationActivationAtOption:
+			modelRequestRateLimitDurationActivationAt, _ = strconv.ParseInt(option.Value, 10, 64)
 		}
 	}
 	if !hasLegacyUsableGroups {
@@ -290,6 +314,25 @@ func loadOptionsFromDatabaseLocked() {
 			}
 		}
 	}
+	resolvedRateLimitDuration, err := applyModelRequestRateLimitDuration(
+		modelRequestRateLimitDuration,
+		hasModelRequestRateLimitDuration,
+		modelRequestRateLimitDurationMinutes,
+		modelRequestRateLimitDurationActivated,
+		modelRequestRateLimitDurationActivationAt,
+	)
+	if err != nil {
+		common.SysLog("failed to set model request rate limit duration: " + err.Error())
+	}
+	common.OptionMapRWMutex.Lock()
+	if !hasModelRequestRateLimitDuration {
+		common.OptionMap[setting.ModelRequestRateLimitDurationOption] = resolvedRateLimitDuration
+	}
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivatedOption] = strconv.FormatBool(modelRequestRateLimitDurationActivated)
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(modelRequestRateLimitDurationActivationAt, 10)
+	common.OptionMap[setting.ModelRequestRateLimitDurationActiveOption] = strconv.FormatBool(setting.ModelRequestRateLimitDurationConfig().Canonical)
+	common.OptionMap[setting.ModelRequestRateLimitDurationStagedOption] = strconv.FormatBool(hasModelRequestRateLimitDuration)
+	common.OptionMapRWMutex.Unlock()
 	if !hasPricingGroups && !legacyUsableGroupsValid {
 		return
 	}
@@ -306,6 +349,93 @@ func loadOptionsFromDatabaseLocked() {
 	if err := NormalizePricingGroupReferences(); err != nil {
 		common.SysLog("failed to normalize pricing group references: " + err.Error())
 	}
+}
+
+func applyModelRequestRateLimitDuration(durationValue string, durationExists bool, legacyMinutes string, activated bool, activationAt int64) (string, error) {
+	legacyResolved := setting.ResolveModelRequestRateLimitDuration("", false, legacyMinutes)
+	canonicalResolved := legacyResolved
+	if durationExists {
+		canonicalResolved = setting.ResolveModelRequestRateLimitDuration(durationValue, true, legacyMinutes)
+	}
+	if err := setting.ConfigureModelRequestRateLimitDuration(canonicalResolved, legacyResolved, durationExists && activated, activationAt); err != nil {
+		return "", err
+	}
+	return setting.ModelRequestRateLimitDurationValue(), nil
+}
+
+func refreshModelRequestRateLimitDuration() error {
+	keys := []string{
+		setting.ModelRequestRateLimitDurationOption,
+		setting.ModelRequestRateLimitDurationLegacyOption,
+		setting.ModelRequestRateLimitDurationActivatedOption,
+		setting.ModelRequestRateLimitDurationActivationAtOption,
+	}
+	var options []Option
+	if err := DB.Where("key IN ?", keys).Find(&options).Error; err != nil {
+		return err
+	}
+
+	durationValue := ""
+	legacyMinutes := ""
+	durationExists := false
+	activated := false
+	activationAt := int64(0)
+	for _, option := range options {
+		switch option.Key {
+		case setting.ModelRequestRateLimitDurationOption:
+			durationValue = option.Value
+			durationExists = true
+		case setting.ModelRequestRateLimitDurationLegacyOption:
+			legacyMinutes = option.Value
+		case setting.ModelRequestRateLimitDurationActivatedOption:
+			activated = option.Value == "true"
+		case setting.ModelRequestRateLimitDurationActivationAtOption:
+			activationAt, _ = strconv.ParseInt(option.Value, 10, 64)
+		}
+	}
+	resolved, err := applyModelRequestRateLimitDuration(durationValue, durationExists, legacyMinutes, activated, activationAt)
+	if err != nil {
+		return err
+	}
+	common.OptionMapRWMutex.Lock()
+	if !durationExists {
+		common.OptionMap[setting.ModelRequestRateLimitDurationOption] = resolved
+	}
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivatedOption] = strconv.FormatBool(activated)
+	common.OptionMap[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(activationAt, 10)
+	common.OptionMap[setting.ModelRequestRateLimitDurationActiveOption] = strconv.FormatBool(setting.ModelRequestRateLimitDurationConfig().Canonical)
+	common.OptionMap[setting.ModelRequestRateLimitDurationStagedOption] = strconv.FormatBool(durationExists)
+	common.OptionMapRWMutex.Unlock()
+	return nil
+}
+
+// RefreshModelRequestRateLimitDurationMetadata keeps the API-visible active
+// state aligned with the shared cutover timestamp without querying the DB.
+func RefreshModelRequestRateLimitDurationMetadata() {
+	common.OptionMapRWMutex.Lock()
+	defer common.OptionMapRWMutex.Unlock()
+	common.OptionMap[setting.ModelRequestRateLimitDurationActiveOption] = strconv.FormatBool(setting.ModelRequestRateLimitDurationConfig().Canonical)
+}
+
+func validateModelRequestRateLimitDurationActivation(values map[string]string) error {
+	if values[setting.ModelRequestRateLimitDurationActivatedOption] != "true" {
+		return nil
+	}
+	durationValue := values[setting.ModelRequestRateLimitDurationOption]
+	if durationValue == "" {
+		var option Option
+		if err := DB.First(&option, "key = ?", setting.ModelRequestRateLimitDurationOption).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("model request rate limit duration must be staged before activation")
+			}
+			return err
+		}
+		durationValue = option.Value
+	}
+	if _, err := setting.ParseModelRequestRateLimitDuration(durationValue); err != nil {
+		return errors.New("model request rate limit duration must be staged before activation")
+	}
+	return nil
 }
 
 func migratePricingGroupsFromLegacy(legacyGroupRatio string, legacyUsableGroups map[string]string) (bool, error) {
@@ -401,10 +531,42 @@ func UpdateOption(key string, value string) error {
 	if key == "GroupRatio" {
 		key = "PricingGroups"
 	}
+	modelRequestRateLimitDurationChanged := key == setting.ModelRequestRateLimitDurationOption ||
+		key == setting.ModelRequestRateLimitDurationLegacyOption ||
+		key == setting.ModelRequestRateLimitDurationActivatedOption ||
+		key == setting.ModelRequestRateLimitDurationActivationAtOption
+	activationWasEnabled := false
+	if key == setting.ModelRequestRateLimitDurationActivatedOption {
+		var option Option
+		err := DB.Select("value").First(&option, "key = ?", setting.ModelRequestRateLimitDurationActivatedOption).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		activationWasEnabled = err == nil && option.Value == "true"
+		if value == "false" && activationWasEnabled {
+			return errors.New("model request rate limit duration activation cannot be disabled")
+		}
+		if value == "true" && activationWasEnabled {
+			return nil
+		}
+	}
+	if err := validateModelRequestRateLimitDurationActivation(map[string]string{key: value}); err != nil {
+		return err
+	}
 	if err := normalizePricingGroupReferencesBeforeOptionUpdate(key); err != nil {
 		return err
 	}
-	return persistOptionsAndRuntime(map[string]string{key: value})
+	values := map[string]string{key: value}
+	if key == setting.ModelRequestRateLimitDurationActivatedOption && value == "true" && !activationWasEnabled {
+		values[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(modelRequestRateLimitActivationNow()+modelRequestRateLimitActivationDelay(), 10)
+	}
+	if err := persistOptionsAndRuntime(values); err != nil {
+		return err
+	}
+	if modelRequestRateLimitDurationChanged {
+		return refreshModelRequestRateLimitDuration()
+	}
+	return nil
 }
 
 func normalizePricingGroupReferencesBeforeOptionUpdate(key string) error {
@@ -453,6 +615,20 @@ func normalizePricingGroupOptionReferencesBeforeRename() error {
 
 func validateOptionValue(key string, value string) error {
 	switch key {
+	case setting.ModelRequestRateLimitDurationStagedOption,
+		setting.ModelRequestRateLimitDurationActiveOption,
+		setting.ModelRequestRateLimitDurationActivationAtOption:
+		return errors.New("model request rate limit duration metadata is read-only")
+	case setting.ModelRequestRateLimitDurationOption:
+		_, err := setting.ParseModelRequestRateLimitDuration(value)
+		return err
+	case setting.ModelRequestRateLimitDurationActivatedOption:
+		if value != "true" && value != "false" {
+			return errors.New("model request rate limit duration activation must be true or false")
+		}
+		return nil
+	case "ModelRequestRateLimitCount":
+		return setting.ValidateModelRequestRateLimitCount(value)
 	case "GroupRatio", "PricingGroups":
 		if err := ratio_setting.ValidatePricingGroupsJSONString(value); err != nil {
 			return err
@@ -472,6 +648,8 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		err        error
 	)
 	switch key {
+	case setting.ModelRequestRateLimitDurationLegacyOption:
+		return strings.TrimSuffix(setting.ResolveModelRequestRateLimitDuration("", false, value), "m"), nil
 	case "GroupRatio":
 		normalized, ok, err = ratio_setting.NormalizeGroupRatioJSONStringForSaveIfInitialized(value)
 	case "PricingGroups":
@@ -706,6 +884,18 @@ func updateOptionsBulkLocked(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	activationWasEnabled := false
+	if values[setting.ModelRequestRateLimitDurationActivatedOption] == "false" || values[setting.ModelRequestRateLimitDurationActivatedOption] == "true" {
+		var option Option
+		err := DB.Select("value").First(&option, "key = ?", setting.ModelRequestRateLimitDurationActivatedOption).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		activationWasEnabled = err == nil && option.Value == "true"
+		if values[setting.ModelRequestRateLimitDurationActivatedOption] == "false" && activationWasEnabled {
+			return errors.New("model request rate limit duration activation cannot be disabled")
+		}
+	}
 	prospectivePricingGroups := values["PricingGroups"]
 	if prospectivePricingGroups == "" {
 		prospectivePricingGroups = values["GroupRatio"]
@@ -741,7 +931,25 @@ func updateOptionsBulkLocked(values map[string]string) error {
 			return err
 		}
 	}
-	return persistOptionsAndRuntime(normalizedValues)
+	if err := validateModelRequestRateLimitDurationActivation(normalizedValues); err != nil {
+		return err
+	}
+	if normalizedValues[setting.ModelRequestRateLimitDurationActivatedOption] == "true" && !activationWasEnabled {
+		normalizedValues[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(modelRequestRateLimitActivationNow()+modelRequestRateLimitActivationDelay(), 10)
+	}
+	if err := persistOptionsAndRuntime(normalizedValues); err != nil {
+		return err
+	}
+	if _, changed := normalizedValues[setting.ModelRequestRateLimitDurationOption]; changed {
+		return refreshModelRequestRateLimitDuration()
+	}
+	if _, changed := normalizedValues[setting.ModelRequestRateLimitDurationLegacyOption]; changed {
+		return refreshModelRequestRateLimitDuration()
+	}
+	if _, changed := normalizedValues[setting.ModelRequestRateLimitDurationActivatedOption]; changed {
+		return refreshModelRequestRateLimitDuration()
+	}
+	return nil
 }
 
 func persistOptionsAndRuntime(values map[string]string) error {
@@ -1177,9 +1385,11 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 	case "PreConsumedQuota":
 		common.PreConsumedQuota, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitCount":
-		setting.ModelRequestRateLimitCount, _ = strconv.Atoi(value)
+		setting.ModelRequestRateLimitCount = setting.ModelRequestRateLimitCountFromValue(value)
 	case "ModelRequestRateLimitDurationMinutes":
 		setting.ModelRequestRateLimitDurationMinutes, _ = strconv.Atoi(value)
+	case setting.ModelRequestRateLimitDurationOption:
+	case setting.ModelRequestRateLimitDurationActivatedOption:
 	case "ModelRequestRateLimitSuccessCount":
 		setting.ModelRequestRateLimitSuccessCount, _ = strconv.Atoi(value)
 	case "ModelRequestRateLimitGroup":

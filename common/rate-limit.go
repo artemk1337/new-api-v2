@@ -6,8 +6,13 @@ import (
 )
 
 type InMemoryRateLimiter struct {
-	store              map[string]*[]int64
+	store              map[string]inMemoryRateLimitEntry
 	mutex              sync.Mutex
+	expirationDuration time.Duration
+}
+
+type inMemoryRateLimitEntry struct {
+	requests           []time.Time
 	expirationDuration time.Duration
 }
 
@@ -15,7 +20,7 @@ func (l *InMemoryRateLimiter) Init(expirationDuration time.Duration) {
 	if l.store == nil {
 		l.mutex.Lock()
 		if l.store == nil {
-			l.store = make(map[string]*[]int64)
+			l.store = make(map[string]inMemoryRateLimitEntry)
 			l.expirationDuration = expirationDuration
 			if expirationDuration > 0 {
 				go l.clearExpiredItems()
@@ -28,43 +33,46 @@ func (l *InMemoryRateLimiter) Init(expirationDuration time.Duration) {
 func (l *InMemoryRateLimiter) clearExpiredItems() {
 	for {
 		time.Sleep(l.expirationDuration)
-		l.mutex.Lock()
-		now := time.Now().Unix()
-		for key := range l.store {
-			queue := l.store[key]
-			size := len(*queue)
-			if size == 0 || now-(*queue)[size-1] > int64(l.expirationDuration.Seconds()) {
-				delete(l.store, key)
-			}
+		l.deleteExpiredItems(time.Now())
+	}
+}
+
+func (l *InMemoryRateLimiter) deleteExpiredItems(now time.Time) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	for key, entry := range l.store {
+		if len(entry.requests) == 0 || now.Sub(entry.requests[len(entry.requests)-1]) > entry.expirationDuration {
+			delete(l.store, key)
 		}
-		l.mutex.Unlock()
 	}
 }
 
 // Request parameter duration's unit is seconds
 func (l *InMemoryRateLimiter) Request(key string, maxRequestNum int, duration int64) bool {
+	return l.request(key, maxRequestNum, time.Duration(duration)*time.Second)
+}
+
+func (l *InMemoryRateLimiter) request(key string, maxRequestNum int, duration time.Duration) bool {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	// [old <-- new]
-	queue, ok := l.store[key]
-	now := time.Now().Unix()
-	if ok {
-		if len(*queue) < maxRequestNum {
-			*queue = append(*queue, now)
-			return true
-		} else {
-			if now-(*queue)[0] >= duration {
-				*queue = (*queue)[1:]
-				*queue = append(*queue, now)
-				return true
-			} else {
-				return false
-			}
-		}
-	} else {
-		s := make([]int64, 0, maxRequestNum)
-		l.store[key] = &s
-		*(l.store[key]) = append(*(l.store[key]), now)
+	now := time.Now()
+	entry := l.store[key]
+	firstActive := 0
+	for firstActive < len(entry.requests) && now.Sub(entry.requests[firstActive]) >= duration {
+		firstActive++
 	}
+	entry.requests = entry.requests[firstActive:]
+	entry.expirationDuration = duration
+	if len(entry.requests) >= maxRequestNum {
+		l.store[key] = entry
+		return false
+	}
+	entry.requests = append(entry.requests, now)
+	l.store[key] = entry
 	return true
+}
+
+// RequestWithDuration applies a rate limit window represented as time.Duration.
+func (l *InMemoryRateLimiter) RequestWithDuration(key string, maxRequestNum int, duration time.Duration) bool {
+	return l.request(key, maxRequestNum, duration)
 }

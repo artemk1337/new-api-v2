@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.77
+
+- Added a selectable model request rate-limit period in seconds, minutes, or hours.
+- Preserved compatibility with the legacy minute-based setting and added validation for canonical periods such as `10s`, `5m`, and `1h`.
+- Switched rate-limit counters safely across rolling replicas while keeping Redis and in-memory windows consistent with the selected period.
+
 ## v1.1.76
 
 - Stopped repeated telemetry-agent error notifications when its controller is unavailable or has not yet been upgraded.

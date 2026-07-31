@@ -8,6 +8,7 @@ local key = KEYS[1]
 local requested = tonumber(ARGV[1])
 local rate = tonumber(ARGV[2])
 local capacity = tonumber(ARGV[3])
+local expiration = tonumber(ARGV[4])
 
 -- 获取当前时间（Redis服务器时间）
 local now = redis.call('TIME')
@@ -39,6 +40,8 @@ end
 
 ---- 更新桶状态并设置过期时间
 redis.call('HMSET', key, 'tokens', tokens, 'last_time', last_time)
---redis.call('EXPIRE', key, math.ceil(capacity / rate) + 60) -- 适当延长过期时间
+if expiration > 0 then
+    redis.call('EXPIRE', key, expiration)
+end
 
 return allowed and 1 or 0

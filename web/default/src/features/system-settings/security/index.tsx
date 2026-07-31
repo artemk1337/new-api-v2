@@ -23,11 +23,17 @@ import {
   getSecuritySectionContent,
   getSecuritySectionMeta,
 } from './section-registry.tsx'
+import { resolveSecuritySettings } from './security-settings'
 
 const defaultSecuritySettings: SecuritySettings = {
   ModelRequestRateLimitEnabled: false,
   ModelRequestRateLimitCount: 0,
   ModelRequestRateLimitSuccessCount: 1000,
+  ModelRequestRateLimitDuration: '1m',
+  ModelRequestRateLimitDurationActivationAt: 0,
+  ModelRequestRateLimitDurationActive: false,
+  ModelRequestRateLimitDurationActivated: false,
+  ModelRequestRateLimitDurationStaged: false,
   ModelRequestRateLimitDurationMinutes: 1,
   ModelRequestRateLimitGroup: '',
   CheckSensitiveEnabled: false,
@@ -52,6 +58,7 @@ export function SecuritySettings() {
       defaultSection={SECURITY_DEFAULT_SECTION}
       getSectionContent={getSecuritySectionContent}
       getSectionMeta={getSecuritySectionMeta}
+      resolveSettings={resolveSecuritySettings}
     />
   )
 }

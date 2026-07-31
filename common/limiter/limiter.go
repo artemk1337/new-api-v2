@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/go-redis/redis/v8"
@@ -60,6 +61,7 @@ func (rl *RedisLimiter) Allow(ctx context.Context, key string, opts ...Option) (
 		config.Requested,
 		config.Rate,
 		config.Capacity,
+		int64(config.Expiration/time.Second),
 	).Int()
 
 	if err != nil {
@@ -70,9 +72,10 @@ func (rl *RedisLimiter) Allow(ctx context.Context, key string, opts ...Option) (
 
 // Config 配置选项模式
 type Config struct {
-	Capacity  int64
-	Rate      int64
-	Requested int64
+	Capacity   int64
+	Rate       float64
+	Requested  int64
+	Expiration time.Duration
 }
 
 type Option func(*Config)
@@ -81,10 +84,14 @@ func WithCapacity(c int64) Option {
 	return func(cfg *Config) { cfg.Capacity = c }
 }
 
-func WithRate(r int64) Option {
+func WithRate(r float64) Option {
 	return func(cfg *Config) { cfg.Rate = r }
 }
 
 func WithRequested(n int64) Option {
 	return func(cfg *Config) { cfg.Requested = n }
+}
+
+func WithExpiration(duration time.Duration) Option {
+	return func(cfg *Config) { cfg.Expiration = duration }
 }

@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
@@ -44,6 +46,181 @@ func TestValidateOptionValueRejectsEmptyAutoGroups(t *testing.T) {
 	require.Error(t, validateOptionValue("AutoGroups", `[" "]`))
 	require.Error(t, validateOptionValue("AutoGroups", `["missing"]`))
 	require.Error(t, validateOptionValue("AutoGroups", `["internal"]`))
+}
+
+func TestValidateOptionValueRejectsInvalidModelRequestRateLimitDuration(t *testing.T) {
+	require.NoError(t, validateOptionValue(setting.ModelRequestRateLimitDurationOption, "10s"))
+	require.Error(t, validateOptionValue(setting.ModelRequestRateLimitDurationOption, "0s"))
+	require.Error(t, validateOptionValue(setting.ModelRequestRateLimitDurationOption, "1.5m"))
+	require.Error(t, validateOptionValue(setting.ModelRequestRateLimitDurationOption, "1d"))
+	require.NoError(t, validateOptionValue("ModelRequestRateLimitCount", "100"))
+	require.Error(t, validateOptionValue("ModelRequestRateLimitCount", "2147483648"))
+}
+
+func TestUpdateOptionAppliesLegacyRateLimitDurationWithoutCanonicalOption(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key IN ?", []string{
+		setting.ModelRequestRateLimitDurationOption,
+		setting.ModelRequestRateLimitDurationLegacyOption,
+		setting.ModelRequestRateLimitDurationActivatedOption,
+		setting.ModelRequestRateLimitDurationActivationAtOption,
+	}).Delete(&Option{}).Error)
+
+	originalDuration := setting.ModelRequestRateLimitDurationConfig()
+	originalLegacyMinutes := setting.ModelRequestRateLimitDurationMinutes
+	common.OptionMapRWMutex.RLock()
+	originalOptionMapDuration, hadOptionMapDuration := common.OptionMap[setting.ModelRequestRateLimitDurationOption]
+	common.OptionMapRWMutex.RUnlock()
+	t.Cleanup(func() {
+		require.NoError(t, setting.SetResolvedModelRequestRateLimitDuration(originalDuration.Value, originalDuration.Canonical))
+		setting.ModelRequestRateLimitDurationMinutes = originalLegacyMinutes
+		common.OptionMapRWMutex.Lock()
+		if hadOptionMapDuration {
+			common.OptionMap[setting.ModelRequestRateLimitDurationOption] = originalOptionMapDuration
+		} else {
+			delete(common.OptionMap, setting.ModelRequestRateLimitDurationOption)
+		}
+		common.OptionMapRWMutex.Unlock()
+		require.NoError(t, DB.Where("key IN ?", []string{
+			setting.ModelRequestRateLimitDurationOption,
+			setting.ModelRequestRateLimitDurationLegacyOption,
+			setting.ModelRequestRateLimitDurationActivatedOption,
+			setting.ModelRequestRateLimitDurationActivationAtOption,
+		}).Delete(&Option{}).Error)
+	})
+
+	require.NoError(t, UpdateOption(setting.ModelRequestRateLimitDurationLegacyOption, "5"))
+	assert.Equal(t, "5m", setting.ModelRequestRateLimitDurationValue())
+	assert.False(t, setting.ModelRequestRateLimitDurationConfig().Canonical)
+	common.OptionMapRWMutex.RLock()
+	assert.Equal(t, "5m", common.OptionMap[setting.ModelRequestRateLimitDurationOption])
+	assert.Equal(t, "false", common.OptionMap[setting.ModelRequestRateLimitDurationStagedOption])
+	common.OptionMapRWMutex.RUnlock()
+
+	var canonical Option
+	assert.ErrorIs(t, DB.First(&canonical, "key = ?", setting.ModelRequestRateLimitDurationOption).Error, gorm.ErrRecordNotFound)
+}
+
+func TestUpdateOptionStagesCanonicalRateLimitDurationUntilActivation(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key IN ?", []string{
+		setting.ModelRequestRateLimitDurationOption,
+		setting.ModelRequestRateLimitDurationLegacyOption,
+		setting.ModelRequestRateLimitDurationActivatedOption,
+		setting.ModelRequestRateLimitDurationActivationAtOption,
+	}).Delete(&Option{}).Error)
+	require.NoError(t, DB.Create(&Option{Key: setting.ModelRequestRateLimitDurationOption, Value: "10s"}).Error)
+
+	originalDuration := setting.ModelRequestRateLimitDurationConfig()
+	originalLegacyMinutes := setting.ModelRequestRateLimitDurationMinutes
+	t.Cleanup(func() {
+		require.NoError(t, setting.SetResolvedModelRequestRateLimitDuration(originalDuration.Value, originalDuration.Canonical))
+		setting.ModelRequestRateLimitDurationMinutes = originalLegacyMinutes
+		require.NoError(t, DB.Where("key IN ?", []string{
+			setting.ModelRequestRateLimitDurationOption,
+			setting.ModelRequestRateLimitDurationLegacyOption,
+			setting.ModelRequestRateLimitDurationActivatedOption,
+			setting.ModelRequestRateLimitDurationActivationAtOption,
+		}).Delete(&Option{}).Error)
+	})
+	require.NoError(t, UpdateOption(setting.ModelRequestRateLimitDurationLegacyOption, "5"))
+	assert.Equal(t, "5m", setting.ModelRequestRateLimitDurationValue())
+	assert.False(t, setting.ModelRequestRateLimitDurationConfig().Canonical)
+	common.OptionMapRWMutex.RLock()
+	assert.Equal(t, "false", common.OptionMap[setting.ModelRequestRateLimitDurationActivatedOption])
+	assert.Equal(t, "true", common.OptionMap[setting.ModelRequestRateLimitDurationStagedOption])
+	common.OptionMapRWMutex.RUnlock()
+
+	require.NoError(t, UpdateOption(setting.ModelRequestRateLimitDurationActivatedOption, "true"))
+	assert.Equal(t, "5m", setting.ModelRequestRateLimitDurationValue())
+	assert.False(t, setting.ModelRequestRateLimitDurationConfig().Canonical)
+	var activationAt Option
+	require.NoError(t, DB.First(&activationAt, "key = ?", setting.ModelRequestRateLimitDurationActivationAtOption).Error)
+	activationAtValue, err := strconv.ParseInt(activationAt.Value, 10, 64)
+	require.NoError(t, err)
+	assert.Greater(t, activationAtValue, time.Now().Unix())
+	common.OptionMapRWMutex.RLock()
+	assert.Equal(t, "true", common.OptionMap[setting.ModelRequestRateLimitDurationActivatedOption])
+	assert.Equal(t, "false", common.OptionMap[setting.ModelRequestRateLimitDurationActiveOption])
+	common.OptionMapRWMutex.RUnlock()
+
+	require.NoError(t, DB.Model(&Option{}).Where("key = ?", setting.ModelRequestRateLimitDurationActivationAtOption).Update("value", strconv.FormatInt(time.Now().Add(-time.Second).Unix(), 10)).Error)
+	require.NoError(t, refreshModelRequestRateLimitDuration())
+	assert.Equal(t, "10s", setting.ModelRequestRateLimitDurationValue())
+	assert.True(t, setting.ModelRequestRateLimitDurationConfig().Canonical)
+	require.Error(t, UpdateOption(setting.ModelRequestRateLimitDurationActivatedOption, "false"))
+	require.Error(t, UpdateOptionsBulk(map[string]string{setting.ModelRequestRateLimitDurationActivatedOption: "false"}))
+	require.Error(t, UpdateOption(setting.ModelRequestRateLimitDurationStagedOption, "true"))
+}
+
+func TestUpdateOptionsBulkActivatesStagedRateLimitDurationAtomically(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key IN ?", []string{
+		setting.ModelRequestRateLimitDurationOption,
+		setting.ModelRequestRateLimitDurationLegacyOption,
+		setting.ModelRequestRateLimitDurationActivatedOption,
+		setting.ModelRequestRateLimitDurationActivationAtOption,
+	}).Delete(&Option{}).Error)
+
+	original := setting.ModelRequestRateLimitDurationConfig()
+	originalNow := modelRequestRateLimitActivationNow
+	now := time.Now().Unix()
+	modelRequestRateLimitActivationNow = func() int64 { return now }
+	t.Cleanup(func() {
+		modelRequestRateLimitActivationNow = originalNow
+		require.NoError(t, setting.SetResolvedModelRequestRateLimitDuration(original.Value, original.Canonical))
+		require.NoError(t, DB.Where("key IN ?", []string{
+			setting.ModelRequestRateLimitDurationOption,
+			setting.ModelRequestRateLimitDurationLegacyOption,
+			setting.ModelRequestRateLimitDurationActivatedOption,
+			setting.ModelRequestRateLimitDurationActivationAtOption,
+		}).Delete(&Option{}).Error)
+	})
+
+	require.Error(t, UpdateOption(setting.ModelRequestRateLimitDurationActivatedOption, "true"))
+	require.Error(t, UpdateOptionsBulk(map[string]string{setting.ModelRequestRateLimitDurationActivatedOption: "true"}))
+	require.NoError(t, UpdateOptionsBulk(map[string]string{
+		setting.ModelRequestRateLimitDurationOption:          "10s",
+		setting.ModelRequestRateLimitDurationActivatedOption: "true",
+	}))
+
+	config := setting.ModelRequestRateLimitDurationConfig()
+	assert.False(t, config.Canonical)
+	assert.Equal(t, "1m", config.Value)
+	var activationAt Option
+	require.NoError(t, DB.First(&activationAt, "key = ?", setting.ModelRequestRateLimitDurationActivationAtOption).Error)
+	activationAtValue, err := strconv.ParseInt(activationAt.Value, 10, 64)
+	require.NoError(t, err)
+	assert.Equal(t, now+modelRequestRateLimitActivationDelay(), activationAtValue)
+}
+
+func TestRateLimitDurationActivationTimestampCannotBeUpdatedDirectly(t *testing.T) {
+	require.Error(t, validateOptionValue(setting.ModelRequestRateLimitDurationActivationAtOption, "1"))
+	require.Error(t, UpdateOption(setting.ModelRequestRateLimitDurationActivationAtOption, "1"))
+}
+
+func TestUpdateOptionNormalizesOverflowingLegacyRateLimitDuration(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key IN ?", []string{
+		setting.ModelRequestRateLimitDurationOption,
+		setting.ModelRequestRateLimitDurationLegacyOption,
+	}).Delete(&Option{}).Error)
+
+	originalDuration := setting.ModelRequestRateLimitDurationConfig()
+	t.Cleanup(func() {
+		require.NoError(t, setting.SetResolvedModelRequestRateLimitDuration(originalDuration.Value, originalDuration.Canonical))
+		require.NoError(t, DB.Where("key IN ?", []string{
+			setting.ModelRequestRateLimitDurationOption,
+			setting.ModelRequestRateLimitDurationLegacyOption,
+		}).Delete(&Option{}).Error)
+	})
+
+	require.NoError(t, UpdateOption(setting.ModelRequestRateLimitDurationLegacyOption, "9223372036854775807"))
+
+	var legacy Option
+	require.NoError(t, DB.First(&legacy, "key = ?", setting.ModelRequestRateLimitDurationLegacyOption).Error)
+	assert.Equal(t, "1", legacy.Value)
+	assert.Equal(t, "1m", setting.ModelRequestRateLimitDurationValue())
 }
 
 func TestUpdateOptionDoesNotPersistInvalidPricingGroups(t *testing.T) {
