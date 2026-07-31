@@ -28,7 +28,7 @@ export type ComboboxInputOption = {
   icon?: React.ReactNode
 }
 
-interface ComboboxInputProps {
+type ComboboxInputProps = {
   options: ComboboxInputOption[]
   value?: string
   onValueChange: (value: string) => void
@@ -38,7 +38,19 @@ interface ComboboxInputProps {
   id?: string
   allowCustomValue?: boolean
   openOnFocus?: boolean
-}
+} &
+  Omit<
+    React.ComponentProps<typeof Input>,
+    | 'type'
+    | 'value'
+    | 'onChange'
+    | 'placeholder'
+    | 'className'
+    | 'id'
+    | 'onFocus'
+    | 'onKeyDown'
+    | 'onPointerDown'
+  >
 
 export function ComboboxInput({
   options,
@@ -50,6 +62,7 @@ export function ComboboxInput({
   id,
   allowCustomValue = false,
   openOnFocus = true,
+  ...inputProps
 }: ComboboxInputProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
@@ -160,6 +173,7 @@ export function ComboboxInput({
   return (
     <div ref={containerRef} className='relative'>
       <Input
+        {...inputProps}
         ref={inputRef}
         id={id}
         type='text'

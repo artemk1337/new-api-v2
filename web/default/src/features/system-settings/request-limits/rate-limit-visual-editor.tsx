@@ -200,6 +200,7 @@ export function RateLimitVisualEditor({
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        unavailableGroupNames={rateLimits.map((limit) => limit.groupName)}
       />
     </div>
   )

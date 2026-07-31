@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -32,7 +33,9 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Dialog } from '@/components/dialog'
+import { getGroups as getPricingGroups } from '@/features/users/api'
 
 const rateLimitDialogSchema = z.object({
   groupName: z.string().min(1, 'Group name is required'),
@@ -61,6 +64,7 @@ type RateLimitDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: RateLimitEntryData) => void
   editData?: RateLimitEntryData | null
+  unavailableGroupNames: string[]
 }
 
 export function RateLimitDialog({
@@ -68,9 +72,22 @@ export function RateLimitDialog({
   onOpenChange,
   onSave,
   editData,
+  unavailableGroupNames,
 }: RateLimitDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
+  const { data: groupsData } = useQuery({
+    queryKey: ['pricing-groups'],
+    queryFn: getPricingGroups,
+    enabled: open,
+    staleTime: 0,
+  })
+  const groups = (groupsData?.data ?? [])
+    .filter((group) => !unavailableGroupNames.includes(String(group.id)))
+    .map((group) => ({
+      value: String(group.id),
+      label: group.name,
+    }))
 
   const form = useForm<RateLimitDialogFormValues>({
     resolver: zodResolver(rateLimitDialogSchema),
@@ -139,13 +156,21 @@ export function RateLimitDialog({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>{t('Group Name')}</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder={t('e.g., default, vip, premium')}
-                    {...field}
-                    disabled={isEditMode}
-                  />
-                </FormControl>
+                {isEditMode ? (
+                  <FormControl>
+                    <Input {...field} disabled />
+                  </FormControl>
+                ) : (
+                  <FormControl>
+                    <ComboboxInput
+                      options={groups}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      placeholder={t('e.g., default, vip, premium')}
+                      allowCustomValue
+                    />
+                  </FormControl>
+                )}
                 <FormDescription>
                   {isEditMode
                     ? t('Group name cannot be changed when editing.')

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.78
+
+- Added searchable selection of pricing groups when configuring group request-rate limits, while retaining support for custom user-group and `auto` keys.
+- Prevented duplicate group-rate-limit selections and preserved accessible validation feedback in the shared combobox input.
+
 ## v1.1.77
 
 - Added a selectable model request rate-limit period in seconds, minutes, or hours.
