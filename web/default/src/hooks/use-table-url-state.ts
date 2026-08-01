@@ -25,8 +25,7 @@ import type {
 
 type SearchRecord = Record<string, unknown>
 
-// Page size persists globally under the classic theme's key (raw number
-// string), so the choice is remembered and carries over from classic.
+// Page size persists globally as a raw number string.
 const PAGE_SIZE_STORAGE_KEY = 'page-size'
 
 function getStoredPageSize(): number | undefined {

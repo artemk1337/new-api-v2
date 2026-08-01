@@ -1240,7 +1240,6 @@
     "DeepSeek": "DeepSeek",
     "default": "по умолчанию",
     "Default": "По умолчанию",
-    "Default (New Frontend)": "По умолчанию (Новый интерфейс)",
     "Default / range": "По умолчанию / диапазон",
     "Default administrator permissions can be overridden for this user.": "Для этого пользователя можно переопределить стандартные права администратора.",
     "Default API Version *": "Версия API по умолчанию *",

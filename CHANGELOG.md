@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.85
+
+- Removed the remaining Classic UI configuration, translations, documentation, and internal migration tooling while preserving redirects for legacy `/console/*` links.
+
 ## v1.1.84
 
 - Sorted model group pricing from the lowest effective coefficient to the highest, matching the Auto group routing chain.
