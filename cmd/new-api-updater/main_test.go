@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -314,6 +315,52 @@ func TestPullPreparedImagePullsConfiguredTag(t *testing.T) {
 	assert.Empty(t, gotDir)
 	assert.Equal(t, "docker", gotName)
 	assert.Equal(t, []string{"pull", "ghcr.io/artemk1337/new-api-v2:v1.2.3"}, gotArgs)
+}
+
+func TestScheduleUpdaterSelfUpgradeStartsDetachedHelper(t *testing.T) {
+	t.Setenv("UPDATER_HOST_COMPOSE_DIR", "/root/repos/new-api")
+	t.Setenv("UPDATER_COMPOSE_DIR", "/workspace")
+	t.Setenv("UPDATER_ENV_FILE", "/workspace/.env")
+	t.Setenv("UPDATER_COMPOSE_FILE", "/workspace/docker-compose.yml")
+	t.Setenv("UPDATER_COMPOSE_PROJECT_NAME", "production-api")
+	t.Setenv("UPDATER_SIDECAR_IMAGE", "ghcr.io/artemk1337/new-api-v2-updater")
+
+	saved := runCommandFn
+	runCommandFn = func(dir string, name string, args ...string) error {
+		assert.Empty(t, dir)
+		require.Equal(t, "docker", name)
+		assert.Equal(t, "run", args[0])
+		assert.Contains(t, args, "-d")
+		assert.Contains(t, args, "--rm")
+		assert.Contains(t, args, "/var/run/docker.sock:/var/run/docker.sock")
+		assert.Contains(t, args, "/root/repos/new-api:/workspace")
+		assert.Contains(t, args, "ghcr.io/artemk1337/new-api-v2-updater:v1.2.3")
+		assert.Contains(t, args[len(args)-1], "UPDATER_SIDECAR_VERSION=v1.2.3")
+		assert.Contains(t, args[len(args)-1], "up -d --no-deps new-api-updater")
+		return nil
+	}
+	t.Cleanup(func() { runCommandFn = saved })
+
+	require.NoError(t, scheduleUpdaterSelfUpgrade("v1.2.3"))
+}
+
+func TestUpdaterSelfUpgradeScriptIsValidShell(t *testing.T) {
+	script := updaterSelfUpgradeScript("production-api", ".env", "docker-compose.yml", "new-api-updater", "v1.2.3")
+	command := exec.Command("sh", "-n")
+	command.Stdin = strings.NewReader(script)
+	require.NoError(t, command.Run())
+}
+
+func TestUpdaterHostComposeDirFailsWithoutWorkspaceMount(t *testing.T) {
+	t.Setenv("UPDATER_HOST_COMPOSE_DIR", "")
+	saved := runCommandOutputFn
+	runCommandOutputFn = func(string, string, ...string) (string, error) {
+		return "", nil
+	}
+	t.Cleanup(func() { runCommandOutputFn = saved })
+
+	_, err := updaterHostComposeDir()
+	require.EqualError(t, err, "updater workspace bind mount is not available")
 }
 
 func TestExtractStatusVersion(t *testing.T) {

@@ -278,6 +278,10 @@ func handleVersionReadiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func runUpdateJob(jobID string, tag string) {
+	if err := inspectUpdaterImage(tag); err != nil {
+		setJobStatus(jobID, "failed", "failed", "", err.Error(), "updater image is not ready")
+		return
+	}
 	setJobStatus(jobID, "running", "pulling", "", "", "pulling update image")
 	imageTag, err := pullPreparedImage(tag)
 	if err != nil {
@@ -292,7 +296,12 @@ func runUpdateJob(jobID string, tag string) {
 		setJobStatus(jobID, "failed", "failed", imageTag, err.Error(), "update deploy failed")
 		return
 	}
-	setJobStatus(jobID, "succeeded", "succeeded", imageTag, "", "update deployed")
+	if err := scheduleUpdaterSelfUpgrade(tag); err != nil {
+		log.Printf("updater self-upgrade was not scheduled: %v", err)
+		setJobStatus(jobID, "succeeded", "succeeded", imageTag, "", "update deployed; updater sidecar upgrade was not scheduled")
+		return
+	}
+	setJobStatus(jobID, "succeeded", "succeeded", imageTag, "", "update deployed; updater sidecar upgrade scheduled")
 }
 
 func setJobStatus(jobID string, status string, step string, image string, errText string, message string) {
@@ -344,6 +353,61 @@ func pullPreparedImage(tag string) (string, error) {
 func inspectPreparedImage(tag string) error {
 	imageTag := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2") + ":" + tag
 	return runCommandFn("", "docker", "manifest", "inspect", imageTag)
+}
+
+func inspectUpdaterImage(tag string) error {
+	imageTag := env("UPDATER_SIDECAR_IMAGE", "ghcr.io/artemk1337/new-api-v2-updater") + ":" + tag
+	return runCommandFn("", "docker", "manifest", "inspect", imageTag)
+}
+
+func scheduleUpdaterSelfUpgrade(tag string) error {
+	composeDir := env("UPDATER_COMPOSE_DIR", "/workspace")
+	envFile := env("UPDATER_ENV_FILE", filepath.Join(composeDir, ".env"))
+	composeFile := env("UPDATER_COMPOSE_FILE", filepath.Join(composeDir, "docker-compose.yml"))
+	service := env("UPDATER_SIDECAR_SERVICE", "new-api-updater")
+	projectName := composeProjectName(composeDir, envFile, env("UPDATER_SERVICE", "new-api"))
+	hostComposeDir, err := updaterHostComposeDir()
+	if err != nil {
+		return err
+	}
+	imageTag := env("UPDATER_SIDECAR_IMAGE", "ghcr.io/artemk1337/new-api-v2-updater") + ":" + tag
+	script := updaterSelfUpgradeScript(projectName, filepath.Base(envFile), filepath.Base(composeFile), service, tag)
+	return runCommandFn("", "docker", "run", "-d", "--rm",
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		"-v", hostComposeDir+":"+composeDir,
+		"-w", composeDir,
+		"--entrypoint", "sh", imageTag, "-c", script)
+}
+
+func updaterHostComposeDir() (string, error) {
+	if composeDir := env("UPDATER_HOST_COMPOSE_DIR", ""); composeDir != "" {
+		return composeDir, nil
+	}
+	containerID, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+	output, err := runCommandOutputFn("", "docker", "inspect", "-f", `{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}`, containerID)
+	if err != nil {
+		return "", err
+	}
+	composeDir := strings.TrimSpace(output)
+	if composeDir == "" || composeDir == "<no value>" {
+		return "", errors.New("updater workspace bind mount is not available")
+	}
+	return composeDir, nil
+}
+
+func updaterSelfUpgradeScript(projectName string, envFile string, composeFile string, service string, tag string) string {
+	compose := "docker compose -p " + projectName + " --env-file " + envFile + " -f " + composeFile
+	return "set -eu\n" +
+		"backup=" + envFile + ".updater-self-upgrade\n" +
+		"cp " + envFile + " $backup\n" +
+		"restore() { cp $backup " + envFile + "; " + compose + " up -d --no-deps " + service + " || true; rm -f $backup; exit 1; }\n" +
+		"if grep -q ^UPDATER_SIDECAR_VERSION= " + envFile + "; then sed -i s\"|^UPDATER_SIDECAR_VERSION=.*|UPDATER_SIDECAR_VERSION=" + tag + "|\" " + envFile + "; else printf \"UPDATER_SIDECAR_VERSION=" + tag + "\\n\" >> " + envFile + "; fi\n" +
+		compose + " pull " + service + " || restore\n" +
+		compose + " up -d --no-deps " + service + " || restore\n" +
+		"rm -f $backup\n"
 }
 
 func imageReadinessError(err error) string {

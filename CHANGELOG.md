@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.97
+
+- Automatically schedule an updater-sidecar upgrade to the selected release after a successful system update.
+- Run the sidecar replacement through a detached helper so the updater can safely replace itself.
+
 ## v1.1.96
 
 - Added dollar symbols to preset top-up amounts in the recharge form.
