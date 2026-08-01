@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.99
+
+- Read update build statuses from GitHub Actions in one request instead of checking every release image serially.
+- Keep the registry manifest check only when starting the selected update.
+
 ## v1.1.98
 
 - Removed the Performance health panel from the dashboard overview.

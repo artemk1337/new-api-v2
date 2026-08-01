@@ -106,8 +106,10 @@ type githubTagRef struct {
 
 type githubWorkflowRun struct {
 	Status       string `json:"status"`
+	Conclusion   string `json:"conclusion"`
 	HeadBranch   string `json:"head_branch"`
 	DisplayTitle string `json:"display_title"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type githubWorkflowRunsResponse struct {
@@ -138,8 +140,7 @@ func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
 	result.UpdateAvailable = len(releases) > 0
 	result.Release = &latest
 	result.Releases = releases
-	applySystemUpdateReadiness(ctx, result.Releases)
-	applySystemUpdateBuildingStatuses(ctx, result.Releases)
+	applySystemUpdateBuildStatuses(ctx, result.Releases)
 	if len(result.Releases) > 0 {
 		result.Release = &result.Releases[len(result.Releases)-1]
 	}
@@ -348,27 +349,47 @@ func applySystemUpdateReadiness(ctx context.Context, releases []SystemUpdateRele
 	}
 }
 
-func applySystemUpdateBuildingStatuses(ctx context.Context, releases []SystemUpdateRelease) {
-	needsBuildStatus := false
-	for _, release := range releases {
-		if release.BuildStatus == "unavailable" && release.BuildMessage != systemUpdateSidecarUpgradeMessage {
-			needsBuildStatus = true
-			break
-		}
-	}
-	if !needsBuildStatus {
+func applySystemUpdateBuildStatuses(ctx context.Context, releases []SystemUpdateRelease) {
+	if len(releases) == 0 {
 		return
 	}
-	buildingTags, err := fetchSystemUpdateBuildingTags(ctx)
+	runs, err := fetchSystemUpdateWorkflowRuns(ctx)
 	if err != nil {
+		for index := range releases {
+			releases[index].BuildStatus = "unavailable"
+			releases[index].BuildMessage = "build status unavailable"
+		}
 		return
 	}
-	for index := range releases {
-		if releases[index].BuildStatus != "unavailable" || !buildingTags[releases[index].TagName] {
+	byTag := make(map[string]githubWorkflowRun, len(runs))
+	for _, run := range runs {
+		tag := systemUpdateWorkflowRunTag(run)
+		if tag == "" {
 			continue
 		}
-		releases[index].BuildStatus = "building"
-		releases[index].BuildMessage = "docker image build is in progress"
+		if previous, ok := byTag[tag]; !ok || run.CreatedAt > previous.CreatedAt {
+			byTag[tag] = run
+		}
+	}
+	for index := range releases {
+		run, ok := byTag[releases[index].TagName]
+		if !ok {
+			releases[index].BuildStatus = "unavailable"
+			releases[index].BuildMessage = "build status unavailable"
+			continue
+		}
+		if isSystemUpdateBuildInProgress(run.Status) {
+			releases[index].BuildStatus = "building"
+			releases[index].BuildMessage = "docker image build is in progress"
+			continue
+		}
+		if run.Status == "completed" && run.Conclusion == "success" {
+			releases[index].BuildStatus = "ready"
+			releases[index].ReadyToDeploy = true
+			continue
+		}
+		releases[index].BuildStatus = "unavailable"
+		releases[index].BuildMessage = "docker image build did not succeed"
 	}
 }
 
@@ -438,7 +459,7 @@ func fetchSystemUpdateTagRefs(ctx context.Context) ([]githubTagRef, error) {
 	return refs, nil
 }
 
-func fetchSystemUpdateBuildingTags(ctx context.Context) (map[string]bool, error) {
+func fetchSystemUpdateWorkflowRuns(ctx context.Context) ([]githubWorkflowRun, error) {
 	repository := systemUpdateRepository()
 	if repository == "" || !strings.Contains(repository, "/") {
 		return nil, errors.New("update repository must be in owner/repo format")
@@ -463,23 +484,21 @@ func fetchSystemUpdateBuildingTags(ctx context.Context) (map[string]bool, error)
 	if err := common.DecodeJson(resp.Body, &runs); err != nil {
 		return nil, err
 	}
-	buildingTags := make(map[string]bool)
-	for _, run := range runs.WorkflowRuns {
-		if !isSystemUpdateBuildInProgress(run.Status) {
-			continue
-		}
-		tag := ""
-		if strings.HasPrefix(run.DisplayTitle, "docker-build:") {
-			tag = strings.TrimPrefix(run.DisplayTitle, "docker-build:")
-		}
-		if !isStableVersionTag(tag) {
-			tag = run.HeadBranch
-		}
-		if isStableVersionTag(tag) {
-			buildingTags[tag] = true
-		}
+	return runs.WorkflowRuns, nil
+}
+
+func systemUpdateWorkflowRunTag(run githubWorkflowRun) string {
+	tag := ""
+	if strings.HasPrefix(run.DisplayTitle, "docker-build:") {
+		tag = strings.TrimPrefix(run.DisplayTitle, "docker-build:")
 	}
-	return buildingTags, nil
+	if !isStableVersionTag(tag) {
+		tag = run.HeadBranch
+	}
+	if !isStableVersionTag(tag) {
+		return ""
+	}
+	return tag
 }
 
 func isSystemUpdateBuildInProgress(status string) bool {
