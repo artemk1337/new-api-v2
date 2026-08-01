@@ -85,7 +85,10 @@ export function usePayment() {
         } else if (isNOWPayments) {
           response = await calculateNOWPaymentsAmount({ amount: topupAmount })
         } else {
-          response = await calculateAmount({ amount: topupAmount })
+          response = await calculateAmount({
+            amount: topupAmount,
+            payment_method: paymentType,
+          })
         }
 
         if (isApiSuccess(response) && response.data) {

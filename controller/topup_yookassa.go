@@ -33,7 +33,7 @@ type yooKassaWebhookPayload struct {
 }
 
 func getYooKassaPayMoney(amount int64, group string) float64 {
-	return getPayMoney(amount, group)
+	return getPayMoney(amount, model.PaymentMethodYooKassaSBP, group)
 }
 
 func formatYooKassaAmount(amount float64) string {

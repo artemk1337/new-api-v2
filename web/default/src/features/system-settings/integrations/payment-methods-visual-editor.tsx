@@ -41,6 +41,7 @@ import {
 type PaymentMethodsVisualEditorProps = {
   value: string
   onChange: (value: string) => void
+  topupGroups: string[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -61,9 +62,18 @@ function getEffectiveIconName(method: PaymentMethodData) {
 export function PaymentMethodsVisualEditor({
   value,
   onChange,
+  topupGroups,
 }: PaymentMethodsVisualEditorProps) {
   const { t } = useTranslation()
   const paymentTemplates = [
+    {
+      name: 'СБП / YooKassa',
+      template: {
+        icon: 'LuCreditCard',
+        name: 'СБП / YooKassa',
+        type: 'yookassa_sbp',
+      },
+    },
     {
       name: t('Epay Alipay'),
       template: {
@@ -129,7 +139,8 @@ export function PaymentMethodsVisualEditor({
         typeof item.type === 'string' &&
         (!('icon' in item) || typeof item.icon === 'string') &&
         (!('min_topup' in item) || typeof item.min_topup === 'string') &&
-        (!('color' in item) || typeof item.color === 'string')
+        (!('color' in item) || typeof item.color === 'string') &&
+        (!('topup_group' in item) || typeof item.topup_group === 'string')
     )
   }, [value])
 
@@ -468,6 +479,7 @@ export function PaymentMethodsVisualEditor({
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        topupGroups={topupGroups}
       />
     </div>
   )

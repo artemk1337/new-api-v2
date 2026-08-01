@@ -42,6 +42,7 @@ const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
     type: z.string().min(1, t('Payment type key is required')),
     icon: z.string().optional(),
     min_topup: z.string().optional(),
+    topup_group: z.string().optional(),
   })
 
 type PaymentMethodDialogFormValues = z.infer<
@@ -56,6 +57,7 @@ export type PaymentMethodData = {
   icon?: string
   min_topup?: string
   color?: string
+  topup_group?: string
 }
 
 type PaymentMethodDialogProps = {
@@ -63,6 +65,7 @@ type PaymentMethodDialogProps = {
   onOpenChange: (open: boolean) => void
   onSave: (data: PaymentMethodData) => void
   editData?: PaymentMethodData | null
+  topupGroups: string[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -79,6 +82,7 @@ export function PaymentMethodDialog({
   onOpenChange,
   onSave,
   editData,
+  topupGroups,
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
@@ -119,6 +123,7 @@ export function PaymentMethodDialog({
       type: '',
       icon: '',
       min_topup: '',
+      topup_group: '',
     },
   })
 
@@ -131,6 +136,7 @@ export function PaymentMethodDialog({
         type: editData.type,
         icon: editData.icon ?? getDefaultIconName(editData.type),
         min_topup: editData.min_topup ?? '',
+        topup_group: editData.topup_group ?? '',
       })
     } else {
       form.reset({
@@ -138,6 +144,7 @@ export function PaymentMethodDialog({
         type: '',
         icon: '',
         min_topup: '',
+        topup_group: '',
       })
     }
   }, [editData, form, open])
@@ -152,6 +159,9 @@ export function PaymentMethodDialog({
     }
     if (values.min_topup && values.min_topup.trim() !== '') {
       data.min_topup = values.min_topup
+    }
+    if (values.topup_group && values.topup_group.trim() !== '') {
+      data.topup_group = values.topup_group.trim()
     }
     onSave(data)
     form.reset()
@@ -304,6 +314,29 @@ export function PaymentMethodDialog({
                 </FormControl>
                 <FormDescription>
                   {t('Optional minimum recharge amount for this method.')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='topup_group'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Top-up coefficient group')}</FormLabel>
+                <FormControl>
+                  <Combobox
+                    options={topupGroups.map((group) => ({ label: group, value: group }))}
+                    value={field.value}
+                    onValueChange={(value) => field.onChange(value ?? '')}
+                    placeholder={t('Use user group coefficient')}
+                    searchPlaceholder={t('Search top-up groups...')}
+                    allowCustomValue
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t('The selected group coefficient determines the amount shown and charged for this method.')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

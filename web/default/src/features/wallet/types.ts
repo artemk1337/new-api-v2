@@ -114,6 +114,8 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional react-icons component name or safe icon URL */
   icon?: string
+  /** Top-up price multiplier configured for this payment method */
+  topup_ratio?: number
 }
 
 /**
@@ -255,6 +257,8 @@ export interface YooKassaSyncRequest {
 export interface AmountRequest {
   /** Topup amount to calculate */
   amount: number
+  /** Selected payment method, used to calculate its configured price */
+  payment_method?: string
 }
 
 /**

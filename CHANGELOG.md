@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.91
+
+- Added a configurable top-up coefficient group for each payment method, so preset prices and charged amounts use the same method-specific calculation.
+- Removed the payment compliance confirmation gate from payment settings, top-ups, redemption codes, subscriptions, and referral transfers.
+
 ## v1.1.90
 
 - Removed the introductory description from the Model Square header.
@@ -11,7 +16,6 @@
 ## v1.1.88
 
 - Removed the global Auto group allowlist. Auto now always uses pricing groups available to the user, while API keys can still limit their own candidate groups.
-
 ## v1.1.87
 
 - Added configurable exchange-rate history with a master-only background updater.

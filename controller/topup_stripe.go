@@ -400,7 +400,7 @@ func getStripePayMoney(amount float64, group string) float64 {
 		amount = amount / common.QuotaPerUnit
 	}
 	// Using float64 for monetary calculations is acceptable here due to the small amounts involved
-	topupGroupRatio := common.GetTopupGroupRatio(group)
+	topupGroupRatio := common.GetTopupGroupRatio(getPaymentTopupGroup(model.PaymentMethodStripe, group))
 	if topupGroupRatio == 0 {
 		topupGroupRatio = 1
 	}

@@ -41,7 +41,7 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	paymentAmount := getPayMoney(req.Amount, group)
+	paymentAmount := getPayMoney(req.Amount, model.PaymentMethodNOWPayments, group)
 	if paymentAmount <= 0.01 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return
@@ -69,7 +69,7 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	paymentAmount := getPayMoney(req.Amount, group)
+	paymentAmount := getPayMoney(req.Amount, model.PaymentMethodNOWPayments, group)
 	if paymentAmount <= 0.01 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return

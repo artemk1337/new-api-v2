@@ -56,7 +56,7 @@ func getWaffoPancakePayMoney(amount int64, group string) float64 {
 		dAmount = dAmount.Div(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
 
-	topupGroupRatio := common.GetTopupGroupRatio(group)
+	topupGroupRatio := common.GetTopupGroupRatio(getPaymentTopupGroup(model.PaymentMethodWaffoPancake, group))
 	if topupGroupRatio == 0 {
 		topupGroupRatio = 1
 	}

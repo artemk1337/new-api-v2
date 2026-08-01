@@ -128,6 +128,19 @@ func GetTopUpInfo(c *gin.Context) {
 			payMethods = append(payMethods, map[string]string{"name": "Crypto / NOWPayments", "type": model.PaymentMethodNOWPayments, "color": "#F7931A", "min_topup": strconv.FormatInt(getMinTopup(), 10)})
 		}
 	}
+	userGroup, err := model.GetUserGroup(c.GetInt("id"), true)
+	if err != nil {
+		userGroup = "default"
+	}
+	for i, method := range payMethods {
+		copyMethod := make(map[string]string, len(method)+1)
+		for key, value := range method {
+			copyMethod[key] = value
+		}
+		ratio := common.GetTopupGroupRatio(getPaymentTopupGroup(copyMethod["type"], userGroup))
+		copyMethod["topup_ratio"] = strconv.FormatFloat(ratio, 'f', -1, 64)
+		payMethods[i] = copyMethod
+	}
 
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
@@ -166,7 +179,8 @@ type EpayRequest struct {
 }
 
 type AmountRequest struct {
-	Amount int64 `json:"amount"`
+	Amount        int64  `json:"amount"`
+	PaymentMethod string `json:"payment_method"`
 }
 
 func GetEpayClient() *epay.Client {
@@ -183,7 +197,16 @@ func GetEpayClient() *epay.Client {
 	return withUrl
 }
 
-func getPayMoney(amount int64, group string) float64 {
+func getPaymentTopupGroup(paymentMethod, userGroup string) string {
+	for _, method := range operation_setting.PayMethods {
+		if method["type"] == paymentMethod && method["topup_group"] != "" {
+			return method["topup_group"]
+		}
+	}
+	return userGroup
+}
+
+func getPayMoney(amount int64, paymentMethod, userGroup string) float64 {
 	dAmount := decimal.NewFromInt(amount)
 	// 充值金额以“展示类型”为准：
 	// - USD/CNY: 前端传 amount 为金额单位；TOKENS: 前端传 tokens，需要换成 USD 金额
@@ -192,7 +215,7 @@ func getPayMoney(amount int64, group string) float64 {
 		dAmount = dAmount.Div(dQuotaPerUnit)
 	}
 
-	topupGroupRatio := common.GetTopupGroupRatio(group)
+	topupGroupRatio := common.GetTopupGroupRatio(getPaymentTopupGroup(paymentMethod, userGroup))
 	if topupGroupRatio == 0 {
 		topupGroupRatio = 1
 	}
@@ -235,7 +258,7 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
+	payMoney := getPayMoney(req.Amount, req.PaymentMethod, group)
 	if payMoney < 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return
@@ -460,7 +483,7 @@ func RequestAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	payMoney := getPayMoney(req.Amount, group)
+	payMoney := getPayMoney(req.Amount, req.PaymentMethod, group)
 	if payMoney <= 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值金额过低"})
 		return

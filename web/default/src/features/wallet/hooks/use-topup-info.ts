@@ -66,6 +66,7 @@ function parsePaymentMethods(
       const rawMinTopup = Number(item.min_topup)
       const normalizedMinTopup = Number.isFinite(rawMinTopup) ? rawMinTopup : 0
       const type = typeof item.type === 'string' ? item.type : ''
+      const rawTopupRatio = Number(item.topup_ratio)
 
       return {
         name: typeof item.name === 'string' ? item.name : '',
@@ -76,6 +77,7 @@ function parsePaymentMethods(
           type === 'stripe' && normalizedMinTopup <= 0
             ? stripeMinTopup
             : normalizedMinTopup,
+        topup_ratio: Number.isFinite(rawTopupRatio) ? rawTopupRatio : 1,
       }
     })
     .filter((item) => item.name && item.type && item.type !== 'waffo')
