@@ -81,27 +81,49 @@ export function createStreamingContentAccumulator(): StreamingContentAccumulator
 
     let visible = ''
     let reasoning = ''
-    const tag = mode === 'content' ? '<think>' : '</think>'
     pendingTag += deduped.delta
 
     while (pendingTag) {
-      if (pendingTag.startsWith(tag)) {
-        pendingTag = pendingTag.slice(tag.length)
+      const tag = mode === 'content' ? '<think>' : '</think>'
+      const tagIndex = pendingTag.indexOf(tag)
+
+      if (tagIndex >= 0) {
+        const text = pendingTag.slice(0, tagIndex)
+        if (mode === 'content') {
+          visible += text
+        } else {
+          reasoning += text
+        }
+        pendingTag = pendingTag.slice(tagIndex + tag.length)
         mode = mode === 'content' ? 'reasoning' : 'content'
         continue
       }
 
-      if (tag.startsWith(pendingTag)) {
-        break
+      let pendingPrefixLength = 0
+      for (
+        let length = Math.min(tag.length - 1, pendingTag.length);
+        length > 0;
+        length--
+      ) {
+        if (pendingTag.endsWith(tag.slice(0, length))) {
+          pendingPrefixLength = length
+          break
+        }
       }
 
-      const character = pendingTag[0]
-      pendingTag = pendingTag.slice(1)
+      const text = pendingPrefixLength
+        ? pendingTag.slice(0, -pendingPrefixLength)
+        : pendingTag
       if (mode === 'content') {
-        visible += character
+        visible += text
       } else {
-        reasoning += character
+        reasoning += text
       }
+      if (pendingPrefixLength) {
+        pendingTag = pendingTag.slice(-pendingPrefixLength)
+        break
+      }
+      pendingTag = ''
     }
 
     return { content: visible, reasoning }

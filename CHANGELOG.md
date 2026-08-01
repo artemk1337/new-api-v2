@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.82
+
+- Fixed incremental `<think>` parsing for multiple tags in one stream chunk and partial tags split across chunks.
+
 ## v1.1.81
 
 - Optimized streaming chat rendering: incremental reasoning parsing, memoized message rows, and lightweight code fences while responses stream.
