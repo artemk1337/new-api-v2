@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.98
+
+- Removed the Performance health panel from the dashboard overview.
+
 ## v1.1.97
 
 - Automatically schedule an updater-sidecar upgrade to the selected release after a successful system update.
