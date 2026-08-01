@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.79
+
+- Hid the secondary load-average axis in System Telemetry so both charts share the same horizontal time scale.
+
 ## v1.1.78
 
 - Added searchable selection of pricing groups when configuring group request-rate limits, while retaining support for custom user-group and `auto` keys.
