@@ -33,6 +33,7 @@ import {
   hasChatCompletionChoice,
   isAssistantMessageFinal,
   isAssistantMessagePending,
+  createStreamingContentAccumulator,
 } from '../lib'
 import type { Message, PlaygroundConfig, ParameterEnabled } from '../types'
 import { useStreamRequest } from './use-stream-request'
@@ -49,17 +50,6 @@ const STREAM_UPDATE_FLUSH_MS = 50
 type PendingStreamChunks = {
   content: string
   reasoning: string
-}
-
-function mergePendingStreamChunk(
-  currentChunk: string,
-  nextChunk: string
-): string {
-  if (!currentChunk || !nextChunk.startsWith(currentChunk)) {
-    return currentChunk + nextChunk
-  }
-
-  return nextChunk
 }
 
 /**
@@ -80,6 +70,9 @@ export function useChatHandler({
     reasoning: '',
   })
   const streamFlushTimerRef = useRef<number | null>(null)
+  const streamContentAccumulatorRef = useRef(
+    createStreamingContentAccumulator()
+  )
 
   const flushStreamUpdates = useCallback(() => {
     if (streamFlushTimerRef.current !== null) {
@@ -129,6 +122,12 @@ export function useChatHandler({
     )
   }, [flushStreamUpdates])
 
+  const finishStreamContent = useCallback(() => {
+    const updates = streamContentAccumulatorRef.current.finish()
+    pendingStreamChunksRef.current.reasoning += updates.reasoning
+    pendingStreamChunksRef.current.content += updates.content
+  }, [])
+
   useEffect(
     () => () => {
       if (streamFlushTimerRef.current !== null) {
@@ -159,10 +158,9 @@ export function useChatHandler({
   // Handle stream update
   const handleStreamUpdate = useCallback(
     (type: 'reasoning' | 'content', chunk: string) => {
-      pendingStreamChunksRef.current[type] = mergePendingStreamChunk(
-        pendingStreamChunksRef.current[type],
-        chunk
-      )
+      const updates = streamContentAccumulatorRef.current.append(type, chunk)
+      pendingStreamChunksRef.current.reasoning += updates.reasoning
+      pendingStreamChunksRef.current.content += updates.content
       scheduleStreamFlush()
     },
     [scheduleStreamFlush]
@@ -170,7 +168,9 @@ export function useChatHandler({
 
   // Handle stream complete
   const handleStreamComplete = useCallback(() => {
+    finishStreamContent()
     flushStreamUpdates()
+    streamContentAccumulatorRef.current.reset()
     setIsRequesting(false)
     onMessageUpdate((prev) =>
       updateLastAssistantMessage(prev, (message) =>
@@ -179,12 +179,14 @@ export function useChatHandler({
           : completeAssistantMessage(message)
       )
     )
-  }, [flushStreamUpdates, onMessageUpdate])
+  }, [finishStreamContent, flushStreamUpdates, onMessageUpdate])
 
   // Handle stream error
   const handleStreamError = useCallback(
     (error: string, errorCode?: string) => {
+      finishStreamContent()
       flushStreamUpdates()
+      streamContentAccumulatorRef.current.reset()
       setIsRequesting(false)
       const displayError = getDisplayError(error)
       toast.error(displayError)
@@ -198,13 +200,21 @@ export function useChatHandler({
         )
       )
     },
-    [flushStreamUpdates, getDisplayError, onMessageUpdate, t]
+    [
+      finishStreamContent,
+      flushStreamUpdates,
+      getDisplayError,
+      onMessageUpdate,
+      t,
+    ]
   )
 
   // Send streaming chat request
   const sendStreamingChat = useCallback(
     (messages: Message[]) => {
       setIsRequesting(true)
+      streamContentAccumulatorRef.current.reset()
+      pendingStreamChunksRef.current = { content: '', reasoning: '' }
       const payload = buildChatCompletionPayload(
         messages,
         config,
@@ -294,7 +304,9 @@ export function useChatHandler({
   // Stop generation
   const stopGeneration = useCallback(() => {
     stopStream()
+    finishStreamContent()
     flushStreamUpdates()
+    streamContentAccumulatorRef.current.reset()
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
     setIsRequesting(false)
@@ -305,7 +317,7 @@ export function useChatHandler({
           : message
       )
     )
-  }, [stopStream, flushStreamUpdates, onMessageUpdate])
+  }, [stopStream, finishStreamContent, flushStreamUpdates, onMessageUpdate])
 
   return {
     sendChat,

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.81
+
+- Optimized streaming chat rendering: incremental reasoning parsing, memoized message rows, and lightweight code fences while responses stream.
+- Improved admin user filtering by avoiding empty substring scans and adding indexes for group, role, and status filters.
+- Reduced pricing catalog recomputation by indexing vendors and processing each enabled model only once per metadata rule.
+
 ## v1.1.80
 
 - Made pricing sync clearly separate protected manual prices from automatically managed models, with per-model and filtered bulk controls to restore Auto mode.

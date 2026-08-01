@@ -66,6 +66,7 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   maxCollapsedLines?: number
   showLineNumbers?: boolean
   showToolbar?: boolean
+  staticView?: boolean
   title?: ReactNode
 }
 
@@ -448,6 +449,7 @@ export const CodeBlock = ({
   maxCollapsedLines,
   showLineNumbers = false,
   showToolbar = false,
+  staticView = false,
   title,
   className,
   children,
@@ -479,6 +481,19 @@ export const CodeBlock = ({
     anchor.download = getDownloadFilename(displayLanguage, filename)
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  if (staticView) {
+    return (
+      <pre
+        className={cn(
+          'bg-muted/20 text-foreground my-3 w-full max-w-full overflow-x-auto rounded-lg border p-4 font-mono text-sm leading-6',
+          className
+        )}
+      >
+        <code>{code}</code>
+      </pre>
+    )
   }
 
   return (
@@ -558,7 +573,10 @@ export const CodeBlock = ({
           }
           language={language}
           readOnly
-          rows={Math.min(Math.max(lineCount, 4), maxExpandedLines ?? lineCount)}
+          rows={Math.min(
+            Math.max(lineCount, 4),
+            maxExpandedLines ?? lineCount
+          )}
           showLineNumbers={showLineNumbers}
           value={code}
         />

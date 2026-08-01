@@ -146,6 +146,7 @@ export function PlaygroundMessageContent({
               maxExpandedLines={48}
               showLineNumbers
               showToolbar
+              staticView={!isMessageFinal}
               title={t('Raw response')}
             >
               <CodeBlockCopyButton />

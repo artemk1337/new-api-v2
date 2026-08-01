@@ -53,41 +53,54 @@ import {
 } from './response-renderer-inline'
 import { renderTable } from './response-renderer-table'
 
-export function renderChildren(nodes: ParsedNode[]): ReactNode {
-  return nodes.map((node, index) => renderNode(node, getNodeKey(node, index)))
+export function renderChildren(
+  nodes: ParsedNode[],
+  final = true
+): ReactNode {
+  return nodes.map((node, index) =>
+    renderNode(node, getNodeKey(node, index), final)
+  )
 }
 
-export function renderFootnotes(footnotes: FootnoteNode[]): ReactNode {
-  return renderFootnotesBlock(footnotes, { renderChildren })
+export function renderFootnotes(
+  footnotes: FootnoteNode[],
+  final = true
+): ReactNode {
+  return renderFootnotesBlock(footnotes, {
+    renderChildren: (nodes) => renderChildren(nodes, final),
+  })
 }
 
-function renderNode(node: ParsedNode, key: string): ReactNode {
+function renderNode(node: ParsedNode, key: string, final: boolean): ReactNode {
+  const renderNestedChildren = (children: ParsedNode[]) =>
+    renderChildren(children, final)
+
   if (isTextNode(node)) {
     return renderTextNode(node)
   }
 
   if (isHeadingNode(node)) {
-    return renderHeading(node, key, { renderChildren })
+    return renderHeading(node, key, { renderChildren: renderNestedChildren })
   }
 
   if (node.type === 'paragraph' && hasParsedChildren(node)) {
     return (
       <p className='my-3 leading-7' key={key}>
-        {renderChildren(node.children)}
+        {renderNestedChildren(node.children)}
       </p>
     )
   }
 
   if (node.type === 'inline' && hasParsedChildren(node)) {
-    return <span key={key}>{renderChildren(node.children)}</span>
+    return <span key={key}>{renderNestedChildren(node.children)}</span>
   }
 
   if (isListNode(node)) {
-    return renderList(node, key, { renderChildren })
+    return renderList(node, key, { renderChildren: renderNestedChildren })
   }
 
   if (isCodeBlockNode(node)) {
-    return renderCodeBlock(node, key)
+    return renderCodeBlock(node, key, final)
   }
 
   if (node.type === 'inline_code' && 'code' in node) {
@@ -102,7 +115,7 @@ function renderNode(node: ParsedNode, key: string): ReactNode {
   }
 
   if (isLinkNode(node)) {
-    return renderLink(node, key, renderChildren)
+    return renderLink(node, key, renderNestedChildren)
   }
 
   if (isImageNode(node)) {
@@ -110,15 +123,19 @@ function renderNode(node: ParsedNode, key: string): ReactNode {
   }
 
   if (isBlockquoteNode(node)) {
-    return renderBlockquote(node, key, { renderChildren })
+    return renderBlockquote(node, key, {
+      renderChildren: renderNestedChildren,
+    })
   }
 
   if (isTableNode(node)) {
-    return renderTable(node, key, { renderChildren })
+    return renderTable(node, key, { renderChildren: renderNestedChildren })
   }
 
   if (isDefinitionListNode(node)) {
-    return renderDefinitionList(node, key, { renderChildren })
+    return renderDefinitionList(node, key, {
+      renderChildren: renderNestedChildren,
+    })
   }
 
   if (node.type === 'strong' && hasParsedChildren(node)) {
@@ -204,7 +221,7 @@ function renderNode(node: ParsedNode, key: string): ReactNode {
   }
 
   if (isHtmlBlockNode(node) && node.tag === 'details') {
-    return renderDetails(node, key, { renderChildren })
+    return renderDetails(node, key, { renderChildren: renderNestedChildren })
   }
 
   if (node.type === 'html_block' && 'content' in node) {
@@ -216,7 +233,7 @@ function renderNode(node: ParsedNode, key: string): ReactNode {
   }
 
   if (hasParsedChildren(node)) {
-    return <span key={key}>{renderChildren(node.children)}</span>
+    return <span key={key}>{renderNestedChildren(node.children)}</span>
   }
 
   if ('content' in node && typeof node.content === 'string') {

@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 import type { Message } from '../../types'
-import { parseThinkTags } from './message-reasoning-utils'
 
 type MessageContentStateBase = {
   displayContent: string
@@ -64,18 +63,6 @@ function shouldShowMessageContent(
   )
 }
 
-function getDisplayContent(message: Message, versionContent: string): string {
-  if (message.from !== MESSAGE_ROLES.ASSISTANT) {
-    return versionContent
-  }
-
-  if (!versionContent.includes('<think>')) {
-    return versionContent
-  }
-
-  return parseThinkTags(versionContent).visibleContent
-}
-
 export function getMessageContentState(
   message: Message,
   versionContent: string
@@ -91,7 +78,7 @@ export function getMessageContentState(
   const showMessageContent = shouldShowMessageContent(message, versionContent)
 
   const baseState: MessageContentStateBase = {
-    displayContent: getDisplayContent(message, versionContent),
+    displayContent: versionContent,
     hasSources: sources.length > 0,
     isAssistant,
     showLoader,

@@ -46,9 +46,12 @@ export const Response = memo((props: ResponseProps) => {
   const parsedContent = useMemo(() => parseResponseContent(nodes), [nodes])
   const renderedContent =
     parsedContent.bodyNodes.length > 0
-      ? renderChildren(parsedContent.bodyNodes)
+      ? renderChildren(parsedContent.bodyNodes, props.final ?? true)
       : content
-  const footnotes = renderFootnotes(parsedContent.footnotes)
+  const footnotes = renderFootnotes(
+    parsedContent.footnotes,
+    props.final ?? true
+  )
 
   return (
     <div

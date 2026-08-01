@@ -126,7 +126,7 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 
 func updatePricing() {
 	//modelRatios := common.GetModelRatios()
-	enableAbilities, err := GetAllEnableAbilityWithChannels()
+	enableAbilities, err := getAllEnableAbilityWithChannelsForPricing()
 	if err != nil {
 		common.SysLog(fmt.Sprintf("GetAllEnableAbilityWithChannels error: %v", err))
 		return
@@ -134,65 +134,29 @@ func updatePricing() {
 	// 预加载模型元数据与供应商一次，避免循环查询
 	var allMeta []Model
 	_ = DB.Find(&allMeta).Error
-	metaMap := make(map[string]*Model)
-	prefixList := make([]*Model, 0)
-	suffixList := make([]*Model, 0)
-	containsList := make([]*Model, 0)
-	for i := range allMeta {
-		m := &allMeta[i]
-		if m.NameRule == NameRuleExact {
-			metaMap[m.ModelName] = m
-		} else {
-			switch m.NameRule {
-			case NameRulePrefix:
-				prefixList = append(prefixList, m)
-			case NameRuleSuffix:
-				suffixList = append(suffixList, m)
-			case NameRuleContains:
-				containsList = append(containsList, m)
-			}
+	modelNames := make([]string, 0, len(enableAbilities))
+	seenModelNames := make(map[string]struct{}, len(enableAbilities))
+	for _, ability := range enableAbilities {
+		if _, exists := seenModelNames[ability.Model]; exists {
+			continue
 		}
+		seenModelNames[ability.Model] = struct{}{}
+		modelNames = append(modelNames, ability.Model)
 	}
-
-	// 将非精确规则模型匹配到 metaMap
-	for _, m := range prefixList {
-		for _, pricingModel := range enableAbilities {
-			if strings.HasPrefix(pricingModel.Model, m.ModelName) {
-				if _, exists := metaMap[pricingModel.Model]; !exists {
-					metaMap[pricingModel.Model] = m
-				}
-			}
-		}
-	}
-	for _, m := range suffixList {
-		for _, pricingModel := range enableAbilities {
-			if strings.HasSuffix(pricingModel.Model, m.ModelName) {
-				if _, exists := metaMap[pricingModel.Model]; !exists {
-					metaMap[pricingModel.Model] = m
-				}
-			}
-		}
-	}
-	for _, m := range containsList {
-		for _, pricingModel := range enableAbilities {
-			if strings.Contains(pricingModel.Model, m.ModelName) {
-				if _, exists := metaMap[pricingModel.Model]; !exists {
-					metaMap[pricingModel.Model] = m
-				}
-			}
-		}
-	}
+	metaMap := buildPricingModelMap(allMeta, modelNames)
 
 	// 预加载供应商
 	var vendors []Vendor
 	_ = DB.Find(&vendors).Error
 	vendorMap := make(map[int]*Vendor)
+	vendorNameMap := make(map[string]int, len(vendors))
 	for i := range vendors {
 		vendorMap[vendors[i].Id] = &vendors[i]
+		vendorNameMap[vendors[i].Name] = vendors[i].Id
 	}
 
 	// 初始化默认供应商映射
-	initDefaultVendorMapping(metaMap, vendorMap, enableAbilities)
+	initDefaultVendorMapping(metaMap, vendorMap, vendorNameMap, enableAbilities)
 
 	// 构建对前端友好的供应商列表
 	vendorsList = buildPricingVendorsList(vendorMap)
@@ -370,6 +334,45 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func buildPricingModelMap(allMeta []Model, modelNames []string) map[string]*Model {
+	metaMap := make(map[string]*Model)
+	prefixList := make([]*Model, 0)
+	suffixList := make([]*Model, 0)
+	containsList := make([]*Model, 0)
+	for i := range allMeta {
+		m := &allMeta[i]
+		if m.NameRule == NameRuleExact {
+			metaMap[m.ModelName] = m
+			continue
+		}
+		switch m.NameRule {
+		case NameRulePrefix:
+			prefixList = append(prefixList, m)
+		case NameRuleSuffix:
+			suffixList = append(suffixList, m)
+		case NameRuleContains:
+			containsList = append(containsList, m)
+		}
+	}
+
+	match := func(rules []*Model, matches func(string, string) bool) {
+		for _, rule := range rules {
+			for _, modelName := range modelNames {
+				if matches(modelName, rule.ModelName) {
+					if _, exists := metaMap[modelName]; !exists {
+						metaMap[modelName] = rule
+					}
+				}
+			}
+		}
+	}
+	match(prefixList, strings.HasPrefix)
+	match(suffixList, strings.HasSuffix)
+	match(containsList, strings.Contains)
+
+	return metaMap
 }
 
 func hasAvailableModelPricing(modelName string) bool {

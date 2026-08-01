@@ -140,7 +140,11 @@ export function renderList(
   )
 }
 
-export function renderCodeBlock(node: CodeBlockNode, key: string): ReactNode {
+export function renderCodeBlock(
+  node: CodeBlockNode,
+  key: string,
+  final: boolean
+): ReactNode {
   const language = node.language || 'plaintext'
   const lineCount = node.code.split('\n').length
 
@@ -154,6 +158,7 @@ export function renderCodeBlock(node: CodeBlockNode, key: string): ReactNode {
       maxExpandedLines={44}
       showLineNumbers
       showToolbar
+      staticView={!final}
       title={language}
     >
       <CodeBlockCopyButton />

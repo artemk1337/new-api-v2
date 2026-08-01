@@ -32,6 +32,105 @@ import {
   updateCurrentVersionContent,
 } from './message-utils'
 
+type StreamingContentMode = 'content' | 'reasoning'
+
+export type StreamingContentAccumulator = {
+  append: (type: StreamChunkType, chunk: string) => {
+    content: string
+    reasoning: string
+  }
+  finish: () => { content: string; reasoning: string }
+  reset: () => void
+}
+
+function appendDedupedChunk(
+  received: string,
+  chunk: string
+): { received: string; delta: string } {
+  if (!chunk) {
+    return { received, delta: '' }
+  }
+
+  if (chunk.startsWith(received)) {
+    return { received: chunk, delta: chunk.slice(received.length) }
+  }
+
+  return { received: received + chunk, delta: chunk }
+}
+
+/**
+ * Incrementally separates <think> content without reparsing the full stream.
+ * The accumulator also accepts both cumulative and delta stream chunks.
+ */
+export function createStreamingContentAccumulator(): StreamingContentAccumulator {
+  let mode: StreamingContentMode = 'content'
+  let pendingTag = ''
+  let receivedContent = ''
+  let receivedReasoning = ''
+
+  const reset = () => {
+    mode = 'content'
+    pendingTag = ''
+    receivedContent = ''
+    receivedReasoning = ''
+  }
+
+  const appendContent = (chunk: string) => {
+    const deduped = appendDedupedChunk(receivedContent, chunk)
+    receivedContent = deduped.received
+
+    let visible = ''
+    let reasoning = ''
+    const tag = mode === 'content' ? '<think>' : '</think>'
+    pendingTag += deduped.delta
+
+    while (pendingTag) {
+      if (pendingTag.startsWith(tag)) {
+        pendingTag = pendingTag.slice(tag.length)
+        mode = mode === 'content' ? 'reasoning' : 'content'
+        continue
+      }
+
+      if (tag.startsWith(pendingTag)) {
+        break
+      }
+
+      const character = pendingTag[0]
+      pendingTag = pendingTag.slice(1)
+      if (mode === 'content') {
+        visible += character
+      } else {
+        reasoning += character
+      }
+    }
+
+    return { content: visible, reasoning }
+  }
+
+  const finish = () => {
+    const result =
+      mode === 'content'
+        ? { content: pendingTag, reasoning: '' }
+        : { content: '', reasoning: pendingTag }
+    pendingTag = ''
+    return result
+  }
+
+  return {
+    append: (type, chunk) => {
+      if (type === 'content') {
+        return appendContent(chunk)
+      }
+
+      const deduped = appendDedupedChunk(receivedReasoning, chunk)
+      receivedReasoning = deduped.received
+      return { content: '', reasoning: deduped.delta }
+    },
+    finish,
+    reset,
+  }
+}
+
 /**
  * Process content chunk during streaming.
  * Separates <think> reasoning from visible content in real-time.
@@ -46,7 +145,7 @@ export function processStreamingContent(
     ? currentVersion.content + contentChunk
     : currentVersion.content
 
-  if (!message.reasoning && !fullContent.includes('<think>')) {
+  if (!fullContent.includes('<think>')) {
     return {
       ...updateCurrentVersionContent(message, fullContent),
       isReasoningStreaming: false,

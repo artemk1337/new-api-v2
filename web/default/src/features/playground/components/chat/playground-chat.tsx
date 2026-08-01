@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -45,6 +45,134 @@ import { PlaygroundMessageEditor } from '../message/playground-message-editor'
 import { PlaygroundEmptyState } from './playground-empty-state'
 
 const MAX_RENDERED_HISTORY_MESSAGES = 24
+
+type PlaygroundChatMessageProps = Pick<
+  PlaygroundChatProps,
+  | 'onCopyMessage'
+  | 'onRegenerateMessage'
+  | 'onEditMessage'
+  | 'onDeleteMessage'
+  | 'onSaveEdit'
+  | 'onCancelEdit'
+  | 'onSaveEditAndSubmit'
+> & {
+  alignment: ReturnType<typeof getMessageAlignment>
+  alwaysShowActions: boolean
+  content: string
+  isEditing: boolean
+  isError: boolean
+  isGenerating: boolean
+  isSourceVisible: boolean
+  message: MessageType
+  onEditTextChange: (value: string) => void
+  previousUserMessage: MessageType | null
+  originalText: string
+  onToggleMessageSource: (message: MessageType) => void
+}
+
+function useStableCallback<T extends (...args: never[]) => void>(
+  callback?: T
+): T | undefined {
+  const callbackRef = useRef(callback)
+
+  useEffect(() => {
+    callbackRef.current = callback
+  }, [callback])
+
+  const stableCallback = useCallback(
+    ((...args: never[]) => callbackRef.current?.(...args)) as T,
+    []
+  )
+
+  return callback === undefined ? undefined : stableCallback
+}
+
+const PlaygroundChatMessage = memo(function PlaygroundChatMessage({
+  alignment,
+  alwaysShowActions,
+  content,
+  isEditing,
+  isError,
+  isGenerating,
+  isSourceVisible,
+  message,
+  onCancelEdit,
+  onCopyMessage,
+  onDeleteMessage,
+  onEditMessage,
+  onEditTextChange,
+  onRegenerateMessage,
+  onSaveEdit,
+  onSaveEditAndSubmit,
+  onToggleMessageSource,
+  previousUserMessage,
+  originalText,
+}: PlaygroundChatMessageProps) {
+  return (
+    <Message
+      className='group flex-row-reverse py-2.5'
+      from={message.from}
+      key={message.key}
+    >
+      <div className='w-full min-w-0 flex-1 basis-full'>
+        {isEditing ? (
+          <PlaygroundMessageEditor
+            editText={content}
+            message={message}
+            onCancelEdit={onCancelEdit}
+            onEditTextChange={onEditTextChange}
+            onSaveEdit={onSaveEdit}
+            onSaveEditAndSubmit={onSaveEditAndSubmit}
+            originalText={originalText}
+          />
+        ) : (
+          <PlaygroundMessageContent
+            alignment={alignment}
+            actions={
+              <MessageActions
+                alwaysVisible={alwaysShowActions}
+                className='mt-1.5'
+                isGenerating={isGenerating}
+                isSourceVisible={isSourceVisible}
+                message={message}
+                onCopy={onCopyMessage}
+                onDelete={onDeleteMessage}
+                onEdit={onEditMessage}
+                onRegenerate={onRegenerateMessage}
+                onToggleSource={onToggleMessageSource}
+              />
+            }
+            errorActions={
+              isError ? (
+                <MessageErrorActions
+                  disabled={isGenerating}
+                  onDelete={
+                    onDeleteMessage
+                      ? () => onDeleteMessage(message)
+                      : undefined
+                  }
+                  onEditPrompt={
+                    onEditMessage && previousUserMessage
+                      ? () => onEditMessage(previousUserMessage)
+                      : undefined
+                  }
+                  onRetry={
+                    onRegenerateMessage
+                      ? () => onRegenerateMessage(message)
+                      : undefined
+                  }
+                />
+              ) : undefined
+            }
+            isSourceVisible={isSourceVisible}
+            message={message}
+            versionContent={content}
+          />
+        )}
+      </div>
+    </Message>
+  )
+})
 
 interface PlaygroundChatProps {
   messages: MessageType[]
@@ -83,13 +211,21 @@ export function PlaygroundChat({
   const [sourceMessageKeys, setSourceMessageKeys] = useState<
     ReadonlySet<string>
   >(() => new Set())
+  const stableOnCopyMessage = useStableCallback(onCopyMessage)
+  const stableOnRegenerateMessage = useStableCallback(onRegenerateMessage)
+  const stableOnEditMessage = useStableCallback(onEditMessage)
+  const stableOnDeleteMessage = useStableCallback(onDeleteMessage)
+  const stableOnSelectPrompt = useStableCallback(onSelectPrompt)
+  const stableOnSaveEdit = useStableCallback(onSaveEdit)
+  const stableOnCancelEdit = useStableCallback(onCancelEdit)
+  const stableOnSaveEditAndSubmit = useStableCallback(onSaveEditAndSubmit)
   const visibleMessageOffset = Math.max(
     0,
     messages.length - MAX_RENDERED_HISTORY_MESSAGES
   )
   const visibleMessages = messages.slice(visibleMessageOffset)
 
-  function handleToggleMessageSource(message: MessageType): void {
+  const handleToggleMessageSource = useCallback((message: MessageType) => {
     setSourceMessageKeys((currentKeys) => {
       const nextKeys = new Set(currentKeys)
 
@@ -101,7 +237,7 @@ export function PlaygroundChat({
 
       return nextKeys
     })
-  }
+  }, [])
 
   useEffect(() => {
     if (!editingKey) return
@@ -128,74 +264,37 @@ export function PlaygroundChat({
     const isSourceVisible = sourceMessageKeys.has(message.key)
 
     return (
-      <Message
-        className='group flex-row-reverse py-2.5'
-        from={message.from}
+      <PlaygroundChatMessage
+        alignment={alignment}
+        alwaysShowActions={alwaysShowActions}
+        content={isEditing ? editText : content}
+        isEditing={isEditing}
+        isError={isError}
+        isGenerating={isGenerating}
+        isSourceVisible={isSourceVisible}
         key={message.key}
-      >
-        <div className='w-full min-w-0 flex-1 basis-full'>
-          {isEditing ? (
-            <PlaygroundMessageEditor
-              editText={editText}
-              message={message}
-              onCancelEdit={onCancelEdit}
-              onEditTextChange={setEditText}
-              onSaveEdit={onSaveEdit}
-              onSaveEditAndSubmit={onSaveEditAndSubmit}
-              originalText={originalText}
-            />
-          ) : (
-            <PlaygroundMessageContent
-              alignment={alignment}
-              actions={
-                <MessageActions
-                  message={message}
-                  onCopy={onCopyMessage}
-                  onRegenerate={onRegenerateMessage}
-                  onToggleSource={handleToggleMessageSource}
-                  onEdit={onEditMessage}
-                  onDelete={onDeleteMessage}
-                  isSourceVisible={isSourceVisible}
-                  isGenerating={isGenerating}
-                  alwaysVisible={alwaysShowActions}
-                  className='mt-1.5'
-                />
-              }
-              isSourceVisible={isSourceVisible}
-              message={message}
-              errorActions={
-                isError ? (
-                  <MessageErrorActions
-                    disabled={isGenerating}
-                    onRetry={
-                      onRegenerateMessage
-                        ? () => onRegenerateMessage(message)
-                        : undefined
-                    }
-                    onEditPrompt={
-                      onEditMessage && previousUserMessage
-                        ? () => onEditMessage(previousUserMessage)
-                        : undefined
-                    }
-                    onDelete={
-                      onDeleteMessage
-                        ? () => onDeleteMessage(message)
-                        : undefined
-                    }
-                  />
-                ) : undefined
-              }
-              versionContent={content}
-            />
-          )}
-        </div>
-      </Message>
+        message={message}
+        onCancelEdit={stableOnCancelEdit}
+        onCopyMessage={stableOnCopyMessage}
+        onDeleteMessage={stableOnDeleteMessage}
+        onEditMessage={stableOnEditMessage}
+        onEditTextChange={setEditText}
+        onRegenerateMessage={stableOnRegenerateMessage}
+        onSaveEdit={stableOnSaveEdit}
+        onSaveEditAndSubmit={stableOnSaveEditAndSubmit}
+        onToggleMessageSource={handleToggleMessageSource}
+        previousUserMessage={previousUserMessage}
+        originalText={originalText}
+      />
     )
   })
 
-  if (visibleMessages.length === 0 && onSelectPrompt) {
+  if (visibleMessages.length === 0 && stableOnSelectPrompt) {
     chatContent = [
-      <PlaygroundEmptyState key='empty' onSelectPrompt={onSelectPrompt} />,
+      <PlaygroundEmptyState
+        key='empty'
+        onSelectPrompt={stableOnSelectPrompt}
+      />,
     ]
   }
 

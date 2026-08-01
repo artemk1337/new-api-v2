@@ -39,3 +39,51 @@ func TestPricingCacheConcurrentInvalidation(t *testing.T) {
 	close(start)
 	workers.Wait()
 }
+
+func TestBuildPricingModelMapPreservesRuleMatching(t *testing.T) {
+	models := []Model{
+		{ModelName: "exact-model", NameRule: NameRuleExact},
+		{ModelName: "gpt", NameRule: NameRulePrefix},
+		{ModelName: "-latest", NameRule: NameRuleSuffix},
+		{ModelName: "special", NameRule: NameRuleContains},
+	}
+
+	modelMap := buildPricingModelMap(models, []string{
+		"exact-model",
+		"gpt-4",
+		"claude-latest",
+		"my-special-model",
+		"gpt-special-latest",
+	})
+
+	require.Same(t, &models[0], modelMap["exact-model"])
+	require.Same(t, &models[1], modelMap["gpt-4"])
+	require.Same(t, &models[2], modelMap["claude-latest"])
+	require.Same(t, &models[3], modelMap["my-special-model"])
+	// Prefix rules are evaluated first, matching the previous updatePricing order.
+	require.Same(t, &models[1], modelMap["gpt-special-latest"])
+}
+
+func TestInitDefaultVendorMappingCreatesVendorOnce(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Model{}, &Vendor{}))
+	t.Cleanup(func() {
+		DB.Exec("DELETE FROM vendors")
+		DB.Exec("DELETE FROM models")
+	})
+
+	metaMap := make(map[string]*Model)
+	vendorMap := make(map[int]*Vendor)
+	vendorNameMap := make(map[string]int)
+	abilities := []AbilityWithChannel{
+		{Ability: Ability{Model: "gpt-4"}},
+		{Ability: Ability{Model: "gpt-4-mini"}},
+	}
+
+	initDefaultVendorMapping(metaMap, vendorMap, vendorNameMap, abilities)
+
+	require.Len(t, vendorMap, 1)
+	require.Len(t, vendorNameMap, 1)
+	require.Equal(t, vendorNameMap["OpenAI"], metaMap["gpt-4"].VendorID)
+	require.Equal(t, metaMap["gpt-4"].VendorID, metaMap["gpt-4-mini"].VendorID)
+}

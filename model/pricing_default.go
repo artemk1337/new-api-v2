@@ -90,7 +90,7 @@ var defaultVendorIcons = map[string]string{
 }
 
 // initDefaultVendorMapping 简化的默认供应商映射
-func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vendor, enableAbilities []AbilityWithChannel) {
+func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vendor, vendorNameMap map[string]int, enableAbilities []AbilityWithChannel) {
 	for _, ability := range enableAbilities {
 		modelName := ability.Model
 		if _, exists := metaMap[modelName]; exists {
@@ -102,7 +102,7 @@ func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vend
 		modelLower := strings.ToLower(modelName)
 		for pattern, vendorName := range defaultVendorRules {
 			if strings.Contains(modelLower, pattern) {
-				vendorID = getOrCreateVendor(vendorName, vendorMap)
+				vendorID = getOrCreateVendor(vendorName, vendorMap, vendorNameMap)
 				break
 			}
 		}
@@ -118,12 +118,10 @@ func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vend
 }
 
 // 查找或创建供应商
-func getOrCreateVendor(vendorName string, vendorMap map[int]*Vendor) int {
-	// 查找现有供应商
-	for id, vendor := range vendorMap {
-		if vendor.Name == vendorName {
-			return id
-		}
+
+func getOrCreateVendor(vendorName string, vendorMap map[int]*Vendor, vendorNameMap map[string]int) int {
+	if id, exists := vendorNameMap[vendorName]; exists {
+		return id
 	}
 
 	// 创建新供应商
@@ -138,6 +136,7 @@ func getOrCreateVendor(vendorName string, vendorMap map[int]*Vendor) int {
 	}
 
 	vendorMap[newVendor.Id] = newVendor
+	vendorNameMap[vendorName] = newVendor.Id
 	return newVendor.Id
 }
 
