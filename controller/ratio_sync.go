@@ -397,8 +397,6 @@ func FetchUpstreamRatios(c *gin.Context) {
 	wg.Wait()
 	close(ch)
 
-	localData := getLocalPricingSyncData()
-
 	var testResults []dto.TestResult
 	var successfulChannels []struct {
 		name string
@@ -425,15 +423,68 @@ func FetchUpstreamRatios(c *gin.Context) {
 		}
 	}
 
-	differences := buildDifferences(localData, successfulChannels)
+	differences, modelStates, configVersion, err := pricingSyncComparisonSnapshot(successfulChannels)
+	if err != nil {
+		logger.LogError(c.Request.Context(), "failed to query pricing sync model states: "+err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "查询模型同步状态失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"differences":  differences,
-			"test_results": testResults,
+			"differences":    differences,
+			"model_states":   modelStates,
+			"config_version": configVersion,
+			"test_results":   testResults,
 		},
 	})
+}
+
+func pricingSyncComparisonSnapshot(successfulChannels []struct {
+	name string
+	data map[string]any
+}) (map[string]map[string]dto.DifferenceItem, map[string]model.PricingSyncModelState, int64, error) {
+	for range 3 {
+		unlockSnapshot := model.LockPricingOptionSnapshot()
+		before, err := model.GetPricingSyncConfigVersion()
+		if err != nil {
+			unlockSnapshot()
+			return nil, nil, 0, err
+		}
+		differences := buildDifferences(getLocalPricingSyncData(), successfulChannels)
+		states, after, err := pricingSyncModelStatesForDifferences(differences)
+		unlockSnapshot()
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if before == after {
+			return differences, states, after, nil
+		}
+	}
+	return nil, nil, 0, model.ErrPricingSyncConfigurationChanged
+}
+
+func pricingSyncModelStatesForDifferences(differences map[string]map[string]dto.DifferenceItem) (map[string]model.PricingSyncModelState, int64, error) {
+	states, configVersion, err := model.GetPricingSyncModelStatesSnapshot()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make(map[string]model.PricingSyncModelState, len(differences))
+	for modelName := range differences {
+		state, ok := states[modelName]
+		if !ok {
+			state = model.PricingSyncModelState{
+				ModelName: modelName,
+				Mode:      model.PricingSyncModelModeGeneral,
+				ChannelID: 0,
+				Status:    model.PricingSyncModelStatusReady,
+			}
+		}
+		result[modelName] = state
+	}
+	return result, configVersion, nil
 }
 
 func buildDifferences(localData map[string]any, successfulChannels []struct {
@@ -1081,8 +1132,9 @@ func UpdatePricingSyncModelPreference(c *gin.Context) {
 // preferences in one pricing transaction.
 func ApplyPricingSyncPatches(c *gin.Context) {
 	request := struct {
-		Patches     map[string]model.JSONObjectPatch        `json:"patches"`
-		Preferences []dto.PricingSyncModelPreferenceRequest `json:"preferences,omitempty"`
+		Patches         map[string]model.JSONObjectPatch        `json:"patches"`
+		Preferences     []dto.PricingSyncModelPreferenceRequest `json:"preferences,omitempty"`
+		ExpectedVersion *int64                                  `json:"expected_version,omitempty"`
 	}{}
 	if err := c.ShouldBindJSON(&request); err != nil || (len(request.Patches) == 0 && len(request.Preferences) == 0) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing patches or preferences are required"})
@@ -1133,7 +1185,20 @@ func ApplyPricingSyncPatches(c *gin.Context) {
 			})
 		}
 	}
-	if err := model.ApplyPricingSyncUpdateWithPreferences(request.Patches, preferenceInputs); err != nil {
+	expectedVersion := int64(-1)
+	if request.ExpectedVersion != nil {
+		if *request.ExpectedVersion < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "expected pricing sync version must be non-negative"})
+			return
+		}
+		expectedVersion = *request.ExpectedVersion
+	}
+	appliedVersion, err := model.ApplyPricingSyncUpdateWithPreferencesIfVersion(request.Patches, preferenceInputs, expectedVersion)
+	if err != nil {
+		if errors.Is(err, model.ErrPricingSyncConfigurationChanged) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
@@ -1141,5 +1206,5 @@ func ApplyPricingSyncPatches(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{"config_version": appliedVersion}})
 }

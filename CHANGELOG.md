@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.80
+
+- Made pricing sync clearly separate protected manual prices from automatically managed models, with per-model and filtered bulk controls to restore Auto mode.
+- Preserved each model's pricing mode when applying checked prices and added version-safe snapshots so stale checks cannot overwrite newer configuration.
+- Added frontend test automation for the default admin interface.
+
 ## v1.1.79
 
 - Hid the secondary load-average axis in System Telemetry so both charts share the same horizontal time scale.

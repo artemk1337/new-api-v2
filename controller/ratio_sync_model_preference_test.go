@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -231,6 +232,7 @@ func TestApplyPricingSyncPatchesAcceptsPreferenceWithoutPatch(t *testing.T) {
 	t.Cleanup(func() { model.DB = previousDB })
 
 	body := []byte(`{
+		"expected_version":0,
 		"preferences":[
 			{"model_name":"model-a","mode":"channel","channel_id":8},
 			{"model_name":"model-b","mode":"general","channel_id":0}
@@ -244,6 +246,13 @@ func TestApplyPricingSyncPatchesAcceptsPreferenceWithoutPatch(t *testing.T) {
 	ApplyPricingSyncPatches(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var response struct {
+		Data struct {
+			ConfigVersion int64 `json:"config_version"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, int64(1), response.Data.ConfigVersion)
 	state, err := model.GetPricingSyncModelState("model-a")
 	require.NoError(t, err)
 	require.Equal(t, model.PricingSyncModelModeChannel, state.Mode)
@@ -256,4 +265,46 @@ func TestApplyPricingSyncPatchesAcceptsPreferenceWithoutPatch(t *testing.T) {
 	require.Equal(t, model.PricingSyncModelModeGeneral, generalState.Mode)
 	require.Equal(t, model.PricingSyncModelStatusStale, generalState.Status)
 	require.Equal(t, "[7]", generalState.Provenance)
+}
+
+func TestApplyPricingSyncPatchesRejectsStaleModelStateSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-apply-stale-snapshot?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&model.Option{},
+		&model.PricingSyncSource{},
+		&model.PricingSyncModelState{},
+	))
+	previousDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+
+	version, err := model.GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+	require.Zero(t, version)
+	require.NoError(t, model.ApplyPricingSyncUpdateWithPreferences(nil, []model.PricingSyncModelPreferenceInput{{
+		ModelName: "model-a",
+		Mode:      model.PricingSyncModelModeManual,
+	}}))
+
+	body := []byte(`{
+		"patches":{"ModelPrice":{"set":{"model-a":1}}},
+		"preferences":[{"model_name":"model-a","mode":"general","channel_id":0}],
+		"expected_version":0
+	}`)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/ratio_sync/apply", bytes.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ApplyPricingSyncPatches(ctx)
+
+	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	state, err := model.GetPricingSyncModelState("model-a")
+	require.NoError(t, err)
+	require.Equal(t, model.PricingSyncModelModeManual, state.Mode)
+	var count int64
+	require.NoError(t, db.Model(&model.Option{}).Where("key = ?", "ModelPrice").Count(&count).Error)
+	require.Zero(t, count)
 }

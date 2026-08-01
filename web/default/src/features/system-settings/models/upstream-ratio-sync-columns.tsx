@@ -16,19 +16,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { AlertTriangle } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { BadgeCell } from '@/components/data-table'
+import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { BadgeCell } from '@/components/data-table'
-import { StatusBadge } from '@/components/status-badge'
+
 import type { RatioType } from '../types'
 import {
   getDisplaySyncFields,
@@ -53,9 +63,12 @@ export function useUpstreamRatioSyncColumns(
   ) => void,
   onUnselectValue: (model: string, ratioType: RatioType) => void,
   onBulkSelect: (upstreamName: string, rows: ModelRow[]) => void,
-  onBulkUnselect: (upstreamName: string, rows: ModelRow[]) => void
+  onBulkUnselect: (upstreamName: string, rows: ModelRow[]) => void,
+  autoSources: Array<{ id: number; name: string }> = [],
+  onEnableAuto?: (model: string, channelID: number) => void
 ): ColumnDef<ModelRow>[] {
   const { t } = useTranslation()
+  const [autoSelectionReset, setAutoSelectionReset] = useState(0)
 
   return useMemo<ColumnDef<ModelRow>[]>(() => {
     const baseColumns: ColumnDef<ModelRow>[] = [
@@ -126,7 +139,7 @@ export function useUpstreamRatioSyncColumns(
                                 className='max-w-[200px] truncate'
                               />
                             }
-                          ></TooltipTrigger>
+                          />
                           <TooltipContent>
                             <p className='max-w-xs text-xs break-all'>
                               {String(current)}
@@ -143,6 +156,47 @@ export function useUpstreamRatioSyncColumns(
         },
       },
     ]
+
+    if (onEnableAuto) {
+      baseColumns.push({
+        id: 'enable_auto',
+        header: t('Automatic update'),
+        cell: ({ row }) => (
+          <Select
+            key={`${row.original.model}-${autoSelectionReset}`}
+            items={[
+              { value: 'general', label: t('General rule') },
+              ...autoSources.map((source) => ({
+                value: `channel:${source.id}`,
+                label: source.name,
+              })),
+            ]}
+            onValueChange={(value) => {
+              if (!value) return
+              const selectedValue = String(value)
+              const [, channel] = selectedValue.split(':')
+              onEnableAuto(row.original.model, channel ? Number(channel) : 0)
+              setAutoSelectionReset((current) => current + 1)
+            }}
+            disabled={isDisabled}
+          >
+            <SelectTrigger className='min-w-40'>
+              <SelectValue placeholder={t('Enable auto')} />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                <SelectItem value='general'>{t('General rule')}</SelectItem>
+                {autoSources.map((source) => (
+                  <SelectItem key={source.id} value={`channel:${source.id}`}>
+                    {source.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        ),
+      })
+    }
 
     const upstreamColumns: ColumnDef<ModelRow>[] = upstreamNames.map(
       (upstreamName) => ({
@@ -271,6 +325,9 @@ export function useUpstreamRatioSyncColumns(
     onUnselectValue,
     onBulkSelect,
     onBulkUnselect,
+    autoSources,
+    onEnableAuto,
+    autoSelectionReset,
     t,
   ])
 }

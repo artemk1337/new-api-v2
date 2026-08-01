@@ -334,8 +334,12 @@ func bumpPricingSyncConfigVersionTx(tx *gorm.DB) error {
 }
 
 func GetPricingSyncConfigVersion() (int64, error) {
-	option := Option{Key: "PricingSyncConfigVersion", Value: "0"}
-	if err := DB.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
+	initialVersion := Option{Key: "PricingSyncConfigVersion", Value: "0"}
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialVersion).Error; err != nil {
+		return 0, err
+	}
+	option := Option{}
+	if err := DB.First(&option, "key = ?", initialVersion.Key).Error; err != nil {
 		return 0, err
 	}
 	version, err := strconv.ParseInt(option.Value, 10, 64)
@@ -409,6 +413,31 @@ func GetPricingSyncModelStates() (map[string]PricingSyncModelState, error) {
 		result[state.ModelName] = state
 	}
 	return result, nil
+}
+
+// GetPricingSyncModelStatesSnapshot returns model states together with the
+// configuration version that guards preference changes. Reading the version
+// before and after the states prevents callers from applying a stale snapshot
+// when another request changes a model preference concurrently.
+func GetPricingSyncModelStatesSnapshot() (map[string]PricingSyncModelState, int64, error) {
+	for range 3 {
+		before, err := GetPricingSyncConfigVersion()
+		if err != nil {
+			return nil, 0, err
+		}
+		states, err := GetPricingSyncModelStates()
+		if err != nil {
+			return nil, 0, err
+		}
+		after, err := GetPricingSyncConfigVersion()
+		if err != nil {
+			return nil, 0, err
+		}
+		if before == after {
+			return states, after, nil
+		}
+	}
+	return nil, 0, ErrPricingSyncConfigurationChanged
 }
 
 func SavePricingSyncModelState(state PricingSyncModelState) error {
@@ -596,8 +625,36 @@ func ApplyPricingSyncUpdate(patches map[string]JSONObjectPatch, states []Pricing
 }
 
 func ApplyPricingSyncUpdateWithPreferences(patches map[string]JSONObjectPatch, preferences []PricingSyncModelPreferenceInput) error {
-	return ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+	_, err := ApplyPricingSyncUpdateWithPreferencesIfVersion(patches, preferences, -1)
+	return err
+}
+
+func ApplyPricingSyncUpdateWithPreferencesIfVersion(patches map[string]JSONObjectPatch, preferences []PricingSyncModelPreferenceInput, expectedVersion int64) (int64, error) {
+	var appliedVersion int64
+	err := ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+		if expectedVersion >= 0 {
+			initialVersion := Option{Key: "PricingSyncConfigVersion", Value: "0"}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialVersion).Error; err != nil {
+				return err
+			}
+			version := Option{}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", initialVersion.Key).Error; err != nil {
+				return err
+			}
+			if version.Value != strconv.FormatInt(expectedVersion, 10) {
+				return ErrPricingSyncConfigurationChanged
+			}
+		}
 		if err := bumpPricingSyncConfigVersionTx(tx); err != nil {
+			return err
+		}
+		version := Option{}
+		if err := tx.First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
+			return err
+		}
+		var err error
+		appliedVersion, err = strconv.ParseInt(version.Value, 10, 64)
+		if err != nil {
 			return err
 		}
 		if len(preferences) == 0 {
@@ -667,21 +724,27 @@ func ApplyPricingSyncUpdateWithPreferences(patches map[string]JSONObjectPatch, p
 		}
 		return nil
 	})
+	return appliedVersion, err
 }
 
 func ApplyPricingSyncUpdateIfVersion(patches map[string]JSONObjectPatch, states []PricingSyncModelState, expectedVersion int64) error {
 	return ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
 		if expectedVersion >= 0 {
-			version := Option{}
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", "PricingSyncConfigVersion").Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if expectedVersion != 0 {
-					return errors.New("pricing sync configuration changed")
-				}
-			} else if err != nil {
+			initialVersion := Option{Key: "PricingSyncConfigVersion", Value: "0"}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialVersion).Error; err != nil {
 				return err
-			} else if version.Value != strconv.FormatInt(expectedVersion, 10) {
-				return errors.New("pricing sync configuration changed")
+			}
+			version := Option{}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", initialVersion.Key).Error; err != nil {
+				return err
+			}
+			if version.Value != strconv.FormatInt(expectedVersion, 10) {
+				return ErrPricingSyncConfigurationChanged
+			}
+		}
+		if len(patches) > 0 || len(states) > 0 {
+			if err := bumpPricingSyncConfigVersionTx(tx); err != nil {
+				return err
 			}
 		}
 		for _, state := range states {

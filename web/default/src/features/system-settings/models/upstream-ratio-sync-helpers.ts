@@ -16,7 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { PricingSyncPatch, RatioType } from '../types'
+import type {
+  DifferencesMap,
+  PricingSyncConfig,
+  PricingSyncModelState,
+  PricingSyncPatch,
+  RatioType,
+  UpstreamChannel,
+} from '../types'
 import { RATIO_TYPE_OPTIONS } from './constants'
 
 export type RatioDifferenceEntry = {
@@ -33,6 +40,148 @@ export type ModelRow = {
 }
 
 export type ResolutionsMap = Record<string, Record<string, number | string>>
+
+export function getPricingSyncErrorMessage(
+  error: unknown,
+  fallback: string
+): string {
+  if (typeof error === 'object' && error !== null && 'response' in error) {
+    const message = (error as { response?: { data?: { message?: unknown } } })
+      .response?.data?.message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+export function isPricingSyncVersionConflict(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'response' in error &&
+    (error as { response?: { status?: number } }).response?.status === 409
+  )
+}
+
+export type PricingSyncAutoSource = {
+  id: number
+  name: string
+}
+
+export function getRunnablePricingSyncSources(
+  channels: UpstreamChannel[],
+  config?: PricingSyncConfig
+): PricingSyncAutoSource[] {
+  if (!config) return []
+
+  const sourcesByChannel = new Map(
+    config.sources.map((source) => [source.channel_id, source])
+  )
+  return channels
+    .filter((channel) => {
+      const source = sourcesByChannel.get(channel.id)
+      return (
+        channel.status === 1 &&
+        source?.enabled === true &&
+        source.interval_seconds > 0
+      )
+    })
+    .map((channel) => ({ id: channel.id, name: channel.name }))
+}
+
+export function rebasePricingSyncConfigDraft(
+  base: PricingSyncConfig,
+  draft: PricingSyncConfig,
+  latest: PricingSyncConfig
+): PricingSyncConfig {
+  const baseSources = new Map(
+    base.sources.map((source) => [source.channel_id, source])
+  )
+  const draftSources = new Map(
+    draft.sources.map((source) => [source.channel_id, source])
+  )
+  const rebasedSources = new Map(
+    latest.sources.map((source) => [source.channel_id, source])
+  )
+
+  const sourceIDs = new Set([...baseSources.keys(), ...draftSources.keys()])
+  sourceIDs.forEach((channelID) => {
+    const baseSource = baseSources.get(channelID)
+    const draftSource = draftSources.get(channelID)
+    if (!draftSource) {
+      if (baseSource) rebasedSources.delete(channelID)
+      return
+    }
+    if (!baseSource) {
+      rebasedSources.set(channelID, draftSource)
+      return
+    }
+
+    const rebasedSource = {
+      ...(rebasedSources.get(channelID) ?? baseSource),
+    }
+    let changed = false
+    if (draftSource.enabled !== baseSource.enabled) {
+      rebasedSource.enabled = draftSource.enabled
+      changed = true
+    }
+    if (draftSource.endpoint !== baseSource.endpoint) {
+      rebasedSource.endpoint = draftSource.endpoint
+      changed = true
+    }
+    if (draftSource.interval_seconds !== baseSource.interval_seconds) {
+      rebasedSource.interval_seconds = draftSource.interval_seconds
+      changed = true
+    }
+    if (changed) rebasedSources.set(channelID, rebasedSource)
+  })
+
+  return {
+    ...latest,
+    strategy:
+      draft.strategy !== base.strategy ? draft.strategy : latest.strategy,
+    sources: [...rebasedSources.values()],
+  }
+}
+
+export type PricingSyncDifferenceGroups = {
+  automatic: DifferencesMap
+  manual: DifferencesMap
+}
+
+export function splitPricingSyncDifferences(
+  differences: DifferencesMap,
+  modelStates: Record<string, PricingSyncModelState>
+): PricingSyncDifferenceGroups {
+  const automatic: DifferencesMap = {}
+  const manual: DifferencesMap = {}
+
+  Object.entries(differences).forEach(([modelName, difference]) => {
+    if (modelStates[modelName]?.mode === 'manual') {
+      manual[modelName] = difference
+      return
+    }
+    automatic[modelName] = difference
+  })
+
+  return { automatic, manual }
+}
+
+export function pricingSyncPreferencesForModels(
+  modelNames: string[],
+  modelStates: Record<string, PricingSyncModelState>
+): PricingSyncModelState[] {
+  return modelNames.map((modelName) => {
+    const state = modelStates[modelName]
+    return (
+      state ?? {
+        model_name: modelName,
+        mode: 'general',
+        channel_id: 0,
+        status: 'ready',
+      }
+    )
+  })
+}
 
 export const RATIO_SYNC_FIELDS: RatioType[] = [
   'model_ratio',

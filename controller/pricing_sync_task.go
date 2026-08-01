@@ -31,6 +31,8 @@ type upstreamPricingSyncSummary struct {
 	FailedChannels      int      `json:"failed_channels"`
 	AppliedModels       int      `json:"applied_models"`
 	SkippedModels       []string `json:"skipped_models,omitempty"`
+	RemovedModels       []string `json:"removed_models,omitempty"`
+	DeletedPricingItems int      `json:"deleted_pricing_items,omitempty"`
 	CandidateHash       string   `json:"candidate_hash,omitempty"`
 	PendingConfirmation bool     `json:"pending_confirmation,omitempty"`
 }
@@ -393,10 +395,23 @@ func optionKeyForPricingField(field string) string {
 func pricingCandidateHash(sources []string, patches map[string]model.JSONObjectPatch) (string, error) {
 	sortedSources := append([]string(nil), sources...)
 	sort.Strings(sortedSources)
+	canonicalPatches := make(map[string]model.JSONObjectPatch, len(patches))
+	for key, patch := range patches {
+		deletes := append([]string(nil), patch.Delete...)
+		sort.Strings(deletes)
+		uniqueDeletes := deletes[:0]
+		for _, modelName := range deletes {
+			if len(uniqueDeletes) == 0 || uniqueDeletes[len(uniqueDeletes)-1] != modelName {
+				uniqueDeletes = append(uniqueDeletes, modelName)
+			}
+		}
+		patch.Delete = uniqueDeletes
+		canonicalPatches[key] = patch
+	}
 	encodedOptions, err := common.Marshal(struct {
 		Sources []string                         `json:"sources"`
 		Patches map[string]model.JSONObjectPatch `json:"patches"`
-	}{Sources: sortedSources, Patches: patches})
+	}{Sources: sortedSources, Patches: canonicalPatches})
 	if err != nil {
 		return "", err
 	}
@@ -460,13 +475,14 @@ func updatePricingSyncSourceIfCurrent(source model.PricingSyncSource, expectedVe
 // returned it twice.  This makes a transient malformed provider response
 // harmless even when no other source participates in a sync run.
 func confirmPricingSyncQuotes(channelID int, data map[string]any, now int64) (map[string]any, error) {
-	return confirmPricingSyncQuotesWithTx(channelID, data, now, nil, nil)
+	return confirmPricingSyncQuotesWithTx(channelID, data, nil, now, nil, nil)
 }
 
-func confirmPricingSyncQuotesIfCurrent(source model.PricingSyncSource, data map[string]any, now, expectedVersion int64) (map[string]any, error) {
+func confirmPricingSyncQuotesIfCurrent(source model.PricingSyncSource, data map[string]any, presentUnsupported []string, now, expectedVersion int64) (map[string]any, error) {
 	return confirmPricingSyncQuotesWithTx(
 		source.ChannelID,
 		data,
+		lo.SliceToMap(presentUnsupported, func(modelName string) (string, struct{}) { return modelName, struct{}{} }),
 		now,
 		func(tx *gorm.DB) error {
 			return pricingSyncSourceCurrentTx(tx, source, expectedVersion)
@@ -479,7 +495,7 @@ func confirmPricingSyncQuotesIfCurrent(source model.PricingSyncSource, data map[
 	)
 }
 
-func confirmPricingSyncQuotesWithTx(channelID int, data map[string]any, now int64, before, after func(*gorm.DB) error) (map[string]any, error) {
+func confirmPricingSyncQuotesWithTx(channelID int, data map[string]any, presentUnsupported map[string]struct{}, now int64, before, after func(*gorm.DB) error) (map[string]any, error) {
 	modelNames := make(map[string]struct{})
 	for _, field := range pricingSyncFields {
 		for modelName := range valueMap(data[field]) {
@@ -535,6 +551,17 @@ func confirmPricingSyncQuotesWithTx(channelID int, data map[string]any, now int6
 		}
 		for _, quote := range existing {
 			if _, found := modelNames[quote.ModelName]; found {
+				continue
+			}
+			if _, present := presentUnsupported[quote.ModelName]; present {
+				if quote.MissingCount == 0 {
+					continue
+				}
+				if err := tx.Model(&model.PricingSyncQuote{}).
+					Where("channel_id = ? AND model_name = ?", channelID, quote.ModelName).
+					Update("missing_count", 0).Error; err != nil {
+					return err
+				}
 				continue
 			}
 			if err := tx.Model(&model.PricingSyncQuote{}).
@@ -1248,6 +1275,7 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 			if err := updatePricingSyncSourceIfCurrent(source, configVersion, map[string]any{"last_error": targetErr.Error()}); err != nil {
 				return summary, err
 			}
+			common.SysLog(fmt.Sprintf("upstream pricing sync target failed: channel_id=%d err=%v", source.ChannelID, targetErr))
 			continue
 		}
 		summary.CheckedChannels++
@@ -1263,7 +1291,7 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 			common.SysLog(fmt.Sprintf("upstream pricing sync failed: channel_id=%d err=%v", source.ChannelID, err))
 			continue
 		}
-		_, err = confirmPricingSyncQuotesIfCurrent(source, fetched.Data, now, configVersion)
+		_, err = confirmPricingSyncQuotesIfCurrent(source, fetched.Data, fetched.UnsupportedModels, now, configVersion)
 		if err != nil {
 			summary.FailedChannels++
 			staleSources[source.ChannelID] = struct{}{}
@@ -1319,7 +1347,12 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 	if err != nil {
 		return summary, err
 	}
+	summary.RemovedModels = lo.Keys(unavailable)
+	sort.Strings(summary.RemovedModels)
 	removeUnavailablePricingSyncModels(patches, unavailable)
+	for _, patch := range patches {
+		summary.DeletedPricingItems += len(patch.Delete)
+	}
 	summary.SkippedModels = lo.Uniq(append(summary.SkippedModels, skipped...))
 	states := pricingSyncAppliedStates(patches, unavailable, staleSources, upstreams, sourceIDs, preferences, now)
 	for _, state := range pricingSyncIncompatibleStates(localPricing, upstreams, sourceIDs, staleSources, preferences, now) {
@@ -1338,16 +1371,54 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 	if len(patches) == 0 && len(states) == 0 {
 		return summary, nil
 	}
+	skippedModels := append([]string(nil), summary.SkippedModels...)
+	sort.Strings(skippedModels)
+	if len(skippedModels) > 20 {
+		skippedModels = skippedModels[:20]
+	}
+	removedModels := summary.RemovedModels
+	if len(removedModels) > 20 {
+		removedModels = removedModels[:20]
+	}
 	if len(patches) > 0 {
 		candidateHash, err := pricingCandidateHash(sources, patches)
 		if err != nil {
 			return summary, err
 		}
 		summary.CandidateHash = candidateHash
+		if !pricingCandidateConfirmed(previousCandidateHash, candidateHash) {
+			summary.PendingConfirmation = true
+			if len(summary.RemovedModels) > 0 {
+				common.SysLog(fmt.Sprintf(
+					"upstream pricing sync removal pending confirmation: config_version=%d source_ids=%v removed_models=%d deleted_pricing_items=%d skipped_models=%d removed_sample=%v skipped_sample=%v",
+					configVersion,
+					sourceIDs,
+					len(summary.RemovedModels),
+					summary.DeletedPricingItems,
+					len(summary.SkippedModels),
+					removedModels,
+					skippedModels,
+				))
+			}
+			return summary, nil
+		}
 	}
 	if err := model.ApplyPricingSyncUpdateIfVersion(patches, states, configVersion); err != nil {
 		return summary, fmt.Errorf("upstream pricing sync apply failed: %w", err)
 	}
 	summary.AppliedModels = applied
+	if applied > 0 || len(summary.RemovedModels) > 0 {
+		common.SysLog(fmt.Sprintf(
+			"upstream pricing sync applied: config_version=%d source_ids=%v applied_models=%d removed_models=%d deleted_pricing_items=%d skipped_models=%d removed_sample=%v skipped_sample=%v",
+			configVersion,
+			sourceIDs,
+			applied,
+			len(summary.RemovedModels),
+			summary.DeletedPricingItems,
+			len(summary.SkippedModels),
+			removedModels,
+			skippedModels,
+		))
+	}
 	return summary, nil
 }

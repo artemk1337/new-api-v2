@@ -23,6 +23,12 @@ import {
   buildPricingMapDiffPatches,
   buildPricingSyncPatches,
   getDisplaySyncFields,
+  getPricingSyncErrorMessage,
+  getRunnablePricingSyncSources,
+  isPricingSyncVersionConflict,
+  pricingSyncPreferencesForModels,
+  rebasePricingSyncConfigDraft,
+  splitPricingSyncDifferences,
 } from './upstream-ratio-sync-helpers.ts'
 
 const ratioOptionKeys = [
@@ -36,6 +42,262 @@ const ratioOptionKeys = [
 ]
 
 describe('pricing sync category patches', () => {
+  test('extracts pricing sync errors with the expected precedence', () => {
+    assert.equal(
+      getPricingSyncErrorMessage(
+        { response: { data: { message: 'server message' } } },
+        'fallback'
+      ),
+      'server message'
+    )
+    assert.equal(
+      getPricingSyncErrorMessage(new Error('request failed'), 'fallback'),
+      'request failed'
+    )
+    assert.equal(
+      getPricingSyncErrorMessage(
+        { response: { data: { message: '   ' } } },
+        'fallback'
+      ),
+      'fallback'
+    )
+    assert.equal(getPricingSyncErrorMessage(null, 'fallback'), 'fallback')
+  })
+
+  test('detects only pricing sync version conflicts', () => {
+    assert.equal(
+      isPricingSyncVersionConflict({ response: { status: 409 } }),
+      true
+    )
+    assert.equal(
+      isPricingSyncVersionConflict({ response: { status: 400 } }),
+      false
+    )
+    assert.equal(isPricingSyncVersionConflict(new Error('conflict')), false)
+    assert.equal(isPricingSyncVersionConflict(null), false)
+  })
+
+  test('returns only persisted sources that can run automatically', () => {
+    const channels = [
+      { id: 1, name: 'runnable', base_url: '', status: 1 },
+      { id: 2, name: 'disabled source', base_url: '', status: 1 },
+      { id: 3, name: 'manual source', base_url: '', status: 1 },
+      { id: 4, name: 'disabled channel', base_url: '', status: 2 },
+      { id: 5, name: 'not configured', base_url: '', status: 1 },
+    ]
+    const config = {
+      strategy: 'highest' as const,
+      version: 7,
+      sources: [
+        { channel_id: 1, enabled: true, endpoint: '', interval_seconds: 60 },
+        { channel_id: 2, enabled: false, endpoint: '', interval_seconds: 60 },
+        { channel_id: 3, enabled: true, endpoint: '', interval_seconds: 0 },
+        { channel_id: 4, enabled: true, endpoint: '', interval_seconds: 60 },
+      ],
+    }
+
+    assert.deepEqual(getRunnablePricingSyncSources(channels, config), [
+      { id: 1, name: 'runnable' },
+    ])
+  })
+
+  test('does not expose automatic sources before persisted config loads', () => {
+    const channels = [{ id: 1, name: 'channel', base_url: '', status: 1 }]
+
+    assert.deepEqual(getRunnablePricingSyncSources(channels), [])
+  })
+
+  test('rebases only dirty pricing sync fields onto the latest config', () => {
+    const base = {
+      strategy: 'highest' as const,
+      version: 1,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: true,
+          endpoint: '/old',
+          interval_seconds: 60,
+        },
+        {
+          channel_id: 2,
+          enabled: true,
+          endpoint: '/two',
+          interval_seconds: 60,
+        },
+      ],
+    }
+    const draft = {
+      strategy: 'lowest' as const,
+      version: 1,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: true,
+          endpoint: '/draft',
+          interval_seconds: 60,
+        },
+        {
+          channel_id: 2,
+          enabled: true,
+          endpoint: '/two',
+          interval_seconds: 60,
+        },
+      ],
+    }
+    const latest = {
+      strategy: 'average' as const,
+      version: 9,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: false,
+          endpoint: '/latest',
+          interval_seconds: 120,
+        },
+        {
+          channel_id: 2,
+          enabled: false,
+          endpoint: '/latest-two',
+          interval_seconds: 30,
+        },
+      ],
+    }
+
+    assert.deepEqual(rebasePricingSyncConfigDraft(base, draft, latest), {
+      strategy: 'lowest',
+      version: 9,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: false,
+          endpoint: '/draft',
+          interval_seconds: 120,
+        },
+        {
+          channel_id: 2,
+          enabled: false,
+          endpoint: '/latest-two',
+          interval_seconds: 30,
+        },
+      ],
+    })
+  })
+
+  test('preserves local source additions and removals while rebasing', () => {
+    const base = {
+      strategy: 'highest' as const,
+      version: 1,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: true,
+          endpoint: '/one',
+          interval_seconds: 60,
+        },
+      ],
+    }
+    const draft = {
+      ...base,
+      sources: [
+        {
+          channel_id: 2,
+          enabled: true,
+          endpoint: '/two',
+          interval_seconds: 30,
+        },
+      ],
+    }
+    const latest = {
+      strategy: 'average' as const,
+      version: 2,
+      sources: [
+        {
+          channel_id: 1,
+          enabled: false,
+          endpoint: '/latest',
+          interval_seconds: 120,
+        },
+        {
+          channel_id: 3,
+          enabled: true,
+          endpoint: '/three',
+          interval_seconds: 90,
+        },
+      ],
+    }
+
+    assert.deepEqual(rebasePricingSyncConfigDraft(base, draft, latest), {
+      strategy: 'average',
+      version: 2,
+      sources: [
+        {
+          channel_id: 3,
+          enabled: true,
+          endpoint: '/three',
+          interval_seconds: 90,
+        },
+        {
+          channel_id: 2,
+          enabled: true,
+          endpoint: '/two',
+          interval_seconds: 30,
+        },
+      ],
+    })
+  })
+
+  test('separates manually protected differences from automatic models', () => {
+    const differences = {
+      automatic: { model_price: { current: 1, upstreams: {}, confidence: {} } },
+      manual: { model_price: { current: 2, upstreams: {}, confidence: {} } },
+    }
+
+    const groups = splitPricingSyncDifferences(differences, {
+      manual: {
+        model_name: 'manual',
+        mode: 'manual',
+        channel_id: 0,
+        status: 'ready',
+      },
+    })
+
+    assert.deepEqual(Object.keys(groups.automatic), ['automatic'])
+    assert.deepEqual(Object.keys(groups.manual), ['manual'])
+  })
+
+  test('keeps current automatic preference when applying selected prices', () => {
+    const preferences = pricingSyncPreferencesForModels(
+      ['general', 'channel', 'missing'],
+      {
+        general: {
+          model_name: 'general',
+          mode: 'general',
+          channel_id: 0,
+          status: 'ready',
+        },
+        channel: {
+          model_name: 'channel',
+          mode: 'channel',
+          channel_id: 7,
+          status: 'ready',
+        },
+      }
+    )
+
+    assert.deepEqual(
+      preferences.map(({ model_name, mode, channel_id }) => ({
+        model_name,
+        mode,
+        channel_id,
+      })),
+      [
+        { model_name: 'general', mode: 'general', channel_id: 0 },
+        { model_name: 'channel', mode: 'channel', channel_id: 7 },
+        { model_name: 'missing', mode: 'general', channel_id: 0 },
+      ]
+    )
+  })
+
   test('hides derived billing mode when expression pricing is available', () => {
     const fields = getDisplaySyncFields({
       billing_mode: { current: null, upstreams: {}, confidence: {} },

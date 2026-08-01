@@ -367,6 +367,38 @@ func TestConfirmPricingSyncQuotesTreatsZeroBaseAsMissing(t *testing.T) {
 	require.Zero(t, quote.Confirmations)
 }
 
+func TestConfirmPricingSyncQuotesDoesNotMarkPresentUnsupportedModelMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:pricing-sync-present-unsupported?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
+	originalDB := model.DB
+	model.DB = db
+	t.Cleanup(func() { model.DB = originalDB })
+	require.NoError(t, db.Create(&model.PricingSyncQuote{
+		ChannelID: 8, ModelName: "duplicate", Confirmations: 2, MissingCount: 1,
+		Data: `{"model_ratio":2,"completion_ratio":3}`,
+	}).Error)
+
+	data, unsupported := upstreamPricingItemsToSyncData([]upstreamPricingItem{
+		{ModelName: "duplicate", ModelRatio: 1, CompletionRatio: 2},
+		{ModelName: "duplicate", ModelRatio: 3, CompletionRatio: 4},
+	})
+	_, err = confirmPricingSyncQuotesWithTx(
+		8,
+		data,
+		lo.SliceToMap(unsupported, func(modelName string) (string, struct{}) { return modelName, struct{}{} }),
+		100,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	var quote model.PricingSyncQuote
+	require.NoError(t, db.First(&quote, "channel_id = ? AND model_name = ?", 8, "duplicate").Error)
+	require.Zero(t, quote.MissingCount)
+	require.Equal(t, 2, quote.Confirmations)
+}
+
 func TestPricingSyncMissingModelsRequiresOwnedAbsentPrice(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:pricing-sync-missing?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -457,6 +489,7 @@ func TestPricingSyncSourceWritesRequireCurrentConfiguration(t *testing.T) {
 	_, err = confirmPricingSyncQuotesIfCurrent(
 		current,
 		map[string]any{"model_price": map[string]any{"model-a": 1.0}},
+		nil,
 		100,
 		1,
 	)
@@ -782,6 +815,18 @@ func TestPricingCandidateRequiresTwoIdenticalChecks(t *testing.T) {
 	require.True(t, pricingCandidateConfirmed(firstHash, sameHash))
 	require.False(t, pricingCandidateConfirmed(firstHash, changedHash))
 	require.False(t, pricingCandidateConfirmed(firstHash, changedSourcesHash))
+}
+
+func TestPricingCandidateHashCanonicalizesDeleteOrder(t *testing.T) {
+	first, err := pricingCandidateHash(nil, map[string]model.JSONObjectPatch{
+		"ModelPrice": {Delete: []string{"model-b", "model-a", "model-a"}},
+	})
+	require.NoError(t, err)
+	second, err := pricingCandidateHash(nil, map[string]model.JSONObjectPatch{
+		"ModelPrice": {Delete: []string{"model-a", "model-b"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, first, second)
 }
 
 func ptr(value string) *string { return &value }

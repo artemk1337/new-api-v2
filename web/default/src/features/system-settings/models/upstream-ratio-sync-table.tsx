@@ -16,9 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useMemo, useState } from 'react'
 import { Loader2, Search } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import {
+  DataTablePagination,
+  DataTableView,
+  useDataTable,
+} from '@/components/data-table'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -28,11 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  DataTablePagination,
-  DataTableView,
-  useDataTable,
-} from '@/components/data-table'
+
 import type { DifferencesMap, RatioType } from '../types'
 import { RATIO_TYPE_OPTIONS } from './constants'
 import { useUpstreamRatioSyncColumns } from './upstream-ratio-sync-columns'
@@ -57,6 +60,9 @@ type UpstreamRatioSyncTableProps = {
     sourceName: string
   ) => void
   onUnselectValue: (model: string, ratioType: RatioType) => void
+  autoSources?: Array<{ id: number; name: string }>
+  onEnableAuto?: (model: string, channelID: number) => void
+  onBulkEnableAuto?: (models: string[]) => void
 }
 
 export function UpstreamRatioSyncTable({
@@ -66,6 +72,9 @@ export function UpstreamRatioSyncTable({
   isSyncing,
   onSelectValue,
   onUnselectValue,
+  autoSources = [],
+  onEnableAuto,
+  onBulkEnableAuto,
 }: UpstreamRatioSyncTableProps) {
   const { t } = useTranslation()
   const [search, setSearch] = useState('')
@@ -110,7 +119,7 @@ export function UpstreamRatioSyncTable({
         }
       )
     })
-    return Array.from(set)
+    return [...set]
   }, [filteredData, ratioTypeFilter])
 
   const handleBulkSelect = useCallback(
@@ -167,7 +176,9 @@ export function UpstreamRatioSyncTable({
     onSelectValue,
     onUnselectValue,
     handleBulkSelect,
-    handleBulkUnselect
+    handleBulkUnselect,
+    autoSources,
+    onEnableAuto
   )
 
   const { table } = useDataTable({
@@ -245,7 +256,28 @@ export function UpstreamRatioSyncTable({
             </SelectGroup>
           </SelectContent>
         </Select>
+        {onBulkEnableAuto && filteredData.length > 0 && (
+          <Button
+            variant='secondary'
+            disabled={isDisabled}
+            onClick={() =>
+              onBulkEnableAuto(filteredData.map((row) => row.model))
+            }
+          >
+            {t('Enable auto for shown models')}
+          </Button>
+        )}
       </div>
+
+      {onEnableAuto && (
+        <div className='flex flex-wrap items-center gap-2 text-sm'>
+          <span className='text-muted-foreground'>
+            {t(
+              'Enable automatic updates for a model using the general rule or a selected source.'
+            )}
+          </span>
+        </div>
+      )}
 
       <DataTableView
         table={table}

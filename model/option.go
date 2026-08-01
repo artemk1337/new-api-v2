@@ -39,6 +39,13 @@ func modelRequestRateLimitActivationDelay() int64 {
 	return int64(max(2*common.SyncFrequency, 2) + 5)
 }
 
+// LockPricingOptionSnapshot prevents a reader from observing a committed
+// option version before the corresponding in-memory pricing maps are refreshed.
+func LockPricingOptionSnapshot() func() {
+	optionUpdateMutex.Lock()
+	return optionUpdateMutex.Unlock
+}
+
 // jsonObjectPatchOptionKeys is intentionally limited to model-pricing maps.
 // Unlike a regular option update, patching an arbitrary JSON option cannot
 // safely run the option-specific migration/normalization pipeline while also
@@ -857,6 +864,11 @@ func UpdatePricingOptionManual(key, value string) error {
 		option.Value = value
 		if err := tx.Save(&option).Error; err != nil {
 			return err
+		}
+		if len(changed) > 0 {
+			if err := bumpPricingSyncConfigVersionTx(tx); err != nil {
+				return err
+			}
 		}
 		for modelName := range changed {
 			state := PricingSyncModelState{ModelName: modelName, Mode: PricingSyncModelModeManual, Status: PricingSyncModelStatusReady}

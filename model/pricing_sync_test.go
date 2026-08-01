@@ -23,6 +23,18 @@ func TestValidatePricingSyncSourceEndpoint(t *testing.T) {
 	}
 }
 
+func TestGetPricingSyncConfigVersionCreatesMissingOption(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	require.NoError(t, DB.Where("key = ?", "PricingSyncConfigVersion").Delete(&Option{}).Error)
+	t.Cleanup(func() {
+		DB.Where("key = ?", "PricingSyncConfigVersion").Delete(&Option{})
+	})
+
+	version, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+	require.Zero(t, version)
+}
+
 func TestDisablePricingSyncSourcesClearsOwnedModelPricing(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}))
@@ -99,6 +111,8 @@ func TestApplyPricingSyncUpdatePersistsPriceAndProvenance(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncModelState{}))
 	const modelName = "synced-with-provenance"
+	version, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
 
 	require.NoError(t, ApplyPricingSyncUpdate(
 		map[string]JSONObjectPatch{
@@ -117,6 +131,9 @@ func TestApplyPricingSyncUpdatePersistsPriceAndProvenance(t *testing.T) {
 	var option Option
 	require.NoError(t, DB.First(&option, "key = ?", "ModelPrice").Error)
 	assert.Contains(t, option.Value, modelName)
+	updatedVersion, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, updatedVersion)
 }
 
 func TestPricingOptionChangedModels(t *testing.T) {
@@ -134,15 +151,45 @@ func TestUpdatePricingOptionManualPersistsPriceAndStateTogether(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncModelState{}))
 	const modelName = "atomic-manual-model"
+	version, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
 
 	require.NoError(t, UpdatePricingOptionManual("ModelPrice", `{"atomic-manual-model":0.5}`))
 
 	state, err := GetPricingSyncModelState(modelName)
 	require.NoError(t, err)
 	assert.Equal(t, PricingSyncModelModeManual, state.Mode)
+	updatedVersion, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, updatedVersion)
 	var option Option
 	require.NoError(t, DB.First(&option, "key = ?", "ModelPrice").Error)
 	assert.Contains(t, option.Value, modelName)
+}
+
+func TestApplyPricingSyncPreferencesInitialVersionCAS(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncModelState{}))
+	require.NoError(t, DB.Where("key = ?", "PricingSyncConfigVersion").Delete(&Option{}).Error)
+	t.Cleanup(func() {
+		DB.Where("key = ?", "PricingSyncConfigVersion").Delete(&Option{})
+	})
+
+	version, err := ApplyPricingSyncUpdateWithPreferencesIfVersion(nil, []PricingSyncModelPreferenceInput{{
+		ModelName: "first-model",
+		Mode:      PricingSyncModelModeGeneral,
+	}}, 0)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), version)
+
+	_, err = ApplyPricingSyncUpdateWithPreferencesIfVersion(nil, []PricingSyncModelPreferenceInput{{
+		ModelName: "stale-model",
+		Mode:      PricingSyncModelModeManual,
+	}}, 0)
+	require.ErrorIs(t, err, ErrPricingSyncConfigurationChanged)
+	var count int64
+	require.NoError(t, DB.Model(&PricingSyncModelState{}).Where("model_name = ?", "stale-model").Count(&count).Error)
+	require.Zero(t, count)
 }
 
 func TestUpdatePricingOptionManualRejectsInvalidExpressionWithoutMutation(t *testing.T) {

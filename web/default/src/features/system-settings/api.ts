@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+import { getPricingSyncErrorMessage } from './models/upstream-ratio-sync-helpers'
 import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
@@ -36,6 +37,7 @@ import type {
   PricingSyncConfigResponse,
   PricingSyncModelState,
   PricingSyncModelPreference,
+  PricingSyncApplyResponse,
   PricingSyncModelStateResponse,
   PricingSyncPatch,
 } from './types'
@@ -157,13 +159,35 @@ export async function getPricingSyncConfig() {
   return res.data
 }
 
+export async function getPricingSyncConfigQuietly() {
+  const res = await api.get<PricingSyncConfigResponse>(
+    '/api/ratio_sync/config',
+    { skipBusinessError: true, skipErrorHandler: true }
+  )
+  return res.data
+}
+
 export async function updatePricingSyncConfig(config: PricingSyncConfig) {
   const { version, ...payload } = config
-  const res = await api.put<UpdateOptionResponse>(
-    '/api/ratio_sync/config',
-    { ...payload, expected_version: version },
-    { skipBusinessError: true }
-  )
+  let res
+  try {
+    res = await api.put<UpdateOptionResponse>(
+      '/api/ratio_sync/config',
+      { ...payload, expected_version: version },
+      { skipBusinessError: true, skipErrorHandler: true }
+    )
+  } catch (error) {
+    if (error instanceof Error) {
+      error.message = getPricingSyncErrorMessage(
+        error,
+        'Failed to save settings'
+      )
+      throw error
+    }
+    throw new Error(
+      getPricingSyncErrorMessage(error, 'Failed to save settings')
+    )
+  }
   if (!res.data.success) {
     throw new Error(res.data.message || 'Failed to save settings')
   }
@@ -196,13 +220,28 @@ export async function updatePricingSyncModelState(
 
 export async function applyPricingSyncPatches(
   patches: Record<string, PricingSyncPatch>,
-  preferences: PricingSyncModelPreference[] = []
+  preferences: PricingSyncModelPreference[] = [],
+  expectedVersion?: number
 ) {
-  const res = await api.post<UpdateOptionResponse>(
-    '/api/ratio_sync/apply',
-    { patches, preferences },
-    { skipBusinessError: true }
-  )
+  let res
+  try {
+    res = await api.post<PricingSyncApplyResponse>(
+      '/api/ratio_sync/apply',
+      { patches, preferences, expected_version: expectedVersion },
+      { skipBusinessError: true, skipErrorHandler: true }
+    )
+  } catch (error) {
+    if (error instanceof Error) {
+      error.message = getPricingSyncErrorMessage(
+        error,
+        'Failed to apply pricing changes'
+      )
+      throw error
+    }
+    throw new Error(
+      getPricingSyncErrorMessage(error, 'Failed to apply pricing changes')
+    )
+  }
   if (!res.data.success) {
     throw new Error(res.data.message || 'Failed to apply pricing changes')
   }

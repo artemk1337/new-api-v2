@@ -518,6 +518,16 @@ export type UpstreamRatiosResponse = {
   data: {
     differences: DifferencesMap
     test_results: TestResult[]
+    model_states: Record<string, PricingSyncModelState>
+    config_version: number
+  }
+}
+
+export type PricingSyncApplyResponse = {
+  success: boolean
+  message: string
+  data: {
+    config_version: number
   }
 }
 

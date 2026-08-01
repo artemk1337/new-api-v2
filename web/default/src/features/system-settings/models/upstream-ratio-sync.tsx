@@ -1,5 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, RefreshCcw } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,23 +16,40 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckSquare, RefreshCcw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import {
   fetchUpstreamRatios,
   applyPricingSyncPatches,
   getPricingSyncConfig,
+  getPricingSyncConfigQuietly,
   getUpstreamChannels,
   updatePricingSyncConfig,
 } from '../api'
 import type {
   DifferencesMap,
+  PricingSyncModelPreference,
+  PricingSyncModelState,
   RatioType,
   PricingSyncConfig,
+  PricingSyncConfigResponse,
   UpstreamChannel,
   UpstreamConfig,
 } from '../types'
@@ -55,7 +70,13 @@ import { PricingSyncSources } from './pricing-sync-sources'
 import {
   buildPricingSyncPatches,
   RATIO_SYNC_FIELDS,
+  getPricingSyncErrorMessage,
   getPreferredSyncField,
+  getRunnablePricingSyncSources,
+  isPricingSyncVersionConflict,
+  pricingSyncPreferencesForModels,
+  rebasePricingSyncConfigDraft,
+  splitPricingSyncDifferences,
   type ResolutionsMap,
 } from './upstream-ratio-sync-helpers'
 import { UpstreamRatioSyncTable } from './upstream-ratio-sync-table'
@@ -144,10 +165,19 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     sources: [],
     version: 0,
   })
+  const [configDirty, setConfigDirty] = useState(false)
+  const persistedConfigRef = useRef<PricingSyncConfig | null>(null)
   const [differences, setDifferences] = useState<DifferencesMap>({})
+  const [modelStates, setModelStates] = useState<
+    Record<string, PricingSyncModelState>
+  >({})
+  const [pricingSnapshotVersion, setPricingSnapshotVersion] = useState<
+    number | null
+  >(null)
   const [resolutions, setResolutions] = useState<ResolutionsMap>({})
   const [conflictItems, setConflictItems] = useState<ConflictItem[]>([])
   const [confirmLoading, setConfirmLoading] = useState(false)
+  const [pendingAutoModels, setPendingAutoModels] = useState<string[]>([])
 
   const { data: channelsData } = useQuery({
     queryKey: ['upstream-channels'],
@@ -165,8 +195,54 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   const channels = useMemo(() => channelsData?.data ?? [], [channelsData?.data])
 
   useEffect(() => {
-    if (syncConfigData?.success) setSyncConfig(syncConfigData.data)
-  }, [syncConfigData])
+    if (!syncConfigData?.success || configDirty) return
+    persistedConfigRef.current = syncConfigData.data
+    setSyncConfig(syncConfigData.data)
+  }, [configDirty, syncConfigData])
+
+  const updatePricingSyncVersion = useCallback(
+    (version: number) => {
+      setPricingSnapshotVersion(version)
+      setSyncConfig((current) => ({ ...current, version }))
+      if (persistedConfigRef.current) {
+        persistedConfigRef.current = {
+          ...persistedConfigRef.current,
+          version,
+        }
+      }
+      queryClient.setQueryData<PricingSyncConfigResponse>(
+        ['pricing-sync-config'],
+        (current) =>
+          current ? { ...current, data: { ...current.data, version } } : current
+      )
+    },
+    [queryClient]
+  )
+
+  const clearPricingSnapshot = useCallback(() => {
+    setPricingSnapshotVersion(null)
+    setDifferences({})
+    setModelStates({})
+    setResolutions({})
+    setConflictItems([])
+    setConflictDialogOpen(false)
+    setPendingAutoModels([])
+  }, [])
+
+  const fetchLatestPricingSyncConfig = useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ['pricing-sync-config'],
+      refetchType: 'none',
+    })
+    const latest = await queryClient.fetchQuery({
+      queryKey: ['pricing-sync-config'],
+      queryFn: getPricingSyncConfigQuietly,
+    })
+    if (!latest.success) {
+      throw new Error(latest.message || t('Failed to load'))
+    }
+    return latest.data
+  }, [queryClient, t])
 
   const fetchMutation = useMutation({
     mutationFn: fetchUpstreamRatios,
@@ -176,7 +252,12 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         return
       }
 
-      const { differences: diffs, test_results } = data.data
+      const {
+        differences: diffs,
+        model_states,
+        config_version,
+        test_results,
+      } = data.data
 
       const errorResults = test_results.filter((r) => r.status === 'error')
       if (errorResults.length > 0) {
@@ -201,6 +282,8 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
       }
 
       setDifferences(diffs)
+      setModelStates(model_states ?? {})
+      setPricingSnapshotVersion(config_version)
       setResolutions({})
 
       if (Object.keys(diffs).length === 0) {
@@ -215,37 +298,48 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   })
 
   const { mutate: syncMutate, isPending: isSyncPending } = useMutation({
-    mutationFn: (
+    mutationFn: ({
+      patches,
+      preferences,
+      expectedVersion,
+    }: {
       patches: Record<
         string,
         { set?: Record<string, number | string>; delete?: string[] }
       >
-    ) => applyPricingSyncPatches(patches),
-    onSuccess: () => {
-      toast.success(t('Prices synced successfully'))
-      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      preferences: PricingSyncModelPreference[]
+      expectedVersion: number
+    }) => applyPricingSyncPatches(patches, preferences, expectedVersion),
+    onError: (error: unknown) => {
+      if (isPricingSyncVersionConflict(error)) {
+        clearPricingSnapshot()
+        toast.error(
+          t(
+            'Pricing settings changed. Check prices again before applying changes.'
+          )
+        )
+        return
+      }
 
-      setDifferences((prevDiffs) => {
-        const newDiffs = { ...prevDiffs }
-        Object.entries(resolutions).forEach(([model, ratios]) => {
-          Object.keys(ratios).forEach((ratioType) => {
-            if (newDiffs[model]?.[ratioType as RatioType]) {
-              delete newDiffs[model][ratioType as RatioType]
-              if (Object.keys(newDiffs[model]).length === 0) {
-                delete newDiffs[model]
-              }
-            }
-          })
-        })
-        return newDiffs
-      })
-
-      setResolutions({})
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || t('Failed to sync prices'))
+      toast.error(getPricingSyncErrorMessage(error, t('Failed to sync prices')))
     },
   })
+
+  const automaticSources = useMemo(
+    () =>
+      getRunnablePricingSyncSources(
+        channels,
+        syncConfigData?.success ? syncConfigData.data : undefined
+      ),
+    [channels, syncConfigData]
+  )
+  const hasRunnableSources =
+    automaticSources.length > 0 && pricingSnapshotVersion !== null
+
+  const differenceGroups = useMemo(
+    () => splitPricingSyncDifferences(differences, modelStates),
+    [differences, modelStates]
+  )
 
   const handleFetchConfiguredSources = () => {
     const selectedChannels = channels.filter((ch) =>
@@ -273,20 +367,41 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
 
   const saveConfigMutation = useMutation({
     mutationFn: () => updatePricingSyncConfig(syncConfig),
-    onSuccess: () => {
+    onSuccess: async () => {
+      clearPricingSnapshot()
       toast.success(t('Synchronization settings saved'))
-      queryClient.invalidateQueries({ queryKey: ['pricing-sync-config'] })
+      try {
+        const latest = await fetchLatestPricingSyncConfig()
+        persistedConfigRef.current = latest
+        setSyncConfig(latest)
+        setConfigDirty(false)
+      } catch (error) {
+        toast.error(getPricingSyncErrorMessage(error, t('Failed to load')))
+      }
     },
-    onError: (error: unknown) => {
-      const status =
-        typeof error === 'object' &&
-        error !== null &&
-        'response' in error &&
-        (error as { response?: { status?: number } }).response?.status
-      if (status === 409) {
-        void queryClient.invalidateQueries({
-          queryKey: ['pricing-sync-config'],
-        })
+    onError: async (error: unknown) => {
+      if (isPricingSyncVersionConflict(error)) {
+        clearPricingSnapshot()
+        const base = persistedConfigRef.current
+        try {
+          const latest = await fetchLatestPricingSyncConfig()
+          setSyncConfig((current) =>
+            base
+              ? rebasePricingSyncConfigDraft(base, current, latest)
+              : { ...current, version: latest.version }
+          )
+          persistedConfigRef.current = latest
+        } catch (refreshError) {
+          toast.error(
+            getPricingSyncErrorMessage(refreshError, t('Failed to load'))
+          )
+        }
+        toast.error(
+          t(
+            'Pricing settings changed. Check prices again before applying changes.'
+          )
+        )
+        return
       }
       toast.error(
         error instanceof Error ? error.message : t('Failed to save settings')
@@ -402,15 +517,126 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   }
 
   const performSync = useCallback(async (): Promise<boolean> => {
+    if (pricingSnapshotVersion === null) return false
+
     const patches = buildPricingSyncPatches(resolutions)
+    const preferences = pricingSyncPreferencesForModels(
+      Object.keys(resolutions),
+      modelStates
+    ).map(({ model_name, mode, channel_id }) => ({
+      model_name,
+      mode,
+      channel_id,
+    }))
 
     return new Promise<boolean>((resolve) => {
-      syncMutate(patches, {
-        onSuccess: () => resolve(true),
-        onError: () => resolve(false),
-      })
+      syncMutate(
+        {
+          patches,
+          preferences,
+          expectedVersion: pricingSnapshotVersion,
+        },
+        {
+          onSuccess: (data) => {
+            updatePricingSyncVersion(data.data.config_version)
+            toast.success(t('Prices synced successfully'))
+            void queryClient.invalidateQueries({ queryKey: ['system-options'] })
+            void queryClient.invalidateQueries({
+              queryKey: ['pricing-sync-model-state'],
+            })
+            setDifferences((current) => {
+              const next = { ...current }
+              Object.entries(resolutions).forEach(([modelName, ratios]) => {
+                Object.keys(ratios).forEach((ratioType) => {
+                  delete next[modelName]?.[ratioType as RatioType]
+                  if (
+                    next[modelName] &&
+                    Object.keys(next[modelName]).length === 0
+                  ) {
+                    delete next[modelName]
+                  }
+                })
+              })
+              return next
+            })
+            setResolutions({})
+            resolve(true)
+          },
+          onError: () => resolve(false),
+        }
+      )
     })
-  }, [resolutions, syncMutate])
+  }, [
+    modelStates,
+    pricingSnapshotVersion,
+    queryClient,
+    resolutions,
+    syncMutate,
+    t,
+    updatePricingSyncVersion,
+  ])
+
+  const enableAutoForModels = useCallback(
+    (modelNames: string[], channelID: number) => {
+      if (pricingSnapshotVersion === null) return
+
+      const preferences: PricingSyncModelPreference[] = modelNames.map(
+        (model_name) => ({
+          model_name,
+          mode: channelID === 0 ? 'general' : 'channel',
+          channel_id: channelID,
+        })
+      )
+      syncMutate(
+        {
+          patches: {},
+          preferences,
+          expectedVersion: pricingSnapshotVersion,
+        },
+        {
+          onSuccess: (data) => {
+            updatePricingSyncVersion(data.data.config_version)
+            setModelStates((current) => {
+              const next = { ...current }
+              modelNames.forEach((modelName) => {
+                next[modelName] = {
+                  ...next[modelName],
+                  model_name: modelName,
+                  mode: channelID === 0 ? 'general' : 'channel',
+                  channel_id: channelID,
+                  status: 'stale',
+                }
+              })
+              return next
+            })
+            setResolutions((current) => {
+              const next = { ...current }
+              modelNames.forEach((modelName) => delete next[modelName])
+              return next
+            })
+            setPendingAutoModels([])
+            modelNames.forEach((modelName) => {
+              void queryClient.invalidateQueries({
+                queryKey: ['pricing-sync-model-state', modelName],
+              })
+            })
+            toast.success(
+              t(
+                'Automatic price updates will start after upstream confirmation.'
+              )
+            )
+          },
+        }
+      )
+    },
+    [
+      pricingSnapshotVersion,
+      queryClient,
+      syncMutate,
+      t,
+      updatePricingSyncVersion,
+    ]
+  )
 
   const findSourceChannel = (
     model: string,
@@ -491,7 +717,12 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
   }
 
   const hasSelections = Object.keys(resolutions).length > 0
+  const isPricingSyncReady =
+    channelsData?.success === true &&
+    syncConfigData?.success === true &&
+    persistedConfigRef.current !== null
   const isLoading =
+    !isPricingSyncReady ||
     fetchMutation.isPending ||
     isSyncPending ||
     confirmLoading ||
@@ -503,7 +734,10 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         channels={channels}
         value={syncConfig}
         disabled={isLoading}
-        onChange={setSyncConfig}
+        onChange={(value) => {
+          setSyncConfig(value)
+          setConfigDirty(true)
+        }}
         onSave={() => saveConfigMutation.mutate()}
       />
 
@@ -527,14 +761,62 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         </div>
       </div>
 
-      <UpstreamRatioSyncTable
-        differences={differences}
-        resolutions={resolutions}
-        isDisabled={isLoading}
-        isSyncing={fetchMutation.isPending}
-        onSelectValue={handleSelectValue}
-        onUnselectValue={handleUnselectValue}
-      />
+      <Tabs defaultValue='automatic'>
+        <TabsList className='grid w-full grid-cols-2'>
+          <TabsTrigger value='automatic'>
+            {t('Automatic updates ({{count}})', {
+              count: Object.keys(differenceGroups.automatic).length,
+            })}
+          </TabsTrigger>
+          <TabsTrigger value='manual'>
+            {t('Manual prices ({{count}})', {
+              count: Object.keys(differenceGroups.manual).length,
+            })}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value='automatic' className='mt-4'>
+          <UpstreamRatioSyncTable
+            differences={differenceGroups.automatic}
+            resolutions={resolutions}
+            isDisabled={isLoading}
+            isSyncing={fetchMutation.isPending}
+            onSelectValue={handleSelectValue}
+            onUnselectValue={handleUnselectValue}
+          />
+        </TabsContent>
+        <TabsContent value='manual' className='mt-4 space-y-3'>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'These prices differ upstream but are protected from automatic updates.'
+            )}
+          </p>
+          {!hasRunnableSources && (
+            <p className='text-muted-foreground text-sm'>
+              {t(
+                'Save at least one enabled source with an automatic update interval before enabling auto.'
+              )}
+            </p>
+          )}
+          <UpstreamRatioSyncTable
+            differences={differenceGroups.manual}
+            resolutions={resolutions}
+            isDisabled={isLoading}
+            isSyncing={fetchMutation.isPending}
+            onSelectValue={handleSelectValue}
+            onUnselectValue={handleUnselectValue}
+            autoSources={automaticSources}
+            onEnableAuto={
+              hasRunnableSources
+                ? (modelName, channelID) =>
+                    enableAutoForModels([modelName], channelID)
+                : undefined
+            }
+            onBulkEnableAuto={
+              hasRunnableSources ? setPendingAutoModels : undefined
+            }
+          />
+        </TabsContent>
+      </Tabs>
 
       <ConflictConfirmDialog
         open={conflictDialogOpen}
@@ -543,6 +825,37 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         onConfirm={handleConfirmConflict}
         isLoading={confirmLoading}
       />
+      <AlertDialog
+        open={pendingAutoModels.length > 0}
+        onOpenChange={(open) => !open && setPendingAutoModels([])}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('Enable automatic price updates?')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'Enable automatic updates for {{count}} shown models. Prices will update after upstream confirmation.',
+                {
+                  count: pendingAutoModels.length,
+                }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isLoading}
+              onClick={() => enableAutoForModels(pendingAutoModels, 0)}
+            >
+              {t('Enable auto')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
