@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.89
+
+- Simplified pricing model cards by removing descriptions, group and endpoint labels, and redundant billing-type labels while preserving aggregated latency, throughput, and status metrics.
+
 ## v1.1.88
 
 - Removed the global Auto group allowlist. Auto now always uses pricing groups available to the user, while API keys can still limit their own candidate groups.
