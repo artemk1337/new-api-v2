@@ -60,12 +60,17 @@ export type PaymentMethodData = {
   topup_group?: string
 }
 
+export type TopupGroupOption = {
+  name: string
+  ratio: number
+}
+
 type PaymentMethodDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: PaymentMethodData) => void
   editData?: PaymentMethodData | null
-  topupGroups: string[]
+  topupGroups: TopupGroupOption[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -327,7 +332,10 @@ export function PaymentMethodDialog({
                 <FormLabel>{t('Top-up coefficient group')}</FormLabel>
                 <FormControl>
                   <Combobox
-                    options={topupGroups.map((group) => ({ label: group, value: group }))}
+                    options={topupGroups.map((group) => ({
+                      label: `${group.name} (${group.ratio})`,
+                      value: group.name,
+                    }))}
                     value={field.value}
                     onValueChange={(value) => field.onChange(value ?? '')}
                     placeholder={t('Use user group coefficient')}

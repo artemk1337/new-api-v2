@@ -36,12 +36,13 @@ import { isArray } from '../utils/json-validators'
 import {
   PaymentMethodDialog,
   type PaymentMethodData,
+  type TopupGroupOption,
 } from './payment-method-dialog'
 
 type PaymentMethodsVisualEditorProps = {
   value: string
   onChange: (value: string) => void
-  topupGroups: string[]
+  topupGroups: TopupGroupOption[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {

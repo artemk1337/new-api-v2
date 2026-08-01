@@ -24,10 +24,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import {
   Alert,
-  AlertAction,
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert'
@@ -58,6 +56,7 @@ import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
+import type { TopupGroupOption } from './payment-method-dialog'
 import {
   formatJsonForEditor,
   getJsonError,
@@ -290,12 +289,18 @@ export function PaymentSettingsSection({
       storeID: waffoPancakeProvisionedStoreID ?? '',
       productID: waffoPancakeProvisionedProductID ?? '',
     })
-  const topupGroups = React.useMemo(() => {
+  const topupGroups = React.useMemo<TopupGroupOption[]>(() => {
     try {
       const parsed = JSON.parse(topupGroupRatio || '{}')
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? Object.keys(parsed)
-        : []
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return []
+      }
+
+      return Object.entries(parsed).flatMap(([name, ratio]) =>
+        typeof ratio === 'number' && Number.isFinite(ratio)
+          ? [{ name, ratio }]
+          : []
+      )
     } catch {
       return []
     }
