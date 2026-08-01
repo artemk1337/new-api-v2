@@ -106,6 +106,7 @@ const defaultBillingSettings: BillingSettings = {
   YooKassaSecretKey: '',
   YooKassaReturnURL: '',
   YooKassaPaymentMethods: 'sbp',
+  NOWPaymentsEnabled: false,
   NOWPaymentsAPIKey: '',
   NOWPaymentsIPNSecret: '',
   NOWPaymentsPriceCurrency: 'usd',

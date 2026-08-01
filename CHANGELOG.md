@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.92
+
+- Added an explicit NOWPayments enable switch in payment settings. Disabling it hides new crypto top-ups while preserving webhook processing for pending payments.
+
 ## v1.1.91
 
 - Added a configurable top-up coefficient group for each payment method, so preset prices and charged amounts use the same method-specific calculation.

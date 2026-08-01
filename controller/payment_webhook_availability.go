@@ -111,7 +111,7 @@ func isYooKassaWebhookEnabled() bool {
 }
 
 func isNOWPaymentsTopUpEnabled() bool {
-	return isPaymentComplianceConfirmed() && isNOWPaymentsWebhookConfigured() &&
+	return isPaymentComplianceConfirmed() && setting.NOWPaymentsEnabled && isNOWPaymentsWebhookConfigured() &&
 		strings.TrimSpace(setting.NOWPaymentsAPIKey) != "" &&
 		strings.TrimSpace(setting.NOWPaymentsIPNCallbackURL) != ""
 }

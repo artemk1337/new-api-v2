@@ -202,6 +202,7 @@ const paymentSchema = z.object({
   YooKassaPaymentMethods: z.string().refine((value) => {
     return value.trim().toLowerCase() === 'sbp'
   }, 'Only SBP is supported for YooKassa payments'),
+  NOWPaymentsEnabled: z.boolean(),
   NOWPaymentsAPIKey: z.string(),
   NOWPaymentsIPNSecret: z.string(),
   NOWPaymentsPriceCurrency: z.string().min(1),
@@ -430,6 +431,7 @@ export function PaymentSettingsSection({
       YooKassaPaymentMethods: normalizeYooKassaPaymentMethods(
         values.YooKassaPaymentMethods
       ),
+      NOWPaymentsEnabled: values.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: values.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: values.NOWPaymentsIPNSecret.trim(),
       NOWPaymentsPriceCurrency: values.NOWPaymentsPriceCurrency
@@ -495,6 +497,7 @@ export function PaymentSettingsSection({
         initialRef.current.YooKassaReturnURL.trim()
       ),
       YooKassaPaymentMethods: initialRef.current.YooKassaPaymentMethods.trim(),
+      NOWPaymentsEnabled: initialRef.current.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: initialRef.current.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: initialRef.current.NOWPaymentsIPNSecret.trim(),
       NOWPaymentsPriceCurrency: initialRef.current.NOWPaymentsPriceCurrency
@@ -662,6 +665,13 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'YooKassaPaymentMethods',
         value: sanitized.YooKassaPaymentMethods,
+      })
+    }
+
+    if (sanitized.NOWPaymentsEnabled !== initial.NOWPaymentsEnabled) {
+      updates.push({
+        key: 'NOWPaymentsEnabled',
+        value: sanitized.NOWPaymentsEnabled,
       })
     }
 
@@ -1434,6 +1444,29 @@ export function PaymentSettingsSection({
                     </code>
                   </p>
                 </div>
+
+                <FormField
+                  control={form.control}
+                  name='NOWPaymentsEnabled'
+                  render={({ field }) => (
+                    <SettingsSwitchItem>
+                      <SettingsSwitchContent>
+                        <FormLabel>
+                          {t('Enable NOWPayments payments')}
+                        </FormLabel>
+                        <FormDescription>
+                          {t('Show Crypto / NOWPayments in recharge options')}
+                        </FormDescription>
+                      </SettingsSwitchContent>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </SettingsSwitchItem>
+                  )}
+                />
 
                 <div className='grid gap-6 md:grid-cols-2'>
                   <FormField

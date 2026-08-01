@@ -142,6 +142,33 @@ func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isWaffoPancakeWebhookEnabled())
 }
 
+func TestNOWPaymentsDisableHidesTopUpButKeepsWebhookForPendingPayments(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	originalEnabled := setting.NOWPaymentsEnabled
+	originalAPIKey := setting.NOWPaymentsAPIKey
+	originalIPNSecret := setting.NOWPaymentsIPNSecret
+	originalCallbackURL := setting.NOWPaymentsIPNCallbackURL
+	t.Cleanup(func() {
+		setting.NOWPaymentsEnabled = originalEnabled
+		setting.NOWPaymentsAPIKey = originalAPIKey
+		setting.NOWPaymentsIPNSecret = originalIPNSecret
+		setting.NOWPaymentsIPNCallbackURL = originalCallbackURL
+	})
+
+	setting.NOWPaymentsEnabled = false
+	setting.NOWPaymentsAPIKey = "api_key"
+	setting.NOWPaymentsIPNSecret = "ipn_secret"
+	setting.NOWPaymentsIPNCallbackURL = "https://example.com/api/user/nowpayments/notify"
+	require.False(t, isNOWPaymentsTopUpEnabled())
+	require.True(t, isNOWPaymentsWebhookEnabled())
+
+	setting.NOWPaymentsEnabled = true
+	require.True(t, isNOWPaymentsTopUpEnabled())
+
+	setting.NOWPaymentsIPNSecret = ""
+	require.False(t, isNOWPaymentsWebhookEnabled())
+}
+
 func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	originalPayAddress := operation_setting.PayAddress

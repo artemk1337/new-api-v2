@@ -173,6 +173,7 @@ func InitOptionMap() {
 	common.OptionMap["YooKassaSecretKey"] = setting.YooKassaSecretKey
 	common.OptionMap["YooKassaReturnURL"] = setting.YooKassaReturnURL
 	common.OptionMap["YooKassaPaymentMethods"] = setting.YooKassaPaymentMethods
+	common.OptionMap["NOWPaymentsEnabled"] = strconv.FormatBool(setting.NOWPaymentsEnabled)
 	common.OptionMap["NOWPaymentsAPIKey"] = setting.NOWPaymentsAPIKey
 	common.OptionMap["NOWPaymentsIPNSecret"] = setting.NOWPaymentsIPNSecret
 	common.OptionMap["NOWPaymentsPriceCurrency"] = setting.NOWPaymentsPriceCurrency
@@ -1344,6 +1345,8 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		setting.YooKassaReturnURL = value
 	case "YooKassaPaymentMethods":
 		setting.YooKassaPaymentMethods = value
+	case "NOWPaymentsEnabled":
+		setting.NOWPaymentsEnabled = value == "true"
 	case "NOWPaymentsAPIKey":
 		setting.NOWPaymentsAPIKey = value
 	case "NOWPaymentsIPNSecret":

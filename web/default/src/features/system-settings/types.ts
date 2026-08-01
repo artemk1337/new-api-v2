@@ -383,6 +383,7 @@ export type BillingSettings = {
   YooKassaSecretKey: string
   YooKassaReturnURL: string
   YooKassaPaymentMethods: string
+  NOWPaymentsEnabled: boolean
   NOWPaymentsAPIKey: string
   NOWPaymentsIPNSecret: string
   NOWPaymentsPriceCurrency: string

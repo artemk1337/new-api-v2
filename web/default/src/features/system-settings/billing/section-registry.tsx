@@ -170,6 +170,7 @@ const BILLING_SECTIONS = [
           YooKassaSecretKey: settings.YooKassaSecretKey ?? '',
           YooKassaReturnURL: settings.YooKassaReturnURL ?? '',
           YooKassaPaymentMethods: settings.YooKassaPaymentMethods ?? 'sbp',
+          NOWPaymentsEnabled: settings.NOWPaymentsEnabled ?? false,
           NOWPaymentsAPIKey: settings.NOWPaymentsAPIKey ?? '',
           NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
           NOWPaymentsPriceCurrency:
