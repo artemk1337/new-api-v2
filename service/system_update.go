@@ -17,18 +17,23 @@ import (
 )
 
 const (
-	defaultUpdateRepository  = "artemk1337/new-api-v2"
-	defaultUpdateSidecarURL  = "http://new-api-updater:18090"
-	systemUpdatePollInterval = 3 * time.Second
-	systemUpdateMaxWait      = 30 * time.Minute
+	defaultUpdateRepository           = "artemk1337/new-api-v2"
+	defaultUpdateSidecarURL           = "http://new-api-updater:18090"
+	systemUpdateBuildWorkflow         = "docker-build.yml"
+	systemUpdateSidecarUpgradeMessage = "updater sidecar must be upgraded to check version readiness"
+	systemUpdatePollInterval          = 3 * time.Second
+	systemUpdateMaxWait               = 30 * time.Minute
 )
 
 type SystemUpdateRelease struct {
-	TagName     string `json:"tag_name"`
-	Name        string `json:"name,omitempty"`
-	Body        string `json:"body,omitempty"`
-	HTMLURL     string `json:"html_url,omitempty"`
-	PublishedAt string `json:"published_at,omitempty"`
+	TagName       string `json:"tag_name"`
+	Name          string `json:"name,omitempty"`
+	Body          string `json:"body,omitempty"`
+	HTMLURL       string `json:"html_url,omitempty"`
+	PublishedAt   string `json:"published_at,omitempty"`
+	BuildStatus   string `json:"build_status"`
+	BuildMessage  string `json:"build_status_message,omitempty"`
+	ReadyToDeploy bool   `json:"ready_to_deploy"`
 }
 
 type SystemUpdateCheckResult struct {
@@ -71,6 +76,21 @@ type systemUpdaterResponse struct {
 	Message  string `json:"message"`
 }
 
+type systemUpdaterVersionReadinessRequest struct {
+	Tags []string `json:"tags"`
+}
+
+type systemUpdaterVersionReadiness struct {
+	Tag           string `json:"tag"`
+	Status        string `json:"status"`
+	ReadyToDeploy bool   `json:"ready_to_deploy"`
+	Error         string `json:"error,omitempty"`
+}
+
+type systemUpdaterVersionReadinessResponse struct {
+	Versions []systemUpdaterVersionReadiness `json:"versions"`
+}
+
 type SystemUpdaterJobStatus struct {
 	JobID   string `json:"job_id"`
 	Status  string `json:"status"`
@@ -82,6 +102,16 @@ type SystemUpdaterJobStatus struct {
 
 type githubTagRef struct {
 	Ref string `json:"ref"`
+}
+
+type githubWorkflowRun struct {
+	Status       string `json:"status"`
+	HeadBranch   string `json:"head_branch"`
+	DisplayTitle string `json:"display_title"`
+}
+
+type githubWorkflowRunsResponse struct {
+	WorkflowRuns []githubWorkflowRun `json:"workflow_runs"`
 }
 
 var (
@@ -105,16 +135,31 @@ func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
 		return result, nil
 	}
 	latest := releases[len(releases)-1]
-	result.UpdateAvailable = latest.TagName != "" && latest.TagName != common.Version
+	result.UpdateAvailable = len(releases) > 0
 	result.Release = &latest
 	result.Releases = releases
+	applySystemUpdateReadiness(ctx, result.Releases)
+	applySystemUpdateBuildingStatuses(ctx, result.Releases)
+	if len(result.Releases) > 0 {
+		result.Release = &result.Releases[len(result.Releases)-1]
+	}
 	return result, nil
 }
 
-func StartSystemUpdateTask(version string) (*model.SystemTask, bool, error) {
+func StartSystemUpdateTask(ctx context.Context, version string) (*model.SystemTask, bool, error) {
 	version = strings.TrimSpace(version)
 	if version == "" {
 		return nil, false, errors.New("version is required")
+	}
+	activeTask, err := model.GetActiveSystemTask(model.SystemTaskTypeSystemUpdate)
+	if err != nil {
+		return nil, false, err
+	}
+	if activeTask != nil {
+		return activeTask, false, nil
+	}
+	if err := validateSystemUpdateVersion(ctx, version); err != nil {
+		return nil, false, err
 	}
 	return EnqueueSystemTask(model.SystemTaskTypeSystemUpdate, SystemUpdatePayload{Version: version})
 }
@@ -128,6 +173,9 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 	if payload.Version == "" {
 		return errors.New("version is required")
 	}
+	if !isStableVersionTag(payload.Version) {
+		return errors.New("version must be a stable release tag")
+	}
 	if err := updateSystemUpdateState(task, runnerID, "checking", 10, "validating update tag"); err != nil {
 		return err
 	}
@@ -138,7 +186,7 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 	if release.TagName != payload.Version {
 		return fmt.Errorf("update tag mismatch: requested %s, got %s", payload.Version, release.TagName)
 	}
-	if payload.Version == common.Version {
+	if isStableVersionTag(common.Version) && compareStableVersionTags(payload.Version, common.Version) == 0 {
 		return errors.New("requested version is already running")
 	}
 
@@ -213,7 +261,7 @@ func fetchSystemUpdateReleases(ctx context.Context, currentVersion string) (stri
 	if currentVersion != "" && isStableVersionTag(currentVersion) {
 		updateTags = updateTags[:0]
 		for _, tag := range tags {
-			if compareStableVersionTags(tag, currentVersion) > 0 {
+			if compareStableVersionTags(tag, currentVersion) != 0 {
 				updateTags = append(updateTags, tag)
 			}
 		}
@@ -235,6 +283,93 @@ func fetchSystemUpdateReleases(ctx context.Context, currentVersion string) (stri
 		releases = append(releases, *release)
 	}
 	return latestTag, releases, nil
+}
+
+func validateSystemUpdateVersion(ctx context.Context, version string) error {
+	if !isStableVersionTag(version) {
+		return errors.New("version must be a stable release tag")
+	}
+	refs, err := fetchSystemUpdateTagRefs(ctx)
+	if err != nil {
+		return err
+	}
+	available := false
+	for _, ref := range refs {
+		tag := strings.TrimPrefix(ref.Ref, "refs/tags/")
+		if tag == version && isStableVersionTag(tag) && (!isStableVersionTag(common.Version) || compareStableVersionTags(tag, common.Version) != 0) {
+			available = true
+			break
+		}
+	}
+	if !available {
+		return fmt.Errorf("version %s is not available for update", version)
+	}
+	candidate := []SystemUpdateRelease{{TagName: version}}
+	applySystemUpdateReadiness(ctx, candidate)
+	if candidate[0].ReadyToDeploy {
+		return nil
+	}
+	if candidate[0].BuildStatus == "building" {
+		return fmt.Errorf("update image for %s is still building", version)
+	}
+	return fmt.Errorf("update image for %s is unavailable: %s", version, candidate[0].BuildMessage)
+}
+
+func applySystemUpdateReadiness(ctx context.Context, releases []SystemUpdateRelease) {
+	if len(releases) == 0 {
+		return
+	}
+	tags := make([]string, 0, len(releases))
+	for _, release := range releases {
+		tags = append(tags, release.TagName)
+	}
+	readiness, err := getSystemUpdaterVersionReadiness(ctx, tags)
+	if err != nil {
+		for index := range releases {
+			releases[index].BuildStatus = "unavailable"
+			releases[index].BuildMessage = err.Error()
+		}
+		return
+	}
+	byTag := make(map[string]systemUpdaterVersionReadiness, len(readiness))
+	for _, item := range readiness {
+		byTag[item.Tag] = item
+	}
+	for index := range releases {
+		item, ok := byTag[releases[index].TagName]
+		if !ok {
+			releases[index].BuildStatus = "unavailable"
+			releases[index].BuildMessage = "updater sidecar returned no build status"
+			continue
+		}
+		releases[index].BuildStatus = item.Status
+		releases[index].BuildMessage = item.Error
+		releases[index].ReadyToDeploy = item.Status == "ready" && item.ReadyToDeploy
+	}
+}
+
+func applySystemUpdateBuildingStatuses(ctx context.Context, releases []SystemUpdateRelease) {
+	needsBuildStatus := false
+	for _, release := range releases {
+		if release.BuildStatus == "unavailable" && release.BuildMessage != systemUpdateSidecarUpgradeMessage {
+			needsBuildStatus = true
+			break
+		}
+	}
+	if !needsBuildStatus {
+		return
+	}
+	buildingTags, err := fetchSystemUpdateBuildingTags(ctx)
+	if err != nil {
+		return
+	}
+	for index := range releases {
+		if releases[index].BuildStatus != "unavailable" || !buildingTags[releases[index].TagName] {
+			continue
+		}
+		releases[index].BuildStatus = "building"
+		releases[index].BuildMessage = "docker image build is in progress"
+	}
 }
 
 func fetchSystemUpdateTag(ctx context.Context, tag string) (*SystemUpdateRelease, error) {
@@ -301,6 +436,59 @@ func fetchSystemUpdateTagRefs(ctx context.Context) ([]githubTagRef, error) {
 		return nil, err
 	}
 	return refs, nil
+}
+
+func fetchSystemUpdateBuildingTags(ctx context.Context) (map[string]bool, error) {
+	repository := systemUpdateRepository()
+	if repository == "" || !strings.Contains(repository, "/") {
+		return nil, errors.New("update repository must be in owner/repo format")
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=100", repository, systemUpdateBuildWorkflow)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "new-api-system-update")
+
+	resp, err := systemUpdateHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("github workflow runs api returned status %d", resp.StatusCode)
+	}
+	runs := githubWorkflowRunsResponse{}
+	if err := common.DecodeJson(resp.Body, &runs); err != nil {
+		return nil, err
+	}
+	buildingTags := make(map[string]bool)
+	for _, run := range runs.WorkflowRuns {
+		if !isSystemUpdateBuildInProgress(run.Status) {
+			continue
+		}
+		tag := ""
+		if strings.HasPrefix(run.DisplayTitle, "docker-build:") {
+			tag = strings.TrimPrefix(run.DisplayTitle, "docker-build:")
+		}
+		if !isStableVersionTag(tag) {
+			tag = run.HeadBranch
+		}
+		if isStableVersionTag(tag) {
+			buildingTags[tag] = true
+		}
+	}
+	return buildingTags, nil
+}
+
+func isSystemUpdateBuildInProgress(status string) bool {
+	switch status {
+	case "queued", "in_progress", "pending", "requested", "waiting":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildSystemUpdateTagRelease(tag string) *SystemUpdateRelease {
@@ -429,6 +617,35 @@ func requestSystemUpdater(ctx context.Context, version string) (*systemUpdaterRe
 		return nil, errors.New("updater sidecar response has no job_id")
 	}
 	return &updaterResp, nil
+}
+
+func getSystemUpdaterVersionReadiness(ctx context.Context, tags []string) ([]systemUpdaterVersionReadiness, error) {
+	body, err := common.Marshal(systemUpdaterVersionReadinessRequest{Tags: tags})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(systemUpdateSidecarURL(), "/")+"/versions/readiness", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := systemUpdateHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+			return nil, errors.New(systemUpdateSidecarUpgradeMessage)
+		}
+		return nil, fmt.Errorf("updater sidecar version readiness returned status %d", resp.StatusCode)
+	}
+	result := systemUpdaterVersionReadinessResponse{}
+	if err := common.DecodeJson(resp.Body, &result); err != nil {
+		return nil, err
+	}
+	return result.Versions, nil
 }
 
 func waitSystemUpdaterJob(ctx context.Context, jobID string) (*SystemUpdaterJobStatus, error) {

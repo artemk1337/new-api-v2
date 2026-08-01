@@ -37,7 +37,7 @@ func ApplySystemUpdate(c *gin.Context) {
 		return
 	}
 
-	task, _, err := service.StartSystemUpdateTask(request.Version)
+	task, _, err := service.StartSystemUpdateTask(c.Request.Context(), request.Version)
 	if err != nil {
 		common.ApiError(c, err)
 		return

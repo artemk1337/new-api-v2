@@ -345,6 +345,52 @@ func TestHandleJobStatusWritesSnapshot(t *testing.T) {
 	assert.JSONEq(t, `{"job_id":"update_1","status":"running","step":"pulling","message":"pulling update image"}`, recorder.Body.String())
 }
 
+func TestHandleVersionReadinessReturnsBatchStatuses(t *testing.T) {
+	t.Setenv("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2")
+	saved := runCommandFn
+	runCommandFn = func(_ string, name string, args ...string) error {
+		require.Equal(t, "docker", name)
+		require.Equal(t, []string{"manifest", "inspect", "ghcr.io/artemk1337/new-api-v2:v1.0.1"}, args)
+		return nil
+	}
+	t.Cleanup(func() {
+		runCommandFn = saved
+	})
+
+	recorder := httptest.NewRecorder()
+	handleVersionReadiness(recorder, httptest.NewRequest(http.MethodPost, "/versions/readiness", strings.NewReader(`{"tags":["v1.0.1","v1.0.1"]}`)))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, `{"versions":[{"tag":"v1.0.1","status":"ready","ready_to_deploy":true}]}`, recorder.Body.String())
+}
+
+func TestHandleVersionReadinessMarksUnconfirmedImagesUnavailable(t *testing.T) {
+	saved := runCommandFn
+	runCommandFn = func(_ string, _ string, args ...string) error {
+		switch args[2] {
+		case "ghcr.io/artemk1337/new-api-v2:v1.0.1":
+			return errors.New("manifest unknown")
+		case "ghcr.io/artemk1337/new-api-v2:v1.0.2":
+			return errors.New("dial tcp: lookup ghcr.io: no such host")
+		default:
+			t.Fatalf("unexpected image: %s", args[2])
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		runCommandFn = saved
+	})
+
+	recorder := httptest.NewRecorder()
+	handleVersionReadiness(recorder, httptest.NewRequest(http.MethodPost, "/versions/readiness", strings.NewReader(`{"tags":["v1.0.1","v1.0.2"]}`)))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, `{"versions":[
+		{"tag":"v1.0.1","status":"unavailable","ready_to_deploy":false,"error":"image manifest is not published yet"},
+		{"tag":"v1.0.2","status":"unavailable","ready_to_deploy":false,"error":"dial tcp: lookup ghcr.io: no such host"}
+	]}`, recorder.Body.String())
+}
+
 func TestCleanupOldJobsKeepsRecentTerminalJobs(t *testing.T) {
 	savedJobs := jobs
 	savedRetention := jobRetention

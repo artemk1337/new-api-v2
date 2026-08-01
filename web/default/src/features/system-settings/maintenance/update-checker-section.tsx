@@ -16,17 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
 import { DownloadIcon, ExternalLinkIcon, RefreshCcwIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
+import { Dialog } from '@/components/dialog'
+import { Button } from '@/components/ui/button'
+import { Markdown } from '@/components/ui/markdown'
 import { getStatus } from '@/lib/api'
 import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Markdown } from '@/components/ui/markdown'
-import { Dialog } from '@/components/dialog'
+
 import {
   checkSystemUpdate,
   getCurrentSystemUpdateTask,
@@ -37,6 +38,11 @@ import {
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
 import type { SystemUpdateRelease, SystemUpdateTask } from '../types'
+import {
+  canDeploySystemUpdateRelease,
+  getSystemUpdateReleaseBuildStatus,
+  type SystemUpdateReleaseBuildStatus,
+} from './system-update-release-status'
 import { shouldResumeDeployingSystemUpdateTask } from './system-update-resume'
 
 type UpdateCheckerSectionProps = {
@@ -107,6 +113,27 @@ function getSystemUpdateStepLabel(t: (key: string) => string, step: string) {
   }
 }
 
+function getSystemUpdateReleaseBuildStatusClass(
+  buildStatus: SystemUpdateReleaseBuildStatus
+) {
+  if (buildStatus === 'ready') {
+    return 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300'
+  }
+  if (buildStatus === 'building') {
+    return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300'
+  }
+  return 'bg-muted text-muted-foreground'
+}
+
+function getSystemUpdateReleaseBuildStatusLabel(
+  t: (key: string) => string,
+  buildStatus: SystemUpdateReleaseBuildStatus
+) {
+  if (buildStatus === 'ready') return t('Ready to deploy')
+  if (buildStatus === 'building') return t('Building')
+  return t('Build status unavailable')
+}
+
 export function UpdateCheckerSection({
   currentVersion,
   startTime,
@@ -128,8 +155,6 @@ export function UpdateCheckerSection({
   const [updateTaskId, setUpdateTaskId] = useState<string | null>(null)
   const [updateJobId, setUpdateJobId] = useState<string | null>(null)
   const [updateJobLookupFailures, setUpdateJobLookupFailures] = useState(0)
-  const [targetVersion, setTargetVersion] = useState('')
-
   const uptime = startTime ? formatTimestamp(startTime) : t('Unknown')
   const version = currentVersion || t('Unknown')
   const updateActive = isActiveSystemUpdateTask(updateTask)
@@ -209,21 +234,6 @@ export function UpdateCheckerSection({
       toast.error(message)
     } finally {
       setUpdating(false)
-    }
-  }
-
-  const handleStartUpdate = async () => {
-    if (!release?.tag_name) return
-    await startUpdateForVersion(release.tag_name)
-  }
-
-  const handleStartTargetVersion = async () => {
-    await startUpdateForVersion(targetVersion)
-  }
-
-  const goToRelease = () => {
-    if (release?.html_url) {
-      window.open(release.html_url, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -315,7 +325,9 @@ export function UpdateCheckerSection({
           const res = await getSystemUpdateJob(updateJobId)
           setUpdateJobLookupFailures(0)
           if (res.success && res.data?.status === 'failed') {
-            toast.error(res.data.error || t('System update failed and was rolled back.'))
+            toast.error(
+              res.data.error || t('System update failed and was rolled back.')
+            )
             setExpectedUpdateVersion(null)
             setExpectedUpdateStartedAt(null)
             setUpdateTaskId(null)
@@ -418,40 +430,6 @@ export function UpdateCheckerSection({
             )}
           </Button>
 
-          <div className='space-y-2'>
-            <div>
-              <div className='text-sm font-medium'>
-                {t('Install or roll back to a specific tag')}
-              </div>
-              <div className='text-muted-foreground text-sm'>
-                {t(
-                  'Install any existing GitHub tag, including an older version for rollback.'
-                )}
-              </div>
-            </div>
-            <div className='flex flex-col gap-2 sm:flex-row'>
-              <Input
-                value={targetVersion}
-                onChange={(event) => setTargetVersion(event.target.value)}
-                placeholder='v1.1.0'
-                disabled={
-                  updating || updateActive || Boolean(expectedUpdateVersion)
-                }
-                aria-label={t('Target version or tag')}
-              />
-              <Button
-                type='button'
-                onClick={handleStartTargetVersion}
-                disabled={
-                  updating || updateActive || Boolean(expectedUpdateVersion)
-                }
-              >
-                <DownloadIcon className='me-2 h-4 w-4' />
-                {updating ? t('Starting update...') : t('Install selected tag')}
-              </Button>
-            </div>
-          </div>
-
           {showUpdateTask && updateTask && (
             <div className='rounded-lg border p-4 md:w-1/2'>
               <div className='mb-4 flex items-start justify-between gap-3'>
@@ -515,45 +493,41 @@ export function UpdateCheckerSection({
         contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
-          <>
-            <Button
-              type='button'
-              variant='secondary'
-              onClick={() => setDialogOpen(false)}
-            >
-              {t('Close')}
-            </Button>
-            {release?.html_url && (
-              <Button type='button' onClick={goToRelease}>
-                <ExternalLinkIcon className='me-2 h-4 w-4' />
-                {t('Open tag')}
-              </Button>
-            )}
-            {release?.tag_name && (
-              <Button
-                type='button'
-                onClick={handleStartUpdate}
-                disabled={
-                  !canUpdate ||
-                  updating ||
-                  updateActive ||
-                  Boolean(expectedUpdateVersion)
-                }
-              >
-                <DownloadIcon className='me-2 h-4 w-4' />
-                {updating ? t('Starting update...') : t('Update now')}
-              </Button>
-            )}
-          </>
+          <Button
+            type='button'
+            variant='secondary'
+            onClick={() => setDialogOpen(false)}
+          >
+            {t('Close')}
+          </Button>
         }
       >
         <div className='space-y-4'>
           {releases.length > 0 ? (
-            [...releases]
-              .reverse()
-              .map((item) => (
-                <div key={item.tag_name} className='space-y-2'>
-                  <h3 className='text-base font-semibold'>{item.tag_name}</h3>
+            [...releases].reverse().map((item) => {
+              const buildStatus = getSystemUpdateReleaseBuildStatus(item)
+              const canDeploy = canDeploySystemUpdateRelease(item)
+              return (
+                <div
+                  key={item.tag_name}
+                  className='space-y-2 rounded-lg border p-4'
+                >
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <h3 className='text-base font-semibold'>{item.tag_name}</h3>
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-1 text-xs font-medium',
+                        getSystemUpdateReleaseBuildStatusClass(buildStatus)
+                      )}
+                    >
+                      {getSystemUpdateReleaseBuildStatusLabel(t, buildStatus)}
+                    </span>
+                  </div>
+                  {item.build_status_message && (
+                    <p className='text-muted-foreground text-sm'>
+                      {item.build_status_message}
+                    </p>
+                  )}
                   {item.body ? (
                     <Markdown>{item.body}</Markdown>
                   ) : (
@@ -561,8 +535,45 @@ export function UpdateCheckerSection({
                       {t('No release notes provided.')}
                     </p>
                   )}
+                  <div className='flex flex-wrap gap-2'>
+                    {item.html_url && (
+                      <Button
+                        type='button'
+                        variant='secondary'
+                        onClick={() =>
+                          window.open(
+                            item.html_url,
+                            '_blank',
+                            'noopener,noreferrer'
+                          )
+                        }
+                      >
+                        <ExternalLinkIcon className='me-2 h-4 w-4' />
+                        {t('Open tag')}
+                      </Button>
+                    )}
+                    <Button
+                      type='button'
+                      onClick={() => startUpdateForVersion(item.tag_name)}
+                      disabled={
+                        !canUpdate ||
+                        !canDeploy ||
+                        updating ||
+                        updateActive ||
+                        Boolean(expectedUpdateVersion)
+                      }
+                    >
+                      <DownloadIcon className='me-2 h-4 w-4' />
+                      {updating
+                        ? t('Starting update...')
+                        : t('Update to {{version}}', {
+                            version: item.tag_name,
+                          })}
+                    </Button>
+                  </div>
                 </div>
-              ))
+              )
+            })
           ) : (
             <p className='text-muted-foreground text-sm'>
               {t('No release notes provided.')}

@@ -100,6 +100,9 @@ export type SystemUpdateRelease = {
   body?: string
   html_url?: string
   published_at?: string
+  build_status?: 'building' | 'ready' | 'unavailable'
+  build_status_message?: string
+  ready_to_deploy?: boolean
 }
 
 export type SystemUpdateCheck = {

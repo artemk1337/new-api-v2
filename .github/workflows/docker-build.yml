@@ -1,4 +1,5 @@
 name: Publish Docker image (Multi-arch)
+run-name: docker-build:${{ inputs.tag || github.ref_name }}
 
 on:
   push:

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.95
+
+- Added version-specific system updates with selectable stable releases and safe rollback support.
+- Show whether each release image is ready, building, or unavailable; installation is enabled only after its image is ready.
+- Added updater-sidecar image readiness checks and GitHub Actions build tracking for tagged releases.
+
 ## v1.1.94
 
 - Added fractional top-up amounts across payment providers, including configurable minimums and preset amounts.

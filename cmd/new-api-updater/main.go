@@ -31,6 +31,21 @@ type updateResponse struct {
 	Message  string `json:"message"`
 }
 
+type versionReadinessRequest struct {
+	Tags []string `json:"tags"`
+}
+
+type versionReadiness struct {
+	Tag           string `json:"tag"`
+	Status        string `json:"status"`
+	ReadyToDeploy bool   `json:"ready_to_deploy"`
+	Error         string `json:"error,omitempty"`
+}
+
+type versionReadinessResponse struct {
+	Versions []versionReadiness `json:"versions"`
+}
+
 type updateJob struct {
 	JobID   string `json:"job_id"`
 	Status  string `json:"status"`
@@ -81,6 +96,7 @@ func main() {
 	})
 	http.HandleFunc("/update", handleUpdate)
 	http.HandleFunc("/jobs/", handleJobStatus)
+	http.HandleFunc("/versions/readiness", handleVersionReadiness)
 	http.HandleFunc("/telemetry-agent", handleTelemetryAgent)
 	log.Printf("new-api updater listening on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -222,6 +238,45 @@ func handleJobStatus(w http.ResponseWriter, r *http.Request) {
 	writeAnyJSON(w, http.StatusOK, jobCopy)
 }
 
+func handleVersionReadiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAnyJSON(w, http.StatusMethodNotAllowed, updateResponse{Message: "method not allowed"})
+		return
+	}
+	request := versionReadinessRequest{}
+	if err := common.DecodeJson(r.Body, &request); err != nil {
+		writeAnyJSON(w, http.StatusBadRequest, updateResponse{Message: "invalid request body"})
+		return
+	}
+	if len(request.Tags) == 0 {
+		writeAnyJSON(w, http.StatusBadRequest, updateResponse{Message: "at least one tag is required"})
+		return
+	}
+
+	versions := make([]versionReadiness, 0, len(request.Tags))
+	seen := make(map[string]struct{}, len(request.Tags))
+	for _, tag := range request.Tags {
+		tag = strings.TrimSpace(tag)
+		if !tagPattern.MatchString(tag) {
+			writeAnyJSON(w, http.StatusBadRequest, updateResponse{Message: "invalid tag"})
+			return
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+
+		readiness := versionReadiness{Tag: tag, Status: "ready", ReadyToDeploy: true}
+		if err := inspectPreparedImage(tag); err != nil {
+			readiness.ReadyToDeploy = false
+			readiness.Status = "unavailable"
+			readiness.Error = imageReadinessError(err)
+		}
+		versions = append(versions, readiness)
+	}
+	writeAnyJSON(w, http.StatusOK, versionReadinessResponse{Versions: versions})
+}
+
 func runUpdateJob(jobID string, tag string) {
 	setJobStatus(jobID, "running", "pulling", "", "", "pulling update image")
 	imageTag, err := pullPreparedImage(tag)
@@ -284,6 +339,24 @@ func pullPreparedImage(tag string) (string, error) {
 		return "", err
 	}
 	return imageTag, nil
+}
+
+func inspectPreparedImage(tag string) error {
+	imageTag := env("UPDATER_IMAGE", "ghcr.io/artemk1337/new-api-v2") + ":" + tag
+	return runCommandFn("", "docker", "manifest", "inspect", imageTag)
+}
+
+func imageReadinessError(err error) string {
+	if err == nil {
+		return ""
+	}
+	errorText := strings.ToLower(err.Error())
+	if strings.Contains(errorText, "manifest unknown") ||
+		strings.Contains(errorText, "no such manifest") ||
+		strings.Contains(errorText, "name unknown") {
+		return "image manifest is not published yet"
+	}
+	return err.Error()
 }
 
 func deployPreparedImage(tag string) error {
