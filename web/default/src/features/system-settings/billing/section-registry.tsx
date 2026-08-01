@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
+import { CurrencyExchangeRateSection } from '../general/currency-exchange-rate-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
@@ -110,6 +111,19 @@ const BILLING_SECTIONS = [
         groupDefaults={getGroupDefaults(settings)}
         toolPricesDefault={settings['tool_price_setting.prices']}
         visibleTabs={['models', 'tool-prices', 'upstream-sync']}
+      />
+    ),
+  },
+  {
+    id: 'currency-exchange-rate',
+    titleKey: 'Exchange Rate Updates',
+    build: (settings: BillingSettings) => (
+      <CurrencyExchangeRateSection
+        defaultValues={{
+          provider: settings['currency_exchange_rate.provider'] ?? 'bybit_p2p',
+          updateInterval:
+            settings['currency_exchange_rate.update_interval'] ?? 'day',
+        }}
       />
     ),
   },

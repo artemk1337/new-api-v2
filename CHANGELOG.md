@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.87
+
+- Added configurable exchange-rate history with a master-only background updater.
+- Added Bybit P2P USDT/RUB quotes based on the median of current sell advertisements, plus the Bank of Russia USD/RUB provider.
+- Added billing settings for the provider and update period from one minute to one day.
+
 ## v1.1.86
 
 - Removed the Uptime Kuma dashboard widget, console settings, status API, and unused configuration support.

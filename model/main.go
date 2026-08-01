@@ -305,6 +305,7 @@ func migrateDB() error {
 		&PricingSyncModelState{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&CurrencyExchangeRate{},
 	)
 	if err != nil {
 		return err
@@ -365,6 +366,7 @@ func migrateDBFast() error {
 		{&PricingSyncSource{}, "PricingSyncSource"},
 		{&PricingSyncQuote{}, "PricingSyncQuote"},
 		{&PricingSyncModelState{}, "PricingSyncModelState"},
+		{&CurrencyExchangeRate{}, "CurrencyExchangeRate"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

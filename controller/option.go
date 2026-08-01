@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/currency_exchange_rate_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -251,6 +252,18 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": err.Error(),
 			})
+			return
+		}
+	case "currency_exchange_rate.provider":
+		err = currency_exchange_rate_setting.ValidateProvider(option.Value.(string))
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	case "currency_exchange_rate.update_interval":
+		err = currency_exchange_rate_setting.ValidateUpdateInterval(option.Value.(string))
+		if err != nil {
+			common.ApiError(c, err)
 			return
 		}
 	case "AutomaticDisableStatusCodes":

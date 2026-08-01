@@ -317,6 +317,8 @@ export type BillingSettings = {
   'general_setting.custom_currency_exchange_rate': number
   DisplayInCurrencyEnabled: boolean
   DisplayTokenStatEnabled: boolean
+  'currency_exchange_rate.provider': 'cbr' | 'bybit_p2p'
+  'currency_exchange_rate.update_interval': 'minute' | 'hour' | 'day'
   ModelPrice: string
   ModelRatio: string
   CacheRatio: string

@@ -39,6 +39,8 @@ const defaultBillingSettings: BillingSettings = {
   'general_setting.custom_currency_exchange_rate': 1,
   DisplayInCurrencyEnabled: true,
   DisplayTokenStatEnabled: true,
+  'currency_exchange_rate.provider': 'bybit_p2p',
+  'currency_exchange_rate.update_interval': 'day',
   ModelPrice: '',
   ModelRatio: '',
   CacheRatio: '',
