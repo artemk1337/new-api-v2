@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.96
+
+- Added dollar symbols to preset top-up amounts in the recharge form.
+
 ## v1.1.95
 
 - Added version-specific system updates with selectable stable releases and safe rollback support.
