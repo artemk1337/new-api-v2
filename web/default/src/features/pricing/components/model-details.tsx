@@ -59,6 +59,7 @@ import {
 import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
 import { getAutoGroupChain } from '../lib/auto-group-chain'
+import { sortGroupsByRatio } from '../lib/pricing-group-order'
 import {
   getDynamicPriceEntries,
   getDynamicPricingSummary,
@@ -899,8 +900,12 @@ function GroupPricingSection(props: {
   const showRechargePrice = props.showRechargePrice ?? false
 
   const availableGroups = useMemo(
-    () => getAvailableGroups(props.model, props.usableGroup || {}),
-    [props.model, props.usableGroup]
+    () =>
+      sortGroupsByRatio(
+        getAvailableGroups(props.model, props.usableGroup || {}),
+        props.groupRatio
+      ),
+    [props.model, props.usableGroup, props.groupRatio]
   )
 
   const isTokenBased = isTokenBasedModel(props.model)

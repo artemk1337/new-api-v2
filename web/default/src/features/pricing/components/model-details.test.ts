@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import { getAutoGroupChain } from '../lib/auto-group-chain'
+import { sortGroupsByRatio } from '../lib/pricing-group-order'
 
 describe('getAutoGroupChain', () => {
   test('orders model-available groups by effective price', () => {
@@ -39,5 +40,15 @@ describe('getAutoGroupChain', () => {
     })
 
     assert.deepEqual(chain, ['1', '2'])
+  })
+
+  test('uses the same ascending order for all group pricing cards', () => {
+    const groups = sortGroupsByRatio(['default', 'codex', 'sale'], {
+      default: 1,
+      codex: 0.8,
+      sale: 0.3,
+    })
+
+    assert.deepEqual(groups, ['sale', 'codex', 'default'])
   })
 })

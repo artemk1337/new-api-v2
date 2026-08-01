@@ -16,15 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { sortGroupsByRatio } from './pricing-group-order'
-
-export function getAutoGroupChain(
-  autoGroups: string[],
-  modelEnableGroups: string[],
+export function sortGroupsByRatio(
+  groups: string[],
   groupRatio: Record<string, number>
 ): string[] {
-  return sortGroupsByRatio(
-    autoGroups.filter((group) => modelEnableGroups.includes(group)),
-    groupRatio
-  )
+  return [...groups].sort((left, right) => {
+    const ratioOrder = (groupRatio[left] ?? 1) - (groupRatio[right] ?? 1)
+    return ratioOrder || left.localeCompare(right)
+  })
 }

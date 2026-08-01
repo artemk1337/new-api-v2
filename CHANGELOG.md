@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.84
+
+- Sorted model group pricing from the lowest effective coefficient to the highest, matching the Auto group routing chain.
+
 ## v1.1.83
 
 - Fixed clipped left-axis labels in the System Telemetry I/O wait chart.
