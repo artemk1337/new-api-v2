@@ -51,7 +51,7 @@ import {
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-import { safeNumberFieldProps } from '../utils/numeric-field'
+import { safeDecimalFieldProps, safeNumberFieldProps } from '../utils/numeric-field'
 import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
@@ -184,7 +184,7 @@ const paymentSchema = z.object({
   WaffoMerchantId: z.string(),
   WaffoCurrency: z.string(),
   WaffoUnitPrice: z.coerce.number().min(0),
-  WaffoMinTopUp: z.coerce.number().min(1),
+  WaffoMinTopUp: z.coerce.number().min(0.01),
   WaffoNotifyUrl: z.string(),
   WaffoReturnUrl: z.string(),
   WaffoPancakeMerchantID: z.string(),
@@ -943,10 +943,9 @@ export function PaymentSettingsSection({
                         </FormLabel>
                         <FormControl>
                           <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
+                            type='text'
+                            inputMode='decimal'
+                            {...safeDecimalFieldProps(field)}
                           />
                         </FormControl>
                         <FormDescription>
@@ -967,10 +966,9 @@ export function PaymentSettingsSection({
                         <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
                         <FormControl>
                           <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
+                            type='text'
+                            inputMode='decimal'
+                            {...safeDecimalFieldProps(field)}
                           />
                         </FormControl>
                         <FormDescription>

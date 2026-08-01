@@ -53,7 +53,7 @@ export function useWaffoPayment() {
 
       try {
         const response = await requestWaffoPayment({
-          amount: Math.floor(topupAmount),
+          amount: topupAmount,
           pay_method_index: payMethodIndex,
         })
 

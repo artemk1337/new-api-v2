@@ -37,6 +37,38 @@ export type SafeNumberFieldProps = {
   ref: (instance: HTMLInputElement | null) => void
 }
 
+export function parseDecimalValue(value: string): number | null {
+  const normalized = value.trim().replace(',', '.')
+  if (!normalized || normalized.endsWith('.')) {
+    return null
+  }
+
+  const next = Number(normalized)
+  return Number.isFinite(next) ? next : null
+}
+
+export function safeDecimalFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>(field: ControllerRenderProps<TFieldValues, TName>): SafeNumberFieldProps {
+  const raw = field.value as unknown
+  const display: number | '' =
+    typeof raw === 'number' && Number.isFinite(raw) ? raw : ''
+
+  return {
+    value: display,
+    onChange: (event) => {
+      const next = parseDecimalValue(event.target.value)
+      if (next !== null) {
+        ;(field.onChange as (value: number) => void)(next)
+      }
+    },
+    onBlur: field.onBlur,
+    name: field.name,
+    ref: field.ref,
+  }
+}
+
 /**
  * Adapter for binding a react-hook-form numeric field to a native
  * `<input type="number">` without ever putting `NaN` into form state.

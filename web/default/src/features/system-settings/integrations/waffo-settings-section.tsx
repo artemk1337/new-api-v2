@@ -16,7 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ChangeEvent, useRef, type SetStateAction, useState } from 'react'
+import {
+  type ChangeEvent,
+  useEffect,
+  useRef,
+  type SetStateAction,
+  useState,
+} from 'react'
 import { Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -30,6 +36,7 @@ import { StaticDataTable } from '@/components/data-table/static/static-data-tabl
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { Dialog } from '@/components/dialog'
 import { SettingsSwitchField } from '../components/settings-form-layout'
+import { parseDecimalValue } from '../utils/numeric-field'
 
 export interface WaffoSettingsValues {
   WaffoEnabled: boolean
@@ -84,6 +91,13 @@ export function WaffoSettingsSection({
     payMethodType: '',
     payMethodName: '',
   })
+  const [waffoMinTopUpInput, setWaffoMinTopUpInput] = useState(() =>
+    values.WaffoMinTopUp.toString()
+  )
+
+  useEffect(() => {
+    setWaffoMinTopUpInput(values.WaffoMinTopUp.toString())
+  }, [values.WaffoMinTopUp])
 
   const openAdd = () => {
     setEditingIdx(-1)
@@ -279,15 +293,18 @@ export function WaffoSettingsSection({
           <div className='grid gap-1.5'>
             <Label>{t('Minimum top-up quantity')}</Label>
             <Input
-              type='number'
-              min={1}
-              value={values.WaffoMinTopUp}
-              onChange={(event) =>
-                onValueChange(
-                  'WaffoMinTopUp',
-                  event.target.value === '' ? 1 : event.target.valueAsNumber
-                )
-              }
+              type='text'
+              inputMode='decimal'
+              value={waffoMinTopUpInput}
+              onChange={(event) => {
+                const value = event.target.value
+                setWaffoMinTopUpInput(value)
+
+                const parsed = parseDecimalValue(value)
+                if (parsed !== null) {
+                  onValueChange('WaffoMinTopUp', parsed)
+                }
+              }}
             />
           </div>
         </div>

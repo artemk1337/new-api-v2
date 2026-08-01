@@ -50,3 +50,9 @@ func TestAmountDiscountConfigExactAmountPrecedence(t *testing.T) {
 	require.Equal(t, 0.95, discounts.DiscountForAmount(100))
 	require.Equal(t, 0.85, discounts.DiscountForAmount(200))
 }
+
+func TestPaymentSettingUnmarshalsFractionalAmountOptions(t *testing.T) {
+	var setting PaymentSetting
+	require.NoError(t, common.Unmarshal([]byte(`{"amount_options":[0.1,1.5]}`), &setting))
+	require.Equal(t, []float64{0.1, 1.5}, setting.AmountOptions)
+}

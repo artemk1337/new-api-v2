@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,8 +21,8 @@ import (
 )
 
 type YooKassaPayRequest struct {
-	Amount        int64  `json:"amount"`
-	PaymentMethod string `json:"payment_method"`
+	Amount        float64 `json:"amount"`
+	PaymentMethod string  `json:"payment_method"`
 }
 
 type yooKassaWebhookPayload struct {
@@ -32,7 +33,7 @@ type yooKassaWebhookPayload struct {
 	} `json:"object"`
 }
 
-func getYooKassaPayMoney(amount int64, group string) float64 {
+func getYooKassaPayMoney(amount float64, group string) float64 {
 	return getPayMoney(amount, model.PaymentMethodYooKassaSBP, group)
 }
 
@@ -40,11 +41,11 @@ func formatYooKassaAmount(amount float64) string {
 	return decimal.NewFromFloat(amount).Round(2).StringFixed(2)
 }
 
-func getYooKassaQuotaToAdd(amount int64) int {
+func getYooKassaQuotaToAdd(amount float64) int {
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		return int(amount)
 	}
-	return int(decimal.NewFromInt(amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+	return int(decimal.NewFromFloat(amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
 }
 
 func getYooKassaReturnURL(tradeNo string) string {
@@ -93,7 +94,7 @@ func RequestYooKassaAmount(c *gin.Context) {
 		return
 	}
 	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %d", getMinTopup())})
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup())})
 		return
 	}
 
@@ -106,6 +107,10 @@ func RequestYooKassaAmount(c *gin.Context) {
 	payMoney := getYooKassaPayMoney(req.Amount, group)
 	if payMoney <= 0.01 {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Top-up amount is too low"})
+		return
+	}
+	if req.Amount != math.Trunc(req.Amount) && !isTopUpPaymentAmountRepresentable(payMoney, 2) {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Payment amount must be exact to cents"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "success", "data": formatYooKassaAmount(payMoney)})
@@ -123,7 +128,7 @@ func RequestYooKassaPay(c *gin.Context) {
 		return
 	}
 	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %d", getMinTopup())})
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup())})
 		return
 	}
 	if !isYooKassaPaymentMethodEnabled(req.PaymentMethod) {
@@ -142,12 +147,17 @@ func RequestYooKassaPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Top-up amount is too low"})
 		return
 	}
+	if req.Amount != math.Trunc(req.Amount) && !isTopUpPaymentAmountRepresentable(payMoney, 2) {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Payment amount must be exact to cents"})
+		return
+	}
 
 	tradeNo := fmt.Sprintf("USR%dNO%s%d", id, common.GetRandomString(6), time.Now().Unix())
 	quotaToAdd := getYooKassaQuotaToAdd(req.Amount)
 	topUp := &model.TopUp{
 		UserId:          id,
-		Amount:          req.Amount,
+		Amount:          int64(req.Amount),
+		RequestedAmount: req.Amount,
 		Money:           payMoney,
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodYooKassaSBP,
@@ -157,7 +167,7 @@ func RequestYooKassaPay(c *gin.Context) {
 		Status:          common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to create top-up order user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to create top-up order user_id=%d trade_no=%s amount=%g error=%q", id, tradeNo, req.Amount, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to create order"})
 		return
 	}
@@ -167,7 +177,7 @@ func RequestYooKassaPay(c *gin.Context) {
 	request := service.NewYooKassaPaymentRequest(tradeNo, id, topUp.Id, formatYooKassaAmount(payMoney), getYooKassaReturnURL(tradeNo), "sbp")
 	payment, err := service.NewYooKassaClient(nil).CreatePayment(ctx, tradeNo, request)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to create payment user_id=%d trade_no=%s amount=%d error=%q", id, tradeNo, req.Amount, err.Error()))
+		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to create payment user_id=%d trade_no=%s amount=%g error=%q", id, tradeNo, req.Amount, err.Error()))
 		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderYooKassa, common.TopUpStatusFailed)
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to start payment"})
 		return
@@ -199,7 +209,7 @@ func RequestYooKassaPay(c *gin.Context) {
 		return
 	}
 
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("YooKassa top-up order created successfully user_id=%d trade_no=%s payment_id=%s amount=%d money=%.2f", id, tradeNo, payment.ID, req.Amount, payMoney))
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("YooKassa top-up order created successfully user_id=%d trade_no=%s payment_id=%s amount=%g money=%.2f", id, tradeNo, payment.ID, req.Amount, payMoney))
 	c.JSON(http.StatusOK, gin.H{
 		"message": "success",
 		"data": gin.H{

@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/status-badge'
+import { parseAmountOption } from './amount-options'
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isArray } from '../utils/json-validators'
 
@@ -53,8 +54,8 @@ export function AmountOptionsVisualEditor({
   }, [value, t])
 
   const handleAdd = () => {
-    const amount = parseFloat(newAmount)
-    if (isNaN(amount) || amount <= 0) {
+    const amount = parseAmountOption(newAmount)
+    if (amount === null) {
       return
     }
 
@@ -87,6 +88,8 @@ export function AmountOptionsVisualEditor({
       handleAdd()
     }
   }
+
+  const newAmountValue = parseAmountOption(newAmount)
 
   return (
     <div className='space-y-4'>
@@ -138,10 +141,9 @@ export function AmountOptionsVisualEditor({
           </Label>
           <Input
             id='new-amount'
-            type='number'
-            step='0.01'
-            min='0'
-            placeholder={t('e.g., 100')}
+            type='text'
+            inputMode='decimal'
+            placeholder={t('e.g., 0.1')}
             value={newAmount}
             onChange={(e) => setNewAmount(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -154,7 +156,7 @@ export function AmountOptionsVisualEditor({
             e.stopPropagation()
             handleAdd()
           }}
-          disabled={!newAmount || parseFloat(newAmount) <= 0}
+          disabled={newAmountValue === null}
           className='w-full sm:w-auto'
         >
           <Plus className='h-4 w-4 sm:mr-2' />

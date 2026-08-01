@@ -130,6 +130,55 @@ func TestRechargeYooKassa_IsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(1), topupLogs)
 }
 
+func TestRechargeProviders_UsePersistedQuotaForFractionalTopUp(t *testing.T) {
+	for _, provider := range []string{PaymentProviderStripe, PaymentProviderWaffo, PaymentProviderWaffoPancake} {
+		t.Run(provider, func(t *testing.T) {
+			truncateTables(t)
+			insertUserForPaymentGuardTest(t, 201, 0)
+			require.NoError(t, (&TopUp{
+				UserId:          201,
+				Amount:          0,
+				Money:           0.1,
+				TradeNo:         "fractional-" + provider,
+				PaymentMethod:   provider,
+				PaymentProvider: provider,
+				QuotaToAdd:      50000,
+				Status:          common.TopUpStatusPending,
+				CreateTime:      time.Now().Unix(),
+			}).Insert())
+
+			var err error
+			if provider == PaymentProviderStripe {
+				err = Recharge("fractional-"+provider, "", "127.0.0.1")
+			} else if provider == PaymentProviderWaffo {
+				err = RechargeWaffo("fractional-"+provider, "127.0.0.1")
+			} else {
+				err = RechargeWaffoPancake("fractional-" + provider)
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 50000, getUserQuotaForPaymentGuardTest(t, 201))
+		})
+	}
+}
+
+func TestRechargeStripe_UsesLegacyMoneyForIntegerTopUp(t *testing.T) {
+	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 202, 0)
+	require.NoError(t, (&TopUp{
+		UserId:          202,
+		Amount:          10,
+		Money:           20,
+		TradeNo:         "stripe-group-ratio",
+		PaymentMethod:   PaymentMethodStripe,
+		PaymentProvider: PaymentProviderStripe,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}).Insert())
+
+	require.NoError(t, Recharge("stripe-group-ratio", "", "127.0.0.1"))
+	assert.Equal(t, int(20*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 202))
+}
+
 func TestRechargeYooKassa_RollsBackWhenUserMissing(t *testing.T) {
 	truncateTables(t)
 

@@ -81,6 +81,16 @@ interface RechargeFormCardProps {
   enableWaffoPancakeTopup?: boolean
 }
 
+export function parseTopupAmount(value: string): number | null {
+  const normalized = value.trim().replace(',', '.')
+  if (!normalized || normalized.endsWith('.')) {
+    return null
+  }
+
+  const amount = Number(normalized)
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
+}
+
 export function RechargeFormCard({
   topupInfo,
   presetAmounts,
@@ -119,9 +129,9 @@ export function RechargeFormCard({
 
   const handleAmountChange = (value: string) => {
     setLocalAmount(value)
-    const numValue = parseInt(value) || 0
-    if (numValue >= 0) {
-      onTopupAmountChange(numValue)
+    const amount = parseTopupAmount(value)
+    if (amount !== null) {
+      onTopupAmountChange(amount)
     }
   }
 
@@ -293,10 +303,12 @@ export function RechargeFormCard({
                 <div className='grid grid-cols-[minmax(0,1fr)_minmax(110px,0.55fr)] gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center'>
                   <Input
                     id='topup-amount'
-                    type='number'
+                    type='text'
+                    inputMode='decimal'
                     value={localAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     min={minTopup}
+                    step='any'
                     placeholder={`Minimum ${minTopup}`}
                     className='h-9 text-base sm:h-10 sm:text-lg'
                   />

@@ -127,12 +127,12 @@ export function usePayment() {
           })
         } else if (isYooKassa) {
           response = await requestYooKassaPayment({
-            amount: Math.floor(topupAmount),
+            amount: topupAmount,
             payment_method: 'yookassa_sbp',
           })
         } else if (isNOWPayments) {
           response = await requestNOWPaymentsPayment({
-            amount: Math.floor(topupAmount),
+            amount: topupAmount,
             payment_method: 'nowpayments',
           })
         } else {

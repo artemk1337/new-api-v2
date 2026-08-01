@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.94
+
+- Added fractional top-up amounts across payment providers, including configurable minimums and preset amounts.
+- Accepted both `.` and `,` decimal separators in wallet and payment settings inputs.
+- Preserved the requested fractional amount in top-up history while keeping legacy records compatible.
+
 ## v1.1.93
 
 - Show each top-up coefficient group together with its coefficient when configuring a payment method.

@@ -308,6 +308,8 @@ export interface TopupRecord {
   user_id: number
   /** Topup amount (quota) */
   amount: number
+  /** Original top-up amount requested by the user */
+  requested_amount?: number
   /** Payment amount (actual money paid) */
   money: number
   /** Trade/order number */

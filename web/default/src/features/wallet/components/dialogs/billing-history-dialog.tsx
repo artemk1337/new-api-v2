@@ -58,6 +58,17 @@ interface BillingHistoryDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
+export function getTopupAmountToDisplay(
+  amount: number,
+  requestedAmount?: number
+): number {
+  return typeof requestedAmount === 'number' &&
+    Number.isFinite(requestedAmount) &&
+    requestedAmount > 0
+    ? requestedAmount
+    : amount
+}
+
 export function BillingHistoryDialog({
   open,
   onOpenChange,
@@ -179,6 +190,10 @@ export function BillingHistoryDialog({
               <div className='space-y-3'>
                 {records.map((record) => {
                   const statusConfig = getStatusConfig(record.status)
+                  const topupAmount = getTopupAmountToDisplay(
+                    record.amount,
+                    record.requested_amount
+                  )
                   return (
                     <div
                       key={record.id}
@@ -239,7 +254,7 @@ export function BillingHistoryDialog({
                             {t('Amount')}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
+                            {formatCurrencyFromUSD(topupAmount, {
                               digitsLarge: 2,
                               digitsSmall: 2,
                               abbreviate: false,

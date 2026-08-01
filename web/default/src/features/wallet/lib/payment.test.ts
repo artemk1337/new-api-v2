@@ -19,7 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getDiscountForAmount } from './payment'
+import type { TopupInfo } from '../types'
+import {
+  generatePresetAmounts,
+  getDiscountForAmount,
+  getMinTopupAmount,
+} from './payment'
 
 describe('wallet payment discounts', () => {
   test('treats amount discount map as minimum amount thresholds', () => {
@@ -37,5 +42,20 @@ describe('wallet payment discounts', () => {
     assert.equal(getDiscountForAmount(150, discounts), 0.94)
     assert.equal(getDiscountForAmount(500, discounts), 0.9)
     assert.equal(getDiscountForAmount(1000, discounts), 0.9)
+  })
+})
+
+describe('wallet minimum top-up', () => {
+  test('keeps fractional online minimum amount', () => {
+    const minimum = getMinTopupAmount({
+      enable_online_topup: true,
+      min_topup: 0.1,
+    } as TopupInfo)
+
+    assert.equal(minimum, 0.1)
+    assert.deepEqual(
+      generatePresetAmounts(minimum).slice(0, 2).map(({ value }) => value),
+      [0.1, 0.5]
+    )
   })
 })

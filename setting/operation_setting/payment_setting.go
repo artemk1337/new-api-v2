@@ -83,7 +83,7 @@ func (discounts AmountDiscountConfig) DiscountForAmount(amount int) float64 {
 }
 
 type PaymentSetting struct {
-	AmountOptions  []int                `json:"amount_options"`
+	AmountOptions  []float64            `json:"amount_options"`
 	AmountDiscount AmountDiscountConfig `json:"amount_discount"` // 支持精确金额折扣和 min_amount 阈值折扣
 
 	ComplianceConfirmed    bool   `json:"compliance_confirmed"`
@@ -97,7 +97,7 @@ const CurrentComplianceTermsVersion = "v1"
 
 // 默认配置
 var paymentSetting = PaymentSetting{
-	AmountOptions:  []int{10, 20, 50, 100, 200, 500},
+	AmountOptions:  []float64{10, 20, 50, 100, 200, 500},
 	AmountDiscount: AmountDiscountConfig{Exact: map[int]float64{}},
 }
 

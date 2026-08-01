@@ -5,6 +5,7 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -22,8 +23,8 @@ import (
 const nowPaymentsSignatureHeader = "x-nowpayments-sig"
 
 type NOWPaymentsPayRequest struct {
-	Amount        int64  `json:"amount"`
-	PaymentMethod string `json:"payment_method"`
+	Amount        float64 `json:"amount"`
+	PaymentMethod string  `json:"payment_method"`
 }
 
 func RequestNOWPaymentsAmount(c *gin.Context) {
@@ -33,7 +34,7 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 		return
 	}
 	if req.Amount < getMinTopup() {
-		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %d", getMinTopup()))
+		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup()))
 		return
 	}
 	group, err := model.GetUserGroup(c.GetInt("id"), true)
@@ -44,6 +45,10 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 	paymentAmount := getPayMoney(req.Amount, model.PaymentMethodNOWPayments, group)
 	if paymentAmount <= 0.01 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
+		return
+	}
+	if req.Amount != math.Trunc(req.Amount) && !isTopUpPaymentAmountRepresentable(paymentAmount, 2) {
+		common.ApiErrorMsg(c, "Payment amount must be exact to cents")
 		return
 	}
 	common.ApiSuccess(c, decimal.NewFromFloat(paymentAmount).Round(2).StringFixed(2))
@@ -60,7 +65,7 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		return
 	}
 	if req.Amount < getMinTopup() {
-		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %d", getMinTopup()))
+		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup()))
 		return
 	}
 	userID := c.GetInt("id")
@@ -74,9 +79,13 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return
 	}
+	if req.Amount != math.Trunc(req.Amount) && !isTopUpPaymentAmountRepresentable(paymentAmount, 2) {
+		common.ApiErrorMsg(c, "Payment amount must be exact to cents")
+		return
+	}
 	tradeNo := fmt.Sprintf("NOW%d%s%d", userID, common.GetRandomString(6), time.Now().Unix())
 	quotaToAdd := getYooKassaQuotaToAdd(req.Amount)
-	topUp := &model.TopUp{UserId: userID, Amount: req.Amount, Money: paymentAmount, TradeNo: tradeNo, PaymentMethod: model.PaymentMethodNOWPayments, PaymentProvider: model.PaymentProviderNOWPayments, QuotaToAdd: quotaToAdd, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}
+	topUp := &model.TopUp{UserId: userID, Amount: int64(req.Amount), RequestedAmount: req.Amount, Money: paymentAmount, TradeNo: tradeNo, PaymentMethod: model.PaymentMethodNOWPayments, PaymentProvider: model.PaymentProviderNOWPayments, QuotaToAdd: quotaToAdd, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments failed to create top-up user_id=%d trade_no=%s error=%q", userID, tradeNo, err.Error()))
 		common.ApiErrorMsg(c, "Failed to create order")
