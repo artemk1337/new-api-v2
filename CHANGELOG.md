@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.83
+
+- Fixed clipped left-axis labels in the System Telemetry I/O wait chart.
+
 ## v1.1.82
 
 - Fixed incremental `<think>` parsing for multiple tags in one stream chunk and partial tags split across chunks.

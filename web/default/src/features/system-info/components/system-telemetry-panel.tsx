@@ -229,7 +229,14 @@ export function SystemTelemetryPanel() {
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey='time' minTickGap={50} />
                 <YAxis yAxisId='percent' unit='%' />
-                <YAxis yAxisId='load' hide />
+                <YAxis
+                  yAxisId='load'
+                  orientation='right'
+                  width={0}
+                  axisLine={false}
+                  tick={false}
+                  tickLine={false}
+                />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Line
                   yAxisId='percent'
