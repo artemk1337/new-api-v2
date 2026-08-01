@@ -49,18 +49,12 @@ import {
 } from '@/components/ui/select'
 
 import { safeJsonParse } from '../utils/json-parser'
-import {
-  addAutoGroup,
-  normalizeAutoGroupList,
-  removeAutoGroup,
-} from './auto-group-list'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
   pricingGroups: string
   topupGroupRatio: string
   groupGroupRatio: string
-  autoGroups: string
   onChange: (field: string, value: string) => void
 }
 
@@ -202,7 +196,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   pricingGroups,
   topupGroupRatio,
   groupGroupRatio,
-  autoGroups,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -212,8 +205,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   >(null)
   const [simpleEditData, setSimpleEditData] = useState<SimpleGroup | null>(null)
 
-  const [autoGroupDialogOpen, setAutoGroupDialogOpen] = useState(false)
-  const [autoGroupInput, setAutoGroupInput] = useState('')
 
   const [groupOverrideDialogOpen, setGroupOverrideDialogOpen] = useState(false)
   const [groupOverrideUserGroup, setGroupOverrideUserGroup] = useState<
@@ -252,21 +243,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       value: String(value),
     }))
   }, [topupGroupRatio])
-
-  // Parse auto groups
-  const autoGroupsList = useMemo(() => {
-    return normalizeAutoGroupList(
-      safeJsonParse<unknown>(autoGroups, {
-        fallback: [],
-        context: 'auto groups',
-      })
-    )
-  }, [autoGroups])
-
-  const availableAutoGroupOptions = useMemo(() => {
-    const selected = new Set(autoGroupsList)
-    return pricingGroupOptions.filter((group) => !selected.has(group.id))
-  }, [autoGroupsList, pricingGroupOptions])
 
   // Parse group-group ratios
   const groupGroupRatioList = useMemo(() => {
@@ -337,30 +313,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
     const field = type === 'groupRatio' ? 'GroupRatio' : 'TopupGroupRatio'
     onChange(field, JSON.stringify(map, null, 2))
-  }
-
-  // Auto groups handlers
-  const handleAutoGroupAdd = () => {
-    setAutoGroupInput('')
-    setAutoGroupDialogOpen(true)
-  }
-
-  const handleAutoGroupSave = () => {
-    if (!autoGroupInput.trim()) return
-
-    const list = addAutoGroup(autoGroupsList, autoGroupInput)
-    if (list.length === autoGroupsList.length) {
-      setAutoGroupDialogOpen(false)
-      return
-    }
-    onChange('AutoGroups', JSON.stringify(list, null, 2))
-    setAutoGroupDialogOpen(false)
-  }
-
-  const handleAutoGroupDelete = (index: number) => {
-    const list = removeAutoGroup(autoGroupsList, index)
-    if (list.length === autoGroupsList.length) return
-    onChange('AutoGroups', JSON.stringify(list, null, 2))
   }
 
   // Group-group ratio handlers
@@ -646,52 +598,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         </CardContent>
       </Card>
 
-      {/* Auto Groups */}
-      <Card className={sectionCardClassName}>
-        <CardHeader className={sectionHeaderClassName}>
-          <CardTitle>{t('Auto group allowlist')}</CardTitle>
-          <CardDescription>
-            {t(
-              'Auto uses only allowed groups, sorts them by price, and tries the cheapest available group first.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className='space-y-4'>
-            <Button
-              onClick={handleAutoGroupAdd}
-              size='sm'
-              disabled={availableAutoGroupOptions.length === 0}
-            >
-              <Plus className='mr-2 h-4 w-4' />
-              {t('Add group')}
-            </Button>
-            {autoGroupsList.length > 0 && (
-              <div className='space-y-2'>
-                {autoGroupsList.map((group, index) => (
-                  <div
-                    key={group}
-                    className='flex items-center gap-2 rounded-md border p-3'
-                  >
-                    <span className='flex-1 font-medium'>
-                      {formatPricingGroupLabel(group, pricingGroupNames)}
-                    </span>
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      onClick={() => handleAutoGroupDelete(index)}
-                      disabled={autoGroupsList.length <= 1}
-                    >
-                      <Trash2 className='h-4 w-4' />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Simple Group Dialog */}
       <SimpleGroupDialog
         open={simpleDialogOpen}
@@ -700,59 +606,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
         editData={simpleEditData}
         type={simpleDialogType}
       />
-
-      {/* Auto Group Dialog */}
-      <Dialog
-        open={autoGroupDialogOpen}
-        onOpenChange={setAutoGroupDialogOpen}
-        title={t('Add auto group')}
-        description={t('Add a group to the Auto allowlist.')}
-        contentHeight='auto'
-        bodyClassName='space-y-4'
-        footer={
-          <>
-            <Button
-              variant='outline'
-              onClick={() => setAutoGroupDialogOpen(false)}
-            >
-              {t('Cancel')}
-            </Button>
-            <Button onClick={handleAutoGroupSave}>{t('Add')}</Button>
-          </>
-        }
-      >
-        <div className='space-y-4 py-4'>
-          <div className='space-y-2'>
-            <Label>{t('Group identifier')}</Label>
-            <Select
-              value={autoGroupInput || null}
-              onValueChange={(value) =>
-                value !== null && setAutoGroupInput(value)
-              }
-            >
-              <SelectTrigger className='w-full'>
-                <SelectValue>
-                  {autoGroupInput
-                    ? formatPricingGroupLabel(
-                        autoGroupInput,
-                        pricingGroupNames
-                      )
-                    : t('Group name')}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                <SelectGroup>
-                  {availableAutoGroupOptions.map((group) => (
-                    <SelectItem key={group.id} value={group.id}>
-                      {formatPricingGroupLabel(group.id, pricingGroupNames)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </Dialog>
 
       {/* User Group Dialog */}
       <Dialog

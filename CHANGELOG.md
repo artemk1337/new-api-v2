@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.88
+
+- Removed the global Auto group allowlist. Auto now always uses pricing groups available to the user, while API keys can still limit their own candidate groups.
+
 ## v1.1.87
 
 - Added configurable exchange-rate history with a master-only background updater.

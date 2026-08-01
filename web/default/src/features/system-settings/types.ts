@@ -279,7 +279,6 @@ export type ModelSettings = {
   TopupGroupRatio: string
   GroupRatio: string
   GroupGroupRatio: string
-  AutoGroups: string
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   RetryTimes: number
@@ -335,7 +334,6 @@ export type BillingSettings = {
   GroupRatio: string
   PricingGroups: string
   GroupGroupRatio: string
-  AutoGroups: string
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   PayAddress: string

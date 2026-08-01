@@ -59,7 +59,6 @@ type GroupFormValues = {
   PricingGroups: string
   TopupGroupRatio: string
   GroupGroupRatio: string
-  AutoGroups: string
   DefaultUseAutoGroup: boolean
   GroupSpecialUsableGroup: string
 }
@@ -135,7 +134,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               pricingGroups={form.watch('PricingGroups')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
-              autoGroups={form.watch('AutoGroups')}
               onChange={(field, value) =>
                 handleFieldChange(field as keyof GroupFormValues, value)
               }
@@ -205,25 +203,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                     {`{ targetGroup: ratio }`}{' '}
                     {t(
                       'to override billing when a user in one group uses a token of another group.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name='AutoGroups'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Auto group allowlist')}</FormLabel>
-                  <FormControl>
-                    <Textarea rows={6} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'Auto uses only allowed groups, sorts them by price, and tries the cheapest available group first.'
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -350,21 +329,6 @@ vip          0.5     ${t('No')}                ${t('Assigned by administrator on
                   {t(
                     'Users only see groups marked as user selectable. Non-selectable groups can still be assigned by administrators.'
                   )}
-                </p>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value='auto'>
-              <AccordionTrigger>{t('Auto group behavior')}</AccordionTrigger>
-              <AccordionContent className='space-y-3'>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t(
-                    'Auto uses only allowed groups, sorts them by price, and tries the cheapest available group first.'
-                  )}
-                </p>
-                <GuideCodeBlock>{`["default", "vip"]`}</GuideCodeBlock>
-                <p className='text-muted-foreground text-sm leading-6'>
-                  {t('New tokens use Auto by default.')}
                 </p>
               </AccordionContent>
             </AccordionItem>

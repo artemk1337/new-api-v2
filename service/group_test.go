@@ -82,7 +82,7 @@ func TestGetUserAutoGroupReturnsAllUsableGroups(t *testing.T) {
 		{"id":2,"name":"premium","ratio":2,"selectable":true},
 		{"id":3,"name":"internal","ratio":1,"selectable":false}
 	]`))
+	// Legacy global AutoGroups values must not restrict Auto routing.
 	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["default"]`))
-
 	assert.Equal(t, []string{"1", "2"}, GetUserAutoGroup(""))
 }
