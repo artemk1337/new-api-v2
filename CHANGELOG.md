@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.86
+
+- Removed the Uptime Kuma dashboard widget, console settings, status API, and unused configuration support.
+
 ## v1.1.85
 
 - Removed the remaining Classic UI configuration, translations, documentation, and internal migration tooling while preserving redirects for legacy `/console/*` links.
