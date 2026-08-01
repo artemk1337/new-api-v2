@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.90
+
+- Removed the introductory description from the Model Square header.
+
 ## v1.1.89
 
 - Simplified pricing model cards by removing descriptions, group and endpoint labels, and redundant billing-type labels while preserving aggregated latency, throughput, and status metrics.
