@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.105
+
+- Separated available updates from previous rollback versions in the system update dialog.
+- Kept rollback actions available in a collapsed section and added localized release group labels.
+
 ## v1.1.104
 
 - Added a Benefit sort option to the pricing catalog, ordering models from the largest displayed savings to the smallest.

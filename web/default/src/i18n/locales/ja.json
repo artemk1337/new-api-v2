@@ -5147,6 +5147,8 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Available updates": "利用可能なアップデート",
+    "Previous versions for rollback ({{count}})": "ロールバック用の以前のバージョン（{{count}}）"
   }
 }

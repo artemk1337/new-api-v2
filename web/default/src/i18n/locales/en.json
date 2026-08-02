@@ -5147,6 +5147,8 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Available updates": "Available updates",
+    "Previous versions for rollback ({{count}})": "Previous versions for rollback ({{count}})"
   }
 }

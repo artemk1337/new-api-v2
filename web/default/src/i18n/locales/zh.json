@@ -5147,6 +5147,8 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Available updates": "可用更新",
+    "Previous versions for rollback ({{count}})": "用于回滚的旧版本（{{count}}）"
   }
 }

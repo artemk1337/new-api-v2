@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import { DownloadIcon, ExternalLinkIcon, RefreshCcwIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,6 +24,11 @@ import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { Markdown } from '@/components/ui/markdown'
 import { getStatus } from '@/lib/api'
 import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
@@ -44,6 +50,7 @@ import {
   type SystemUpdateReleaseBuildStatus,
 } from './system-update-release-status'
 import { shouldResumeDeployingSystemUpdateTask } from './system-update-resume'
+import { compareStableSystemUpdateVersions } from './system-update-version'
 
 type UpdateCheckerSectionProps = {
   currentVersion?: string | null
@@ -134,6 +141,80 @@ function getSystemUpdateReleaseBuildStatusLabel(
   return t('Build status unavailable')
 }
 
+type SystemUpdateReleaseCardProps = {
+  canUpdate: boolean
+  disabled: boolean
+  onUpdate: (version: string) => void
+  release: SystemUpdateRelease
+  t: TFunction
+  updating: boolean
+}
+
+function SystemUpdateReleaseCard(props: SystemUpdateReleaseCardProps) {
+  const buildStatus = getSystemUpdateReleaseBuildStatus(props.release)
+  const canDeploy = canDeploySystemUpdateRelease(props.release)
+
+  return (
+    <div className='space-y-2 rounded-lg border p-4'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
+        <h3 className='text-base font-semibold'>{props.release.tag_name}</h3>
+        <span
+          className={cn(
+            'rounded-full px-2 py-1 text-xs font-medium',
+            getSystemUpdateReleaseBuildStatusClass(buildStatus)
+          )}
+        >
+          {getSystemUpdateReleaseBuildStatusLabel(props.t, buildStatus)}
+        </span>
+      </div>
+      {props.release.build_status_message && (
+        <p className='text-muted-foreground text-sm'>
+          {props.release.build_status_message}
+        </p>
+      )}
+      {props.release.body ? (
+        <Markdown>{props.release.body}</Markdown>
+      ) : (
+        <p className='text-muted-foreground text-sm'>
+          {props.t('No release notes provided.')}
+        </p>
+      )}
+      <div className='flex flex-wrap gap-2'>
+        {props.release.html_url && (
+          <Button
+            type='button'
+            variant='secondary'
+            onClick={() =>
+              window.open(
+                props.release.html_url,
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }
+          >
+            <ExternalLinkIcon className='me-2 h-4 w-4' />
+            {props.t('Open tag')}
+          </Button>
+        )}
+        <Button
+          type='button'
+          onClick={() => props.onUpdate(props.release.tag_name)}
+          disabled={
+            !props.canUpdate || !canDeploy || props.updating || props.disabled
+          }
+        >
+          <DownloadIcon className='me-2 h-4 w-4' />
+          {props.updating
+            ? props.t('Starting update...')
+            : props.t('Update to {{version}}', {
+                version: props.release.tag_name,
+              })}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function UpdateCheckerSection({
   currentVersion,
   startTime,
@@ -159,6 +240,21 @@ export function UpdateCheckerSection({
   const version = currentVersion || t('Unknown')
   const updateActive = isActiveSystemUpdateTask(updateTask)
   const showUpdateTask = Boolean(updateTask && expectedUpdateVersion)
+  const orderedReleases = [...releases].reverse()
+  const availableReleases = orderedReleases.filter((item) => {
+    const comparison = compareStableSystemUpdateVersions(
+      item.tag_name,
+      currentVersion
+    )
+    return comparison === null || comparison > 0
+  })
+  const previousReleases = orderedReleases.filter((item) => {
+    const comparison = compareStableSystemUpdateVersions(
+      item.tag_name,
+      currentVersion
+    )
+    return comparison !== null && comparison <= 0
+  })
 
   const handleCheckUpdates = async () => {
     setChecking(true)
@@ -504,76 +600,57 @@ export function UpdateCheckerSection({
       >
         <div className='space-y-4'>
           {releases.length > 0 ? (
-            [...releases].reverse().map((item) => {
-              const buildStatus = getSystemUpdateReleaseBuildStatus(item)
-              const canDeploy = canDeploySystemUpdateRelease(item)
-              return (
-                <div
-                  key={item.tag_name}
-                  className='space-y-2 rounded-lg border p-4'
-                >
-                  <div className='flex flex-wrap items-center justify-between gap-2'>
-                    <h3 className='text-base font-semibold'>{item.tag_name}</h3>
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-1 text-xs font-medium',
-                        getSystemUpdateReleaseBuildStatusClass(buildStatus)
-                      )}
-                    >
-                      {getSystemUpdateReleaseBuildStatusLabel(t, buildStatus)}
-                    </span>
-                  </div>
-                  {item.build_status_message && (
-                    <p className='text-muted-foreground text-sm'>
-                      {item.build_status_message}
-                    </p>
-                  )}
-                  {item.body ? (
-                    <Markdown>{item.body}</Markdown>
-                  ) : (
-                    <p className='text-muted-foreground text-sm'>
-                      {t('No release notes provided.')}
-                    </p>
-                  )}
-                  <div className='flex flex-wrap gap-2'>
-                    {item.html_url && (
-                      <Button
-                        type='button'
-                        variant='secondary'
-                        onClick={() =>
-                          window.open(
-                            item.html_url,
-                            '_blank',
-                            'noopener,noreferrer'
-                          )
+            <>
+              {availableReleases.length > 0 && (
+                <section aria-labelledby='available-updates-heading'>
+                  <h2
+                    id='available-updates-heading'
+                    className='mb-3 text-sm font-semibold'
+                  >
+                    {t('Available updates')}
+                  </h2>
+                  <div className='space-y-4'>
+                    {availableReleases.map((item) => (
+                      <SystemUpdateReleaseCard
+                        key={item.tag_name}
+                        canUpdate={canUpdate}
+                        disabled={
+                          updateActive || Boolean(expectedUpdateVersion)
                         }
-                      >
-                        <ExternalLinkIcon className='me-2 h-4 w-4' />
-                        {t('Open tag')}
-                      </Button>
-                    )}
-                    <Button
-                      type='button'
-                      onClick={() => startUpdateForVersion(item.tag_name)}
-                      disabled={
-                        !canUpdate ||
-                        !canDeploy ||
-                        updating ||
-                        updateActive ||
-                        Boolean(expectedUpdateVersion)
-                      }
-                    >
-                      <DownloadIcon className='me-2 h-4 w-4' />
-                      {updating
-                        ? t('Starting update...')
-                        : t('Update to {{version}}', {
-                            version: item.tag_name,
-                          })}
-                    </Button>
+                        onUpdate={startUpdateForVersion}
+                        release={item}
+                        t={t}
+                        updating={updating}
+                      />
+                    ))}
                   </div>
-                </div>
-              )
-            })
+                </section>
+              )}
+              {previousReleases.length > 0 && (
+                <Collapsible>
+                  <CollapsibleTrigger className='text-muted-foreground hover:text-foreground text-sm font-medium underline-offset-4 hover:underline'>
+                    {t('Previous versions for rollback ({{count}})', {
+                      count: previousReleases.length,
+                    })}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className='mt-3 space-y-4'>
+                    {previousReleases.map((item) => (
+                      <SystemUpdateReleaseCard
+                        key={item.tag_name}
+                        canUpdate={canUpdate}
+                        disabled={
+                          updateActive || Boolean(expectedUpdateVersion)
+                        }
+                        onUpdate={startUpdateForVersion}
+                        release={item}
+                        t={t}
+                        updating={updating}
+                      />
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </>
           ) : (
             <p className='text-muted-foreground text-sm'>
               {t('No release notes provided.')}
