@@ -29,7 +29,6 @@ import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialo
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
-import { WalletStatsCard } from './components/wallet-stats-card'
 import { syncYooKassaPayment, isApiSuccess } from './api'
 import {
   useTopupInfo,
@@ -60,7 +59,6 @@ interface WalletProps {
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
-  const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
@@ -107,7 +105,6 @@ export function Wallet(props: WalletProps) {
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
     try {
-      setUserLoading(true)
       const response = await getSelf()
       if (response.success && response.data) {
         setUser(response.data as UserWalletData)
@@ -115,8 +112,6 @@ export function Wallet(props: WalletProps) {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch user data:', error)
-    } finally {
-      setUserLoading(false)
     }
   }, [])
 
@@ -299,8 +294,6 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <WalletStatsCard user={user} loading={userLoading} />
-
             <div
               className={
                 showSubscriptionPanel

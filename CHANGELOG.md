@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.108
+
+- Removed quota and request statistics from the profile header and wallet page.
+
 ## v1.1.107
 
 - Renamed the Russian dashboard overview block to "Статистика".
