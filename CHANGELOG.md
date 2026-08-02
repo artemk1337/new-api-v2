@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.103
+
+- Fixed channel group search to match displayed group names as well as internal IDs.
+- Removed the preselected default group when creating a channel.
+
 ## v1.1.102
 
 - Added suggestions of existing channel tags in the channel editor while allowing custom values.

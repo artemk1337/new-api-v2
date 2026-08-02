@@ -167,6 +167,19 @@ export function MultiSelect(props: MultiSelectProps) {
     return Array.from(set)
   }, [props.options, props.selected, canCreate, trimmedInput])
 
+  // The underlying values can be opaque identifiers while users search by
+  // the displayed label (for example pricing-group IDs vs. group names).
+  // Include both in the combobox filter so searching remains useful without
+  // changing the values submitted by the form.
+  const filterItems = React.useCallback(
+    (value: string, search: string) => {
+      const option = props.options.find((item) => item.value === value)
+      const searchableText = `${option?.label ?? value} ${value}`.toLowerCase()
+      return searchableText.includes(search.toLowerCase())
+    },
+    [props.options]
+  )
+
   const addValues = React.useCallback(
     (values: string[]) => {
       const next: string[] = []
@@ -253,6 +266,7 @@ export function MultiSelect(props: MultiSelectProps) {
       onValueChange={handleValueChange}
       inputValue={inputValue}
       onInputValueChange={handleInputValueChange}
+      filter={filterItems}
       open={open}
       onOpenChange={setOpen}
       disabled={props.disabled}
