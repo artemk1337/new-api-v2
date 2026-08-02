@@ -66,6 +66,7 @@ export const STATIC_I18N_KEYS = [
   'Name',
   'Price: Low to High',
   'Price: High to Low',
+  'Benefit',
   'All Models',
   'Token-based',
   'Per Request',

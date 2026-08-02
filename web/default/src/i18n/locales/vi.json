@@ -605,6 +605,7 @@
     "Batch upstream model updates applied: {{channels}} channels, {{added}} added, {{removed}} removed, {{fails}} failed": "Đã áp dụng cập nhật hàng loạt mô hình upstream: {{channels}} kênh, {{added}} đã thêm, {{removed}} đã xóa, {{fails}} thất bại",
     "Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.": "Trước yêu cầu, Auto giữ trước số tiền cần cho nhóm đắt nhất đã chọn. Chỉ chi phí thực tế bị tính.",
     "Benefit {{percent}}%": "Tiết kiệm {{percent}}%",
+    "Benefit": "Tiết kiệm",
     "Best for single-tenant deployments. Pricing and billing options stay hidden.": "Phù hợp nhất cho triển khai đơn người dùng. Các tùy chọn giá và thanh toán sẽ được ẩn.",
     "Best TTFT": "TTFT tốt nhất",
     "Billable input tokens": "Token đầu vào tính phí",

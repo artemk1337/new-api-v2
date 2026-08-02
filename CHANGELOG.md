@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.104
+
+- Added a Benefit sort option to the pricing catalog, ordering models from the largest displayed savings to the smallest.
+
 ## v1.1.103
 
 - Fixed channel group search to match displayed group names as well as internal IDs.

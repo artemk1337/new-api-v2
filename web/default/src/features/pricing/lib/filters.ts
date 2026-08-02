@@ -24,6 +24,7 @@ import {
   ENDPOINT_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import { getDisplayGroupRatio } from './price'
 
 export type PricingFilterValues = {
   search: string
@@ -121,12 +122,17 @@ function getModelPrice(model: PricingModel): number {
   return model.quota_type === 0 ? model.model_ratio : model.model_price || 0
 }
 
+function getModelBenefit(model: PricingModel, groupFilter: string): number {
+  return Math.max(0, (1 - getDisplayGroupRatio(model, groupFilter)) * 100)
+}
+
 /**
  * Sort models by specified option
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string
+  sortBy: string,
+  groupFilter = FILTER_ALL
 ): PricingModel[] {
   const sorted = [...models]
 
@@ -142,6 +148,16 @@ export function sortModels(
     case SORT_OPTIONS.PRICE_HIGH:
       sorted.sort((a, b) => getModelPrice(b) - getModelPrice(a))
       break
+    case SORT_OPTIONS.BENEFIT:
+      sorted.sort((a, b) => {
+        const benefitDifference =
+          getModelBenefit(b, groupFilter) - getModelBenefit(a, groupFilter)
+        return (
+          benefitDifference ||
+          (a.model_name || '').localeCompare(b.model_name || '')
+        )
+      })
+      break
   }
 
   return sorted
@@ -155,7 +171,7 @@ export function filterAndSortModels(
   filters: PricingFilterValues & { sortBy: string }
 ): PricingModel[] {
   let result = filterModelsForFacet(models, filters)
-  result = sortModels(result, filters.sortBy)
+  result = sortModels(result, filters.sortBy, filters.group)
 
   return result
 }
@@ -210,7 +226,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b))
 }
 
 /**
