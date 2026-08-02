@@ -771,7 +771,6 @@
     "Chat client name is required": "チャットクライアント名は必須です",
     "Chat configuration JSON": "チャット設定JSON",
     "Chat preset not found": "チャットプリセットが見つかりません",
-    "Chat Presets": "チャットプリセット",
     "Chat session management": "チャットセッション管理",
     "ChatCompletions -> Responses Compatibility": "ChatCompletions → レスポンス互換",
     "ChatGPT Subscription (Codex)": "ChatGPT Subscription (Codex)",

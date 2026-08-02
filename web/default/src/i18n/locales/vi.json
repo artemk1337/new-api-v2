@@ -771,7 +771,6 @@
     "Chat client name is required": "Tên ứng dụng chat là bắt buộc",
     "Chat configuration JSON": "Cấu hình trò chuyện JSON",
     "Chat preset not found": "Thiết lập sẵn trò chuyện không tìm thấy",
-    "Chat Presets": "Cài đặt sẵn trò chuyện",
     "Chat session management": "Quản lý phiên trò chuyện",
     "ChatCompletions -> Responses Compatibility": "Tương thích ChatCompletions -> Phản hồi",
     "ChatGPT Subscription (Codex)": "ChatGPT Subscription (Codex)",

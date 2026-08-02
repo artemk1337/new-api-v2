@@ -771,7 +771,6 @@
     "Chat client name is required": "Название чат-клиента обязательно",
     "Chat configuration JSON": "JSON конфигурации чата",
     "Chat preset not found": "Предустановка чата не найдена",
-    "Chat Presets": "Пресеты чата",
     "Chat session management": "Управление сессиями чата",
     "ChatCompletions -> Responses Compatibility": "Совместимость ChatCompletions → Ответы",
     "ChatGPT Subscription (Codex)": "ChatGPT Subscription (Codex)",

@@ -25,6 +25,8 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+const removedChatsOptionKey = "Chats"
+
 // JSONObjectPatch describes changes to one JSON-object option. Set values are
 // applied after Delete, so Set wins when a field is present in both lists.
 type JSONObjectPatch struct {
@@ -181,7 +183,6 @@ func InitOptionMap() {
 	common.OptionMap["NOWPaymentsIPNCallbackURL"] = setting.NOWPaymentsIPNCallbackURL
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["PricingGroups"] = "[]"
-	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["PayMethods"] = operation_setting.PayMethods2JsonString()
@@ -311,6 +312,9 @@ func loadOptionsFromDatabaseLocked() {
 		return optionLoadPriority(options[i].Key) < optionLoadPriority(options[j].Key)
 	})
 	for _, option := range options {
+		if option.Key == removedChatsOptionKey {
+			continue
+		}
 		if option.Key == "GroupRatio" {
 			continue
 		}
@@ -525,6 +529,12 @@ func UpdateOption(key string, value string) error {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
 
+	if key == removedChatsOptionKey {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, key)
+		common.OptionMapRWMutex.Unlock()
+		return nil
+	}
 	if key == "UserUsableGroups" {
 		return nil
 	}
@@ -897,6 +907,22 @@ func updateOptionsBulkLocked(values map[string]string) error {
 	if len(values) == 0 {
 		return nil
 	}
+	_, removedChats := values[removedChatsOptionKey]
+	if removedChats {
+		filtered := make(map[string]string, len(values)-1)
+		for key, value := range values {
+			if key != removedChatsOptionKey {
+				filtered[key] = value
+			}
+		}
+		values = filtered
+		if len(values) == 0 {
+			common.OptionMapRWMutex.Lock()
+			delete(common.OptionMap, removedChatsOptionKey)
+			common.OptionMapRWMutex.Unlock()
+			return nil
+		}
+	}
 	activationWasEnabled := false
 	if values[setting.ModelRequestRateLimitDurationActivatedOption] == "false" || values[setting.ModelRequestRateLimitDurationActivatedOption] == "true" {
 		var option Option
@@ -952,6 +978,11 @@ func updateOptionsBulkLocked(values map[string]string) error {
 	}
 	if err := persistOptionsAndRuntime(normalizedValues); err != nil {
 		return err
+	}
+	if removedChats {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, removedChatsOptionKey)
+		common.OptionMapRWMutex.Unlock()
 	}
 	if _, changed := normalizedValues[setting.ModelRequestRateLimitDurationOption]; changed {
 		return refreshModelRequestRateLimitDuration()
@@ -1107,6 +1138,12 @@ func updateOptionMap(key string, value string) error {
 }
 
 func updateOptionMapWithPricingReferenceNormalization(key string, value string, normalizePricingReferences bool) (err error) {
+	if key == removedChatsOptionKey {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, key)
+		common.OptionMapRWMutex.Unlock()
+		return nil
+	}
 	if key == "UserUsableGroups" {
 		return nil
 	}
@@ -1247,8 +1284,6 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		system_setting.WorkerValidKey = value
 	case "PayAddress":
 		operation_setting.PayAddress = value
-	case "Chats":
-		err = setting.UpdateChatsByJsonString(value)
 	case "AutoGroups":
 		err = setting.UpdateAutoGroupsByJsonString(value)
 		if err == nil {

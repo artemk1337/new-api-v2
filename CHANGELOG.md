@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.109
+
+- Removed the legacy Chat tab, presets, and related admin settings; renamed Playground to Chat and moved it to General.
+
 ## v1.1.108
 
 - Removed quota and request statistics from the profile header and wallet page.

@@ -512,11 +512,6 @@ export const STATIC_I18N_KEYS = [
   'Violation deduction amount',
   'Base amount. Actual deduction = base amount × system group rate.',
 
-  // Chat2Link
-  'No available Web chat links',
-  'No enabled tokens available',
-  'Redirecting to chat page...',
-
   // Channel upstream updates
   'No processable upstream model updates for this channel',
   'Upstream model updates applied: {{added}} added, {{removed}} removed, {{ignored}} ignored this time, {{totalIgnored}} total ignored models',
