@@ -36,6 +36,7 @@ var defaultVendorRules = map[string]string{
 	"kling":    "Kuaishou",
 	"jimeng":   "Jimeng",
 	"vidu":     "Vidu",
+	"mj_":      "Midjourney",
 }
 
 var defaultVendorEnglishNames = map[string]string{
@@ -84,6 +85,7 @@ var defaultVendorIcons = map[string]string{
 	"Jimeng":     "Jimeng.Color",
 	"即梦":         "Jimeng.Color",
 	"Vidu":       "Vidu",
+	"Midjourney": "Midjourney",
 	"微软":         "AzureAI",
 	"Microsoft":  "AzureAI",
 	"Azure":      "AzureAI",
@@ -93,7 +95,8 @@ var defaultVendorIcons = map[string]string{
 func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vendor, vendorNameMap map[string]int, enableAbilities []AbilityWithChannel) {
 	for _, ability := range enableAbilities {
 		modelName := ability.Model
-		if _, exists := metaMap[modelName]; exists {
+		meta, exists := metaMap[modelName]
+		if exists && meta.VendorID != 0 {
 			continue
 		}
 
@@ -105,6 +108,10 @@ func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vend
 				vendorID = getOrCreateVendor(vendorName, vendorMap, vendorNameMap)
 				break
 			}
+		}
+		if exists {
+			meta.VendorID = vendorID
+			continue
 		}
 
 		// 创建模型元数据

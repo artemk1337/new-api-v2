@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.106
+
+- Automatically identify Midjourney `mj_*` models and show their Midjourney provider icon, including existing model metadata without a provider.
+
 ## v1.1.105
 
 - Separated available updates from previous rollback versions in the system update dialog.

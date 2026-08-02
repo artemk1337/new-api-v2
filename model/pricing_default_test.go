@@ -19,6 +19,7 @@ func TestDefaultVendorRulesUseEnglishNames(t *testing.T) {
 		"doubao":  "ByteDance",
 		"kling":   "Kuaishou",
 		"jimeng":  "Jimeng",
+		"mj_":     "Midjourney",
 	}
 
 	for pattern, vendorName := range expected {
@@ -28,24 +29,25 @@ func TestDefaultVendorRulesUseEnglishNames(t *testing.T) {
 
 func TestDefaultVendorIconsSupportEnglishAndLegacyChineseNames(t *testing.T) {
 	cases := map[string]string{
-		"Zhipu":     "Zhipu.Color",
-		"智谱":        "Zhipu.Color",
-		"Alibaba":   "Qwen.Color",
-		"阿里巴巴":      "Qwen.Color",
-		"Baidu":     "Wenxin.Color",
-		"百度":        "Wenxin.Color",
-		"iFLYTEK":   "Spark.Color",
-		"讯飞":        "Spark.Color",
-		"Tencent":   "Hunyuan.Color",
-		"腾讯":        "Hunyuan.Color",
-		"01.AI":     "Yi.Color",
-		"零一万物":      "Yi.Color",
-		"ByteDance": "Doubao.Color",
-		"字节跳动":      "Doubao.Color",
-		"Kuaishou":  "Kling.Color",
-		"快手":        "Kling.Color",
-		"Jimeng":    "Jimeng.Color",
-		"即梦":        "Jimeng.Color",
+		"Zhipu":      "Zhipu.Color",
+		"智谱":         "Zhipu.Color",
+		"Alibaba":    "Qwen.Color",
+		"阿里巴巴":       "Qwen.Color",
+		"Baidu":      "Wenxin.Color",
+		"百度":         "Wenxin.Color",
+		"iFLYTEK":    "Spark.Color",
+		"讯飞":         "Spark.Color",
+		"Tencent":    "Hunyuan.Color",
+		"腾讯":         "Hunyuan.Color",
+		"01.AI":      "Yi.Color",
+		"零一万物":       "Yi.Color",
+		"ByteDance":  "Doubao.Color",
+		"字节跳动":       "Doubao.Color",
+		"Kuaishou":   "Kling.Color",
+		"快手":         "Kling.Color",
+		"Jimeng":     "Jimeng.Color",
+		"即梦":         "Jimeng.Color",
+		"Midjourney": "Midjourney",
 	}
 
 	for vendorName, icon := range cases {

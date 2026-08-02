@@ -87,3 +87,27 @@ func TestInitDefaultVendorMappingCreatesVendorOnce(t *testing.T) {
 	require.Equal(t, vendorNameMap["OpenAI"], metaMap["gpt-4"].VendorID)
 	require.Equal(t, metaMap["gpt-4"].VendorID, metaMap["gpt-4-mini"].VendorID)
 }
+
+func TestInitDefaultVendorMappingAssignsExistingUnassignedMidjourneyModel(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Model{}, &Vendor{}))
+	t.Cleanup(func() {
+		DB.Exec("DELETE FROM vendors")
+		DB.Exec("DELETE FROM models")
+	})
+
+	metaMap := map[string]*Model{
+		"mj_imagine": {ModelName: "mj_imagine", VendorID: 0},
+	}
+	vendorMap := make(map[int]*Vendor)
+	vendorNameMap := make(map[string]int)
+
+	initDefaultVendorMapping(metaMap, vendorMap, vendorNameMap, []AbilityWithChannel{
+		{Ability: Ability{Model: "mj_imagine"}},
+	})
+
+	vendorID := metaMap["mj_imagine"].VendorID
+	require.NotZero(t, vendorID)
+	require.Equal(t, vendorNameMap["Midjourney"], vendorID)
+	require.Equal(t, "Midjourney", vendorMap[vendorID].Icon)
+}
