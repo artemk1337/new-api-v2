@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.107
+
+- Renamed the Russian dashboard overview block to "Статистика".
+
 ## v1.1.106
 
 - Automatically identify Midjourney `mj_*` models and show their Midjourney provider icon, including existing model metadata without a provider.
