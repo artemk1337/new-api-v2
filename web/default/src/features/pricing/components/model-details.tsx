@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft,
   CalendarClock,
@@ -47,6 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CopyButton } from '@/components/copy-button'
 import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
+import { MOTION_TRANSITION } from '@/lib/motion'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
@@ -1294,6 +1296,7 @@ export interface ModelDetailsDrawerProps extends ModelDetailsContentProps {
 
 export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
   const { t } = useTranslation()
+  const shouldReduceMotion = useReducedMotion()
   const { open, onOpenChange, ...contentProps } = props
 
   return (
@@ -1309,7 +1312,17 @@ export function ModelDetailsDrawer(props: ModelDetailsDrawerProps) {
           <SheetDescription>{t('Model details')}</SheetDescription>
         </SheetHeader>
         <div className='flex-1 overflow-y-auto px-4 pt-11 pb-5 sm:px-6 sm:pt-12 sm:pb-6'>
-          <ModelDetailsContent {...contentProps} />
+          {shouldReduceMotion ? (
+            <ModelDetailsContent {...contentProps} />
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={MOTION_TRANSITION.default}
+            >
+              <ModelDetailsContent {...contentProps} />
+            </motion.div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

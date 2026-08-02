@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.100
+
+- Added a smooth animation when opening model details in the pricing catalog, while respecting reduced-motion preferences.
+
 ## v1.1.99
 
 - Read update build statuses from GitHub Actions in one request instead of checking every release image serially.
