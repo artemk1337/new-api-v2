@@ -21,6 +21,7 @@ const (
 	defaultUpdateSidecarURL           = "http://new-api-updater:18090"
 	systemUpdateBuildWorkflow         = "docker-build.yml"
 	systemUpdateSidecarUpgradeMessage = "updater sidecar must be upgraded to check version readiness"
+	systemUpdateManualOnlyMessage     = "automatic updates are disabled; run ./install.sh update <tag> on the Docker host"
 	systemUpdatePollInterval          = 3 * time.Second
 	systemUpdateMaxWait               = 30 * time.Minute
 )
@@ -119,12 +120,13 @@ type githubWorkflowRunsResponse struct {
 var (
 	systemUpdateHTTPClient = &http.Client{Timeout: 15 * time.Second}
 	stableVersionTagRe     = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
+	systemUpdateCanApplyFn = systemUpdateCanApply
 )
 
 func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
 	result := &SystemUpdateCheckResult{
 		Enabled:        true,
-		CanUpdate:      systemUpdateCanApply(),
+		CanUpdate:      systemUpdateCanApplyFn(),
 		Repository:     systemUpdateRepository(),
 		CurrentVersion: common.Version,
 	}
@@ -151,6 +153,9 @@ func StartSystemUpdateTask(ctx context.Context, version string) (*model.SystemTa
 	version = strings.TrimSpace(version)
 	if version == "" {
 		return nil, false, errors.New("version is required")
+	}
+	if !systemUpdateCanApplyFn() {
+		return nil, false, errors.New(systemUpdateManualOnlyMessage)
 	}
 	activeTask, err := model.GetActiveSystemTask(model.SystemTaskTypeSystemUpdate)
 	if err != nil {
@@ -739,7 +744,7 @@ func GetSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 }
 
 func systemUpdateCanApply() bool {
-	return true
+	return false
 }
 
 func systemUpdateRepository() string {

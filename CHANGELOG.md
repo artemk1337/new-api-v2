@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.111
+
+- Replaced in-container automatic updates with a safe host-side update script and recovery checks.
+- Made telemetry agent controls idempotent and added a manual host-side agent setup command.
+
 ## v1.1.110
 
 - Renamed the Russian wallet top-up heading to "Пополнение" and removed its redundant payment-method hint.
@@ -11,7 +16,6 @@
 ## v1.1.108
 
 - Removed quota and request statistics from the profile header and wallet page.
-
 ## v1.1.107
 
 - Renamed the Russian dashboard overview block to "Статистика".

@@ -30,6 +30,13 @@ func withSystemUpdateHTTPClient(t *testing.T, fn roundTripFunc) {
 	})
 }
 
+func withSystemUpdatesEnabled(t *testing.T) {
+	t.Helper()
+	saved := systemUpdateCanApplyFn
+	systemUpdateCanApplyFn = func() bool { return true }
+	t.Cleanup(func() { systemUpdateCanApplyFn = saved })
+}
+
 func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
@@ -69,7 +76,7 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Enabled)
-	assert.True(t, result.CanUpdate)
+	assert.False(t, result.CanUpdate)
 	assert.Equal(t, "artemk1337/new-api-v2", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
 	assert.Equal(t, "v1.1.0", result.LatestVersion)
@@ -161,6 +168,7 @@ func TestCheckSystemUpdateMarksActiveManualDockerBuildAsBuilding(t *testing.T) {
 }
 
 func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
+	withSystemUpdatesEnabled(t)
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
@@ -189,7 +197,16 @@ func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
 	assert.Equal(t, first.TaskID, second.TaskID)
 }
 
+func TestStartSystemUpdateTaskRequiresHostScript(t *testing.T) {
+	task, created, err := StartSystemUpdateTask(t.Context(), "v1.0.1")
+
+	require.Nil(t, task)
+	assert.False(t, created)
+	require.EqualError(t, err, systemUpdateManualOnlyMessage)
+}
+
 func TestStartSystemUpdateTaskRejectsVersionWhoseImageIsUnavailable(t *testing.T) {
+	withSystemUpdatesEnabled(t)
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
@@ -289,6 +306,7 @@ func TestCheckSystemUpdateListsReadyRollbackVersions(t *testing.T) {
 }
 
 func TestStartSystemUpdateTaskAllowsReadyRollbackVersion(t *testing.T) {
+	withSystemUpdatesEnabled(t)
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
@@ -316,6 +334,7 @@ func TestStartSystemUpdateTaskAllowsReadyRollbackVersion(t *testing.T) {
 }
 
 func TestStartSystemUpdateTaskRejectsVersionOutsideAvailableUpdates(t *testing.T) {
+	withSystemUpdatesEnabled(t)
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
@@ -339,6 +358,7 @@ func TestStartSystemUpdateTaskRejectsVersionOutsideAvailableUpdates(t *testing.T
 }
 
 func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
+	withSystemUpdatesEnabled(t)
 	truncate(t)
 	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
 	savedVersion := common.Version
