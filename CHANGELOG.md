@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.110
+
+- Renamed the Russian wallet top-up heading to "Пополнение" and removed its redundant payment-method hint.
+
 ## v1.1.109
 
 - Removed the legacy Chat tab, presets, and related admin settings; renamed Playground to Chat and moved it to General.
