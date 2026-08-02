@@ -16,21 +16,49 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { memo } from 'react'
 import { ChevronRight, Copy } from 'lucide-react'
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { DEFAULT_TOKEN_UNIT } from '../constants'
-import {
-  getDynamicDisplayGroupRatio,
-  getDynamicPricingSummary,
-} from '../lib/dynamic-price'
+
+import { DEFAULT_TOKEN_UNIT, FILTER_ALL } from '../constants'
+import { getDynamicPricingSummary } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  formatRequestPriceAtRatio,
+  formatTokenPriceAtRatio,
+  getDisplayGroupRatio,
+} from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
-import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
+
+function normalizeCompactPrice(value: string): string {
+  return value
+    .replaceAll(/([\d])[\s\u00a0\u202f]+([$€£¥₽₩₹])/gu, '$1$2')
+    .replaceAll(/([$€£¥₽₩₹])[\s\u00a0\u202f]+([\d])/gu, '$1$2')
+}
+
+function renderHeroPrice(
+  label: string,
+  current: string,
+  base: string,
+  unit: string
+): React.ReactNode {
+  return (
+    <div className='flex min-w-[125px] flex-col gap-0.5 leading-none'>
+      <span className='flex items-baseline gap-2 whitespace-nowrap'>
+        <span className='text-foreground font-mono text-sm font-bold sm:text-base'>
+          {label} {current}/{unit}
+        </span>
+        <span className='font-mono text-sm text-red-600/70 line-through dark:text-red-400/70'>
+          {base}
+        </span>
+      </span>
+    </div>
+  )
+}
 
 export interface ModelCardProps {
   model: PricingModel
@@ -39,7 +67,7 @@ export interface ModelCardProps {
   usdExchangeRate?: number
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
-  perf?: ModelPerfBadgeData
+  groupFilter?: string
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -50,6 +78,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
   const isTokenBased = isTokenBasedModel(props.model)
+  const hasGroupFilter = Boolean(
+    props.groupFilter && props.groupFilter !== FILTER_ALL
+  )
+  const displayRatio = getDisplayGroupRatio(
+    props.model,
+    hasGroupFilter ? props.groupFilter : undefined
+  )
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
@@ -57,16 +92,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const isDynamicPricing =
     props.model.billing_mode === 'tiered_expr' &&
     Boolean(props.model.billing_expr)
-  const hasCachedPrice = isTokenBased && props.model.cache_ratio != null
   const dynamicSummary = isDynamicPricing
     ? getDynamicPricingSummary(props.model, {
         tokenUnit,
         showRechargePrice,
         priceRate,
         usdExchangeRate,
-        groupRatioMultiplier: getDynamicDisplayGroupRatio(props.model),
+        groupRatioMultiplier: displayRatio,
       })
     : null
+  const benefitPercent = Math.max(0, Math.round((1 - displayRatio) * 100))
+  const pricingCaption = t('Benefit {{percent}}%', {
+    percent: benefitPercent,
+  })
   let pricingContent: React.ReactNode
 
   if (dynamicSummary?.isSpecialExpression) {
@@ -81,18 +119,22 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       </span>
     )
   } else if (dynamicSummary?.primaryEntries.length) {
-    pricingContent = dynamicSummary.primaryEntries.map((entry) => (
-      <span
-        key={entry.key}
-        className='text-muted-foreground whitespace-nowrap'
-      >
-        {t(entry.shortLabel)}{' '}
-        <span className='text-foreground font-mono font-semibold'>
-          {entry.formatted}
-        </span>
-        /{tokenUnitLabel}
-      </span>
-    ))
+    pricingContent = (
+      <div className='flex flex-col gap-1'>
+        {dynamicSummary.primaryEntries.map((entry) => {
+          const baseEntry = dynamicSummary.baseEntries.find(
+            (candidate) => candidate.key === entry.key
+          )
+          const hero = renderHeroPrice(
+            t(entry.shortLabel),
+            normalizeCompactPrice(entry.formatted),
+            normalizeCompactPrice(baseEntry?.formatted || entry.formatted),
+            tokenUnitLabel
+          )
+          return <div key={entry.key}>{hero}</div>
+        })}
+      </div>
+    )
   } else if (dynamicSummary) {
     pricingContent = (
       <span className='text-muted-foreground text-xs'>
@@ -101,65 +143,89 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     )
   } else if (isTokenBased) {
     pricingContent = (
-      <>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Input')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
+      <div className='flex flex-col gap-1'>
+        {renderHeroPrice(
+          t('Input'),
+          normalizeCompactPrice(
+            formatTokenPriceAtRatio(
               props.model,
               'input',
+              displayRatio,
               tokenUnit,
               showRechargePrice,
               priceRate,
               usdExchangeRate
-            )}
-          </span>
-          /{tokenUnitLabel}
-        </span>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Output')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
+            )
+          ),
+          normalizeCompactPrice(
+            formatTokenPriceAtRatio(
               props.model,
-              'output',
+              'input',
+              1,
               tokenUnit,
               showRechargePrice,
               priceRate,
               usdExchangeRate
-            )}
-          </span>
-          /{tokenUnitLabel}
-        </span>
-        {hasCachedPrice && (
-          <span className='text-muted-foreground/60 whitespace-nowrap'>
-            {t('Cached')}{' '}
-            <span className='font-mono'>
-              {formatPrice(
+            )
+          ),
+          tokenUnitLabel
+        )}
+        <div>
+          {renderHeroPrice(
+            t('Output'),
+            normalizeCompactPrice(
+              formatTokenPriceAtRatio(
                 props.model,
-                'cache',
+                'output',
+                displayRatio,
                 tokenUnit,
                 showRechargePrice,
                 priceRate,
                 usdExchangeRate
-              )}
-            </span>
-          </span>
-        )}
-      </>
+              )
+            ),
+            normalizeCompactPrice(
+              formatTokenPriceAtRatio(
+                props.model,
+                'output',
+                1,
+                tokenUnit,
+                showRechargePrice,
+                priceRate,
+                usdExchangeRate
+              )
+            ),
+            tokenUnitLabel
+          )}
+        </div>
+      </div>
     )
   } else {
     pricingContent = (
-      <span className='text-muted-foreground whitespace-nowrap'>
-        <span className='text-foreground font-mono font-semibold'>
-          {formatRequestPrice(
-            props.model,
-            showRechargePrice,
-            priceRate,
-            usdExchangeRate
-          )}
-        </span>{' '}
-        / {t('request')}
-      </span>
+      <div className='flex flex-col gap-3'>
+        {renderHeroPrice(
+          '',
+          normalizeCompactPrice(
+            formatRequestPriceAtRatio(
+              props.model,
+              displayRatio,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate
+            )
+          ),
+          normalizeCompactPrice(
+            formatRequestPriceAtRatio(
+              props.model,
+              1,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate
+            )
+          ),
+          t('request')
+        )}
+      </div>
     )
   }
 
@@ -171,7 +237,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   return (
     <div
       className={cn(
-        'group relative flex flex-col rounded-xl border p-3 transition-colors sm:p-5',
+        'group relative flex w-full max-w-[480px] flex-col rounded-xl border p-3 transition-colors sm:p-5',
         'hover:bg-muted/20'
       )}
     >
@@ -189,7 +255,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
               {props.model.model_name}
             </h3>
-            <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs sm:mt-1 sm:gap-x-3'>
+            <div className='mt-1 flex flex-wrap items-start justify-start gap-x-5 gap-y-3 text-xs'>
+              <span className='text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
+                {pricingCaption}
+              </span>
               {pricingContent}
             </div>
           </div>
@@ -198,25 +267,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <div className='flex shrink-0 items-center gap-1.5'>
           <button
             type='button'
-            onClick={props.onClick}
-            className='text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:px-2.5 sm:py-1.5'
-          >
-            {t('Details')}
-            <ChevronRight className='size-3.5' />
-          </button>
-          <button
-            type='button'
             onClick={handleCopy}
             className='text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border p-1.5 transition-colors'
             title={t('Copy')}
           >
             <Copy className='size-3.5' />
           </button>
+          <button
+            type='button'
+            onClick={props.onClick}
+            className='text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:px-2.5 sm:py-1.5'
+          >
+            {t('Details')}
+            <ChevronRight className='size-3.5' />
+          </button>
         </div>
-      </div>
-
-      <div className='mt-2 flex justify-end sm:mt-4'>
-        <ModelPerfBadge perf={props.perf} />
       </div>
     </div>
   )

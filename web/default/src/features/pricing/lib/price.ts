@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { formatCurrencyFromUSD } from '@/lib/currency'
+
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
 
@@ -35,7 +36,7 @@ export function stripTrailingZeros(formatted: string): string {
   const [, symbol, number, suffix] = match
 
   // Remove commas for processing
-  const cleanNumber = number.replace(/,/g, '')
+  const cleanNumber = number.replaceAll(',', '')
 
   // Convert to number and back to remove trailing zeros
   const parsed = parseFloat(cleanNumber)
@@ -71,6 +72,21 @@ function getMinGroupRatio(
   }
 
   return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
+}
+
+export function getDisplayGroupRatio(
+  model: PricingModel,
+  groupFilter?: string
+): number {
+  const ratios = model.group_ratio || {}
+  if (
+    groupFilter &&
+    Object.prototype.hasOwnProperty.call(ratios, groupFilter)
+  ) {
+    return ratios[groupFilter]
+  }
+  const groups = Array.isArray(model.enable_groups) ? model.enable_groups : []
+  return getMinGroupRatio(groups, ratios)
 }
 
 /**
@@ -115,6 +131,29 @@ function calculateTokenPrice(
             Number(model.audio_completion_ratio)
         : NaN
   }
+}
+
+export function formatTokenPriceAtRatio(
+  model: PricingModel,
+  type: PriceType,
+  ratio: number,
+  tokenUnit: TokenUnit,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1
+): string {
+  if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) return '-'
+  const priceInUSD = applyRechargeRate(
+    calculateTokenPrice(model, type, ratio),
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+  return formatCurrencyFromUSD(priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit], {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
 }
 
 function hasRatio(value: number | null | undefined): boolean {
@@ -172,26 +211,15 @@ export function formatPrice(
     return '-'
   }
 
-  const enableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-  const minRatio = getMinGroupRatio(enableGroups, groupRatio)
-
-  let priceInUSD = calculateTokenPrice(model, type, minRatio)
-  priceInUSD = applyRechargeRate(
-    priceInUSD,
+  return formatTokenPriceAtRatio(
+    model,
+    type,
+    getDisplayGroupRatio(model),
+    tokenUnit,
     showWithRecharge,
     priceRate,
     usdExchangeRate
   )
-
-  const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
-  return formatCurrencyFromUSD(price, {
-    digitsLarge: 4,
-    digitsSmall: 6,
-    abbreviate: false,
-  })
 }
 
 /**
@@ -211,7 +239,9 @@ export function formatGroupPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = Object.prototype.hasOwnProperty.call(groupRatio, group)
+    ? groupRatio[group]
+    : 1
   let priceInUSD = calculateTokenPrice(model, type, ratio)
 
   priceInUSD = applyRechargeRate(
@@ -244,7 +274,9 @@ export function formatFixedPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = Object.prototype.hasOwnProperty.call(groupRatio, group)
+    ? groupRatio[group]
+    : 1
   let priceInUSD = (model.model_price || 0) * ratio
 
   priceInUSD = applyRechargeRate(
@@ -274,13 +306,25 @@ export function formatRequestPrice(
     return '-'
   }
 
-  const enableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-  const minRatio = getMinGroupRatio(enableGroups, groupRatio)
+  return formatRequestPriceAtRatio(
+    model,
+    getDisplayGroupRatio(model),
+    showWithRecharge,
+    priceRate,
+    usdExchangeRate
+  )
+}
 
-  let priceInUSD = (model.model_price || 0) * minRatio
+export function formatRequestPriceAtRatio(
+  model: PricingModel,
+  ratio: number,
+  showWithRecharge = false,
+  priceRate = 1,
+  usdExchangeRate = 1
+): string {
+  if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) return '-'
+
+  let priceInUSD = (model.model_price || 0) * ratio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,

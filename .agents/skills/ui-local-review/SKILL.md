@@ -21,6 +21,16 @@ cd web/default && bun run dev -- --host 0.0.0.0 --port 5173
 
 Открой `http://127.0.0.1:5173/`. Дождись доступности backend: не считай временный 504 успешной проверкой.
 
+### Демо ценовых карточек
+
+Для воспроизводимого визуального review трёх широких карточек в dev-compose используй:
+
+```bash
+bash .agents/skills/ui-local-review/scripts/seed-pricing-card-demo.sh
+```
+
+Скрипт меняет только локальную PostgreSQL volume из `docker-compose.dev.yml`: создаёт `claude-opus-4-8`, `gpt-5.4`, `kimi-k2`. У всех tiered-тариф задаёт базу `$10/$30` за 1M токенов, а показываемая цена — `$1.5/$4.5` через группу `default` с коэффициентом `0.15`. Он не предназначен для production или общего development-окружения.
+
 ## Проверка в браузере
 
 1. Открой целевой сценарий в Browser и проверь DOM, видимые ошибки и console.

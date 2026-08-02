@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+
 import { TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
 import {
@@ -54,6 +55,7 @@ export type DynamicPricingSummary = {
   isSpecialExpression: boolean
   rawExpression: string
   entries: DynamicPriceEntry[]
+  baseEntries: DynamicPriceEntry[]
   primaryEntries: DynamicPriceEntry[]
   secondaryEntries: DynamicPriceEntry[]
 }
@@ -64,9 +66,18 @@ export function isDynamicPricingModel(model: PricingModel): boolean {
   return model.billing_mode === 'tiered_expr' && Boolean(model.billing_expr)
 }
 
-export function getDynamicDisplayGroupRatio(model: PricingModel): number {
+export function getDynamicDisplayGroupRatio(
+  model: PricingModel,
+  groupFilter?: string
+): number {
   const groups = Array.isArray(model.enable_groups) ? model.enable_groups : []
   const ratios = model.group_ratio || {}
+  if (
+    groupFilter &&
+    Object.prototype.hasOwnProperty.call(ratios, groupFilter)
+  ) {
+    return ratios[groupFilter]
+  }
   if (groups.length === 0) return 1
 
   let minRatio = Number.POSITIVE_INFINITY
@@ -169,6 +180,10 @@ export function getDynamicPricingSummary(
   const tiers = getDynamicPricingTiers(model)
   const tier = tiers[0] || null
   const entries = getDynamicPriceEntries(tier, options)
+  const baseEntries = getDynamicPriceEntries(tier, {
+    ...options,
+    groupRatioMultiplier: 1,
+  })
   const rawExpression = model.billing_expr || ''
 
   return {
@@ -179,6 +194,7 @@ export function getDynamicPricingSummary(
     isSpecialExpression: rawExpression.trim().length > 0 && tiers.length === 0,
     rawExpression,
     entries,
+    baseEntries,
     primaryEntries: entries.filter((entry) =>
       PRIMARY_DYNAMIC_FIELDS.has(entry.field)
     ),

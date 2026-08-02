@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.101
+
+- Updated pricing preview cards with group-aware current and base token prices, a savings percentage, and compact responsive layout.
+- Added clearer price comparison styling: green savings and red strikethrough base prices, with copy and details actions retained.
+
 ## v1.1.100
 
 - Added a smooth animation when opening model details in the pricing catalog, while respecting reduced-motion preferences.
