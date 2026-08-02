@@ -86,6 +86,20 @@ export async function getChannels(
   return res.data
 }
 
+export type ChannelTagsResponse = {
+  success: boolean
+  message?: string
+  data?: string[]
+}
+
+/**
+ * Get all unique non-empty channel tags.
+ */
+export async function getChannelTags(): Promise<ChannelTagsResponse> {
+  const res = await api.get('/api/channel/tags')
+  return res.data
+}
+
 /**
  * Search channels with filters
  */

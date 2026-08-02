@@ -98,6 +98,15 @@ func GetChannelOps(c *gin.Context) {
 	})
 }
 
+func GetAllChannelTags(c *gin.Context) {
+	tags, err := model.GetAllChannelTags()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, tags)
+}
+
 func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)

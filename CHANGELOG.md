@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.102
+
+- Added suggestions of existing channel tags in the channel editor while allowing custom values.
+- Clarified internal notes as user-invisible and removed duplicate helper text.
+
 ## v1.1.101
 
 - Updated pricing preview cards with group-aware current and base token prices, a savings percentage, and compact responsive layout.

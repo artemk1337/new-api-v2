@@ -126,6 +126,7 @@ import {
   getAllModels,
   getChannel,
   getChannelKey,
+  getChannelTags,
   getGroups,
   getPrefillGroups,
   refreshCodexCredential,
@@ -651,6 +652,21 @@ export function ChannelMutateDrawer({
     queryFn: getAllModels,
   })
 
+  const { data: channelTagsData } = useQuery({
+    queryKey: ['channel-tags'],
+    queryFn: getChannelTags,
+    enabled: open,
+  })
+
+  const tagOptions = useMemo(
+    () =>
+      (channelTagsData?.data ?? []).map((tag) => ({
+        label: tag,
+        value: tag,
+      })),
+    [channelTagsData]
+  )
+
   // Fetch prefill model groups
   const { data: prefillGroupsData } = useQuery({
     queryKey: ['prefill_groups', 'model'],
@@ -1009,7 +1025,7 @@ export function ChannelMutateDrawer({
     },
     {
       id: ADVANCED_SETTINGS_SECTION_IDS.internalNotes,
-      title: t('Internal Notes'),
+      title: t('Internal notes (not shown to users)'),
       configured: internalNotesConfigured,
     },
     {
@@ -1481,6 +1497,7 @@ export function ChannelMutateDrawer({
   // Handle successful submission
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+    queryClient.invalidateQueries({ queryKey: ['channel-tags'] })
     if (channelId) {
       queryClient.invalidateQueries({
         queryKey: channelsQueryKeys.detail(channelId),
@@ -3629,7 +3646,7 @@ export function ChannelMutateDrawer({
                             )}
                           >
                             <SubHeading
-                              title={t('Internal Notes')}
+                              title={t('Internal notes (not shown to users)')}
                               icon={<FileText className='h-3.5 w-3.5' />}
                             />
                             <div className='grid gap-4 sm:grid-cols-2'>
@@ -3640,9 +3657,12 @@ export function ChannelMutateDrawer({
                                   <FormItem>
                                     <FormLabel>{t('Tag')}</FormLabel>
                                     <FormControl>
-                                      <Input
+                                      <Combobox
+                                        options={tagOptions}
+                                        value={field.value}
+                                        onValueChange={field.onChange}
                                         placeholder={t(FIELD_PLACEHOLDERS.TAG)}
-                                        {...field}
+                                        allowCustomValue
                                       />
                                     </FormControl>
                                     <FormDescription>
@@ -3668,9 +3688,6 @@ export function ChannelMutateDrawer({
                                         {...field}
                                       />
                                     </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.REMARK)}
-                                    </FormDescription>
                                     <FormMessage />
                                   </FormItem>
                                 )}

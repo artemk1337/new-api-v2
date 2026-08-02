@@ -1153,6 +1153,17 @@ func GetPaginatedTags(offset int, limit int) ([]*string, error) {
 	return GetPaginatedChannelTags(DB.Model(&Channel{}), offset, limit)
 }
 
+// GetAllChannelTags returns all unique non-empty channel tags in stable order.
+func GetAllChannelTags() ([]string, error) {
+	tags := make([]string, 0)
+	err := DB.Model(&Channel{}).
+		Select("DISTINCT tag").
+		Where("tag is not null AND tag != ''").
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "tag"}}).
+		Pluck("tag", &tags).Error
+	return tags, err
+}
+
 func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, error) {
 	var tags []*string
 	err := query.

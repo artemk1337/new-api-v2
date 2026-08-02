@@ -48,6 +48,25 @@ func TestReplaceChannelGroupNamesWithIDs(t *testing.T) {
 	assert.ElementsMatch(t, []string{"1", "2", "custom"}, abilityGroups)
 }
 
+func TestGetAllChannelTagsReturnsUniqueNonEmptyTagsInOrder(t *testing.T) {
+	truncateTables(t)
+	tagA, tagB, empty := "alpha", "beta", ""
+	channels := []*Channel{
+		{Name: "tag-a-1", Key: "key", Models: "model", Tag: &tagA},
+		{Name: "tag-a-2", Key: "key", Models: "model", Tag: &tagA},
+		{Name: "tag-b", Key: "key", Models: "model", Tag: &tagB},
+		{Name: "tag-empty", Key: "key", Models: "model", Tag: &empty},
+		{Name: "tag-nil", Key: "key", Models: "model"},
+	}
+	for _, channel := range channels {
+		require.NoError(t, DB.Create(channel).Error)
+	}
+
+	tags, err := GetAllChannelTags()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta"}, tags)
+}
+
 func TestChannelInsertStoresPricingGroupIDsAndSurvivesRename(t *testing.T) {
 	truncateTables(t)
 
