@@ -20,7 +20,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { AlertTriangle, KeyRound, Loader2, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import dayjs from '@/lib/dayjs'
+
+import { StatusBadge } from '@/components/status-badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +42,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StatusBadge } from '@/components/status-badge'
 import { usePasskeyManagement } from '@/features/auth/passkey'
 import {
   SecureVerificationDialog,
@@ -67,7 +67,6 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
     removing,
     supported,
     enabled,
-    lastUsed,
     register,
     remove,
   } = usePasskeyManagement()
@@ -200,11 +199,6 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
     )
   }
 
-  const formattedLastUsed =
-    lastUsed && !Number.isNaN(Date.parse(lastUsed))
-      ? dayjs(lastUsed).fromNow()
-      : t('Not used yet')
-
   const showUnsupportedNotice = !supported && !enabled
   let backupStatus: {
     label: string
@@ -262,9 +256,6 @@ export function PasskeyCard({ loading: pageLoading }: PasskeyCardProps) {
                       />
                     )}
                   </div>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Last used:')} {formattedLastUsed}
-                  </p>
                 </div>
               </div>
 

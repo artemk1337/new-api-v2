@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.113
+
+- Simplified profile security cards by removing the unused Passkey last-used status and redundant two-factor authentication guidance.
+
 ## v1.1.112
 
 - Show update and rollback releases together in the system update dialog, separated by clear headings and a divider.
