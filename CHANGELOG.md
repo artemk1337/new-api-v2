@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.114
+
+- Clarified sidebar navigation labels for Overview and Dashboard across supported locales.
+
 ## v1.1.113
 
 - Simplified profile security cards by removing the unused Passkey last-used status and redundant two-factor authentication guidance.

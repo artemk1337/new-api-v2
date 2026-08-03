@@ -59,12 +59,12 @@ export function useSidebarData(): SidebarData {
             icon: MessageSquare,
           },
           {
-            title: t('Overview'),
+            title: t('Overview navigation'),
             url: '/dashboard/overview',
             icon: Activity,
           },
           {
-            title: t('Dashboard'),
+            title: t('Dashboard navigation'),
             url: '/dashboard/models',
             icon: LayoutDashboard,
           },
