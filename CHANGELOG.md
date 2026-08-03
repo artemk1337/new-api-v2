@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.116
+
+- Consolidated usage logs into one Journal page with General, Drawing, and Tasks tabs while preserving direct section links.
+- Renamed the Russian sidebar entry to "Журнал" and removed the duplicate task-log entry.
+
 ## v1.1.115
 
 - Prevented system updates to releases whose Docker image is still building or not marked ready for deployment; enforced readiness validation in both the update UI and backend.

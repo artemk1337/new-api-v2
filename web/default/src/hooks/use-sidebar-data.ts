@@ -23,7 +23,6 @@ import {
   FileText,
   Key,
   LayoutDashboard,
-  ListTodo,
   MessageSquare,
   Newspaper,
   Radio,
@@ -35,8 +34,9 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { ROLE } from '@/lib/roles'
+
 import type { SidebarData } from '@/components/layout/types'
+import { ROLE } from '@/lib/roles'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -74,16 +74,15 @@ export function useSidebarData(): SidebarData {
             icon: Key,
           },
           {
-            title: t('Usage Logs'),
+            title: t('Usage Logs navigation'),
             url: '/usage-logs/common',
+            activeUrls: ['/usage-logs/drawing', '/usage-logs/task'],
+            configUrls: [
+              '/usage-logs/common',
+              '/usage-logs/drawing',
+              '/usage-logs/task',
+            ],
             icon: FileText,
-          },
-          {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-            icon: ListTodo,
           },
         ],
       },
