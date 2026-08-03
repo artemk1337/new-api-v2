@@ -157,6 +157,7 @@ install_release() {
   upsert_env COMPOSE_PROJECT_NAME "$COMPOSE_PROJECT_NAME"
   upsert_env UPDATER_SIDECAR_IMAGE "$UPDATER_IMAGE"
   upsert_env UPDATER_SIDECAR_VERSION "$version"
+  upsert_env UPDATER_HOST_COMPOSE_DIR "$SCRIPT_DIR"
   upsert_env UPDATE_CHECK_REPOSITORY "$REPOSITORY"
   upsert_env UPDATE_SIDECAR_TOKEN "$token"
 
@@ -172,6 +173,7 @@ update_application() {
   version="$(release_version "${1:-}")"
   require_command pg_restore
   require_command curl
+  upsert_env UPDATER_HOST_COMPOSE_DIR "$SCRIPT_DIR"
   compose config -q
   docker manifest inspect "${APP_IMAGE}:${version}" >/dev/null
 
@@ -199,6 +201,7 @@ update_application() {
 
 update_updater() {
   version="$(release_version "${1:-}")"
+  upsert_env UPDATER_HOST_COMPOSE_DIR "$SCRIPT_DIR"
   compose config -q
   docker manifest inspect "${UPDATER_IMAGE}:${version}" >/dev/null
 

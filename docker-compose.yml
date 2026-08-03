@@ -64,14 +64,14 @@ services:
     restart: always
     environment:
       - UPDATER_IMAGE=${UPDATER_IMAGE:-ghcr.io/artemk1337/new-api-v2}
-      - UPDATER_COMPOSE_DIR=/workspace
-      - UPDATER_ENV_FILE=/workspace/.env
-      - UPDATER_COMPOSE_FILE=/workspace/docker-compose.yml
+      - UPDATER_COMPOSE_DIR=${UPDATER_HOST_COMPOSE_DIR:?UPDATER_HOST_COMPOSE_DIR must be set by install.sh}
+      - UPDATER_ENV_FILE=${UPDATER_HOST_COMPOSE_DIR:?UPDATER_HOST_COMPOSE_DIR must be set by install.sh}/.env
+      - UPDATER_COMPOSE_FILE=${UPDATER_HOST_COMPOSE_DIR:?UPDATER_HOST_COMPOSE_DIR must be set by install.sh}/docker-compose.yml
       - UPDATER_SERVICE=new-api
       - UPDATER_TELEMETRY_AGENT_SERVICE=system-telemetry-agent
       - UPDATER_TELEMETRY_AGENT_CONTAINER=new-api-system-telemetry-agent
     volumes:
-      - .:/workspace
+      - ${UPDATER_HOST_COMPOSE_DIR:?UPDATER_HOST_COMPOSE_DIR must be set by install.sh}:${UPDATER_HOST_COMPOSE_DIR:?UPDATER_HOST_COMPOSE_DIR must be set by install.sh}
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - new-api-network

@@ -747,7 +747,7 @@ func GetSystemUpdaterJobStatus(ctx context.Context, jobID string) (*SystemUpdate
 }
 
 func systemUpdateCanApply() bool {
-	return false
+	return true
 }
 
 func systemUpdateRepository() string {

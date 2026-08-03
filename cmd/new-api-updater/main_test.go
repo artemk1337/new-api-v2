@@ -11,18 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHandleUpdateRequiresHostScript(t *testing.T) {
+func TestHandleUpdateRejectsInvalidTag(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	handleUpdate(recorder, httptest.NewRequest(http.MethodPost, "/update", nil))
-	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.JSONEq(t, `{"accepted":false,"message":"automatic updates are disabled; run ./install.sh update <tag> on the Docker host"}`, recorder.Body.String())
+	handleUpdate(recorder, httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"tag":"v1.0.1;rm"}`)))
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.JSONEq(t, `{"accepted":false,"message":"invalid tag"}`, recorder.Body.String())
 }
 
-func TestHandleVersionReadinessRequiresHostScript(t *testing.T) {
+func TestHandleVersionReadinessMarksManifestUnavailable(t *testing.T) {
+	saved := runCommandFn
+	runCommandFn = func(_ string, _ string, _ ...string) error { return fmt.Errorf("manifest unknown") }
+	t.Cleanup(func() { runCommandFn = saved })
 	recorder := httptest.NewRecorder()
 	handleVersionReadiness(recorder, httptest.NewRequest(http.MethodPost, "/versions/readiness", strings.NewReader(`{"tags":["v1.0.1","v1.0.1"]}`)))
 	require.Equal(t, http.StatusOK, recorder.Code)
-	assert.JSONEq(t, `{"versions":[{"tag":"v1.0.1","status":"unavailable","ready_to_deploy":false,"error":"automatic updates are disabled; run ./install.sh update <tag> on the Docker host"}]}`, recorder.Body.String())
+	assert.JSONEq(t, `{"versions":[{"tag":"v1.0.1","status":"unavailable","ready_to_deploy":false,"error":"image manifest is not published yet"}]}`, recorder.Body.String())
 }
 
 func TestTelemetryAgentStatusTreatsMissingContainerAsStopped(t *testing.T) {

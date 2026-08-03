@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.117
+
+- Restored system updates from the admin UI after a release image is published and ready.
+- Safely deploy updates with a verified PostgreSQL backup, health/version checks, rollback, and host-correct Docker Compose paths.
+
 ## v1.1.116
 
 - Consolidated usage logs into one Journal page with General, Drawing, and Tasks tabs while preserving direct section links.

@@ -76,7 +76,7 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Enabled)
-	assert.False(t, result.CanUpdate)
+	assert.True(t, result.CanUpdate)
 	assert.Equal(t, "artemk1337/new-api-v2", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
 	assert.Equal(t, "v1.1.0", result.LatestVersion)
@@ -195,14 +195,6 @@ func TestStartSystemUpdateTaskDedupsActiveRun(t *testing.T) {
 	require.False(t, created)
 	require.NotNil(t, second)
 	assert.Equal(t, first.TaskID, second.TaskID)
-}
-
-func TestStartSystemUpdateTaskRequiresHostScript(t *testing.T) {
-	task, created, err := StartSystemUpdateTask(t.Context(), "v1.0.1")
-
-	require.Nil(t, task)
-	assert.False(t, created)
-	require.EqualError(t, err, systemUpdateManualOnlyMessage)
 }
 
 func TestStartSystemUpdateTaskRejectsVersionWhoseImageIsUnavailable(t *testing.T) {
