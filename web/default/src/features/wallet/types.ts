@@ -69,9 +69,9 @@ export type NOWPaymentsPaymentResponse = ApiResponse<{
   trade_no?: string
 }>
 
-export interface DiscountThreshold {
+export interface CashbackThreshold {
   min_amount: number
-  discount: number
+  cashback_percent: number
 }
 
 /**
@@ -148,10 +148,8 @@ export interface TopupInfo {
   stripe_min_topup: number
   /** Preset amount options */
   amount_options: number[]
-  /** Discount rates by amount */
-  discount: Record<number, number>
-  /** Threshold discounts sorted by min_amount */
-  discount_thresholds?: DiscountThreshold[]
+  /** Cashback thresholds sorted by min_amount */
+  cashback: CashbackThreshold[]
   /** Optional topup link for purchasing codes */
   topup_link?: string
   /** Whether Creem topup is enabled */
@@ -183,13 +181,13 @@ export interface TopupInfo {
 }
 
 /**
- * Preset amount option with optional discount
+ * Preset amount option with optional cashback percentage
  */
 export interface PresetAmount {
   /** Preset amount value */
   value: number
-  /** Optional discount rate (0-1) */
-  discount?: number
+  /** Optional cashback percentage (0-100) */
+  cashback_percent?: number
 }
 
 /**

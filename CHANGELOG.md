@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.118
+
+- Replaced top-up discounts with threshold-based cashback while keeping payment totals at full price.
+- Added cashback configuration and previews to the admin and wallet interfaces across supported locales.
+- Persisted the exact cashback-adjusted quota on new payment orders so later configuration changes cannot alter fulfillment.
+- Made provider and manual top-up completion atomic and idempotent, with guarded legacy recovery and fail-closed handling for ambiguous quotas.
+
 ## v1.1.117
 
 - Restored system updates from the admin UI after a release image is published and ready.

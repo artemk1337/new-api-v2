@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/thanhpk/randstr"
 	waffo "github.com/waffo-com/waffo-go"
 	"github.com/waffo-com/waffo-go/config"
@@ -96,16 +97,18 @@ func isWaffoPaymentAmountRepresentable(amount float64, currency string) bool {
 // Waffo only accepts USD, so this function handles the conversion from different
 // display types (USD/CNY/TOKENS) to the actual USD amount to charge.
 func getWaffoPayMoney(amount float64, group string) float64 {
-	originalAmount := amount
+	paymentAmount := decimal.NewFromFloat(amount)
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		amount = amount / common.QuotaPerUnit
+		paymentAmount = paymentAmount.Div(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
 	topupGroupRatio := common.GetTopupGroupRatio(getPaymentTopupGroup(model.PaymentMethodWaffo, group))
 	if topupGroupRatio == 0 {
 		topupGroupRatio = 1
 	}
-	discount := operation_setting.GetPaymentSetting().AmountDiscount.DiscountForAmount(int(originalAmount))
-	return amount * setting.WaffoUnitPrice * topupGroupRatio * discount
+	return paymentAmount.
+		Mul(decimal.NewFromFloat(setting.WaffoUnitPrice)).
+		Mul(decimal.NewFromFloat(topupGroupRatio)).
+		InexactFloat64()
 }
 
 type WaffoPayRequest struct {
@@ -238,7 +241,7 @@ func RequestWaffoPay(c *gin.Context) {
 		TradeNo:         merchantOrderId,
 		PaymentMethod:   model.PaymentMethodWaffo,
 		PaymentProvider: model.PaymentProviderWaffo,
-		QuotaToAdd:      getYooKassaQuotaToAdd(req.Amount),
+		QuotaToAdd:      getTopUpQuotaToAdd(req.Amount),
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}

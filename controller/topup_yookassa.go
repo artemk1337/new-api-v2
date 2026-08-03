@@ -41,11 +41,13 @@ func formatYooKassaAmount(amount float64) string {
 	return decimal.NewFromFloat(amount).Round(2).StringFixed(2)
 }
 
-func getYooKassaQuotaToAdd(amount float64) int {
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		return int(amount)
+func getTopUpQuotaToAdd(amount float64) int {
+	quota := decimal.NewFromFloat(amount)
+	if operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens {
+		quota = quota.Mul(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
-	return int(decimal.NewFromFloat(amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+	cashbackPercent := decimal.NewFromFloat(operation_setting.GetPaymentSetting().AmountCashback.CashbackPercentForAmount(amount))
+	return int(quota.Mul(decimal.NewFromInt(100).Add(cashbackPercent)).Div(decimal.NewFromInt(100)).IntPart())
 }
 
 func getYooKassaReturnURL(tradeNo string) string {
@@ -153,7 +155,7 @@ func RequestYooKassaPay(c *gin.Context) {
 	}
 
 	tradeNo := fmt.Sprintf("USR%dNO%s%d", id, common.GetRandomString(6), time.Now().Unix())
-	quotaToAdd := getYooKassaQuotaToAdd(req.Amount)
+	quotaToAdd := getTopUpQuotaToAdd(req.Amount)
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          int64(req.Amount),

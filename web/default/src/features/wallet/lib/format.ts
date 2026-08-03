@@ -16,8 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { DEFAULT_DISCOUNT_RATE } from '../constants'
-
+import { formatCurrencyFromUSD } from '@/lib/currency'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 // ============================================================================
 // Wallet-specific Formatting Functions
 // ============================================================================
@@ -62,36 +65,45 @@ export function formatCurrency(amount: number | string): string {
 }
 
 /**
- * Get discount label for display (e.g., "20% OFF")
- */
-export function getDiscountLabel(discount: number, offLabel = 'OFF'): string {
-  if (discount >= DEFAULT_DISCOUNT_RATE) {
-    return ''
-  }
-  const off = Math.round((1 - discount) * 100)
-  return `${off}% ${offLabel}`
-}
-
-/**
- * Calculate pricing details for a preset amount
  */
 export function calculatePresetPricing(
   presetValue: number,
   priceRatio: number,
-  discount: number,
   usdExchangeRate: number = 1
 ) {
   const originalPrice = presetValue * priceRatio
-  const actualPrice = originalPrice * discount
-  const savedAmount = originalPrice - actualPrice
-  const hasDiscount = discount < 1.0
   const displayValue = presetValue * usdExchangeRate
 
   return {
     displayValue,
     originalPrice,
-    actualPrice,
-    savedAmount,
-    hasDiscount,
+    actualPrice: originalPrice,
   }
+}
+
+export function calculateCashbackAmount(
+  amount: number,
+  cashbackPercent: number
+): number {
+  if (!Number.isFinite(amount) || !Number.isFinite(cashbackPercent)) {
+    return 0
+  }
+  return Math.max(0, (amount * cashbackPercent) / 100)
+}
+
+export function formatCashbackCredit(amount: number): string {
+  const currency = useSystemConfigStore.getState().config.currency
+  const amountUSD =
+    currency.quotaDisplayType === 'TOKENS'
+      ? amount /
+        (currency.quotaPerUnit > 0
+          ? currency.quotaPerUnit
+          : DEFAULT_CURRENCY_CONFIG.quotaPerUnit)
+      : amount
+
+  return formatCurrencyFromUSD(amountUSD, {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: false,
+  })
 }

@@ -16,11 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useEffect, useMemo } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import * as z from 'zod'
+
+import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -32,62 +34,60 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Dialog } from '@/components/dialog'
 
-const createAmountDiscountDialogSchema = (t: (key: string) => string) =>
+const createAmountCashbackDialogSchema = (t: (key: string) => string) =>
   z.object({
     amount: z
       .number()
-      .positive(t('Amount must be greater than 0'))
-      .int(t('Amount must be a whole number')),
-    discountRate: z
+      .nonnegative(t('Amount must be 0 or greater'))
+      .finite(t('Amount must be a finite number')),
+    cashbackPercent: z
       .number()
-      .positive(t('Discount rate must be greater than 0'))
-      .max(1, t('Discount rate must be ≤ 1')),
+      .min(0, t('Cashback percentage must be 0 or greater'))
+      .max(100, t('Cashback percentage must be ≤ 100')),
   })
 
-type AmountDiscountDialogFormValues = z.infer<
-  ReturnType<typeof createAmountDiscountDialogSchema>
+type AmountCashbackDialogFormValues = z.infer<
+  ReturnType<typeof createAmountCashbackDialogSchema>
 >
 
-const AMOUNT_DISCOUNT_FORM_ID = 'amount-discount-form'
+const AMOUNT_CASHBACK_FORM_ID = 'amount-cashback-form'
 
-export type AmountDiscountData = {
+export type AmountCashbackData = {
   amount: number
-  discountRate: number
+  cashbackPercent: number
 }
 
-type AmountDiscountDialogProps = {
+type AmountCashbackDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: AmountDiscountData) => void
-  editData?: AmountDiscountData | null
+  onSave: (data: AmountCashbackData) => void
+  editData?: AmountCashbackData | null
+  tokenAmounts: boolean
 }
 
-export function AmountDiscountDialog({
+export function AmountCashbackDialog({
   open,
   onOpenChange,
   onSave,
   editData,
-}: AmountDiscountDialogProps) {
+  tokenAmounts,
+}: AmountCashbackDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
-  const amountDiscountDialogSchema = createAmountDiscountDialogSchema(t)
+  const amountCashbackDialogSchema = createAmountCashbackDialogSchema(t)
 
-  const form = useForm<AmountDiscountDialogFormValues>({
-    resolver: zodResolver(amountDiscountDialogSchema),
+  const form = useForm<AmountCashbackDialogFormValues>({
+    resolver: zodResolver(amountCashbackDialogSchema),
     defaultValues: {
       amount: 0,
-      discountRate: 1,
+      cashbackPercent: 0,
     },
   })
 
-  const discountRate = form.watch('discountRate')
+  const cashbackPercent = form.watch('cashbackPercent')
 
-  const discountPercentage = useMemo(() => {
-    if (!discountRate || discountRate >= 1) return 0
-    return Math.round((1 - discountRate) * 100)
-  }, [discountRate])
+  const cashbackPreview = useMemo(() => cashbackPercent || 0, [cashbackPercent])
 
   useEffect(() => {
     if (editData) {
@@ -95,15 +95,15 @@ export function AmountDiscountDialog({
     } else {
       form.reset({
         amount: 0,
-        discountRate: 1,
+        cashbackPercent: 0,
       })
     }
   }, [editData, form, open])
 
-  const handleSubmit = (values: AmountDiscountDialogFormValues) => {
+  const handleSubmit = (values: AmountCashbackDialogFormValues) => {
     onSave({
       amount: values.amount,
-      discountRate: values.discountRate,
+      cashbackPercent: values.cashbackPercent,
     })
     form.reset()
     onOpenChange(false)
@@ -113,9 +113,9 @@ export function AmountDiscountDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEditMode ? t('Edit discount tier') : t('Add discount tier')}
+      title={isEditMode ? t('Edit cashback tier') : t('Add cashback tier')}
       description={t(
-        'Set a discount rate for a specific recharge amount threshold.'
+        'Set a cashback percentage for a specific recharge amount threshold.'
       )}
       contentClassName='sm:max-w-[500px]'
       contentHeight='auto'
@@ -129,7 +129,7 @@ export function AmountDiscountDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={AMOUNT_DISCOUNT_FORM_ID}>
+          <Button type='submit' form={AMOUNT_CASHBACK_FORM_ID}>
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>
@@ -137,7 +137,7 @@ export function AmountDiscountDialog({
     >
       <Form {...form}>
         <form
-          id={AMOUNT_DISCOUNT_FORM_ID}
+          id={AMOUNT_CASHBACK_FORM_ID}
           onSubmit={form.handleSubmit(handleSubmit)}
           className='space-y-4'
         >
@@ -146,16 +146,20 @@ export function AmountDiscountDialog({
             name='amount'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Recharge Amount (USD)')}</FormLabel>
+                <FormLabel>
+                  {tokenAmounts
+                    ? t('Recharge Amount (Tokens)')
+                    : t('Recharge Amount (USD)')}
+                </FormLabel>
                 <FormControl>
                   <Input
                     type='number'
-                    step='1'
-                    min='1'
+                    step='any'
+                    min='0'
                     placeholder={t('e.g., 100')}
                     {...field}
                     onChange={(e) =>
-                      field.onChange(parseInt(e.target.value) || 0)
+                      field.onChange(Number.parseFloat(e.target.value) || 0)
                     }
                     disabled={isEditMode}
                   />
@@ -164,7 +168,7 @@ export function AmountDiscountDialog({
                   {isEditMode
                     ? t('Amount cannot be changed when editing.')
                     : t(
-                        'Minimum recharge amount to qualify for this discount.'
+                        'Minimum recharge amount to qualify for this cashback.'
                       )}
                 </FormDescription>
                 <FormMessage />
@@ -174,32 +178,32 @@ export function AmountDiscountDialog({
 
           <FormField
             control={form.control}
-            name='discountRate'
+            name='cashbackPercent'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Discount Rate')}</FormLabel>
+                <FormLabel>{t('Cashback Percentage')}</FormLabel>
                 <FormControl>
                   <Input
                     type='number'
                     step='0.01'
-                    min='0.01'
-                    max='1'
-                    placeholder={t('e.g., 0.95')}
+                    min='0'
+                    max='100'
+                    placeholder={t('e.g., 1')}
                     {...field}
                     onChange={(e) =>
-                      field.onChange(parseFloat(e.target.value) || 0)
+                      field.onChange(Number.parseFloat(e.target.value) || 0)
                     }
                   />
                 </FormControl>
                 <FormDescription>
-                  {t('Final price multiplier (0.95 = 5% discount')}
-                  {discountPercentage > 0 && (
+                  {t(
+                    'Percentage credited to the balance after a successful topup.'
+                  )}
+                  {cashbackPreview > 0 && (
                     <span className='ml-1 font-medium text-green-600 dark:text-green-400'>
-                      = {discountPercentage}
-                      {t('% off')}
+                      = {cashbackPreview}%
                     </span>
                   )}
-                  )
                 </FormDescription>
                 <FormMessage />
               </FormItem>

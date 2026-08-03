@@ -16,11 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
 import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatNumber } from '@/lib/format'
-import { cn } from '@/lib/utils'
+
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -34,13 +33,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { formatNumber } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
 import {
   formatCurrency,
-  getDiscountLabel,
+  formatCashbackCredit,
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
-  getDiscountForAmount,
+  calculateCashbackAmount,
+  getCashbackPercentForAmount,
 } from '../lib'
 import type {
   PaymentMethod,
@@ -231,23 +234,22 @@ export function RechargeFormCard({
                   </Label>
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
                     {presetAmounts.map((preset, index) => {
-                      const discount =
-                        preset.discount ||
-                        getDiscountForAmount(
+                      const cashbackPercent =
+                        preset.cashback_percent !== undefined
+                          ? preset.cashback_percent
+                          : getCashbackPercentForAmount(
+                              preset.value,
+                              topupInfo?.cashback
+                            )
+                      const { displayValue, actualPrice } =
+                        calculatePresetPricing(
                           preset.value,
-                          topupInfo?.discount,
-                          topupInfo?.discount_thresholds
+                          priceRatio,
+                          usdExchangeRate
                         )
-                      const {
-                        displayValue,
-                        actualPrice,
-                        savedAmount,
-                        hasDiscount,
-                      } = calculatePresetPricing(
+                      const cashbackAmount = calculateCashbackAmount(
                         preset.value,
-                        priceRatio,
-                        discount,
-                        usdExchangeRate
+                        cashbackPercent
                       )
                       return (
                         <Button
@@ -265,9 +267,11 @@ export function RechargeFormCard({
                             <div className='text-base font-semibold sm:text-lg'>
                               ${formatNumber(displayValue)}
                             </div>
-                            {hasDiscount && (
+                            {cashbackPercent > 0 && (
                               <div className='text-xs font-medium text-green-600'>
-                                {getDiscountLabel(discount, t('OFF'))}
+                                {t('{{percent}}% cashback', {
+                                  percent: cashbackPercent,
+                                })}
                               </div>
                             )}
                           </div>
@@ -275,12 +279,12 @@ export function RechargeFormCard({
                             {t('Pay {{amount}}', {
                               amount: formatCurrency(actualPrice),
                             })}
-                            {hasDiscount && savedAmount > 0 && (
+                            {cashbackAmount > 0 && (
                               <span className='text-green-600'>
                                 {' '}
                                 •{' '}
-                                {t('Save {{amount}}', {
-                                  amount: formatCurrency(savedAmount),
+                                {t('Get {{amount}} cashback', {
+                                  amount: formatCashbackCredit(cashbackAmount),
                                 })}
                               </span>
                             )}
@@ -323,6 +327,27 @@ export function RechargeFormCard({
                       </span>
                     )}
                   </div>
+                  {(() => {
+                    const cashbackPercent = getCashbackPercentForAmount(
+                      topupAmount,
+                      topupInfo?.cashback
+                    )
+                    const cashbackAmount = calculateCashbackAmount(
+                      topupAmount,
+                      cashbackPercent
+                    )
+                    return cashbackAmount > 0 ? (
+                      <div className='text-muted-foreground col-span-2 text-xs lg:col-span-1'>
+                        {t(
+                          'You will receive {{amount}} cashback ({{percent}}%)',
+                          {
+                            amount: formatCashbackCredit(cashbackAmount),
+                            percent: cashbackPercent,
+                          }
+                        )}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
               </div>
 

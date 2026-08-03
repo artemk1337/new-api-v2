@@ -41,7 +41,7 @@ import {
 } from './hooks'
 import {
   getDefaultPaymentType,
-  getDiscountForAmount,
+  getCashbackPercentForAmount,
   getMinTopupAmount,
   isWaffoPancakePayment,
 } from './lib'
@@ -272,13 +272,8 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Get discount rate for current topup amount
-  const getDiscountRate = useCallback(() => {
-    return getDiscountForAmount(
-      topupAmount,
-      topupInfo?.discount,
-      topupInfo?.discount_thresholds
-    )
+  const getCashbackPercent = useCallback(() => {
+    return getCashbackPercentForAmount(topupAmount, topupInfo?.cashback)
   }, [topupInfo, topupAmount])
 
   const handleSubscriptionAvailabilityChange = useCallback(
@@ -372,7 +367,7 @@ export function Wallet(props: WalletProps) {
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
         processing={processing || pancakeProcessing}
-        discountRate={getDiscountRate()}
+        cashbackPercent={getCashbackPercent()}
         usdExchangeRate={effectiveUsdExchangeRate}
       />
 

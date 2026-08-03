@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	"github.com/stripe/stripe-go/v81/webhook"
@@ -103,10 +104,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 
 	reference := fmt.Sprintf("new-api-ref-%d-%d-%s", user.Id, time.Now().UnixMilli(), randstr.String(4))
 	referenceId := "ref_" + common.Sha1([]byte(reference))
-	quotaToAdd := 0
-	if req.Amount != math.Trunc(req.Amount) {
-		quotaToAdd = getYooKassaQuotaToAdd(req.Amount)
-	}
+	quotaToAdd := getTopUpQuotaToAdd(req.Amount)
 
 	payLink, err := genStripeLink(referenceId, user.StripeCustomer, user.Email, req.Amount, chargedMoney, req.SuccessURL, req.CancelURL)
 	if err != nil {
@@ -425,23 +423,22 @@ func GetChargedAmount(count float64, user model.User) float64 {
 		topUpGroupRatio = 1
 	}
 
-	return count * topUpGroupRatio
+	return decimal.NewFromFloat(count).Mul(decimal.NewFromFloat(topUpGroupRatio)).InexactFloat64()
 }
 
 func getStripePayMoney(amount float64, group string) float64 {
-	originalAmount := amount
+	paymentAmount := decimal.NewFromFloat(amount)
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		amount = amount / common.QuotaPerUnit
+		paymentAmount = paymentAmount.Div(decimal.NewFromFloat(common.QuotaPerUnit))
 	}
-	// Using float64 for monetary calculations is acceptable here due to the small amounts involved
 	topupGroupRatio := common.GetTopupGroupRatio(getPaymentTopupGroup(model.PaymentMethodStripe, group))
 	if topupGroupRatio == 0 {
 		topupGroupRatio = 1
 	}
-	// apply optional preset discount by the original request amount (if configured), default 1.0
-	discount := operation_setting.GetPaymentSetting().AmountDiscount.DiscountForAmount(int(originalAmount))
-	payMoney := amount * setting.StripeUnitPrice * topupGroupRatio * discount
-	return payMoney
+	return paymentAmount.
+		Mul(decimal.NewFromFloat(setting.StripeUnitPrice)).
+		Mul(decimal.NewFromFloat(topupGroupRatio)).
+		InexactFloat64()
 }
 
 func getStripeMinTopup() float64 {

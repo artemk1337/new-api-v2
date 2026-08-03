@@ -66,12 +66,9 @@ func getWaffoPancakePayMoney(amount float64, group string) float64 {
 		topupGroupRatio = 1
 	}
 
-	discount := operation_setting.GetPaymentSetting().AmountDiscount.DiscountForAmount(int(amount))
-
 	payMoney := dAmount.
 		Mul(decimal.NewFromFloat(setting.WaffoPancakeUnitPrice)).
-		Mul(decimal.NewFromFloat(topupGroupRatio)).
-		Mul(decimal.NewFromFloat(discount))
+		Mul(decimal.NewFromFloat(topupGroupRatio))
 
 	return payMoney.InexactFloat64()
 }
@@ -386,7 +383,7 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		TradeNo:         tradeNo,
 		PaymentMethod:   model.PaymentMethodWaffoPancake,
 		PaymentProvider: model.PaymentProviderWaffoPancake,
-		QuotaToAdd:      getYooKassaQuotaToAdd(req.Amount),
+		QuotaToAdd:      getTopUpQuotaToAdd(req.Amount),
 		CreateTime:      time.Now().Unix(),
 		Status:          common.TopUpStatusPending,
 	}

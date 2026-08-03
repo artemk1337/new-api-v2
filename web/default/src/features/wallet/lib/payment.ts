@@ -22,7 +22,7 @@ import {
   DEFAULT_PAYMENT_TYPE,
   DEFAULT_MIN_TOPUP,
 } from '../constants'
-import type { DiscountThreshold, PresetAmount, TopupInfo } from '../types'
+import type { CashbackThreshold, PresetAmount, TopupInfo } from '../types'
 
 // ============================================================================
 // Payment Processing Functions
@@ -178,12 +178,11 @@ export function generatePresetAmounts(minAmount: number): PresetAmount[] {
 }
 
 /**
- * Merge custom preset amounts with discounts
+ * Merge custom preset amounts with cashback thresholds
  */
 export function mergePresetAmounts(
   amountOptions: number[],
-  discounts: Record<number, number>,
-  thresholds: DiscountThreshold[] = []
+  cashback: CashbackThreshold[] = []
 ): PresetAmount[] {
   if (!amountOptions || amountOptions.length === 0) {
     return []
@@ -191,45 +190,28 @@ export function mergePresetAmounts(
 
   return amountOptions.map((amount) => ({
     value: amount,
-    discount: getDiscountForAmount(amount, discounts, thresholds),
+    cashback_percent: getCashbackPercentForAmount(amount, cashback),
   }))
 }
 
-export function getDiscountForAmount(
+export function getCashbackPercentForAmount(
   amount: number,
-  discounts: Record<number, number> = {},
-  thresholds: DiscountThreshold[] = []
+  cashback: CashbackThreshold[] = []
 ): number {
-  if (thresholds.length > 0) {
-    let discount = 1.0
-    let bestMinAmount = -1
-    for (const threshold of thresholds) {
-      if (
-        threshold.min_amount <= amount &&
-        threshold.min_amount > bestMinAmount &&
-        threshold.discount > 0
-      ) {
-        bestMinAmount = threshold.min_amount
-        discount = threshold.discount
-      }
-    }
-    return discount
-  }
-
-  let discount = 1.0
+  let cashbackPercent = 0
   let bestMinAmount = -1
-  for (const [thresholdAmount, thresholdDiscount] of Object.entries(
-    discounts
-  )) {
-    const minAmount = Number(thresholdAmount)
+  for (const threshold of cashback) {
+    const minAmount = Number(threshold.min_amount)
+    const percent = Number(threshold.cashback_percent)
     if (
       minAmount <= amount &&
       minAmount > bestMinAmount &&
-      thresholdDiscount > 0
+      Number.isFinite(percent) &&
+      percent >= 0
     ) {
       bestMinAmount = minAmount
-      discount = thresholdDiscount
+      cashbackPercent = percent
     }
   }
-  return discount
+  return cashbackPercent
 }

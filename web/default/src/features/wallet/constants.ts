@@ -65,11 +65,6 @@ export const PAYMENT_ICON_COLORS = {
 export const QUOTA_PER_DOLLAR = 500000
 
 /**
- * Default discount rate (no discount)
- */
-export const DEFAULT_DISCOUNT_RATE = 1.0
-
-/**
  * Default minimum topup amount
  */
 export const DEFAULT_MIN_TOPUP = 1

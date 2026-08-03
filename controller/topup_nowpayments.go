@@ -84,7 +84,7 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		return
 	}
 	tradeNo := fmt.Sprintf("NOW%d%s%d", userID, common.GetRandomString(6), time.Now().Unix())
-	quotaToAdd := getYooKassaQuotaToAdd(req.Amount)
+	quotaToAdd := getTopUpQuotaToAdd(req.Amount)
 	topUp := &model.TopUp{UserId: userID, Amount: int64(req.Amount), RequestedAmount: req.Amount, Money: paymentAmount, TradeNo: tradeNo, PaymentMethod: model.PaymentMethodNOWPayments, PaymentProvider: model.PaymentProviderNOWPayments, QuotaToAdd: quotaToAdd, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments failed to create top-up user_id=%d trade_no=%s error=%q", userID, tradeNo, err.Error()))

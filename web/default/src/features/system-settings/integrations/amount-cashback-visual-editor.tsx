@@ -16,31 +16,35 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useMemo } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
+
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { StatusBadge } from '@/components/status-badge'
+import { Button } from '@/components/ui/button'
+
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isObjectRecord } from '../utils/json-validators'
+import { formatAmountCashbackThreshold } from './amount-cashback'
 import {
-  AmountDiscountDialog,
-  type AmountDiscountData,
-} from './amount-discount-dialog'
+  AmountCashbackDialog,
+  type AmountCashbackData,
+} from './amount-cashback-dialog'
 
-type AmountDiscountVisualEditorProps = {
+type AmountCashbackVisualEditorProps = {
   value: string
   onChange: (value: string) => void
+  tokenAmounts: boolean
 }
 
-type ParsedAmountDiscounts = {
-  discounts: AmountDiscountData[]
+type ParsedAmountCashbacks = {
+  cashbacks: AmountCashbackData[]
   thresholdMode: boolean
 }
 
-function parseAmountDiscounts(value: string): ParsedAmountDiscounts {
+function parseAmountCashbacks(value: string): ParsedAmountCashbacks {
   let parsed: unknown
   try {
     parsed = JSON.parse(value || '{}')
@@ -49,26 +53,32 @@ function parseAmountDiscounts(value: string): ParsedAmountDiscounts {
   }
 
   if (Array.isArray(parsed)) {
-    const discounts = parsed
+    const cashbacks = parsed
       .map((item) => {
         if (!item || typeof item !== 'object') {
           return null
         }
         const record = item as Record<string, unknown>
         const amount = Number(record.min_amount)
-        const discountRate = Number(record.discount)
-        if (!Number.isFinite(amount) || !Number.isFinite(discountRate)) {
+        const cashbackPercent = Number(record.cashback_percent)
+        if (!Number.isFinite(amount) || !Number.isFinite(cashbackPercent)) {
           return null
         }
         return {
           amount,
-          discountRate,
+          cashbackPercent,
         }
       })
-      .filter((item): item is AmountDiscountData => item !== null)
+      .filter(
+        (item): item is AmountCashbackData =>
+          item !== null &&
+          item.amount >= 0 &&
+          item.cashbackPercent >= 0 &&
+          item.cashbackPercent <= 100
+      )
       .sort((a, b) => a.amount - b.amount)
 
-    return { discounts, thresholdMode: true }
+    return { cashbacks, thresholdMode: true }
   }
 
   const parsedObject = safeJsonParseWithValidation<Record<string, unknown>>(
@@ -76,83 +86,82 @@ function parseAmountDiscounts(value: string): ParsedAmountDiscounts {
     {
       fallback: {},
       validator: isObjectRecord,
-      validatorMessage: 'Amount discount must be a JSON object',
-      context: 'amount discounts',
+      validatorMessage: 'Amount cashback must be a JSON object',
+      context: 'amount cashback',
     }
   )
-  const discounts = Object.entries(parsedObject)
+  const cashbacks = Object.entries(parsedObject)
     .map(([amount, rate]) => ({
-      amount: parseInt(amount, 10),
-      discountRate: typeof rate === 'number' ? rate : parseFloat(String(rate)),
+      amount: Number.parseInt(amount, 10),
+      cashbackPercent:
+        typeof rate === 'number' ? rate : Number.parseFloat(String(rate)),
     }))
-    .filter((item) => !isNaN(item.amount) && !isNaN(item.discountRate))
+    .filter(
+      (item) =>
+        Number.isFinite(item.amount) &&
+        Number.isFinite(item.cashbackPercent) &&
+        item.amount >= 0 &&
+        item.cashbackPercent >= 0 &&
+        item.cashbackPercent <= 100
+    )
     .sort((a, b) => a.amount - b.amount)
 
-  return { discounts, thresholdMode: false }
+  return { cashbacks, thresholdMode: false }
 }
 
-function stringifyAmountDiscounts(
-  discounts: AmountDiscountData[],
-  thresholdMode: boolean
+function stringifyAmountCashbacks(
+  cashbacks: AmountCashbackData[],
+  _thresholdMode: boolean
 ): string {
-  const sorted = [...discounts].sort((a, b) => a.amount - b.amount)
-  if (thresholdMode) {
-    return JSON.stringify(
-      sorted.map((item) => ({
-        min_amount: item.amount,
-        discount: item.discountRate,
-      })),
-      null,
-      2
-    )
-  }
-
+  const sorted = [...cashbacks].sort((a, b) => a.amount - b.amount)
   return JSON.stringify(
-    Object.fromEntries(
-      sorted.map((item) => [item.amount.toString(), item.discountRate])
-    ),
+    sorted.map((item) => ({
+      min_amount: item.amount,
+      cashback_percent: item.cashbackPercent,
+    })),
     null,
     2
   )
 }
 
-export function AmountDiscountVisualEditor({
+export function AmountCashbackVisualEditor({
   value,
   onChange,
-}: AmountDiscountVisualEditorProps) {
+  tokenAmounts,
+}: AmountCashbackVisualEditorProps) {
   const { t } = useTranslation()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editData, setEditData] = useState<AmountDiscountData | null>(null)
+  const [editData, setEditData] = useState<AmountCashbackData | null>(null)
 
-  const parsedDiscounts = useMemo(() => parseAmountDiscounts(value), [value])
-  const discounts = parsedDiscounts.discounts
+  const parsedCashbacks = useMemo(() => parseAmountCashbacks(value), [value])
+  const cashbacks = parsedCashbacks.cashbacks
 
-  const handleSave = (data: AmountDiscountData) => {
-    const nextDiscounts = discounts.filter((item) => {
+  const handleSave = (data: AmountCashbackData) => {
+    const nextCashbacks = cashbacks.filter((item) => {
       if (editData && editData.amount !== data.amount) {
         return item.amount !== editData.amount && item.amount !== data.amount
       }
       return item.amount !== data.amount
     })
 
-    nextDiscounts.push(data)
+    nextCashbacks.push(data)
 
     onChange(
-      stringifyAmountDiscounts(nextDiscounts, parsedDiscounts.thresholdMode)
+      stringifyAmountCashbacks(nextCashbacks, parsedCashbacks.thresholdMode)
     )
   }
 
   const handleDelete = (amount: number) => {
     onChange(
-      stringifyAmountDiscounts(
-        discounts.filter((item) => item.amount !== amount),
-        parsedDiscounts.thresholdMode
+      stringifyAmountCashbacks(
+        cashbacks.filter((item) => item.amount !== amount),
+        parsedCashbacks.thresholdMode
       )
     )
   }
 
-  const handleEdit = (discount: AmountDiscountData) => {
-    setEditData(discount)
+  const handleEdit = (cashback: AmountCashbackData) => {
+    setEditData(cashback)
     setDialogOpen(true)
   }
 
@@ -161,17 +170,15 @@ export function AmountDiscountVisualEditor({
     setDialogOpen(true)
   }
 
-  const formatPercentage = (rate: number) => {
-    if (rate >= 1) return '0%'
-    const discount = Math.round((1 - rate) * 100)
-    return `${discount}%`
+  const formatPercentage = (percent: number) => {
+    return `${percent}%`
   }
 
   return (
     <div className='space-y-4'>
       <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
         <p className='text-muted-foreground text-sm'>
-          {t('Configure discount rates based on recharge amounts')}
+          {t('Configure cashback rates based on recharge amounts')}
         </p>
         <Button
           type='button'
@@ -184,14 +191,14 @@ export function AmountDiscountVisualEditor({
           className='w-full sm:w-auto'
         >
           <Plus className='h-4 w-4 sm:mr-2' />
-          <span className='sm:inline'>{t('Add discount tier')}</span>
+          <span className='sm:inline'>{t('Add cashback tier')}</span>
         </Button>
       </div>
 
-      {discounts.length === 0 ? (
+      {cashbacks.length === 0 ? (
         <div className='text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm'>
           {t(
-            'No discount tiers configured. Click "Add discount tier" to get started.'
+            'No cashback tiers configured. Click "Add cashback tier" to get started.'
           )}
         </div>
       ) : (
@@ -199,35 +206,33 @@ export function AmountDiscountVisualEditor({
           {/* Desktop table view */}
           <StaticDataTable
             className='hidden rounded-none border-0 sm:block'
-            data={discounts}
-            getRowKey={(discount) => discount.amount}
+            data={cashbacks}
+            getRowKey={(cashback) => cashback.amount}
             columns={[
               {
                 id: 'amount',
-                header: t('Recharge Amount'),
-                cell: (discount) => (
-                  <span className='font-mono text-sm'>${discount.amount}</span>
+                header: tokenAmounts
+                  ? t('Recharge Amount (Tokens)')
+                  : t('Recharge Amount (USD)'),
+                cell: (cashback) => (
+                  <span className='font-mono text-sm'>
+                    {formatAmountCashbackThreshold(
+                      cashback.amount,
+                      tokenAmounts
+                    )}
+                  </span>
                 ),
               },
               {
-                id: 'discount-rate',
-                header: t('Discount Rate'),
-                cell: (discount) => (
-                  <code className='bg-muted rounded px-1.5 py-0.5 text-sm'>
-                    {discount.discountRate.toFixed(2)}
-                  </code>
-                ),
-              },
-              {
-                id: 'discount',
-                header: t('Discount'),
-                cell: (discount) => (
+                id: 'cashback',
+                header: t('Cashback'),
+                cell: (cashback) => (
                   <StatusBadge
-                    variant={discount.discountRate < 1 ? 'info' : 'neutral'}
+                    variant={cashback.cashbackPercent > 0 ? 'info' : 'neutral'}
                     className='font-mono'
                     copyable={false}
                   >
-                    {formatPercentage(discount.discountRate)} {t('off')}
+                    {formatPercentage(cashback.cashbackPercent)}
                   </StatusBadge>
                 ),
               },
@@ -236,13 +241,13 @@ export function AmountDiscountVisualEditor({
                 header: t('Actions'),
                 className: 'text-right',
                 cellClassName: 'text-right',
-                cell: (discount) => (
+                cell: (cashback) => (
                   <StaticRowActions
                     editLabel={t('Edit')}
                     deleteLabel={t('Delete')}
                     menuLabel={t('Open menu')}
-                    onEdit={() => handleEdit(discount)}
-                    onDelete={() => handleDelete(discount.amount)}
+                    onEdit={() => handleEdit(cashback)}
+                    onDelete={() => handleDelete(cashback.amount)}
                   />
                 ),
               },
@@ -251,30 +256,46 @@ export function AmountDiscountVisualEditor({
 
           {/* Mobile card view */}
           <div className='divide-y sm:hidden'>
-            {discounts.map((discount) => (
-              <div key={discount.amount} className='p-4'>
+            {cashbacks.map((cashback) => (
+              <div key={cashback.amount} className='p-4'>
                 <div className='mb-3 flex items-start justify-between'>
                   <div className='flex-1'>
-                    <div className='mb-2 font-mono text-base font-medium'>
-                      ${discount.amount}
+                    <div className='text-muted-foreground mb-1 text-xs'>
+                      {tokenAmounts
+                        ? t('Recharge Amount (Tokens)')
+                        : t('Recharge Amount (USD)')}
                     </div>
-                    <StatusBadge
-                      variant={discount.discountRate < 1 ? 'info' : 'neutral'}
-                      className='font-mono'
-                      copyable={false}
-                    >
-                      {formatPercentage(discount.discountRate)} {t('off')}
-                    </StatusBadge>
+                    <div className='mb-2 font-mono text-base font-medium'>
+                      {formatAmountCashbackThreshold(
+                        cashback.amount,
+                        tokenAmounts
+                      )}
+                    </div>
+                    <div className='flex items-center gap-2 text-sm'>
+                      <span className='text-muted-foreground'>
+                        {t('Cashback')}:
+                      </span>
+                      <StatusBadge
+                        variant={
+                          cashback.cashbackPercent > 0 ? 'info' : 'neutral'
+                        }
+                        className='font-mono'
+                        copyable={false}
+                      >
+                        {formatPercentage(cashback.cashbackPercent)}
+                      </StatusBadge>
+                    </div>
                   </div>
                   <div className='flex gap-1'>
                     <Button
                       type='button'
                       variant='ghost'
                       size='sm'
+                      aria-label={t('Edit cashback tier')}
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        handleEdit(discount)
+                        handleEdit(cashback)
                       }}
                     >
                       <Pencil className='h-4 w-4' />
@@ -283,23 +304,16 @@ export function AmountDiscountVisualEditor({
                       type='button'
                       variant='ghost'
                       size='sm'
+                      aria-label={t('Delete cashback tier')}
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
-                        handleDelete(discount.amount)
+                        handleDelete(cashback.amount)
                       }}
                     >
                       <Trash2 className='h-4 w-4' />
                     </Button>
                   </div>
-                </div>
-                <div className='text-sm'>
-                  <span className='text-muted-foreground'>
-                    {t('Discount Rate:')}{' '}
-                  </span>
-                  <code className='bg-muted rounded px-1.5 py-0.5 text-xs'>
-                    {discount.discountRate.toFixed(2)}
-                  </code>
                 </div>
               </div>
             ))}
@@ -307,11 +321,12 @@ export function AmountDiscountVisualEditor({
         </div>
       )}
 
-      <AmountDiscountDialog
+      <AmountCashbackDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSave={handleSave}
         editData={editData}
+        tokenAmounts={tokenAmounts}
       />
     </div>
   )

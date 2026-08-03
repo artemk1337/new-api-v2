@@ -633,6 +633,12 @@ func normalizePricingGroupOptionReferencesBeforeRename() error {
 
 func validateOptionValue(key string, value string) error {
 	switch key {
+	case "payment_setting.amount_cashback":
+		var cashbacks operation_setting.AmountCashbackConfig
+		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
+			return err
+		}
+		return operation_setting.ValidateAmountCashback(cashbacks)
 	case setting.ModelRequestRateLimitDurationStagedOption,
 		setting.ModelRequestRateLimitDurationActiveOption,
 		setting.ModelRequestRateLimitDurationActivationAtOption:
@@ -666,6 +672,16 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		err        error
 	)
 	switch key {
+	case "payment_setting.amount_cashback":
+		var cashbacks operation_setting.AmountCashbackConfig
+		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
+			return value, err
+		}
+		encoded, err := common.Marshal(cashbacks)
+		if err != nil {
+			return value, err
+		}
+		return string(encoded), nil
 	case setting.ModelRequestRateLimitDurationLegacyOption:
 		return strings.TrimSuffix(setting.ResolveModelRequestRateLimitDuration("", false, value), "m"), nil
 	case "GroupRatio":
@@ -1130,6 +1146,13 @@ func sortedOptionKeys(values map[string]string) []string {
 }
 
 func updateOptionMapFromDatabase(key string, value string) error {
+	if key == "payment_setting.amount_cashback" {
+		normalized, err := normalizeOptionValueForSave(key, value)
+		if err != nil {
+			return err
+		}
+		value = normalized
+	}
 	return updateOptionMapWithPricingReferenceNormalization(key, value, false)
 }
 

@@ -29,7 +29,7 @@ import type {
   CreemProduct,
   PaymentMethod,
   WaffoPayMethod,
-  DiscountThreshold,
+  CashbackThreshold,
 } from '../types'
 
 // ============================================================================
@@ -127,12 +127,9 @@ function parseAmountOptions(data: unknown): number[] {
     .filter((item) => Number.isFinite(item) && item > 0)
 }
 
-function parseDiscountConfig(data: unknown): {
-  discount: Record<number, number>
-  thresholds: DiscountThreshold[]
-} {
+export function parseCashbackConfig(data: unknown): CashbackThreshold[] {
   if (!data) {
-    return { discount: {}, thresholds: [] }
+    return []
   }
 
   let parsedData = data
@@ -141,12 +138,12 @@ function parseDiscountConfig(data: unknown): {
     try {
       parsedData = JSON.parse(data)
     } catch {
-      return { discount: {}, thresholds: [] }
+      return []
     }
   }
 
   if (!parsedData || typeof parsedData !== 'object') {
-    return { discount: {}, thresholds: [] }
+    return []
   }
 
   if (Array.isArray(parsedData)) {
@@ -157,31 +154,28 @@ function parseDiscountConfig(data: unknown): {
         }
         const candidate = item as Record<string, unknown>
         const minAmount = Number(candidate.min_amount)
-        const discount = Number(candidate.discount)
-        if (!Number.isFinite(minAmount) || !Number.isFinite(discount)) {
+        const cashbackPercent = Number(candidate.cashback_percent)
+        if (!Number.isFinite(minAmount) || !Number.isFinite(cashbackPercent)) {
           return null
         }
-        return { min_amount: minAmount, discount }
+        return { min_amount: minAmount, cashback_percent: cashbackPercent }
       })
-      .filter((item): item is DiscountThreshold => item !== null)
+      .filter((item): item is CashbackThreshold => item !== null)
       .sort((a, b) => a.min_amount - b.min_amount)
-    return { discount: {}, thresholds }
+    return thresholds
   }
 
-  const discount = Object.entries(parsedData).reduce<Record<number, number>>(
-    (result, [key, value]) => {
-      const numericKey = Number(key)
-      const numericValue = Number(value)
-
-      if (Number.isFinite(numericKey) && Number.isFinite(numericValue)) {
-        result[numericKey] = numericValue
-      }
-
-      return result
-    },
-    {}
-  )
-  return { discount, thresholds: [] }
+  return Object.entries(parsedData)
+    .map(([key, value]) => ({
+      min_amount: Number(key),
+      cashback_percent: Number(value),
+    }))
+    .filter(
+      (item) =>
+        Number.isFinite(item.min_amount) &&
+        Number.isFinite(item.cashback_percent)
+    )
+    .sort((a, b) => a.min_amount - b.min_amount)
 }
 
 export function useTopupInfo() {
@@ -201,7 +195,7 @@ export function useTopupInfo() {
         return
       }
 
-      const discountConfig = parseDiscountConfig(response.data.discount)
+      const cashback = parseCashbackConfig(response.data.cashback)
       const processedData: TopupInfo = {
         ...response.data,
         pay_methods: parsePaymentMethods(
@@ -209,8 +203,7 @@ export function useTopupInfo() {
           response.data.stripe_min_topup
         ),
         amount_options: parseAmountOptions(response.data.amount_options),
-        discount: discountConfig.discount,
-        discount_thresholds: discountConfig.thresholds,
+        cashback,
         creem_products: parseCreemProducts(response.data.creem_products),
         waffo_pay_methods: parseWaffoPayMethods(
           response.data.waffo_pay_methods
@@ -222,8 +215,7 @@ export function useTopupInfo() {
       if (processedData.amount_options.length > 0) {
         const customPresets = mergePresetAmounts(
           processedData.amount_options,
-          processedData.discount || {},
-          processedData.discount_thresholds || []
+          processedData.cashback || []
         )
         setPresetAmounts(customPresets)
       } else {

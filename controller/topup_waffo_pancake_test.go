@@ -6,7 +6,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,24 +30,18 @@ func TestFormatWaffoPancakeAmount_UsesDisplayPriceString(t *testing.T) {
 func TestGetWaffoPancakePayMoney(t *testing.T) {
 	originalUnitPrice := setting.WaffoPancakeUnitPrice
 	originalQuotaDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
-	originalDiscounts := operation_setting.GetPaymentSetting().AmountDiscount
+	originalCashbacks := operation_setting.GetPaymentSetting().AmountCashback
 	originalTopupGroupRatio := common.TopupGroupRatio2JSONString()
 
 	t.Cleanup(func() {
 		setting.WaffoPancakeUnitPrice = originalUnitPrice
 		operation_setting.GetGeneralSetting().QuotaDisplayType = originalQuotaDisplayType
-		operation_setting.GetPaymentSetting().AmountDiscount = originalDiscounts
+		operation_setting.GetPaymentSetting().AmountCashback = originalCashbacks
 		require.NoError(t, common.UpdateTopupGroupRatioByJSONString(originalTopupGroupRatio))
 	})
 
 	setting.WaffoPancakeUnitPrice = 2.5
-	operation_setting.GetPaymentSetting().AmountDiscount = operation_setting.AmountDiscountConfig{
-		Exact: map[int]float64{
-			10:                           0.8,
-			int(common.QuotaPerUnit * 3): 0.5,
-			20:                           0,
-		},
-	}
+	operation_setting.GetPaymentSetting().AmountCashback = operation_setting.AmountCashbackConfig{{MinAmount: 10, CashbackPercent: 20}}
 	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1,"vip":1.2}`))
 
 	testCases := []struct {
@@ -59,21 +52,21 @@ func TestGetWaffoPancakePayMoney(t *testing.T) {
 		expected         float64
 	}{
 		{
-			name:             "currency display applies unit price group ratio and discount",
+			name:             "currency display applies unit price and group ratio",
 			amount:           10,
 			group:            "vip",
 			quotaDisplayType: operation_setting.QuotaDisplayTypeUSD,
-			expected:         24,
+			expected:         30,
 		},
 		{
 			name:             "tokens display converts quota to display units before pricing",
 			amount:           common.QuotaPerUnit * 3,
 			group:            "vip",
 			quotaDisplayType: operation_setting.QuotaDisplayTypeTokens,
-			expected:         4.5,
+			expected:         9,
 		},
 		{
-			name:             "non-positive discount falls back to no discount",
+			name:             "cashback configuration does not lower payment total",
 			amount:           20,
 			group:            "default",
 			quotaDisplayType: operation_setting.QuotaDisplayTypeUSD,
@@ -89,17 +82,4 @@ func TestGetWaffoPancakePayMoney(t *testing.T) {
 		})
 	}
 
-	t.Run("threshold discount uses highest matching min amount", func(t *testing.T) {
-		operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeUSD
-		operation_setting.GetPaymentSetting().AmountDiscount = operation_setting.AmountDiscountConfig{
-			Thresholds: []operation_setting.ThresholdDiscount{
-				{MinAmount: 5, Discount: 0.9},
-				{MinAmount: 10, Discount: 0.85},
-				{MinAmount: 20, Discount: 0.7},
-			},
-		}
-
-		actual := getWaffoPancakePayMoney(15, "default")
-		assert.InDelta(t, 31.875, actual, 0.000001)
-	})
 }

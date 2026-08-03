@@ -16,19 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import * as React from 'react'
-import * as z from 'zod'
-import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Code2, Eye, ShieldAlert } from 'lucide-react'
+import * as React from 'react'
+import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from '@/components/ui/alert'
+import * as z from 'zod'
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -43,6 +40,8 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { useSystemConfigStore } from '@/stores/system-config-store'
+
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -51,12 +50,19 @@ import {
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-import { safeDecimalFieldProps, safeNumberFieldProps } from '../utils/numeric-field'
-import { AmountDiscountVisualEditor } from './amount-discount-visual-editor'
+import {
+  safeDecimalFieldProps,
+  safeNumberFieldProps,
+} from '../utils/numeric-field'
+import {
+  isValidAmountCashbackConfig,
+  normalizeAmountCashbackConfig,
+} from './amount-cashback'
+import { AmountCashbackVisualEditor } from './amount-cashback-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
-import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import type { TopupGroupOption } from './payment-method-dialog'
+import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
   getJsonError,
@@ -123,31 +129,8 @@ const paymentSchema = z.object({
       })
     }
   }),
-  AmountDiscount: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(
-      value,
-      (parsed) => {
-        if (!parsed) return false
-        if (Array.isArray(parsed)) {
-          return parsed.every((item) => {
-            if (!item || typeof item !== 'object' || Array.isArray(item)) {
-              return false
-            }
-            const record = item as Record<string, unknown>
-            return (
-              Number.isInteger(Number(record.min_amount)) &&
-              Number.isFinite(Number(record.discount))
-            )
-          })
-        }
-        if (typeof parsed !== 'object') return false
-        return Object.entries(parsed).every(
-          ([amount, discount]) =>
-            Number.isInteger(Number(amount)) &&
-            Number.isFinite(Number(discount))
-        )
-      }
-    )
+  AmountCashback: z.string().superRefine((value, ctx) => {
+    const error = getJsonError(value, isValidAmountCashbackConfig)
     if (error) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -253,6 +236,9 @@ export function PaymentSettingsSection({
   waffoPancakeProvisionedProductID,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
+  const tokenAmounts =
+    useSystemConfigStore((state) => state.config.currency.quotaDisplayType) ===
+    'TOKENS'
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
   const initialFormValues = React.useMemo<PaymentFormValues>(
@@ -272,7 +258,7 @@ export function PaymentSettingsSection({
   const [payMethodsVisualMode, setPayMethodsVisualMode] = React.useState(true)
   const [amountOptionsVisualMode, setAmountOptionsVisualMode] =
     React.useState(true)
-  const [amountDiscountVisualMode, setAmountDiscountVisualMode] =
+  const [amountCashbackVisualMode, setAmountCashbackVisualMode] =
     React.useState(true)
   const [creemProductsVisualMode, setCreemProductsVisualMode] =
     React.useState(true)
@@ -326,7 +312,7 @@ export function PaymentSettingsSection({
       ...initialFormValues,
       PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
       AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
-      AmountDiscount: formatJsonForEditor(initialFormValues.AmountDiscount),
+      AmountCashback: formatJsonForEditor(initialFormValues.AmountCashback),
       CreemProducts: formatJsonForEditor(initialFormValues.CreemProducts),
     },
   })
@@ -383,7 +369,7 @@ export function PaymentSettingsSection({
       ...parsedDefaults,
       PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
-      AmountDiscount: formatJsonForEditor(parsedDefaults.AmountDiscount),
+      AmountCashback: formatJsonForEditor(parsedDefaults.AmountCashback),
       CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
     })
   }, [defaultsSignature, form])
@@ -398,7 +384,7 @@ export function PaymentSettingsSection({
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
-      AmountDiscount: values.AmountDiscount.trim(),
+      AmountCashback: normalizeAmountCashbackConfig(values.AmountCashback),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -439,12 +425,10 @@ export function PaymentSettingsSection({
       NOWPaymentsEnabled: values.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: values.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: values.NOWPaymentsIPNSecret.trim(),
-      NOWPaymentsPriceCurrency: values.NOWPaymentsPriceCurrency
-        .trim()
-        .toLowerCase(),
-      NOWPaymentsPayCurrency: values.NOWPaymentsPayCurrency
-        .trim()
-        .toLowerCase(),
+      NOWPaymentsPriceCurrency:
+        values.NOWPaymentsPriceCurrency.trim().toLowerCase(),
+      NOWPaymentsPayCurrency:
+        values.NOWPaymentsPayCurrency.trim().toLowerCase(),
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         values.NOWPaymentsIPNCallbackURL.trim()
       ),
@@ -461,7 +445,9 @@ export function PaymentSettingsSection({
       ),
       PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
-      AmountDiscount: initialRef.current.AmountDiscount.trim(),
+      AmountCashback: normalizeAmountCashbackConfig(
+        initialRef.current.AmountCashback
+      ),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -505,12 +491,10 @@ export function PaymentSettingsSection({
       NOWPaymentsEnabled: initialRef.current.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: initialRef.current.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: initialRef.current.NOWPaymentsIPNSecret.trim(),
-      NOWPaymentsPriceCurrency: initialRef.current.NOWPaymentsPriceCurrency
-        .trim()
-        .toLowerCase(),
-      NOWPaymentsPayCurrency: initialRef.current.NOWPaymentsPayCurrency
-        .trim()
-        .toLowerCase(),
+      NOWPaymentsPriceCurrency:
+        initialRef.current.NOWPaymentsPriceCurrency.trim().toLowerCase(),
+      NOWPaymentsPayCurrency:
+        initialRef.current.NOWPaymentsPayCurrency.trim().toLowerCase(),
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         initialRef.current.NOWPaymentsIPNCallbackURL.trim()
       ),
@@ -563,12 +547,12 @@ export function PaymentSettingsSection({
     }
 
     if (
-      normalizeJsonForComparison(sanitized.AmountDiscount) !==
-      normalizeJsonForComparison(initial.AmountDiscount)
+      normalizeJsonForComparison(sanitized.AmountCashback) !==
+      normalizeJsonForComparison(initial.AmountCashback)
     ) {
       updates.push({
-        key: 'payment_setting.amount_discount',
-        value: sanitized.AmountDiscount,
+        key: 'payment_setting.amount_cashback',
+        value: sanitized.AmountCashback,
       })
     }
 
@@ -664,9 +648,7 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
-      sanitized.YooKassaPaymentMethods !== initial.YooKassaPaymentMethods
-    ) {
+    if (sanitized.YooKassaPaymentMethods !== initial.YooKassaPaymentMethods) {
       updates.push({
         key: 'YooKassaPaymentMethods',
         value: sanitized.YooKassaPaymentMethods,
@@ -709,9 +691,7 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
-      sanitized.NOWPaymentsPayCurrency !== initial.NOWPaymentsPayCurrency
-    ) {
+    if (sanitized.NOWPaymentsPayCurrency !== initial.NOWPaymentsPayCurrency) {
       updates.push({
         key: 'NOWPaymentsPayCurrency',
         value: sanitized.NOWPaymentsPayCurrency,
@@ -1098,23 +1078,23 @@ export function PaymentSettingsSection({
 
                   <FormField
                     control={form.control}
-                    name='AmountDiscount'
+                    name='AmountCashback'
                     render={({ field }) => (
                       <FormItem>
                         <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                          <FormLabel>{t('Amount discount')}</FormLabel>
+                          <FormLabel>{t('Amount cashback')}</FormLabel>
                           <Button
                             type='button'
                             variant='outline'
                             size='sm'
                             onClick={() =>
-                              setAmountDiscountVisualMode(
-                                !amountDiscountVisualMode
+                              setAmountCashbackVisualMode(
+                                !amountCashbackVisualMode
                               )
                             }
                             className='w-full sm:w-auto'
                           >
-                            {amountDiscountVisualMode ? (
+                            {amountCashbackVisualMode ? (
                               <>
                                 <Code2 className='mr-2 h-3 w-3' />
                                 {t('JSON Editor')}
@@ -1128,15 +1108,16 @@ export function PaymentSettingsSection({
                           </Button>
                         </div>
                         <FormControl>
-                          {amountDiscountVisualMode ? (
-                            <AmountDiscountVisualEditor
+                          {amountCashbackVisualMode ? (
+                            <AmountCashbackVisualEditor
                               value={field.value}
                               onChange={field.onChange}
+                              tokenAmounts={tokenAmounts}
                             />
                           ) : (
                             <Textarea
                               rows={4}
-                              placeholder='[{"min_amount":100,"discount":0.95}]'
+                              placeholder='[{"min_amount":100,"cashback_percent":1}]'
                               {...field}
                               onChange={(event) =>
                                 field.onChange(event.target.value)
@@ -1146,7 +1127,9 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Discount map or threshold array with min_amount; each amount is a minimum recharge amount'
+                            tokenAmounts
+                              ? 'Cashback thresholds use token amounts; min_amount is the minimum token recharge amount'
+                              : 'Cashback thresholds use USD amounts; min_amount is the minimum USD recharge amount'
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -1276,7 +1259,10 @@ export function PaymentSettingsSection({
               </div>
             </TabsContent>
 
-            <TabsContent value='yookassa' className={paymentTabContentClassName}>
+            <TabsContent
+              value='yookassa'
+              className={paymentTabContentClassName}
+            >
               <div className='space-y-4'>
                 <div>
                   <h3 className='text-lg font-medium'>
@@ -1440,7 +1426,9 @@ export function PaymentSettingsSection({
                     {t('Webhook Configuration:')}
                   </p>
                   <p>
-                    {t('Set this IPN callback URL in the NOWPayments dashboard:')}{' '}
+                    {t(
+                      'Set this IPN callback URL in the NOWPayments dashboard:'
+                    )}{' '}
                     <code className='rounded bg-orange-100 px-1 py-0.5 text-xs dark:bg-orange-900'>
                       {form.watch('NOWPaymentsIPNCallbackURL') ||
                         '<ServerAddress>/api/nowpayments/webhook'}

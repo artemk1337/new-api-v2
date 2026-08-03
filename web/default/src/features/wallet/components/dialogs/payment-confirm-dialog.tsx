@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatLocalCurrencyAmount } from '@/lib/currency'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,8 +30,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
-import { formatCurrency, getPaymentIcon } from '../../lib'
+import { formatLocalCurrencyAmount } from '@/lib/currency'
+
+import {
+  calculateCashbackAmount,
+  formatCashbackCredit,
+  formatCurrency,
+  getPaymentIcon,
+} from '../../lib'
 import type { PaymentMethod } from '../../types'
 
 interface PaymentConfirmDialogProps {
@@ -43,7 +49,7 @@ interface PaymentConfirmDialogProps {
   paymentMethod: PaymentMethod | undefined
   calculating: boolean
   processing: boolean
-  discountRate?: number
+  cashbackPercent?: number
   usdExchangeRate?: number
 }
 
@@ -56,13 +62,11 @@ export function PaymentConfirmDialog({
   paymentMethod,
   calculating,
   processing,
-  discountRate = DEFAULT_DISCOUNT_RATE,
+  cashbackPercent = 0,
   usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
-  const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
-  const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
-  const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const cashbackAmount = calculateCashbackAmount(topupAmount, cashbackPercent)
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -97,25 +101,20 @@ export function PaymentConfirmDialog({
             {calculating ? (
               <Skeleton className='h-6 w-24' />
             ) : (
-              <div className='flex items-baseline gap-2'>
-                <span className='text-2xl font-semibold'>
-                  {formatCurrency(paymentAmount)}
-                </span>
-                {hasDiscount && (
-                  <span className='text-muted-foreground text-sm line-through'>
-                    {formatCurrency(originalAmount)}
-                  </span>
-                )}
-              </div>
+              <span className='text-2xl font-semibold'>
+                {formatCurrency(paymentAmount)}
+              </span>
             )}
           </div>
 
-          {hasDiscount && !calculating && (
+          {cashbackAmount > 0 && !calculating && (
             <div className='bg-muted/50 rounded-lg p-3'>
               <div className='flex items-center justify-between text-sm'>
-                <span className='text-muted-foreground'>{t('You save')}</span>
+                <span className='text-muted-foreground'>
+                  {t('Cashback ({{percent}}%)', { percent: cashbackPercent })}
+                </span>
                 <span className='font-semibold text-green-600'>
-                  {formatCurrency(discountAmount)}
+                  +{formatCashbackCredit(cashbackAmount)}
                 </span>
               </div>
             </div>
