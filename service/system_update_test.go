@@ -372,12 +372,20 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Host {
 		case "api.github.com":
-			assert.Equal(t, "/repos/artemk1337/new-api-v2/git/ref/tags/v1.0.1", req.URL.Path)
-			return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
+			switch req.URL.Path {
+			case "/repos/artemk1337/new-api-v2/git/ref/tags/v1.0.1":
+				return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
+			case "/repos/artemk1337/new-api-v2/git/matching-refs/tags/":
+				return jsonResponse(http.StatusOK, `[{"ref":"refs/tags/v1.0.1"}]`), nil
+			}
+			t.Fatalf("unexpected GitHub API path: %s", req.URL.Path)
 		case "new-api-updater:18090":
 			assert.Empty(t, req.Header.Get("Authorization"))
 			switch req.Method {
 			case http.MethodPost:
+				if req.URL.Path == "/versions/readiness" {
+					return jsonResponse(http.StatusOK, `{"versions":[{"tag":"v1.0.1","status":"ready","ready_to_deploy":true}]}`), nil
+				}
 				updaterCalled = true
 				body, err := io.ReadAll(req.Body)
 				require.NoError(t, err)
@@ -412,4 +420,47 @@ func TestRunSystemUpdateTaskValidatesTagAndRequestsUpdater(t *testing.T) {
 	assert.Contains(t, reloaded.Result, `"image":"ghcr.io/artemk1337/new-api-v2:v1.0.1"`)
 	assert.Contains(t, reloaded.Result, `"job_id":"job-1"`)
 	assert.Contains(t, reloaded.Result, `"status":"deploying"`)
+}
+
+func TestRunSystemUpdateTaskRejectsBuildingVersionBeforeRequestingUpdater(t *testing.T) {
+	withSystemUpdatesEnabled(t)
+	truncate(t)
+	t.Setenv("UPDATE_CHECK_REPOSITORY", "artemk1337/new-api-v2")
+	savedVersion := common.Version
+	common.Version = "v1.0.0"
+	t.Cleanup(func() {
+		common.Version = savedVersion
+	})
+
+	updaterCalled := false
+	withSystemUpdateHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Host {
+		case "api.github.com":
+			switch req.URL.Path {
+			case "/repos/artemk1337/new-api-v2/git/ref/tags/v1.0.1":
+				return jsonResponse(http.StatusOK, `{"ref":"refs/tags/v1.0.1"}`), nil
+			case "/repos/artemk1337/new-api-v2/git/matching-refs/tags/":
+				return jsonResponse(http.StatusOK, `[{"ref":"refs/tags/v1.0.1"}]`), nil
+			}
+		case "new-api-updater:18090":
+			if req.URL.Path == "/versions/readiness" {
+				return jsonResponse(http.StatusOK, `{"versions":[{"tag":"v1.0.1","status":"building","ready_to_deploy":false}]}`), nil
+			}
+			if req.URL.Path == "/update" {
+				updaterCalled = true
+			}
+		}
+		t.Fatalf("unexpected request: %s%s", req.URL.Host, req.URL.Path)
+		return nil, nil
+	})
+
+	task, err := model.CreateSystemTask(model.SystemTaskTypeSystemUpdate, SystemUpdatePayload{Version: "v1.0.1"}, nil)
+	require.NoError(t, err)
+	claimed, ok, err := model.ClaimSystemTask(task.ID, model.SystemTaskTypeSystemUpdate, "runner-a", common.GetTimestamp()+60)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	err = RunSystemUpdateTask(t.Context(), claimed, "runner-a")
+	require.EqualError(t, err, "update image for v1.0.1 is still building")
+	assert.False(t, updaterCalled)
 }

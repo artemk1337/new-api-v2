@@ -195,6 +195,9 @@ func RunSystemUpdateTask(ctx context.Context, task *model.SystemTask, runnerID s
 	if isStableVersionTag(common.Version) && compareStableVersionTags(payload.Version, common.Version) == 0 {
 		return errors.New("requested version is already running")
 	}
+	if err := validateSystemUpdateVersion(ctx, payload.Version); err != nil {
+		return err
+	}
 
 	if err := updateSystemUpdateState(task, runnerID, "requesting_updater", 60, "requesting updater sidecar"); err != nil {
 		return err

@@ -33,5 +33,5 @@ export function getSystemUpdateReleaseBuildStatus(
 }
 
 export function canDeploySystemUpdateRelease(release: SystemUpdateRelease) {
-  return release.ready_to_deploy === true
+  return release.build_status === 'ready' && release.ready_to_deploy === true
 }

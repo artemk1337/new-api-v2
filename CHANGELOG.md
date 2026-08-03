@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.115
+
+- Prevented system updates to releases whose Docker image is still building or not marked ready for deployment; enforced readiness validation in both the update UI and backend.
+
 ## v1.1.114
 
 - Clarified sidebar navigation labels for Overview and Dashboard across supported locales.

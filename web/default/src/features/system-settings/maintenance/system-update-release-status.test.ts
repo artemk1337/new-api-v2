@@ -54,4 +54,24 @@ describe('system update release status', () => {
     assert.equal(getSystemUpdateReleaseBuildStatus(release), 'ready')
     assert.equal(canDeploySystemUpdateRelease(release), true)
   })
+
+  test('does not allow a building release even when marked deployable', () => {
+    const release: SystemUpdateRelease = {
+      tag_name: 'v1.2.3',
+      build_status: 'building',
+      ready_to_deploy: true,
+    }
+
+    assert.equal(canDeploySystemUpdateRelease(release), false)
+  })
+
+  test('does not allow a ready release without the deployable marker', () => {
+    const release: SystemUpdateRelease = {
+      tag_name: 'v1.2.3',
+      build_status: 'ready',
+      ready_to_deploy: false,
+    }
+
+    assert.equal(canDeploySystemUpdateRelease(release), false)
+  })
 })
