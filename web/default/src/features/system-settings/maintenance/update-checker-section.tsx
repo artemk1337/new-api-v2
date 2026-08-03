@@ -24,11 +24,6 @@ import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import { Markdown } from '@/components/ui/markdown'
 import { getStatus } from '@/lib/api'
 import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
@@ -255,6 +250,7 @@ export function UpdateCheckerSection({
     )
     return comparison !== null && comparison <= 0
   })
+  const newestAvailableVersion = availableReleases[0]?.tag_name
 
   const handleCheckUpdates = async () => {
     setChecking(true)
@@ -571,9 +567,9 @@ export function UpdateCheckerSection({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         title={
-          release?.tag_name
+          newestAvailableVersion
             ? t('New version available: {{version}}', {
-                version: release.tag_name,
+                version: newestAvailableVersion,
               })
             : t('Release details')
         }
@@ -627,13 +623,19 @@ export function UpdateCheckerSection({
                 </section>
               )}
               {previousReleases.length > 0 && (
-                <Collapsible>
-                  <CollapsibleTrigger className='text-muted-foreground hover:text-foreground text-sm font-medium underline-offset-4 hover:underline'>
+                <section
+                  aria-labelledby='previous-versions-heading'
+                  className='border-t pt-4'
+                >
+                  <h2
+                    id='previous-versions-heading'
+                    className='mb-3 text-sm font-semibold'
+                  >
                     {t('Previous versions for rollback ({{count}})', {
                       count: previousReleases.length,
                     })}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className='mt-3 space-y-4'>
+                  </h2>
+                  <div className='space-y-4'>
                     {previousReleases.map((item) => (
                       <SystemUpdateReleaseCard
                         key={item.tag_name}
@@ -647,8 +649,8 @@ export function UpdateCheckerSection({
                         updating={updating}
                       />
                     ))}
-                  </CollapsibleContent>
-                </Collapsible>
+                  </div>
+                </section>
               )}
             </>
           ) : (

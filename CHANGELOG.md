@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.112
+
+- Show update and rollback releases together in the system update dialog, separated by clear headings and a divider.
+- Do not present an older rollback release as a new version.
+
 ## v1.1.111
 
 - Replaced in-container automatic updates with a safe host-side update script and recovery checks.
