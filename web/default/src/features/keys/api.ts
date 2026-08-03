@@ -67,6 +67,13 @@ export async function createApiKey(
   return res.data
 }
 
+export async function createOnboardingApiKey(): Promise<
+  ApiResponse<{ created: boolean }>
+> {
+  const res = await api.post('/api/token/first')
+  return res.data
+}
+
 // Update an existing API key
 export async function updateApiKey(
   data: ApiKeyFormData & { id: number }

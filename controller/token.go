@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -255,20 +256,7 @@ func AddToken(c *gin.Context) {
 			return
 		}
 	}
-	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if int(count) >= maxTokens {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": fmt.Sprintf("已达到最大令牌数量限制 (%d)", maxTokens),
-		})
-		return
-	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
@@ -308,8 +296,15 @@ func AddToken(c *gin.Context) {
 		Group:               group,
 		AutoGroupCandidates: autoGroupCandidates,
 	}
-	err = cleanToken.Insert()
+	err = cleanToken.InsertWithUserTokenLimit(maxTokens)
 	if err != nil {
+		if errors.Is(err, model.ErrUserTokenLimitReached) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("已达到最大令牌数量限制 (%d)", maxTokens),
+			})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -317,6 +312,33 @@ func AddToken(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
+}
+
+func CreateOnboardingToken(c *gin.Context) {
+	userId := c.GetInt("id")
+	user, err := model.GetUserCache(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	group, candidates, err := normalizeTokenRoutingForUser(user.Group, "auto", nil)
+	if err != nil {
+		writeInvalidTokenRouting(c, err)
+		return
+	}
+	created, err := model.CreateOnboardingToken(userId, group, candidates)
+	if err != nil {
+		if errors.Is(err, model.ErrUserTokenLimitReached) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("已达到最大令牌数量限制 (%d)", operation_setting.GetMaxUserTokens()),
+			})
+			return
+		}
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"created": created})
 }
 
 func DeleteToken(c *gin.Context) {

@@ -4,17 +4,20 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -584,6 +587,155 @@ func TestAddTokenDefaultsToAutoAndNormalizesCandidateIDs(t *testing.T) {
 	assert.Equal(t, "auto", detail.Group)
 	assert.Equal(t, []string{"2", "1"}, detail.AutoGroupCandidates)
 	assert.NotContains(t, getRecorder.Body.String(), "cross_group_retry")
+}
+
+func TestCreateOnboardingTokenCreatesExactlyOneKey(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       81,
+		Username: "onboarding-token-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	var wg sync.WaitGroup
+	created := make(chan bool, 2)
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			didCreate, err := model.CreateOnboardingToken(81, "auto", "")
+			created <- didCreate
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(created)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	createdCount := 0
+	for didCreate := range created {
+		if didCreate {
+			createdCount++
+		}
+	}
+	assert.Equal(t, 1, createdCount)
+
+	var tokens []model.Token
+	require.NoError(t, db.Where("user_id = ?", 81).Find(&tokens).Error)
+	require.Len(t, tokens, 1)
+	assert.Equal(t, "Мой первый ключ", tokens[0].Name)
+	assert.Equal(t, "auto", tokens[0].Group)
+	assert.True(t, tokens[0].UnlimitedQuota)
+	assert.Equal(t, int64(-1), tokens[0].ExpiredTime)
+}
+
+func TestCreateOnboardingTokenRespectsMaxUserTokens(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       82,
+		Username: "onboarding-limit-user",
+		Password: "not-used-in-test",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	settings := operation_setting.GetTokenSetting()
+	originalMax := settings.MaxUserTokens
+	settings.MaxUserTokens = 0
+	t.Cleanup(func() { settings.MaxUserTokens = originalMax })
+
+	created, err := model.CreateOnboardingToken(82, "auto", "")
+	require.ErrorIs(t, err, model.ErrUserTokenLimitReached)
+	assert.False(t, created)
+
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", 82).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestCreateOnboardingTokenSkipsUserWithRegularToken(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       83,
+		Username: "regular-token-user",
+		Password: "not-used-in-test",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, (&model.Token{
+		UserId:       83,
+		Name:         "regular",
+		Key:          "regular-token-key",
+		CreatedTime:  common.GetTimestamp(),
+		AccessedTime: common.GetTimestamp(),
+		ExpiredTime:  -1,
+		Group:        "auto",
+	}).Insert())
+
+	created, err := model.CreateOnboardingToken(83, "auto", "")
+	require.NoError(t, err)
+	assert.False(t, created)
+
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", 83).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestOnboardingAndRegularTokenShareLimitTransaction(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       84,
+		Username: "onboarding-race-user",
+		Password: "not-used-in-test",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	regular := &model.Token{
+		UserId:       84,
+		Name:         "regular",
+		Key:          "onboarding-race-regular-key",
+		CreatedTime:  common.GetTimestamp(),
+		AccessedTime: common.GetTimestamp(),
+		ExpiredTime:  -1,
+		Group:        "auto",
+	}
+	var wg sync.WaitGroup
+	regularResult := make(chan error, 1)
+	onboardingResult := make(chan struct {
+		created bool
+		err     error
+	}, 1)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		regularResult <- regular.InsertWithUserTokenLimit(1)
+	}()
+	go func() {
+		defer wg.Done()
+		created, err := model.CreateOnboardingToken(84, "auto", "")
+		onboardingResult <- struct {
+			created bool
+			err     error
+		}{created, err}
+	}()
+	wg.Wait()
+
+	regularErr := <-regularResult
+	onboarding := <-onboardingResult
+	require.True(t,
+		regularErr == nil || errors.Is(regularErr, model.ErrUserTokenLimitReached),
+		"unexpected regular token error: %v", regularErr,
+	)
+	require.NoError(t, onboarding.err)
+
+	var tokens []model.Token
+	require.NoError(t, db.Where("user_id = ?", 84).Find(&tokens).Error)
+	require.Len(t, tokens, 1)
+	assert.Equal(t, onboarding.created, tokens[0].Name == "Мой первый ключ")
 }
 
 func TestAddTokenFixedGroupClearsCandidates(t *testing.T) {

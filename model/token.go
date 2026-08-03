@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Token struct {
@@ -39,6 +41,8 @@ type PricingGroupCandidates string
 var ErrTokenRoutingMigrationPending = errors.New(
 	"Auto group selection is temporarily unavailable while the database migration is pending; select all groups or try again shortly",
 )
+
+var ErrUserTokenLimitReached = errors.New("user token limit reached")
 
 func NewPricingGroupCandidates(groups []string) PricingGroupCandidates {
 	normalized := make([]string, 0, len(groups))
@@ -372,10 +376,98 @@ func (token *Token) Insert() error {
 	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
 		return ErrTokenRoutingMigrationPending
 	}
-	if !hasCandidatesColumn {
-		return DB.Omit("auto_group_candidates").Create(token).Error
+	return withUserTokenCreationLock(token.UserId, func(tx *gorm.DB) error {
+		return token.insertWithDB(tx, hasCandidatesColumn)
+	})
+}
+
+// InsertWithUserTokenLimit creates a regular token after checking the user's
+// current token count under the same lock used by onboarding creation.
+func (token *Token) InsertWithUserTokenLimit(maxTokens int) error {
+	token.NormalizeRouting()
+	hasCandidatesColumn := DB.Migrator().HasColumn(&Token{}, "auto_group_candidates")
+	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
+		return ErrTokenRoutingMigrationPending
 	}
-	return DB.Create(token).Error
+	return withUserTokenCreationLock(token.UserId, func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&Token{}).Where("user_id = ?", token.UserId).Count(&count).Error; err != nil {
+			return err
+		}
+		if int(count) >= maxTokens {
+			return ErrUserTokenLimitReached
+		}
+		return token.insertWithDB(tx, hasCandidatesColumn)
+	})
+}
+
+func (token *Token) insertWithDB(tx *gorm.DB, hasCandidatesColumn bool) error {
+	if !hasCandidatesColumn {
+		return tx.Omit("auto_group_candidates").Create(token).Error
+	}
+	return tx.Create(token).Error
+}
+
+// CreateOnboardingToken creates the first token for a user exactly once.
+// The user row lock serializes onboarding requests on MySQL and PostgreSQL;
+// SQLite retries its write-lock conflicts.
+func CreateOnboardingToken(userId int, group string, candidates PricingGroupCandidates) (bool, error) {
+	created := false
+	err := withUserTokenCreationLock(userId, func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&Token{}).Where("user_id = ?", userId).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		if int(count) >= operation_setting.GetMaxUserTokens() {
+			return ErrUserTokenLimitReached
+		}
+
+		key, err := common.GenerateKey()
+		if err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		token := Token{
+			UserId:              userId,
+			Name:                "Мой первый ключ",
+			Key:                 key,
+			CreatedTime:         now,
+			AccessedTime:        now,
+			ExpiredTime:         -1,
+			UnlimitedQuota:      true,
+			Group:               group,
+			AutoGroupCandidates: candidates,
+		}
+		if err := tx.Create(&token).Error; err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
+	return created, err
+}
+
+func withUserTokenCreationLock(userId int, callback func(*gorm.DB) error) error {
+	for attempt := 0; attempt < 5; attempt++ {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var user User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userId).Error; err != nil {
+				return err
+			}
+			return callback(tx)
+		})
+		if err == nil {
+			return nil
+		}
+		if !common.UsingMainDatabase(common.DatabaseTypeSQLite) || !strings.Contains(strings.ToLower(err.Error()), "locked") {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	return fmt.Errorf("creating token: database remained locked")
 }
 
 // Update Make sure your token's fields is completed, because this will update non-zero values

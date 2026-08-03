@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
@@ -51,7 +51,11 @@ import {
   CardStaggerContainer,
   CardStaggerItem,
 } from '@/components/page-transition'
-import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
+import {
+  createOnboardingApiKey,
+  fetchTokenKey,
+  getApiKeys,
+} from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import {
   useApiInfo,
@@ -216,6 +220,7 @@ function StartStepItem(props: {
   step: StartStep
   index: number
   isLast: boolean
+  onClick?: () => void
 }) {
   const Icon = props.step.icon
   const StatusIcon = props.step.completed ? Check : Circle
@@ -242,6 +247,11 @@ function StartStepItem(props: {
 
       <Link
         to={props.step.to}
+        onClick={(event) => {
+          if (!props.onClick) return
+          event.preventDefault()
+          props.onClick()
+        }}
         className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
       >
         <span className='flex min-w-0 items-start gap-2.5'>
@@ -429,6 +439,9 @@ function CompactQuickAction(props: { action: QuickAction }) {
 export function OverviewDashboard() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
+  const queryClient = useQueryClient()
+  const [isCreatingFirstKey, setIsCreatingFirstKey] = useState(false)
+  const isCreatingFirstKeyRef = useRef(false)
   const { items: apiInfoItems } = useApiInfo()
   const {
     apiInfo: showApiInfoPanel,
@@ -448,7 +461,7 @@ export function OverviewDashboard() {
     queryKey: ['dashboard', 'overview', 'api-keys'],
     queryFn: async () => {
       const result = await getApiKeys({ p: 1, size: 10 })
-      return result.success ? (result.data?.items ?? []) : []
+      return result.success ? (result.data?.items ?? []) : null
     },
     staleTime: 60 * 1000,
   })
@@ -466,6 +479,45 @@ export function OverviewDashboard() {
     () => getPreferredKey(apiKeysQuery.data ?? []),
     [apiKeysQuery.data]
   )
+  const canCreateFirstKey =
+    apiKeysQuery.isSuccess &&
+    Array.isArray(apiKeysQuery.data) &&
+    !preferredKey &&
+    !isCreatingFirstKey
+
+  const handleCreateFirstKey = async () => {
+    if (!canCreateFirstKey || isCreatingFirstKeyRef.current) return
+
+    isCreatingFirstKeyRef.current = true
+    setIsCreatingFirstKey(true)
+    try {
+      const refreshedKeys = await apiKeysQuery.refetch()
+      if (refreshedKeys.isError || !refreshedKeys.data) {
+        toast.error(t('Failed to load API keys'))
+        return
+      }
+      if (getPreferredKey(refreshedKeys.data)) return
+
+      const result = await createOnboardingApiKey()
+      if (result.success) {
+        if (result.data?.created) {
+          toast.success(
+            t('Successfully created {{count}} API Key(s)', { count: 1 })
+          )
+        }
+        await queryClient.invalidateQueries({
+          queryKey: ['dashboard', 'overview', 'api-keys'],
+        })
+      } else {
+        toast.error(result.message || t('Failed to create API key'))
+      }
+    } catch {
+      toast.error(t('Failed to create API key'))
+    } finally {
+      isCreatingFirstKeyRef.current = false
+      setIsCreatingFirstKey(false)
+    }
+  }
 
   const startSteps = useMemo<StartStep[]>(
     () => [
@@ -617,10 +669,6 @@ export function OverviewDashboard() {
                         <ChevronUp data-icon='inline-start' />
                         {t('Hide setup guide')}
                       </Button>
-                      <Button size='sm' render={<Link to='/keys' />}>
-                        <KeyRound data-icon='inline-start' />
-                        {t('Create API Key')}
-                      </Button>
                     </div>
                   </div>
 
@@ -631,6 +679,11 @@ export function OverviewDashboard() {
                         step={step}
                         index={index}
                         isLast={index === startSteps.length - 1}
+                        onClick={
+                          index === 0 && canCreateFirstKey
+                            ? handleCreateFirstKey
+                            : undefined
+                        }
                       />
                     ))}
                   </ol>

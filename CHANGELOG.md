@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.121
+
+- Added an idempotent one-click API-key onboarding flow on Dashboard Overview with safe first-key defaults and atomic duplicate and limit protection.
+- Removed the redundant Create API Key action from the expanded setup guide.
+
 ## v1.1.120
 
 - Sort pricing models by benefit by default and place the Benefit option first in the sort menu.
