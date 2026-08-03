@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.120
+
+- Sort pricing models by benefit by default and place the Benefit option first in the sort menu.
+
 ## v1.1.119
 
 - Highlight ready-to-deploy new system-update releases with a subtle green glowing card border.

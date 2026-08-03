@@ -20,7 +20,7 @@ import { useMemo, useCallback, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import {
   FILTER_ALL,
-  SORT_OPTIONS,
+  DEFAULT_SORT_OPTION,
   QUOTA_TYPES,
   ENDPOINT_TYPES,
   DEFAULT_TOKEN_UNIT,
@@ -66,7 +66,7 @@ export function useFilters(models: PricingModel[]) {
   }))
 
   const searchInput = filterState.search || ''
-  const sortBy = filterState.sort || SORT_OPTIONS.NAME
+  const sortBy = filterState.sort || DEFAULT_SORT_OPTION
   const vendorFilter = filterState.vendor || FILTER_ALL
   const groupFilter = filterState.group || FILTER_ALL
   const quotaTypeFilter = filterState.quotaType || QUOTA_TYPES.ALL
@@ -112,7 +112,7 @@ export function useFilters(models: PricingModel[]) {
   )
   const setSortBy = useCallback(
     (v: string) =>
-      updateFilters({ sort: v === SORT_OPTIONS.NAME ? undefined : v }),
+      updateFilters({ sort: v === DEFAULT_SORT_OPTION ? undefined : v }),
     [updateFilters]
   )
   const setVendorFilter = useCallback(
