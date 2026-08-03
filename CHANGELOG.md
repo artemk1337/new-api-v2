@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.122
+
+- Renamed the dynamic pricing tier Length field to Context in the model details view.
+
 ## v1.1.121
 
 - Added an idempotent one-click API-key onboarding flow on Dashboard Overview with safe first-key defaults and atomic duplicate and limit protection.
