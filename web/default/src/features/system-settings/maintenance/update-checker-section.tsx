@@ -139,6 +139,7 @@ function getSystemUpdateReleaseBuildStatusLabel(
 type SystemUpdateReleaseCardProps = {
   canUpdate: boolean
   disabled: boolean
+  isAvailableUpdate: boolean
   onUpdate: (version: string) => void
   release: SystemUpdateRelease
   t: TFunction
@@ -150,7 +151,14 @@ function SystemUpdateReleaseCard(props: SystemUpdateReleaseCardProps) {
   const canDeploy = canDeploySystemUpdateRelease(props.release)
 
   return (
-    <div className='space-y-2 rounded-lg border p-4'>
+    <div
+      className={cn(
+        'space-y-2 rounded-lg border p-4',
+        props.isAvailableUpdate &&
+          canDeploy &&
+          'border-green-500/70 shadow-[0_0_18px_rgba(34,197,94,0.28)] dark:border-green-400/70 dark:shadow-[0_0_22px_rgba(74,222,128,0.24)]'
+      )}
+    >
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <h3 className='text-base font-semibold'>{props.release.tag_name}</h3>
         <span
@@ -613,6 +621,7 @@ export function UpdateCheckerSection({
                         disabled={
                           updateActive || Boolean(expectedUpdateVersion)
                         }
+                        isAvailableUpdate
                         onUpdate={startUpdateForVersion}
                         release={item}
                         t={t}
@@ -643,6 +652,7 @@ export function UpdateCheckerSection({
                         disabled={
                           updateActive || Boolean(expectedUpdateVersion)
                         }
+                        isAvailableUpdate={false}
                         onUpdate={startUpdateForVersion}
                         release={item}
                         t={t}

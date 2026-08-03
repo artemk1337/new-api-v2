@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.119
+
+- Highlight ready-to-deploy new system-update releases with a subtle green glowing card border.
+
 ## v1.1.118
 
 - Replaced top-up discounts with threshold-based cashback while keeping payment totals at full price.
