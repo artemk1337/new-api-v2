@@ -231,7 +231,7 @@ export function Pricing() {
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
               shareUrl={shareUrl}
-              className='hover-scrollbar sticky top-4 hidden max-h-[calc(100dvh-2rem)] self-start overflow-y-auto xl:block'
+              className='sticky top-4 hidden self-start xl:block'
             />
 
             <main className='min-w-0 space-y-4'>

@@ -21,6 +21,13 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
@@ -39,7 +46,7 @@ export interface ModelCardGridProps {
 export function ModelCardGrid(props: ModelCardGridProps) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
-  const pageSize = DEFAULT_PRICING_PAGE_SIZE
+  const [pageSize, setPageSize] = useState(DEFAULT_PRICING_PAGE_SIZE)
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -70,14 +77,39 @@ export function ModelCardGrid(props: ModelCardGridProps) {
         ))}
       </div>
 
-      {totalPages > 1 && (
-        <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 border-t px-4 py-3 text-sm sm:flex-row'>
+      <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 border-t px-4 py-3 text-sm sm:flex-row'>
+        <div className='flex items-center gap-3'>
           <p className='text-muted-foreground'>
             {t('Page {{current}} of {{total}}', {
               current: currentPage,
               total: totalPages,
             })}
           </p>
+          <div className='flex items-center gap-1.5'>
+            <p className='text-muted-foreground/80 whitespace-nowrap'>
+              {t('Rows per page')}
+            </p>
+            <Select
+              value={`${pageSize}`}
+              onValueChange={(value) => {
+                setPageSize(Number(value))
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className='h-8 w-[64px] font-medium tabular-nums'>
+                <SelectValue placeholder={pageSize} />
+              </SelectTrigger>
+              <SelectContent side='top' alignItemWithTrigger={false}>
+                {[10, 20, 30, 40, 50, 100].map((option) => (
+                  <SelectItem key={option} value={`${option}`}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {totalPages > 1 && (
           <div className='flex items-center gap-2'>
             <Button
               type='button'
@@ -104,8 +136,8 @@ export function ModelCardGrid(props: ModelCardGridProps) {
               <ChevronRight className='size-4' />
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

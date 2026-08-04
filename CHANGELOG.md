@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.123
+
+- Made the pricing sidebar height dynamic so it no longer has an internal scroll area.
+- Added a model-card page-size selector to choose how many pricing models are shown per page.
+
 ## v1.1.122
 
 - Renamed the dynamic pricing tier Length field to Context in the model details view.
