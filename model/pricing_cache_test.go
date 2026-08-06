@@ -111,3 +111,27 @@ func TestInitDefaultVendorMappingAssignsExistingUnassignedMidjourneyModel(t *tes
 	require.Equal(t, vendorNameMap["Midjourney"], vendorID)
 	require.Equal(t, "Midjourney", vendorMap[vendorID].Icon)
 }
+
+func TestInitDefaultVendorMappingAssignsVeoToGoogle(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Model{}, &Vendor{}))
+	t.Cleanup(func() {
+		DB.Exec("DELETE FROM vendors")
+		DB.Exec("DELETE FROM models")
+	})
+
+	metaMap := map[string]*Model{
+		"veo_3_1-fast": {ModelName: "veo_3_1-fast"},
+	}
+	vendorMap := make(map[int]*Vendor)
+	vendorNameMap := make(map[string]int)
+
+	initDefaultVendorMapping(metaMap, vendorMap, vendorNameMap, []AbilityWithChannel{
+		{Ability: Ability{Model: "veo_3_1-fast"}},
+	})
+
+	vendorID := metaMap["veo_3_1-fast"].VendorID
+	require.NotZero(t, vendorID)
+	require.Equal(t, vendorNameMap["Google"], vendorID)
+	require.Equal(t, "Gemini.Color", vendorMap[vendorID].Icon)
+}

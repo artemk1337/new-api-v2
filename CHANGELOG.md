@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.124
+
+- Automatically associate Veo video models with Google and display the Gemini provider icon in the pricing catalog.
+
 ## v1.1.123
 
 - Made the pricing sidebar height dynamic so it no longer has an internal scroll area.

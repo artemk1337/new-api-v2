@@ -14,6 +14,7 @@ var defaultVendorRules = map[string]string{
 	"o3":       "OpenAI",
 	"claude":   "Anthropic",
 	"gemini":   "Google",
+	"veo":      "Google",
 	"moonshot": "Moonshot",
 	"kimi":     "Moonshot",
 	"chatglm":  "Zhipu",
