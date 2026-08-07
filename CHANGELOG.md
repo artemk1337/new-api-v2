@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.125
+
+- Keep incomplete pricing model-card rows left-aligned with stable card widths.
+
 ## v1.1.124
 
 - Automatically associate Veo video models with Google and display the Gemini provider icon in the pricing catalog.
