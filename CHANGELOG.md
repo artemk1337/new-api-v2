@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.126
+
+- Automatically remove unavailable upstream models during channel auto-sync and report those removals accurately in update task summaries and notifications.
+
 ## v1.1.125
 
 - Keep incomplete pricing model-card rows left-aligned with stable card widths.

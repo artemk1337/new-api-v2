@@ -2,11 +2,14 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
@@ -176,6 +179,124 @@ func TestCollectPendingUpstreamModelChangesFromModels_WithIgnoredRegexPatterns(t
 	require.Equal(t, []string{}, pendingRemoveModels)
 }
 
+func TestCheckAndPersistChannelUpstreamModelUpdatesAutoSyncRemovesUnavailableModels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/models", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, err := fmt.Fprint(w, `{"data":[{"id":"current-model"}]}`)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(upstream.Close)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		Key:     "test-key",
+		Status:  common.ChannelStatusEnabled,
+		BaseURL: &baseURL,
+		Models:  "current-model,stale-model",
+		Group:   "default",
+		Name:    "auto-sync-removal",
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled:    true,
+		UpstreamModelUpdateAutoSyncEnabled: true,
+	})
+	require.NoError(t, channel.Insert())
+
+	settings := channel.GetOtherSettings()
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+	require.NoError(t, err)
+	require.True(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Equal(t, []string{"stale-model"}, autoRemoved)
+	require.Equal(t, "current-model", channel.Models)
+	require.Empty(t, settings.UpstreamModelUpdateLastRemovedModels)
+	var reloaded model.Channel
+	require.NoError(t, db.First(&reloaded, channel.Id).Error)
+	require.Equal(t, "current-model", reloaded.Models)
+	require.Empty(t, reloaded.GetOtherSettings().UpstreamModelUpdateLastRemovedModels)
+
+	var abilities []model.Ability
+	require.NoError(t, db.Where("channel_id = ?", channel.Id).Find(&abilities).Error)
+	require.Len(t, abilities, 1)
+	require.Equal(t, "current-model", abilities[0].Model)
+}
+
+func TestCheckAndPersistChannelUpstreamModelUpdatesWithoutAutoSyncKeepsRemovalPending(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := fmt.Fprint(w, `{"data":[{"id":"current-model"}]}`)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(upstream.Close)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		Key:     "test-key",
+		Status:  common.ChannelStatusEnabled,
+		BaseURL: &baseURL,
+		Models:  "current-model,stale-model",
+		Group:   "default",
+		Name:    "manual-removal",
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled:    true,
+		UpstreamModelUpdateAutoSyncEnabled: false,
+	})
+	require.NoError(t, channel.Insert())
+
+	settings := channel.GetOtherSettings()
+	modelsChanged, autoAdded, autoRemoved, err := checkAndPersistChannelUpstreamModelUpdates(channel, &settings, true, true)
+	require.NoError(t, err)
+	require.False(t, modelsChanged)
+	require.Zero(t, autoAdded)
+	require.Empty(t, autoRemoved)
+	require.Equal(t, "current-model,stale-model", channel.Models)
+	require.Equal(t, []string{"stale-model"}, settings.UpstreamModelUpdateLastRemovedModels)
+	var reloaded model.Channel
+	require.NoError(t, db.First(&reloaded, channel.Id).Error)
+	require.Equal(t, "current-model,stale-model", reloaded.Models)
+	require.Equal(t, []string{"stale-model"}, reloaded.GetOtherSettings().UpstreamModelUpdateLastRemovedModels)
+}
+
+func TestRunChannelUpstreamModelUpdateTaskOnceAutoSyncRemovalOnlyReportsRemovedModels(t *testing.T) {
+	setupModelListControllerTestDB(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, err := fmt.Fprint(w, `{"data":[{"id":"current-model"}]}`)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(upstream.Close)
+
+	baseURL := upstream.URL
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeOpenAI,
+		Key:     "test-key",
+		Status:  common.ChannelStatusEnabled,
+		BaseURL: &baseURL,
+		Models:  "current-model,stale-model",
+		Group:   "default",
+		Name:    "task-auto-sync-removal",
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		UpstreamModelUpdateCheckEnabled:    true,
+		UpstreamModelUpdateAutoSyncEnabled: true,
+	})
+	require.NoError(t, channel.Insert())
+
+	summary := runChannelUpstreamModelUpdateTaskOnce(nil, true, true, nil)
+	require.Equal(t, upstreamModelUpdateSummary{
+		CheckedChannels:      1,
+		ChangedChannels:      1,
+		DetectedRemoveModels: 1,
+		AutoRemovedModels:    1,
+	}, summary)
+}
+
 func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *testing.T) {
 	channelSummaries := make([]upstreamModelUpdateChannelSummary, 0, 12)
 	for i := 0; i < 12; i++ {
@@ -192,6 +313,8 @@ func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *
 		56,
 		21,
 		9,
+		7,
+		[]string{"auto-removed-model"},
 		[]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
 		channelSummaries,
 		[]string{
@@ -207,6 +330,10 @@ func TestBuildUpstreamModelUpdateTaskNotificationContent_OmitOverflowDetails(t *
 
 	require.Contains(t, content, "其余 4 个渠道已省略")
 	require.Contains(t, content, "其余 1 个已省略")
+	require.Contains(t, content, "自动同步新增 9 个、删除 7 个")
+	require.Contains(t, content, "删除模型示例")
+	require.Contains(t, content, "自动同步删除模型示例")
+	require.Contains(t, content, "auto-removed-model")
 	require.Contains(t, content, "失败渠道 ID（展示 10/12）")
 	require.Contains(t, content, "其余 2 个已省略")
 }
