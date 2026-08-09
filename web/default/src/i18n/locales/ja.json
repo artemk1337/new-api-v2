@@ -1464,6 +1464,7 @@
     "Duration Value": "期間値",
     "Dynamic Pricing": "ダイナミック価格設定",
     "Dynamic ratio": "動的倍率",
+    "Channels: {{total}} total · {{active}} active · {{inactive}} inactive": "チャンネル：合計 {{total}} · 有効 {{active}} · 無効 {{inactive}}",
     "e.g. ¥ or HK$": "例: ¥ または HK$",
     "e.g. 401, 403, 429, 500-599": "例：401, 403, 429, 500-599",
     "e.g. 8 means 1 USD = 8 units": "例: 8 は 1 USD = 8 単位 を意味します",

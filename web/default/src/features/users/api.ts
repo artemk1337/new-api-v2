@@ -215,4 +215,9 @@ export type PricingGroupRecord = {
   ratio: number
   selectable: boolean
   description: string
+  channel_stats?: {
+    total: number
+    active: number
+    inactive: number
+  }
 }

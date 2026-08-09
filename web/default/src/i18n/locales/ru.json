@@ -1464,6 +1464,7 @@
     "Duration Value": "Значение срока",
     "Dynamic Pricing": "Динамическое ценообразование",
     "Dynamic ratio": "Динамический коэффициент",
+    "Channels: {{total}} total · {{active}} active · {{inactive}} inactive": "Каналы: всего {{total}} · активных {{active}} · выключено {{inactive}}",
     "e.g. ¥ or HK$": "напр. ¥ или HK$",
     "e.g. 401, 403, 429, 500-599": "напр. 401, 403, 429, 500-599",
     "e.g. 8 means 1 USD = 8 units": "напр. 8 означает 1 USD = 8 единиц",

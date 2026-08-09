@@ -19,9 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useMemo, useEffect, useCallback, memo } from 'react'
 import { Plus, Trash2, ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
+import { getGroups } from '@/features/users/api'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -60,6 +62,7 @@ type GroupRatioVisualEditorProps = {
 
 type GroupPricingRow = {
   _id: string
+  isNew: boolean
   id: number
   name: string
   ratio: number
@@ -115,6 +118,7 @@ function parsePricingGroupRows(pricingGroups: string): GroupPricingRow[] {
       if (!Number.isFinite(id) || id <= 0 || !name) continue
       rows.push({
         _id: createGroupPricingId(),
+        isNew: false,
         id,
         name,
         ratio: normalizeRatio(row.ratio),
@@ -133,6 +137,7 @@ function parsePricingGroupRows(pricingGroups: string): GroupPricingRow[] {
     entries.sort(([a], [b]) => a.localeCompare(b))
     return entries.map(([name, value], index) => ({
       _id: createGroupPricingId(),
+      isNew: false,
       id: index + 1,
       name,
       ratio: normalizeRatio(value),
@@ -665,8 +670,23 @@ function GroupPricingTable({
   onChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
+  const { data: groupsData } = useQuery({
+    queryKey: ['pricing-groups', 'channel-stats'],
+    queryFn: getGroups,
+  })
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
     parsePricingGroupRows(pricingGroups)
+  )
+
+  const channelStatsById = useMemo(
+    () =>
+      new Map(
+        (groupsData?.data ?? []).map((group) => [
+          group.id,
+          group.channel_stats,
+        ])
+      ),
+    [groupsData]
   )
 
   useEffect(() => {
@@ -706,6 +726,7 @@ function GroupPricingTable({
       ...rows,
       {
         _id: createGroupPricingId(),
+        isNew: true,
         id: nextId,
         name: `group_${nextId}`,
         ratio: 1,
@@ -811,6 +832,33 @@ function GroupPricingTable({
                     }
                   />
                 ),
+              },
+              {
+                id: 'channels',
+                header: t('Channels'),
+                className: 'w-28',
+                cell: (row) => {
+                  const stats = (row.isNew
+                    ? undefined
+                    : channelStatsById.get(row.id)) ?? {
+                    total: 0,
+                    active: 0,
+                    inactive: 0,
+                  }
+                  const label = t(
+                    'Channels: {{total}} total · {{active}} active · {{inactive}} inactive',
+                    stats
+                  )
+                  return (
+                    <span
+                      className='text-muted-foreground text-xs tabular-nums'
+                      title={label}
+                      aria-label={label}
+                    >
+                      {stats.total}/{stats.active}/{stats.inactive}
+                    </span>
+                  )
+                },
               },
               {
                 id: 'selectable',

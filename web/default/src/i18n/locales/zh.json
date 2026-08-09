@@ -1464,6 +1464,7 @@
     "Duration Value": "有效期数值",
     "Dynamic Pricing": "动态计费",
     "Dynamic ratio": "动态倍率",
+    "Channels: {{total}} total · {{active}} active · {{inactive}} inactive": "渠道：共 {{total}} · 活跃 {{active}} · 已停用 {{inactive}}",
     "e.g. ¥ or HK$": "例如，¥ 或 HK$",
     "e.g. 401, 403, 429, 500-599": "例如 401、403、429、500-599",
     "e.g. 8 means 1 USD = 8 units": "例如，8 表示 1 美元 = 8 单位",

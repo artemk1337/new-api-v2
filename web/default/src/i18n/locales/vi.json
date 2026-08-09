@@ -1464,6 +1464,7 @@
     "Duration Value": "Giá trị thời lượng",
     "Dynamic Pricing": "Giá linh hoạt",
     "Dynamic ratio": "Hệ số động",
+    "Channels: {{total}} total · {{active}} active · {{inactive}} inactive": "Kênh: tổng {{total}} · hoạt động {{active}} · đã tắt {{inactive}}",
     "e.g. ¥ or HK$": "ví dụ ¥ hoặc HK$",
     "e.g. 401, 403, 429, 500-599": "vd. 401, 403, 429, 500-599",
     "e.g. 8 means 1 USD = 8 units": "Ví dụ: 8 có nghĩa là 1 USD = 8 đơn vị",

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.128
+
+- Added total, active, and inactive channel counts to each admin pricing group.
+
 ## v1.1.127
 
 - Added a Yesterday quick date-range preset to the usage journal.

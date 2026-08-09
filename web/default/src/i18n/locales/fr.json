@@ -1464,6 +1464,7 @@
     "Duration Value": "Valeur de durée",
     "Dynamic Pricing": "Tarification dynamique",
     "Dynamic ratio": "Coefficient dynamique",
+    "Channels: {{total}} total · {{active}} active · {{inactive}} inactive": "Canaux : total {{total}} · actifs {{active}} · désactivés {{inactive}}",
     "e.g. ¥ or HK$": "par ex. ¥ ou HK$",
     "e.g. 401, 403, 429, 500-599": "ex. 401, 403, 429, 500-599",
     "e.g. 8 means 1 USD = 8 units": "par ex. 8 signifie 1 USD = 8 unités",

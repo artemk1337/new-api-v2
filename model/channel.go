@@ -61,6 +61,43 @@ type Channel struct {
 	Keys []string `json:"-" gorm:"-"`
 }
 
+// ChannelGroupStats summarizes channel status for a pricing group.
+// A channel belonging to multiple groups is counted once in each group.
+type ChannelGroupStats struct {
+	Total    int `json:"total"`
+	Active   int `json:"active"`
+	Inactive int `json:"inactive"`
+}
+
+// GetChannelGroupStats returns channel counts grouped by pricing group key.
+// Only one small query is used so the result stays compatible with all
+// supported database dialects.
+func GetChannelGroupStats() (map[string]ChannelGroupStats, error) {
+	var channels []Channel
+	if err := DB.Model(&Channel{}).Select(commonGroupCol + ", status").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+
+	stats := make(map[string]ChannelGroupStats)
+	for _, channel := range channels {
+		for _, group := range channel.GetGroups() {
+			key := ratio_setting.PricingGroupKey(group)
+			if key == "" {
+				continue
+			}
+			current := stats[key]
+			current.Total++
+			if channel.Status == common.ChannelStatusEnabled {
+				current.Active++
+			} else {
+				current.Inactive++
+			}
+			stats[key] = current
+		}
+	}
+	return stats, nil
+}
+
 type ChannelInfo struct {
 	IsMultiKey             bool                  `json:"is_multi_key"`                        // 是否多Key模式
 	MultiKeySize           int                   `json:"multi_key_size"`                      // 多Key模式下的Key数量

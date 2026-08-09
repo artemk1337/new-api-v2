@@ -11,11 +11,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type pricingGroupResponse struct {
+	Id           int                     `json:"id"`
+	Name         string                  `json:"name"`
+	Ratio        float64                 `json:"ratio"`
+	Selectable   bool                    `json:"selectable"`
+	Description  string                  `json:"description,omitempty"`
+	ChannelStats model.ChannelGroupStats `json:"channel_stats"`
+}
+
 func GetGroups(c *gin.Context) {
+	groups := ratio_setting.GetPricingGroupsCopy()
+	channelStats, err := model.GetChannelGroupStats()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	data := make([]pricingGroupResponse, 0, len(groups))
+	for _, group := range groups {
+		stats := channelStats[ratio_setting.PricingGroupKey(group.Name)]
+		data = append(data, pricingGroupResponse{
+			Id:           group.Id,
+			Name:         group.Name,
+			Ratio:        group.Ratio,
+			Selectable:   group.Selectable,
+			Description:  group.Description,
+			ChannelStats: stats,
+		})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    ratio_setting.GetPricingGroupsCopy(),
+		"data":    data,
 	})
 }
 
