@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.127
+
+- Added a Yesterday quick date-range preset to the usage journal.
+
 ## v1.1.126
 
 - Automatically remove unavailable upstream models during channel auto-sync and report those removals accurately in update task summaries and notifications.
