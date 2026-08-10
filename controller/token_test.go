@@ -589,6 +589,39 @@ func TestAddTokenDefaultsToAutoAndNormalizesCandidateIDs(t *testing.T) {
 	assert.NotContains(t, getRecorder.Body.String(), "cross_group_retry")
 }
 
+func TestAddTokenReturnsCreatedIDAndMaskedKey(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       75,
+		Username: "created-token-response-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+		"name":            "created-token-response",
+		"expired_time":    -1,
+		"unlimited_quota": true,
+	}, 75)
+	AddToken(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success)
+	var created tokenResponseItem
+	require.NoError(t, common.Unmarshal(response.Data, &created))
+	require.NotZero(t, created.ID)
+	require.NotEmpty(t, created.Key)
+
+	var stored model.Token
+	require.NoError(t, db.Session(&gorm.Session{SkipHooks: true}).First(&stored, created.ID).Error)
+	assert.Equal(t, stored.GetMaskedKey(), created.Key)
+	assert.NotEqual(t, stored.Key, created.Key)
+	assert.NotContains(t, recorder.Body.String(), stored.Key)
+}
+
 func TestCreateOnboardingTokenCreatesExactlyOneKey(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	require.NoError(t, db.Create(&model.User{

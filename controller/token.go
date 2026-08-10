@@ -308,10 +308,9 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-	})
+	// Return the newly assigned id and masked key so clients can immediately
+	// resolve the one-time secret without guessing which token was created.
+	common.ApiSuccess(c, buildMaskedTokenResponse(&cleanToken))
 }
 
 func CreateOnboardingToken(c *gin.Context) {

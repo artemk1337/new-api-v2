@@ -79,7 +79,7 @@ import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
-import { createApiKey, updateApiKey, getApiKey } from '../api'
+import { createApiKey, fetchTokenKey, updateApiKey, getApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
   getApiKeyFormSchema,
@@ -95,6 +95,8 @@ import {
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
+import { ApiKeyCreatedDialog } from './dialogs/api-key-created-dialog'
+import { normalizeApiKey } from './dialogs/api-key-created-dialog-utils'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -113,6 +115,12 @@ export function ApiKeysMutateDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [isAutoHelpOpen, setIsAutoHelpOpen] = useState(false)
+  const [createdKey, setCreatedKey] = useState('')
+  const [createdTokenId, setCreatedTokenId] = useState<number | null>(null)
+  const [createdKeyResolved, setCreatedKeyResolved] = useState(false)
+  const [createdKeyError, setCreatedKeyError] = useState('')
+  const [isRetryingCreatedKey, setIsRetryingCreatedKey] = useState(false)
+  const [createdDialogOpen, setCreatedDialogOpen] = useState(false)
 
   // Fetch models
   const { data: modelsData } = useQuery({
@@ -314,6 +322,9 @@ export function ApiKeysMutateDrawer({
         // Create mode - handle batch creation
         const count = data.tokenCount || 1
         let successCount = 0
+        let newlyCreatedKey = ''
+        let newlyCreatedTokenId: number | null = null
+        let keyResolutionError = ''
 
         for (let i = 0; i < count; i++) {
           const result = await createApiKey({
@@ -325,6 +336,28 @@ export function ApiKeysMutateDrawer({
           })
           if (result.success) {
             successCount++
+            if (count === 1 && result.data?.id) {
+              newlyCreatedTokenId = result.data.id
+              newlyCreatedKey = result.data.key
+                ? normalizeApiKey(result.data.key)
+                : 'sk-********'
+              try {
+                const keyResult = await fetchTokenKey(result.data.id)
+                if (keyResult.success && keyResult.data?.key) {
+                  newlyCreatedKey = normalizeApiKey(keyResult.data.key)
+                } else {
+                  keyResolutionError =
+                    keyResult.message ||
+                    t(
+                      'The API key was created, but its full value could not be loaded.'
+                    )
+                }
+              } catch {
+                keyResolutionError = t(
+                  'The API key was created, but its full value could not be loaded.'
+                )
+              }
+            }
           } else {
             toast.error(result.message || t(ERROR_MESSAGES.CREATE_FAILED))
             break
@@ -332,11 +365,19 @@ export function ApiKeysMutateDrawer({
         }
 
         if (successCount > 0) {
-          toast.success(
-            t('Successfully created {{count}} API Key(s)', {
-              count: successCount,
-            })
-          )
+          if (count === 1 && newlyCreatedTokenId) {
+            setCreatedTokenId(newlyCreatedTokenId)
+            setCreatedKey(newlyCreatedKey)
+            setCreatedKeyResolved(!keyResolutionError)
+            setCreatedKeyError(keyResolutionError)
+            setCreatedDialogOpen(true)
+          } else {
+            toast.success(
+              t('Successfully created {{count}} API Key(s)', {
+                count: successCount,
+              })
+            )
+          }
           onOpenChange(false)
           triggerRefresh()
         }
@@ -350,6 +391,36 @@ export function ApiKeysMutateDrawer({
 
   const onInvalid: SubmitErrorHandler<ApiKeyFormValues> = () => {
     toast.error(t('Please fix the highlighted fields before saving'))
+  }
+
+  const retryCreatedKey = async () => {
+    if (!createdTokenId) return
+
+    setIsRetryingCreatedKey(true)
+    try {
+      const result = await fetchTokenKey(createdTokenId)
+      if (result.success && result.data?.key) {
+        const resolvedKey = normalizeApiKey(result.data.key)
+        setCreatedKey(resolvedKey)
+        setCreatedKeyResolved(true)
+        setCreatedKeyError('')
+      } else {
+        setCreatedKeyResolved(false)
+        setCreatedKeyError(
+          result.message ||
+            t(
+              'The API key was created, but its full value could not be loaded.'
+            )
+        )
+      }
+    } catch {
+      setCreatedKeyResolved(false)
+      setCreatedKeyError(
+        t('The API key was created, but its full value could not be loaded.')
+      )
+    } finally {
+      setIsRetryingCreatedKey(false)
+    }
   }
 
   const handleSetExpiry = (months: number, days: number, hours: number) => {
@@ -861,6 +932,23 @@ export function ApiKeysMutateDrawer({
           </Button>
         </SheetFooter>
       </SheetContent>
+      <ApiKeyCreatedDialog
+        open={createdDialogOpen}
+        tokenKey={createdKey}
+        keyResolved={createdKeyResolved}
+        keyError={createdKeyError}
+        retrying={isRetryingCreatedKey}
+        onRetry={() => void retryCreatedKey()}
+        onOpenChange={(nextOpen) => {
+          setCreatedDialogOpen(nextOpen)
+          if (!nextOpen) {
+            setCreatedKey('')
+            setCreatedTokenId(null)
+            setCreatedKeyResolved(false)
+            setCreatedKeyError('')
+          }
+        }}
+      />
     </Sheet>
   )
 }

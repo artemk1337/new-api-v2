@@ -55,6 +55,7 @@ import {
 import { cn } from '@/lib/utils'
 
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
+  bodyClassName?: string
   code: string
   collapsedLines?: number
   defaultCollapsed?: boolean
@@ -573,10 +574,7 @@ export const CodeBlock = ({
           }
           language={language}
           readOnly
-          rows={Math.min(
-            Math.max(lineCount, 4),
-            maxExpandedLines ?? lineCount
-          )}
+          rows={Math.min(Math.max(lineCount, 4), maxExpandedLines ?? lineCount)}
           showLineNumbers={showLineNumbers}
           value={code}
         />

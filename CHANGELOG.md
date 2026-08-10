@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.129
+
+- Added an API-key onboarding dialog after creating a key, with a protected revealable secret, Base URL, and copyable cURL, Python, Node.js, and Go examples.
+- Kept API-key onboarding responsive and safe: code samples are scroll-free, language tabs adapt to mobile, and full secrets are fetched only through the protected token endpoint.
+
 ## v1.1.128
 
 - Added total, active, and inactive channel counts to each admin pricing group.
