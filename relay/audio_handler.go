@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -36,6 +37,15 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
 		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())
+	}
+	if info.RelayMode == relayconstant.RelayModeAudioSpeech {
+		if unsupported, ok := adaptor.(interface{ SupportsAudioSpeech() bool }); ok && !unsupported.SupportsAudioSpeech() {
+			return types.NewError(
+				fmt.Errorf("audio speech is not supported by api type: %d", info.ApiType),
+				types.ErrorCodeConvertRequestFailed,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
 	}
 	adaptor.Init(info)
 

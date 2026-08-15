@@ -1,14 +1,12 @@
 package controller
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -75,14 +73,13 @@ func VideoProxy(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "", nil)
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, "", nil)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to create request: %s", err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to create proxy request")
 		return
 	}
+	forwardVideoRequestHeaders(c.Request.Header, req.Header)
 
 	switch channel.Type {
 	case constant.ChannelTypeGemini:
@@ -151,24 +148,54 @@ func VideoProxy(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Upstream returned status %d for %s", resp.StatusCode, videoURL))
 		videoProxyError(c, http.StatusBadGateway, "server_error",
 			fmt.Sprintf("Upstream service returned status %d", resp.StatusCode))
 		return
 	}
+	if err := writeVideoResponse(c, resp); err != nil {
+		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
+	}
+}
 
+var videoProxyRequestHeaders = []string{"Range", "If-Range"}
+
+var fixedHopByHopHeaders = map[string]struct{}{
+	"Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {}, "Proxy-Authorization": {},
+	"TE": {}, "Trailer": {}, "Transfer-Encoding": {}, "Upgrade": {},
+}
+
+func forwardVideoRequestHeaders(src, dst http.Header) {
+	for _, key := range videoProxyRequestHeaders {
+		if values := src.Values(key); len(values) > 0 {
+			dst[key] = append([]string(nil), values...)
+		}
+	}
+}
+
+func writeVideoResponse(c *gin.Context, resp *http.Response) error {
+	hopByHop := make(map[string]struct{}, len(fixedHopByHopHeaders))
+	for key := range fixedHopByHopHeaders {
+		hopByHop[key] = struct{}{}
+	}
+	for _, value := range resp.Header.Values("Connection") {
+		for token := range strings.SplitSeq(value, ",") {
+			hopByHop[http.CanonicalHeaderKey(strings.TrimSpace(token))] = struct{}{}
+		}
+	}
 	for key, values := range resp.Header {
+		if _, skip := hopByHop[http.CanonicalHeaderKey(key)]; skip {
+			continue
+		}
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
 		}
 	}
-
 	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
 	c.Writer.WriteHeader(resp.StatusCode)
-	if _, err = io.Copy(c.Writer, resp.Body); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to stream video content: %s", err.Error()))
-	}
+	_, err := io.Copy(c.Writer, resp.Body)
+	return err
 }
 
 func writeVideoDataURL(c *gin.Context, dataURL string) error {

@@ -30,6 +30,24 @@ func TestRelayErrorHandlerFinancialOutcome(t *testing.T) {
 			outcome: types.AttemptFinancialOutcomeUnknown,
 		},
 		{
+			name:    "known group saturation is non billable",
+			status:  http.StatusTooManyRequests,
+			body:    `{"error":{"message":"The upstream load for the current group is saturated. Please try again later or switch to another group."}}`,
+			outcome: types.AttemptFinancialOutcomeNonBillable,
+		},
+		{
+			name:    "known model saturation is non billable",
+			status:  http.StatusTooManyRequests,
+			body:    `{"message":"当前模型wan2.6-i2v上游已饱和, 请稍后再试!"}`,
+			outcome: types.AttemptFinancialOutcomeNonBillable,
+		},
+		{
+			name:    "known credentials concurrency saturation is non billable",
+			status:  http.StatusTooManyRequests,
+			body:    `{"error":{"message":"所有可用凭据均已达到并发上限，请稍后重试。 [up_rate_limit]"}}`,
+			outcome: types.AttemptFinancialOutcomeNonBillable,
+		},
+		{
 			name:    "structured 503 without explicit no charge is unknown",
 			status:  http.StatusServiceUnavailable,
 			body:    `{"message":"temporarily unavailable"}`,
@@ -163,6 +181,11 @@ func TestRelayErrorHandlerFinancialOutcome(t *testing.T) {
 			assert.Equal(t, tt.outcome, err.GetFinancialOutcome())
 		})
 	}
+}
+
+func TestKnownSaturationEnablesAutoFallbackAfterDispatch(t *testing.T) {
+	outcome := ClassifyUpstreamErrorResponse(http.StatusTooManyRequests, []byte(`{"error":{"message":"The upstream load for the current group is saturated."}}`))
+	assert.True(t, ShouldRetryAutoAttempt(outcome, true, false, true))
 }
 
 func TestRelayErrorHandlerTreatsResourceIdentifiersAsBillingEvidence(t *testing.T) {

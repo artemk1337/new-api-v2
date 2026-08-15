@@ -145,7 +145,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 // upstream response independently from retry policy and HTTP status. Invalid,
 // empty, or structurally unknown bodies stay unknown: after dispatch the caller
 // must treat them as financially ambiguous.
-func ClassifyUpstreamErrorResponse(_ int, body []byte) types.AttemptFinancialOutcome {
+func ClassifyUpstreamErrorResponse(statusCode int, body []byte) types.AttemptFinancialOutcome {
 	if !gjson.ValidBytes(body) {
 		return types.AttemptFinancialOutcomeUnknown
 	}
@@ -156,7 +156,29 @@ func ClassifyUpstreamErrorResponse(_ int, body []byte) types.AttemptFinancialOut
 	if responseExplicitlyGuaranteesNoBilling(value) {
 		return types.AttemptFinancialOutcomeNonBillable
 	}
+	// A saturated upstream rejects the request before processing it. Keep this
+	// narrow to the messages used by the relay's saturation normalization; a
+	// generic 429 remains financially unknown and must not be retried after
+	// dispatch.
+	if statusCode == http.StatusTooManyRequests && isUpstreamSaturatedResponse(value) {
+		return types.AttemptFinancialOutcomeNonBillable
+	}
 	return types.AttemptFinancialOutcomeUnknown
+}
+
+func isUpstreamSaturatedResponse(value gjson.Result) bool {
+	if value.Get("error.message").Exists() && isUpstreamSaturatedMessage(value.Get("error.message").String()) {
+		return true
+	}
+	return isUpstreamSaturatedMessage(value.Get("message").String())
+}
+
+func isUpstreamSaturatedMessage(message string) bool {
+	message = strings.ToLower(message)
+	return strings.Contains(message, "the upstream load for the current group is saturated") ||
+		strings.Contains(message, "当前分组上游负载已饱和") ||
+		(strings.Contains(message, "当前模型") && strings.Contains(message, "上游已饱和")) ||
+		strings.Contains(message, "所有可用凭据均已达到并发上限")
 }
 
 func responseExplicitlyGuaranteesNoBilling(value gjson.Result) bool {

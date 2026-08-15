@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.131
+
+- Support ranged video proxy streaming, including HTTP 206 partial responses.
+- Safely auto-fallback known upstream saturation and concurrency-limit 429 errors.
+- Avoid routing unsupported Alibaba TTS requests upstream.
+
 ## v1.1.130
 
 - Added configurable fixed per-call pricing for task models, preventing duration multipliers from being applied to providers that charge per request.

@@ -88,6 +88,12 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
+// SupportsAudioSpeech reports whether this adaptor can convert OpenAI TTS requests.
+// Alibaba's OpenAI-compatible endpoint does not implement /v1/audio/speech here.
+func (a *Adaptor) SupportsAudioSpeech() bool {
+	return false
+}
+
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	var fullRequestURL string
 	switch info.RelayFormat {
