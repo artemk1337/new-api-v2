@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.130
+
+- Added configurable fixed per-call pricing for task models, preventing duration multipliers from being applied to providers that charge per request.
+- Use the task's original upstream key when polling Gemini and Vertex video tasks in real time.
+
 ## v1.1.129
 
 - Added an API-key onboarding dialog after creating a key, with a protected revealable secret, Base URL, and copyable cURL, Python, Node.js, and Go examples.

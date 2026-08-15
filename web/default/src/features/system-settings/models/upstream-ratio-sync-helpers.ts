@@ -231,6 +231,7 @@ const PRICING_FORM_OPTION_KEYS: Record<string, string> = {
   AudioCompletionRatio: 'AudioCompletionRatio',
   BillingMode: 'billing_setting.billing_mode',
   BillingExpr: 'billing_setting.billing_expr',
+  TaskPriceUnit: 'billing_setting.task_price_unit',
 }
 
 export function buildPricingMapDiffPatches(

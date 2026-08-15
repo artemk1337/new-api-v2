@@ -19,6 +19,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,12 @@ type TaskSubmitResult struct {
 	Platform       constant.TaskPlatform
 	Quota          int
 	//PerCallPrice   types.PriceData
+}
+
+func applyTaskPriceUnit(modelName string, ratios map[string]float64) {
+	if billing_setting.GetTaskPriceUnit(modelName) == billing_setting.TaskPriceUnitPerCall {
+		delete(ratios, "seconds")
+	}
 }
 
 // ResolveOriginTask 处理基于已有任务的提交（remix / continuation）：
@@ -207,6 +214,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 				info.PriceData.AddOtherRatio(k, v)
 			}
 		}
+		applyTaskPriceUnit(modelName, info.PriceData.OtherRatios)
 
 		// 6. 将 OtherRatios 应用到基础额度
 		if !common.StringsContains(constant.TaskPricePatches, modelName) {
@@ -502,7 +510,11 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		return nil
 	}
 
-	resp, err := adaptor.FetchTask(baseURL, channelModel.Key, map[string]any{
+	key := task.PrivateData.Key
+	if key == "" {
+		key = channelModel.Key
+	}
+	resp, err := adaptor.FetchTask(baseURL, key, map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
 	}, proxy)

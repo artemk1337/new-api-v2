@@ -54,16 +54,17 @@ func LockPricingOptionSnapshot() func() {
 // merging the latest value under a row lock. Keep this API scoped to the
 // pricing synchronizer's independent per-model maps.
 var jsonObjectPatchOptionKeys = map[string]struct{}{
-	"ModelRatio":                   {},
-	"ModelPrice":                   {},
-	"CompletionRatio":              {},
-	"CacheRatio":                   {},
-	"CreateCacheRatio":             {},
-	"ImageRatio":                   {},
-	"AudioRatio":                   {},
-	"AudioCompletionRatio":         {},
-	"billing_setting.billing_mode": {},
-	"billing_setting.billing_expr": {},
+	"ModelRatio":                      {},
+	"ModelPrice":                      {},
+	"CompletionRatio":                 {},
+	"CacheRatio":                      {},
+	"CreateCacheRatio":                {},
+	"ImageRatio":                      {},
+	"AudioRatio":                      {},
+	"AudioCompletionRatio":            {},
+	"billing_setting.billing_mode":    {},
+	"billing_setting.billing_expr":    {},
+	"billing_setting.task_price_unit": {},
 }
 
 func IsModelPricingOption(key string) bool {
@@ -660,6 +661,17 @@ func validateOptionValue(key string, value string) error {
 		return ratio_setting.ValidatePricingGroupIDStabilityJSONString(value)
 	case "AutoGroups":
 		return ratio_setting.ValidateAutoGroupsJSONString(value)
+	case "billing_setting.task_price_unit":
+		values := make(map[string]string)
+		if err := common.UnmarshalJsonStr(value, &values); err != nil {
+			return err
+		}
+		for _, unit := range values {
+			if !billing_setting.IsTaskPriceUnit(unit) {
+				return errors.New("unsupported task price unit")
+			}
+		}
+		return nil
 	default:
 		return nil
 	}

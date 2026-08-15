@@ -112,6 +112,7 @@ const createModelSchema = (t: Translate) =>
     ExposeRatioEnabled: z.boolean(),
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
+    TaskPriceUnit: createJsonStringField(t),
   })
 
 const createGroupSchema = (t: Translate) =>
@@ -193,6 +194,7 @@ export function RatioSettingsCard({
     ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+    TaskPriceUnit: normalizeJsonString(modelDefaults.TaskPriceUnit),
   })
   const [savedModelValues, setSavedModelValues] = useState(
     modelNormalizedDefaults.current
@@ -228,6 +230,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      TaskPriceUnit: formatJsonForTextarea(modelDefaults.TaskPriceUnit),
     },
   })
 
@@ -260,6 +263,7 @@ export function RatioSettingsCard({
       ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+      TaskPriceUnit: normalizeJsonString(modelDefaults.TaskPriceUnit),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
@@ -277,6 +281,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      TaskPriceUnit: formatJsonForTextarea(modelDefaults.TaskPriceUnit),
     })
   }, [modelDefaults, modelForm])
 
@@ -321,6 +326,7 @@ export function RatioSettingsCard({
         ExposeRatioEnabled: values.ExposeRatioEnabled,
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
+        TaskPriceUnit: normalizeJsonString(values.TaskPriceUnit),
       }
 
       const updates = (

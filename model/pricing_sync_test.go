@@ -44,11 +44,15 @@ func TestDisablePricingSyncSourcesClearsOwnedModelPricing(t *testing.T) {
 	keys := []string{
 		"ModelPrice", "ModelRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio",
 		"ImageRatio", "AudioRatio", "AudioCompletionRatio",
-		"billing_setting.billing_mode", "billing_setting.billing_expr",
+		"billing_setting.billing_mode", "billing_setting.billing_expr", "billing_setting.task_price_unit",
 	}
 	patches := make(map[string]JSONObjectPatch, len(keys))
 	for _, key := range keys {
-		patches[key] = JSONObjectPatch{Set: map[string]any{modelName: 1}}
+		value := any(1)
+		if key == "billing_setting.task_price_unit" {
+			value = "per_call"
+		}
+		patches[key] = JSONObjectPatch{Set: map[string]any{modelName: value}}
 	}
 	require.NoError(t, ApplyJSONOptionPatches(patches))
 	t.Cleanup(func() {
@@ -205,6 +209,20 @@ func TestUpdatePricingOptionManualRejectsInvalidExpressionWithoutMutation(t *tes
 	var option Option
 	require.NoError(t, DB.First(&option, "key = ?", key).Error)
 	assert.Equal(t, previous, option.Value)
+	var stateCount int64
+	require.NoError(t, DB.Model(&PricingSyncModelState{}).Count(&stateCount).Error)
+	assert.Zero(t, stateCount)
+}
+
+func TestUpdatePricingOptionManualRejectsInvalidTaskPriceUnit(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncModelState{}))
+
+	err := ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+		"billing_setting.task_price_unit": {Set: map[string]any{"model-a": "per-hour"}},
+	})
+
+	require.ErrorContains(t, err, "unsupported task price unit")
 	var stateCount int64
 	require.NoError(t, DB.Model(&PricingSyncModelState{}).Count(&stateCount).Error)
 	assert.Zero(t, stateCount)

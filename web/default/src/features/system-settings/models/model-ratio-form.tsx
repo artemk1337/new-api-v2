@@ -57,6 +57,7 @@ type ModelFormValues = {
   ExposeRatioEnabled: boolean
   BillingMode: string
   BillingExpr: string
+  TaskPriceUnit: string
 }
 
 type ModelRatioFormProps = {
@@ -80,6 +81,7 @@ type ModelJsonFieldName =
   | 'ImageRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
+  | 'TaskPriceUnit'
 
 const modelJsonFields: Array<{
   name: ModelJsonFieldName
@@ -129,6 +131,12 @@ const modelJsonFields: Array<{
     name: 'AudioCompletionRatio',
     labelKey: 'Audio completion ratio',
     descriptionKey: 'Ratio applied to audio completions for streaming models.',
+  },
+  {
+    name: 'TaskPriceUnit',
+    labelKey: 'Task price unit',
+    descriptionKey:
+      'JSON map of task model → per_call or per_second. Use per_call for a fixed price per task.',
   },
 ]
 
@@ -258,6 +266,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
               savedBillingExpr={savedValues.BillingExpr}
+              taskPriceUnit={form.watch('TaskPriceUnit')}
               modelPrice={form.watch('ModelPrice')}
               modelRatio={form.watch('ModelRatio')}
               cacheRatio={form.watch('CacheRatio')}
@@ -274,6 +283,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                 const fieldMap: Record<string, keyof ModelFormValues> = {
                   'billing_setting.billing_mode': 'BillingMode',
                   'billing_setting.billing_expr': 'BillingExpr',
+                  'billing_setting.task_price_unit': 'TaskPriceUnit',
                 }
                 const formField =
                   fieldMap[field] || (field as keyof ModelFormValues)
