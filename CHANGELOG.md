@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.135
+
+- Sort pricing sidebar groups alphabetically by their display names.
+
 ## v1.1.134
 
 - Renamed the Russian FAQ settings heading to “FAQ”.

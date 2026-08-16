@@ -37,6 +37,7 @@ import {
   getQuotaTypeLabels,
 } from '../constants'
 import { filterModelsForFacet, parseTags } from '../lib/filters'
+import { sortGroupsByName } from '../lib/pricing-group-order'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -232,7 +233,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
       label: t('All Groups'),
       count: groupModels.length,
     },
-    ...props.groups
+    ...sortGroupsByName(props.groups, props.groupNames)
       .map((group) => {
         const count = countBy(groupModels, (model) =>
           model.enable_groups?.includes(group)

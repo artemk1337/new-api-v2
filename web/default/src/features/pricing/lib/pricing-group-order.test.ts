@@ -16,21 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function sortGroupsByRatio(
-  groups: string[],
-  groupRatio: Record<string, number>
-): string[] {
-  return [...groups].sort((left, right) => {
-    const ratioOrder = (groupRatio[left] ?? 1) - (groupRatio[right] ?? 1)
-    return ratioOrder || left.localeCompare(right)
-  })
-}
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
 
-export function sortGroupsByName(
-  groups: string[],
-  groupNames: Record<string, string> = {}
-): string[] {
-  return [...groups].sort((left, right) =>
-    (groupNames[left] ?? left).localeCompare(groupNames[right] ?? right)
-  )
-}
+import { sortGroupsByName } from './pricing-group-order'
+
+test('sortGroupsByName sorts groups by display name', () => {
+  const groups = sortGroupsByName(['zebra', 'alpha', 'beta'], {
+    zebra: 'Alpha',
+    alpha: 'Charlie',
+    beta: 'Bravo',
+  })
+
+  assert.deepEqual(groups, ['zebra', 'beta', 'alpha'])
+})
