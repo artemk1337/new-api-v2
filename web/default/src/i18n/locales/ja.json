@@ -5187,6 +5187,11 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Model Provenance": "モデルの出所",
+    "Requested model": "リクエストしたモデル",
+    "Sent to upstream": "上流に送信したモデル",
+    "Provider-returned model": "プロバイダーが返したモデル",
+    "Provider-returned model is shown only when supplied by the provider.": "プロバイダーが返した場合のみ、プロバイダーが返したモデルを表示します。"
   }
 }

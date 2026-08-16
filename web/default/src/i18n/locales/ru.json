@@ -5187,6 +5187,11 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Model Provenance": "Происхождение модели",
+    "Requested model": "Запрошенная модель",
+    "Sent to upstream": "Отправлена апстриму",
+    "Provider-returned model": "Модель, возвращённая провайдером",
+    "Provider-returned model is shown only when supplied by the provider.": "Модель, возвращённая провайдером, показывается только если провайдер её передал."
   }
 }

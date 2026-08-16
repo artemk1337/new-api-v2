@@ -164,6 +164,10 @@ export interface LogOtherData {
   cache_creation_ratio_1h?: number
   is_model_mapped?: boolean
   upstream_model_name?: string
+  // Model provenance fields recorded by the relay for user-visible log details.
+  requested_model?: string
+  sent_upstream_model?: string
+  provider_returned_model?: string
   audio_ratio?: number
   audio_completion_ratio?: number
   frt?: number

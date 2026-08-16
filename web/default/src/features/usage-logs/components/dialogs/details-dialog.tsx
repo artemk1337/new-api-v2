@@ -1254,6 +1254,41 @@ export function DetailsDialog(props: DetailsDialogProps) {
             </div>
           </div>
         )}
+
+        {/* Model provenance (reported routing metadata, not an independent attestation) */}
+        {other &&
+          (other.requested_model ||
+            other.sent_upstream_model ||
+            other.provider_returned_model) && (
+            <DetailSection label={t('Model Provenance')}>
+              {other.requested_model && (
+                <DetailRow
+                  label={t('Requested model')}
+                  value={other.requested_model}
+                  mono
+                />
+              )}
+              {other.sent_upstream_model && (
+                <DetailRow
+                  label={t('Sent to upstream')}
+                  value={other.sent_upstream_model}
+                  mono
+                />
+              )}
+              {other.provider_returned_model && (
+                <DetailRow
+                  label={t('Provider-returned model')}
+                  value={other.provider_returned_model}
+                  mono
+                />
+              )}
+              <p className='text-muted-foreground text-[11px] leading-relaxed'>
+                {t(
+                  'Provider-returned model is shown only when supplied by the provider.'
+                )}
+              </p>
+            </DetailSection>
+          )}
       </div>
     </Dialog>
   )

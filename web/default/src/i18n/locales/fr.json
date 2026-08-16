@@ -5187,6 +5187,11 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Model Provenance": "Provenance du modèle",
+    "Requested model": "Modèle demandé",
+    "Sent to upstream": "Modèle envoyé au fournisseur amont",
+    "Provider-returned model": "Modèle renvoyé par le fournisseur",
+    "Provider-returned model is shown only when supplied by the provider.": "Le modèle renvoyé par le fournisseur n’est affiché que si celui-ci le fournit."
   }
 }

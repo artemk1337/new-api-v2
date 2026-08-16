@@ -5187,6 +5187,11 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Model Provenance": "Nguồn gốc mô hình",
+    "Requested model": "Mô hình được yêu cầu",
+    "Sent to upstream": "Mô hình gửi lên upstream",
+    "Provider-returned model": "Mô hình do nhà cung cấp trả về",
+    "Provider-returned model is shown only when supplied by the provider.": "Chỉ hiển thị mô hình do nhà cung cấp trả về khi nhà cung cấp gửi thông tin này."
   }
 }

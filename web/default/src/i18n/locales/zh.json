@@ -5187,6 +5187,11 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Model Provenance": "模型来源",
+    "Requested model": "请求的模型",
+    "Sent to upstream": "发送至上游的模型",
+    "Provider-returned model": "提供商返回的模型",
+    "Provider-returned model is shown only when supplied by the provider.": "仅当提供商返回该信息时才显示提供商返回的模型。"
   }
 }

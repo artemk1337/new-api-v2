@@ -5187,6 +5187,11 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Model Provenance": "Model Provenance",
+    "Requested model": "Requested model",
+    "Sent to upstream": "Sent to upstream",
+    "Provider-returned model": "Provider-returned model",
+    "Provider-returned model is shown only when supplied by the provider.": "Provider-returned model is shown only when supplied by the provider."
   }
 }
