@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.136
+
+- Display requested, sent upstream, and provider-returned model details in the usage-log dialog when available.
+
 ## v1.1.135
 
 - Sort pricing sidebar groups alphabetically by their display names.
