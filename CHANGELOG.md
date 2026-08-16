@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.133
+
+- Added requested, sent upstream, and provider-returned model names to usage-log details when explicitly available from the provider response.
+
 ## v1.1.132
 
 - Fixed Anthropic streaming tool-use SSE block indexing so content_block_start, content_block_delta, and content_block_stop remain matched for sparse, parallel, and metadata-only streams.
