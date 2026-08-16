@@ -132,25 +132,33 @@ type RelayInfo struct {
 	UsePrice               bool
 	RelayMode              int
 	OriginModelName        string
-	RequestURLPath         string
-	RequestHeaders         map[string]string
-	ShouldIncludeUsage     bool
-	DisablePing            bool // 是否禁止向下游发送自定义 Ping
-	ClientWs               *websocket.Conn
-	TargetWs               *websocket.Conn
-	InputAudioFormat       string
-	OutputAudioFormat      string
-	RealtimeTools          []dto.RealTimeTool
-	IsFirstRequest         bool
-	AudioUsage             bool
-	ReasoningEffort        string
-	UserSetting            dto.UserSetting
-	UserEmail              string
-	UserQuota              int
-	RelayFormat            types.RelayFormat
-	SendResponseCount      int
-	ReceivedResponseCount  int
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// RequestedModelName preserves the model requested by the client. It is
+	// intentionally separate from OriginModelName, which may be normalized.
+	RequestedModelName string
+	// SentUpstreamModelName is the model name selected for the upstream request.
+	SentUpstreamModelName string
+	// ProviderReturnedModelName is populated only from an explicit upstream
+	// response field; it is never inferred from the request.
+	ProviderReturnedModelName string
+	RequestURLPath            string
+	RequestHeaders            map[string]string
+	ShouldIncludeUsage        bool
+	DisablePing               bool // 是否禁止向下游发送自定义 Ping
+	ClientWs                  *websocket.Conn
+	TargetWs                  *websocket.Conn
+	InputAudioFormat          string
+	OutputAudioFormat         string
+	RealtimeTools             []dto.RealTimeTool
+	IsFirstRequest            bool
+	AudioUsage                bool
+	ReasoningEffort           string
+	UserSetting               dto.UserSetting
+	UserEmail                 string
+	UserQuota                 int
+	RelayFormat               types.RelayFormat
+	SendResponseCount         int
+	ReceivedResponseCount     int
+	FinalPreConsumedQuota     int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
@@ -515,7 +523,9 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		UserQuota:  common.GetContextKeyInt(c, constant.ContextKeyUserQuota),
 		UserEmail:  common.GetContextKeyString(c, constant.ContextKeyUserEmail),
 
-		OriginModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		OriginModelName:       common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		RequestedModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		SentUpstreamModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),
 		TokenKey:       common.GetContextKeyString(c, constant.ContextKeyTokenKey),

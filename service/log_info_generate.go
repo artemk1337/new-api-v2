@@ -43,6 +43,21 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["cache_ratio"] = cacheRatio
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
+	if relayInfo != nil {
+		if relayInfo.RequestedModelName != "" {
+			other["requested_model"] = relayInfo.RequestedModelName
+		}
+		sentModel := relayInfo.UpstreamModelName
+		if sentModel == "" {
+			sentModel = relayInfo.SentUpstreamModelName
+		}
+		if sentModel != "" {
+			other["sent_upstream_model"] = sentModel
+		}
+		if relayInfo.ProviderReturnedModelName != "" {
+			other["provider_returned_model"] = relayInfo.ProviderReturnedModelName
+		}
+	}
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort

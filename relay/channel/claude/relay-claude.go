@@ -801,13 +801,18 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
 		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
 	}
+	if claudeResponse.Type == "message_start" && claudeResponse.Message != nil && claudeResponse.Message.Model != "" {
+		info.ProviderReturnedModelName = claudeResponse.Message.Model
+	}
 	if info.RelayFormat == types.RelayFormatClaude {
 		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
 
 		if claudeResponse.Type == "message_start" {
 			// message_start, 获取usage
 			if claudeResponse.Message != nil {
-				info.UpstreamModelName = claudeResponse.Message.Model
+				if claudeResponse.Message.Model != "" {
+					info.ProviderReturnedModelName = claudeResponse.Message.Model
+				}
 			}
 		} else if claudeResponse.Type == "message_delta" {
 			// 确保 message_delta 的 usage 包含完整的 input_tokens 和 cache 相关字段
@@ -903,6 +908,11 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
 	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+	if claudeResponse.Model != "" {
+		info.ProviderReturnedModelName = claudeResponse.Model
+	} else if claudeResponse.Message != nil && claudeResponse.Message.Model != "" {
+		info.ProviderReturnedModelName = claudeResponse.Message.Model
+	}
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
