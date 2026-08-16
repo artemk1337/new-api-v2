@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.134
+
+- Renamed the Russian FAQ settings heading to “FAQ”.
+
 ## v1.1.133
 
 - Added requested, sent upstream, and provider-returned model names to usage-log details when explicitly available from the provider response.
