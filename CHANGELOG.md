@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.138
+
+- Removed the provider-returned model explanatory text from usage-log details.
+
 ## v1.1.137
 
 - Made usage-log billing details compact and consistent across fixed, per-call, and dynamic pricing.

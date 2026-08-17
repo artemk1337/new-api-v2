@@ -1461,11 +1461,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   mono
                 />
               )}
-              <p className='text-muted-foreground text-[11px] leading-relaxed'>
-                {t(
-                  'Provider-returned model is shown only when supplied by the provider.'
-                )}
-              </p>
             </DetailSection>
           )}
       </div>
