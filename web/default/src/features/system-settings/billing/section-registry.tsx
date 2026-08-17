@@ -17,10 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { parseCurrencyDisplayType } from '@/lib/currency'
+
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { CurrencyExchangeRateSection } from '../general/currency-exchange-rate-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
+import { ReferralSettingsSection } from '../general/referral-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
@@ -60,8 +62,6 @@ const BILLING_SECTIONS = [
         defaultValues={{
           QuotaForNewUser: settings.QuotaForNewUser,
           PreConsumedQuota: settings.PreConsumedQuota,
-          QuotaForInviter: settings.QuotaForInviter,
-          QuotaForInvitee: settings.QuotaForInvitee,
           TopUpLink: settings.TopUpLink,
           general_setting: {
             docs_link: settings['general_setting.docs_link'],
@@ -70,6 +70,19 @@ const BILLING_SECTIONS = [
             enable_free_model_pre_consume:
               settings['quota_setting.enable_free_model_pre_consume'],
           },
+        }}
+      />
+    ),
+  },
+  {
+    id: 'referral-program',
+    titleKey: 'Referral Program',
+    build: (settings: BillingSettings) => (
+      <ReferralSettingsSection
+        defaultValues={{
+          QuotaForInviter: settings.QuotaForInviter,
+          QuotaForInvitee: settings.QuotaForInvitee,
+          ReferralDepositPercent: settings.ReferralDepositPercent,
         }}
         complianceConfirmed={
           (settings['payment_setting.compliance_confirmed'] ?? false) &&
@@ -174,11 +187,9 @@ const BILLING_SECTIONS = [
           NOWPaymentsEnabled: settings.NOWPaymentsEnabled ?? false,
           NOWPaymentsAPIKey: settings.NOWPaymentsAPIKey ?? '',
           NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
-          NOWPaymentsPriceCurrency:
-            settings.NOWPaymentsPriceCurrency ?? 'usd',
+          NOWPaymentsPriceCurrency: settings.NOWPaymentsPriceCurrency ?? 'usd',
           NOWPaymentsPayCurrency: settings.NOWPaymentsPayCurrency ?? '',
-          NOWPaymentsIPNCallbackURL:
-            settings.NOWPaymentsIPNCallbackURL ?? '',
+          NOWPaymentsIPNCallbackURL: settings.NOWPaymentsIPNCallbackURL ?? '',
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

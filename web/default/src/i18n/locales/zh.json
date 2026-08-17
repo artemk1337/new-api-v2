@@ -2368,6 +2368,8 @@
     "Invited by user ID": "由用户 ID 邀请",
     "Invited Users": "受邀用户",
     "Invitee Reward": "受邀者奖励",
+    "Percentage of each referred user wallet top-up credited to the inviter.": "受邀用户每次钱包充值时计入邀请者余额的百分比。",
+    "Referral Reward Percentage": "推荐奖励百分比",
     "Inviter": "邀请人",
     "Inviter Reward": "邀请者奖励",
     "Invites": "邀请",

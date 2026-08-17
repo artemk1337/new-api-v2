@@ -2368,6 +2368,8 @@
     "Invited by user ID": "ユーザーIDによる招待",
     "Invited Users": "招待されたユーザー",
     "Invitee Reward": "招待された側の報酬",
+    "Percentage of each referred user wallet top-up credited to the inviter.": "紹介されたユーザーのウォレット入金ごとに招待者へ付与する割合。",
+    "Referral Reward Percentage": "紹介報酬の割合",
     "Inviter": "招待者",
     "Inviter Reward": "招待した側の報酬",
     "Invites": "招待",

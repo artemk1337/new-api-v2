@@ -21,6 +21,18 @@ func TestOptionMapLoadsFractionalMinTopUp(t *testing.T) {
 	assert.Equal(t, "0.1", common.OptionMap["MinTopUp"])
 }
 
+func TestReferralDepositPercentOptionValidation(t *testing.T) {
+	originalPercent := common.ReferralDepositPercent
+	t.Cleanup(func() { common.ReferralDepositPercent = originalPercent })
+
+	require.NoError(t, validateOptionValue("ReferralDepositPercent", "12.5"))
+	require.Error(t, validateOptionValue("ReferralDepositPercent", "-1"))
+	require.Error(t, validateOptionValue("ReferralDepositPercent", "100.1"))
+	require.Error(t, validateOptionValue("ReferralDepositPercent", "not-a-number"))
+	require.NoError(t, updateOptionMapFromDatabase("ReferralDepositPercent", "12.5"))
+	assert.Equal(t, 12.5, common.ReferralDepositPercent)
+}
+
 func TestManualCompleteTopUpUsesPersistedQuotaForFractionalAmount(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.Create(&User{

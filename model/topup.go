@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,57 @@ var (
 	ErrTopUpNotFound         = errors.New("topup not found")
 	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
 )
+
+// creditReferralDepositReward credits a percentage of the referred user's
+// successful top-up to the inviter's referral balance. It runs inside the
+// top-up completion transaction, so retries cannot apply the reward twice:
+// the caller only reaches it after winning the top-up status CAS.
+func creditReferralDepositReward(tx *gorm.DB, topUp *TopUp, quotaToAdd int) error {
+	if common.ReferralDepositPercent <= 0 || common.ReferralDepositPercent > 100 ||
+		math.IsNaN(common.ReferralDepositPercent) || math.IsInf(common.ReferralDepositPercent, 0) || quotaToAdd <= 0 {
+		return nil
+	}
+
+	reward := decimal.NewFromInt(int64(quotaToAdd)).
+		Mul(decimal.NewFromFloat(common.ReferralDepositPercent)).
+		Div(decimal.NewFromInt(100)).IntPart()
+	if reward <= 0 {
+		return nil
+	}
+
+	var referredUser User
+	if err := tx.Select("inviter_id").First(&referredUser, topUp.UserId).Error; err != nil {
+		return err
+	}
+	if referredUser.InviterId == 0 || referredUser.InviterId == topUp.UserId {
+		return nil
+	}
+
+	// A deleted inviter must not make an otherwise valid payment fail.
+	result := tx.Model(&User{}).
+		Where("id = ?", referredUser.InviterId).
+		Updates(map[string]interface{}{
+			"aff_quota":   gorm.Expr("aff_quota + ?", reward),
+			"aff_history": gorm.Expr("aff_history + ?", reward),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
+
+// invalidateTopUpUserCaches runs only after a completion transaction commits.
+// Top-up completion updates quota with SQL expressions, so the referred user's
+// cached wallet value must be discarded before their next read. Referral
+// balances are kept in AffQuota/AffHistoryQuota and are not part of UserBase.
+func invalidateTopUpUserCaches(topUp *TopUp) {
+	if !common.RedisEnabled {
+		return
+	}
+	if err := invalidateUserCache(topUp.UserId); err != nil {
+		common.SysLog("failed to invalidate top-up user cache: " + err.Error())
+	}
+}
 
 func (topUp *TopUp) Insert() error {
 	var err error
@@ -177,6 +229,7 @@ func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionP
 
 	topUp.CompleteTime = completeTime
 	topUp.Status = common.TopUpStatusSuccess
+	invalidateTopUpUserCaches(topUp)
 	return topUp, true, nil
 }
 
@@ -241,7 +294,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, quota)
 	})
 
 	if err != nil {
@@ -317,6 +370,9 @@ func RechargeEpay(tradeNo, paymentMethod, callerIP string) (err error) {
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
+		if err := creditReferralDepositReward(tx, topUp, quotaToAdd); err != nil {
+			return err
+		}
 		quotaCredited = true
 		return nil
 	})
@@ -337,6 +393,7 @@ func RechargeEpay(tradeNo, paymentMethod, callerIP string) (err error) {
 		}
 		return ErrTopUpStatusInvalid
 	}
+	invalidateTopUpUserCaches(topUp)
 	if quotaCredited {
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIP, topUp.PaymentMethod, PaymentProviderEpay)
 	}
@@ -519,7 +576,7 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, quotaToAdd)
 	})
 	if err != nil {
 		return err
@@ -559,7 +616,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, int(quota))
 	})
 	if err != nil {
 		common.SysError("creem topup failed: " + err.Error())
@@ -590,7 +647,7 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, quotaToAdd)
 	})
 	if err != nil {
 		common.SysError("waffo topup failed: " + err.Error())
@@ -621,7 +678,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 		if result.RowsAffected == 0 {
 			return errors.New("充值用户不存在")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, quotaToAdd)
 	})
 	if err != nil {
 		common.SysError("waffo pancake topup failed: " + err.Error())
@@ -660,7 +717,7 @@ func rechargeProviderTopUp(tradeNo string, callerIp, provider, providerName stri
 		if result.RowsAffected == 0 {
 			return errors.New("Top-up user does not exist")
 		}
-		return nil
+		return creditReferralDepositReward(tx, topUp, quotaToAdd)
 	})
 	if err != nil {
 		common.SysError(strings.ToLower(providerName) + " topup failed: " + err.Error())

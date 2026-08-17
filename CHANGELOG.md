@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.141
+
+- Added configurable referral rewards from successful wallet top-ups, with atomic callback handling and referral-balance transfer support.
+- Added a dedicated Referral Program section to billing settings.
+
 ## v1.1.140
 
 - Fixed Claude usage-log details to keep text input separate from cache tokens.

@@ -356,8 +356,15 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 		return err
 	}
 
-	// 提交事务
-	return tx.Commit().Error
+	// 提交事务。只有确认提交成功后才能清理缓存，避免回滚时丢失旧值。
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	if err := invalidateUserCache(user.Id); err != nil {
+		// 数据库提交已经成功，不能让客户端因缓存清理失败而重试转账。
+		common.SysLog("failed to invalidate user cache after affiliate quota transfer: " + err.Error())
+	}
+	return nil
 }
 
 func (user *User) Insert(inviterId int) error {
@@ -436,6 +443,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	user.InviterId = inviterId
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置

@@ -2368,6 +2368,8 @@
     "Invited by user ID": "Được mời bởi ID người dùng",
     "Invited Users": "Người dùng được mời",
     "Invitee Reward": "Referral reward",
+    "Percentage of each referred user wallet top-up credited to the inviter.": "Phần trăm mỗi lần nạp ví của người được giới thiệu được cộng cho người mời.",
+    "Referral Reward Percentage": "Tỷ lệ phần trăm phần thưởng giới thiệu",
     "Inviter": "Người mời",
     "Inviter Reward": "Phần thưởng người mời",
     "Invites": "Mời",

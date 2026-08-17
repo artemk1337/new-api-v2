@@ -122,6 +122,10 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
+
+// ReferralDepositPercent is the percentage of a successful referred user's
+// top-up quota credited to the inviter. It is disabled by default.
+var ReferralDepositPercent = 0.0
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false

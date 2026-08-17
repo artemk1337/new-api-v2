@@ -2368,6 +2368,8 @@
     "Invited by user ID": "Приглашен пользователем с ID",
     "Invited Users": "Приглашенные пользователи",
     "Invitee Reward": "Награда приглашенному",
+    "Percentage of each referred user wallet top-up credited to the inviter.": "Процент от каждого пополнения кошелька приглашённого пользователя, начисляемый пригласившему.",
+    "Referral Reward Percentage": "Процент реферального вознаграждения",
     "Inviter": "Пригласивший",
     "Inviter Reward": "Награда приглашающему",
     "Invites": "Приглашения",

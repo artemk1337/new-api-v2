@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -199,6 +200,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
+	common.OptionMap["ReferralDepositPercent"] = strconv.FormatFloat(common.ReferralDepositPercent, 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -640,6 +642,12 @@ func validateOptionValue(key string, value string) error {
 			return err
 		}
 		return operation_setting.ValidateAmountCashback(cashbacks)
+	case "ReferralDepositPercent":
+		percent, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || math.IsNaN(percent) || math.IsInf(percent, 0) || percent < 0 || percent > 100 {
+			return errors.New("referral deposit percent must be between 0 and 100")
+		}
+		return nil
 	case setting.ModelRequestRateLimitDurationStagedOption,
 		setting.ModelRequestRateLimitDurationActiveOption,
 		setting.ModelRequestRateLimitDurationActivationAtOption:
@@ -1465,6 +1473,12 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		common.QuotaForInviter, _ = strconv.Atoi(value)
 	case "QuotaForInvitee":
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
+	case "ReferralDepositPercent":
+		percent, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil || math.IsNaN(percent) || math.IsInf(percent, 0) || percent < 0 || percent > 100 {
+			percent = 0
+		}
+		common.ReferralDepositPercent = percent
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

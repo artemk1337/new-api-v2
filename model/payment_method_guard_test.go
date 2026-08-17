@@ -174,6 +174,50 @@ func TestRechargeYooKassa_IsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(1), topupLogs)
 }
 
+func TestRechargeYooKassaCreditsConfiguredReferralPercentOnce(t *testing.T) {
+	truncateTables(t)
+	originalPercent := common.ReferralDepositPercent
+	common.ReferralDepositPercent = 10
+	t.Cleanup(func() { common.ReferralDepositPercent = originalPercent })
+
+	require.NoError(t, DB.Create(&User{
+		Id:       1030,
+		Username: "referral_inviter",
+		AffCode:  "referral-inviter",
+		Status:   common.UserStatusEnabled,
+		Quota:    0,
+	}).Error)
+	require.NoError(t, DB.Create(&User{
+		Id:        1031,
+		Username:  "referral_invitee",
+		AffCode:   "referral-invitee",
+		Status:    common.UserStatusEnabled,
+		InviterId: 1030,
+		Quota:     0,
+	}).Error)
+	require.NoError(t, (&TopUp{
+		UserId:          1031,
+		Amount:          10,
+		Money:           10,
+		TradeNo:         "yookassa-referral-percent",
+		PaymentMethod:   PaymentMethodYooKassaSBP,
+		PaymentProvider: PaymentProviderYooKassa,
+		QuotaToAdd:      5000000,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}).Insert())
+
+	require.NoError(t, RechargeYooKassa("yookassa-referral-percent", "127.0.0.1"))
+	require.NoError(t, RechargeYooKassa("yookassa-referral-percent", "127.0.0.1"))
+
+	assert.Equal(t, 5000000, getUserQuotaForPaymentGuardTest(t, 1031))
+	var inviter User
+	require.NoError(t, DB.Select("quota", "aff_quota", "aff_history").First(&inviter, 1030).Error)
+	assert.Zero(t, inviter.Quota)
+	assert.Equal(t, 500000, inviter.AffQuota)
+	assert.Equal(t, 500000, inviter.AffHistoryQuota)
+}
+
 func TestRechargeYooKassaLegacyPendingUsesMetadataQuota(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -349,6 +393,47 @@ func TestRechargeEpay_IsAtomicAndIdempotent(t *testing.T) {
 	var topupLogs int64
 	require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", 103, LogTypeTopup).Count(&topupLogs).Error)
 	assert.Equal(t, int64(1), topupLogs)
+}
+
+func TestRechargeEpayCreditsReferralRewardOnce(t *testing.T) {
+	truncateTables(t)
+	originalPercent := common.ReferralDepositPercent
+	common.ReferralDepositPercent = 10
+	t.Cleanup(func() { common.ReferralDepositPercent = originalPercent })
+
+	require.NoError(t, DB.Create(&User{
+		Id:       1032,
+		Username: "epay-referral-inviter",
+		AffCode:  "epay-referral-inviter-code",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, DB.Create(&User{
+		Id:        1033,
+		Username:  "epay-referral-invitee",
+		AffCode:   "epay-referral-invitee-code",
+		InviterId: 1032,
+		Status:    common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, (&TopUp{
+		UserId:          1033,
+		Amount:          10,
+		Money:           10,
+		TradeNo:         "epay-referral-percent",
+		PaymentProvider: PaymentProviderEpay,
+		QuotaToAdd:      5000000,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}).Insert())
+
+	require.NoError(t, RechargeEpay("epay-referral-percent", "alipay", "127.0.0.1"))
+	require.NoError(t, RechargeEpay("epay-referral-percent", "alipay", "127.0.0.1"))
+
+	assert.Equal(t, 5000000, getUserQuotaForPaymentGuardTest(t, 1033))
+	var inviter User
+	require.NoError(t, DB.Select("quota", "aff_quota", "aff_history").First(&inviter, 1032).Error)
+	assert.Zero(t, inviter.Quota)
+	assert.Equal(t, 500000, inviter.AffQuota)
+	assert.Equal(t, 500000, inviter.AffHistoryQuota)
 }
 
 func TestRechargeEpayConcurrentCompletionsCreditOnce(t *testing.T) {
