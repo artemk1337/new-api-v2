@@ -341,7 +341,18 @@ function BillingBreakdown(props: {
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
 
   if (isTieredExpr) {
-    // Dynamic pricing is rendered through the shared token rows and formula.
+    const prices = Object.fromEntries(
+      (getTieredBillingSummary(other)?.priceEntries ?? []).map((entry) => [
+        entry.shortLabel,
+        entry.price,
+      ])
+    )
+    if (prices.Input != null && prices.Input > 0) {
+      rows.push({ label: t('Input'), value: `${fmtPrice(prices.Input)}/M` })
+    }
+    if (prices.Output != null && prices.Output > 0) {
+      rows.push({ label: t('Output'), value: `${fmtPrice(prices.Output)}/M` })
+    }
   } else if (isPerCall) {
     if (other.model_price != null) {
       rows.push({
@@ -350,6 +361,15 @@ function BillingBreakdown(props: {
       })
     }
   } else {
+    if (other.model_ratio != null && other.model_ratio > 0) {
+      rows.push({ label: t('Input'), value: `${fmtPrice(baseInputUSD)}/M` })
+      if (other.completion_ratio != null && other.completion_ratio > 0) {
+        rows.push({
+          label: t('Output'),
+          value: `${fmtPrice(baseInputUSD * other.completion_ratio)}/M`,
+        })
+      }
+    }
   }
 
   const userGR = other.user_group_ratio
@@ -502,29 +522,15 @@ function TokenBreakdown(props: {
   if (!hasTokens) return null
 
   const rows: Array<{ label: string; value: string }> = []
-  const baseInputUSD = props.isTiered
-    ? null
-    : other.model_ratio != null
-      ? other.model_ratio * 2
-      : null
-  const rate = (ratio: number | undefined) =>
-    baseInputUSD != null && ratio != null
-      ? `${formatBillingCurrencyFromUSD(baseInputUSD * ratio, { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
-      : null
-  const dynamicRate = (label: string) =>
-    tieredPrices?.[label] != null
-      ? `${formatBillingCurrencyFromUSD(tieredPrices[label], { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
-      : null
-
   rows.push({
     label: t('Input'),
-    value: `${parts.baseInput.toLocaleString()}${dynamicRate('Input') || rate(1) ? ` · ${dynamicRate('Input') || rate(1)}` : ''}`,
+    value: parts.baseInput.toLocaleString(),
   })
 
   if (parts.cacheRead > 0 && (!props.isTiered || tieredPrices?.['Cache Read'])) {
     rows.push({
       label: t('Cache Read'),
-      value: `${parts.cacheRead.toLocaleString()}${dynamicRate('Cache Read') || rate(other.cache_ratio) ? ` · ${dynamicRate('Cache Read') || rate(other.cache_ratio)}` : ''}`,
+      value: parts.cacheRead.toLocaleString(),
     })
   }
 
@@ -534,27 +540,27 @@ function TokenBreakdown(props: {
   ) {
     rows.push({
       label: t('Cache Write'),
-      value: `${parts.cacheWriteResidual.toLocaleString()}${dynamicRate('Cache Write') || rate(other.cache_creation_ratio) ? ` · ${dynamicRate('Cache Write') || rate(other.cache_creation_ratio)}` : ''}`,
+      value: parts.cacheWriteResidual.toLocaleString(),
     })
   }
 
   if (parts.cacheWrite5m > 0 && (!props.isTiered || tieredPrices?.['Cache Write (5m)'])) {
     rows.push({
       label: t('Cache Write (5m)'),
-      value: `${parts.cacheWrite5m.toLocaleString()}${dynamicRate('Cache Write (5m)') || rate(other.cache_creation_ratio_5m) ? ` · ${dynamicRate('Cache Write (5m)') || rate(other.cache_creation_ratio_5m)}` : ''}`,
+      value: parts.cacheWrite5m.toLocaleString(),
     })
   }
 
   if (parts.cacheWrite1h > 0 && (!props.isTiered || tieredPrices?.['Cache Write (1h)'])) {
     rows.push({
       label: t('Cache Write (1h)'),
-      value: `${parts.cacheWrite1h.toLocaleString()}${dynamicRate('Cache Write (1h)') || rate(other.cache_creation_ratio_1h) ? ` · ${dynamicRate('Cache Write (1h)') || rate(other.cache_creation_ratio_1h)}` : ''}`,
+      value: parts.cacheWrite1h.toLocaleString(),
     })
   }
 
   rows.push({
     label: t('Output'),
-    value: `${parts.output.toLocaleString()}${dynamicRate('Output') || rate(other.completion_ratio) ? ` · ${dynamicRate('Output') || rate(other.completion_ratio)}` : ''}`,
+    value: parts.output.toLocaleString(),
   })
 
   if (other.image && other.image_output) {

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.139
+
+- Show input and output rates in billing details while keeping token breakdowns count-only.
+
 ## v1.1.138
 
 - Removed the provider-returned model explanatory text from usage-log details.
