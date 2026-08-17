@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.137
+
+- Made usage-log billing details compact and consistent across fixed, per-call, and dynamic pricing.
+- Show the matched dynamic tier, its conditions, actual billed token categories, and a reconciled calculation.
+- Correctly represent cache-read tokens in dynamic pricing details for both Claude and OpenAI-compatible usage semantics.
+- Added a repeatable local billing-details demo seed.
+
 ## v1.1.136
 
 - Display requested, sent upstream, and provider-returned model details in the usage-log dialog when available.

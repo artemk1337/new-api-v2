@@ -71,3 +71,17 @@ docker compose up -d
 создайте и проверьте резервную копию базы данных; пересоздавайте только сервис
 приложения и не удаляйте Docker-тома. Не запускайте на production-сервере
 `docker build`, `docker compose build` или `docker compose up --build`.
+
+### Billing details demo (local SQLite)
+
+After starting the API once (so migrations create the database), seed an
+isolated synthetic model, pricing options, and usage-log record:
+
+```bash
+./scripts/seed-billing-demo.sh              # uses SQLITE_PATH or one-api.db
+# or: ./scripts/seed-billing-demo.sh /tmp/new-api-demo.db
+```
+
+Open the admin usage logs at `/usage-logs/common` and open request
+`billing-demo-request-0001`. The script only replaces rows with its own demo
+model/request identifiers and is safe to run repeatedly.

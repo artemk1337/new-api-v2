@@ -32,23 +32,25 @@ import {
   LogIn,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatBillingCurrencyFromUSD } from '@/lib/currency'
-import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
+
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
+import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
   getParamOverrideActionLabel,
   parseAuditLine,
   decodeBillingExprB64,
-  getTieredBillingSummary,
   hasAnyCacheTokens,
+  getTieredBillingSummary,
   isViolationFeeLog,
   getFirstResponseTimeColor,
   getResponseTimeColor,
@@ -142,6 +144,163 @@ function formatRatio(ratio: number | undefined): string {
   return ratio.toFixed(4)
 }
 
+function getTokenBillingParts(log: UsageLog, other: LogOtherData) {
+  const input = Math.max(0, log.prompt_tokens || 0)
+  const output = Math.max(0, log.completion_tokens || 0)
+  const cacheRead = Math.max(0, other.cache_tokens || 0)
+  const cacheWrite = Math.max(0, other.cache_creation_tokens || 0)
+  const cacheWrite5m = Math.max(0, other.cache_creation_tokens_5m || 0)
+  const cacheWrite1h = Math.max(0, other.cache_creation_tokens_1h || 0)
+  const cacheWriteResidual = Math.max(
+    0,
+    cacheWrite - cacheWrite5m - cacheWrite1h
+  )
+
+  return {
+    input,
+    output,
+    cacheRead,
+    cacheWrite,
+    cacheWrite5m,
+    cacheWrite1h,
+    cacheWriteResidual,
+    baseInput: Math.max(
+      0,
+      input - cacheRead - cacheWrite5m - cacheWrite1h - cacheWriteResidual
+    ),
+  }
+}
+
+function getDynamicTokenBillingParts(
+  log: UsageLog,
+  other: LogOtherData,
+  prices: Record<string, number>
+) {
+  const parts = getTokenBillingParts(log, other)
+  const separatelyPriced = (label: string) => (prices[label] ?? 0) > 0
+
+  // Claude reports prompt_tokens as text input and cache usage separately.
+  // Other formats report one total, so only cache categories that have their
+  // own expression price are excluded from the base input term.
+  const baseInput = other.claude
+    ? parts.input
+    : Math.max(
+        0,
+        parts.input -
+          (separatelyPriced('Cache Read') ? parts.cacheRead : 0) -
+          (separatelyPriced('Cache Write') ? parts.cacheWriteResidual : 0) -
+          (separatelyPriced('Cache Write (5m)') ? parts.cacheWrite5m : 0) -
+          (separatelyPriced('Cache Write (1h)') ? parts.cacheWrite1h : 0)
+      )
+
+  return { ...parts, baseInput }
+}
+
+function billingFormula(
+  log: UsageLog,
+  other: LogOtherData
+): string | null {
+  const isDynamic = other.billing_mode === 'tiered_expr'
+  if (!isDynamic && (other.model_ratio == null || !Number.isFinite(other.model_ratio))) {
+    return null
+  }
+  const group =
+    other.user_group_ratio != null && other.user_group_ratio !== -1
+      ? other.user_group_ratio
+      : other.group_ratio
+  const effectiveGroup = isDynamic ? (group != null && Number.isFinite(group) ? group : 1) : group
+  if (effectiveGroup == null || !Number.isFinite(effectiveGroup)) {
+    return null
+  }
+  if (isDynamic) {
+    if (!other.expr_b64 || !other.matched_tier) return null
+    const prices = Object.fromEntries(
+      (getTieredBillingSummary(other)?.priceEntries ?? []).map((entry) => [entry.shortLabel, entry.price])
+    )
+    const parts = getDynamicTokenBillingParts(log, other, prices)
+    const terms: string[] = []
+    const add = (label: string, count: number) => {
+      const price = prices[label]
+      if (count > 0 && price != null && price > 0) terms.push(`${count}×${price}/1M`)
+    }
+    add('Input', parts.baseInput)
+    add('Cache Read', parts.cacheRead)
+    add('Cache Write', parts.cacheWriteResidual)
+    add('Cache Write (5m)', parts.cacheWrite5m)
+    add('Cache Write (1h)', parts.cacheWrite1h)
+    add('Output', parts.output)
+    add('Audio In', other.audio_input || 0)
+    add('Audio Out', other.audio_output || 0)
+    add('Image In', other.image_output || 0)
+    if (terms.length === 0) return null
+    return `(${terms.join(' + ')})×${effectiveGroup} = ${formatLogQuota(log.quota)}`
+  }
+  const parts = getTokenBillingParts(log, other)
+  if (parts.cacheRead > 0 && other.cache_ratio == null) {
+    return null
+  }
+  if (parts.cacheWrite5m > 0 && other.cache_creation_ratio_5m == null) {
+    return null
+  }
+  if (parts.cacheWrite1h > 0 && other.cache_creation_ratio_1h == null) {
+    return null
+  }
+  if (parts.cacheWriteResidual > 0 && other.cache_creation_ratio == null) {
+    return null
+  }
+  if (parts.output > 0 && other.completion_ratio == null) {
+    return null
+  }
+  const base = (other.model_ratio ?? 0) * 2
+  const terms = [`${parts.baseInput}×${base}/1M`]
+  if (parts.cacheRead > 0 && other.cache_ratio != null) {
+    terms.push(
+      `${parts.cacheRead}×${base * other.cache_ratio}/1M`
+    )
+  }
+  if (parts.cacheWriteResidual > 0 && other.cache_creation_ratio != null) {
+    terms.push(
+      `${parts.cacheWriteResidual}×${base * other.cache_creation_ratio}/1M`
+    )
+  }
+  if (parts.cacheWrite5m > 0 && other.cache_creation_ratio_5m != null) {
+    terms.push(
+      `${parts.cacheWrite5m}×${base * other.cache_creation_ratio_5m}/1M`
+    )
+  }
+  if (parts.cacheWrite1h > 0 && other.cache_creation_ratio_1h != null) {
+    terms.push(
+      `${parts.cacheWrite1h}×${base * other.cache_creation_ratio_1h}/1M`
+    )
+  }
+  if (parts.output > 0 && other.completion_ratio != null) {
+    terms.push(
+      `${parts.output}×${base * other.completion_ratio}/1M`
+    )
+  }
+  if (other.web_search_call_count && other.web_search_price && other.web_search_price > 0) {
+    terms.push(`${other.web_search_call_count}×${other.web_search_price}/1K`)
+  }
+  if (other.file_search_call_count && other.file_search_price && other.file_search_price > 0) {
+    terms.push(`${other.file_search_call_count}×${other.file_search_price}/1K`)
+  }
+  if (other.image_generation_call && other.image_generation_call_price && other.image_generation_call_price > 0) {
+    terms.push(`1×${other.image_generation_call_price}`)
+  }
+  if (other.audio_input_token_count && other.audio_input_price && other.audio_input_price > 0) {
+    terms.push(`${other.audio_input_token_count}×${other.audio_input_price}/1M`)
+  }
+  if (terms.length === 1 && parts.baseInput === 0 && parts.output === 0) {
+    return null
+  }
+  const total = formatBillingCurrencyFromUSD(log.quota / 500000, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+    abbreviate: false,
+  })
+  return `(${terms.join(' + ')})×${group} = ${total}`
+}
+
 function formatAutoFailedGroups(
   other: LogOtherData,
   formatGroup: (group: string) => string
@@ -175,7 +334,6 @@ function BillingBreakdown(props: {
   const isPerCall = isPerCallBilling(other.model_price)
   const isClaude = other.claude === true
   const isTieredExpr = other.billing_mode === 'tiered_expr'
-  const tieredSummary = getTieredBillingSummary(other)
 
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
@@ -183,51 +341,15 @@ function BillingBreakdown(props: {
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
 
   if (isTieredExpr) {
-    rows.push({
-      label: t('Billing Mode'),
-      value: t('Dynamic Pricing'),
-    })
-    if (tieredSummary) {
-      if (tieredSummary.tier.label) {
-        rows.push({
-          label: t('Matched Tier'),
-          value: tieredSummary.tier.label,
-        })
-      }
-      for (const entry of tieredSummary.priceEntries) {
-        rows.push({
-          label: t(entry.shortLabel),
-          value: `${fmtPrice(entry.price)}/M`,
-        })
-      }
-    } else {
-      rows.push({
-        label: t('Matched Tier'),
-        value: t('No matching results'),
-      })
-    }
+    // Dynamic pricing is rendered through the shared token rows and formula.
   } else if (isPerCall) {
-    rows.push({ label: t('Billing Mode'), value: t('Per-call') })
     if (other.model_price != null) {
       rows.push({
         label: t('Model Price'),
-        value: fmtPrice(other.model_price),
+        value: `${fmtPrice(other.model_price)} × 1 = ${formatLogQuota(log.quota)}`,
       })
     }
   } else {
-    rows.push({ label: t('Billing Mode'), value: t('Per-token') })
-    if (other.model_ratio != null) {
-      rows.push({
-        label: t('Input'),
-        value: `${fmtPrice(baseInputUSD)}/M`,
-      })
-    }
-    if (other.completion_ratio != null && other.model_ratio != null) {
-      rows.push({
-        label: t('Output'),
-        value: `${fmtPrice(baseInputUSD * other.completion_ratio)}/M`,
-      })
-    }
   }
 
   const userGR = other.user_group_ratio
@@ -235,21 +357,21 @@ function BillingBreakdown(props: {
   const effectiveGR = isUserGR ? userGR : other.group_ratio
   if (effectiveGR != null && Number.isFinite(effectiveGR)) {
     rows.push({
-      label: isUserGR ? t('User Exclusive Ratio') : t('Group Ratio'),
+      label: t('Group Ratio'),
       value: `${formatRatio(effectiveGR)}x`,
     })
   }
 
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
-    if (other.cache_ratio != null && other.cache_ratio !== 1) {
+    if (other.cache_tokens && other.cache_tokens > 0 && other.cache_ratio != null && other.cache_ratio > 0) {
       rows.push({
         label: t('Cache Read'),
         value: `${fmtPrice(baseInputUSD * other.cache_ratio)}/M`,
       })
     }
     if (
-      other.cache_creation_ratio != null &&
-      other.cache_creation_ratio !== 1
+      other.cache_creation_tokens && other.cache_creation_tokens > 0 &&
+      other.cache_creation_ratio != null && other.cache_creation_ratio > 0
     ) {
       rows.push({
         label: t('Cache Creation'),
@@ -257,8 +379,8 @@ function BillingBreakdown(props: {
       })
     }
     if (
-      other.cache_creation_ratio_5m != null &&
-      other.cache_creation_ratio_5m !== 0
+      other.cache_creation_tokens_5m && other.cache_creation_tokens_5m > 0 &&
+      other.cache_creation_ratio_5m != null && other.cache_creation_ratio_5m > 0
     ) {
       rows.push({
         label: t('Cache Creation (5m)'),
@@ -266,8 +388,8 @@ function BillingBreakdown(props: {
       })
     }
     if (
-      other.cache_creation_ratio_1h != null &&
-      other.cache_creation_ratio_1h !== 0
+      other.cache_creation_tokens_1h && other.cache_creation_tokens_1h > 0 &&
+      other.cache_creation_ratio_1h != null && other.cache_creation_ratio_1h > 0
     ) {
       rows.push({
         label: t('Cache Creation (1h)'),
@@ -277,7 +399,7 @@ function BillingBreakdown(props: {
   }
 
   if (!isTieredExpr) {
-    if (other.audio_ratio != null && other.audio_ratio !== 1) {
+    if (other.audio_input && other.audio_input > 0 && other.audio_ratio != null && other.audio_ratio > 0) {
       rows.push({
         label: t('Audio input'),
         value: `${fmtPrice(baseInputUSD * other.audio_ratio)}/M`,
@@ -285,8 +407,8 @@ function BillingBreakdown(props: {
     }
 
     if (
-      other.audio_completion_ratio != null &&
-      other.audio_completion_ratio !== 1
+      other.audio_output && other.audio_output > 0 &&
+      other.audio_completion_ratio != null && other.audio_completion_ratio > 0
     ) {
       rows.push({
         label: t('Audio output'),
@@ -294,7 +416,7 @@ function BillingBreakdown(props: {
       })
     }
 
-    if (other.image_ratio != null && other.image_ratio !== 1) {
+    if (other.image_output && other.image_output > 0 && other.image_ratio != null && other.image_ratio > 0) {
       rows.push({
         label: t('Image input'),
         value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
@@ -302,28 +424,28 @@ function BillingBreakdown(props: {
     }
   }
 
-  if (other.web_search && other.web_search_call_count) {
+  if (other.web_search && other.web_search_call_count && other.web_search_price && other.web_search_price > 0) {
     rows.push({
       label: t('Web Search'),
       value: `${other.web_search_call_count}x${other.web_search_price ? ` (${fmtPrice(other.web_search_price)})` : ''}`,
     })
   }
 
-  if (other.file_search && other.file_search_call_count) {
+  if (other.file_search && other.file_search_call_count && other.file_search_price && other.file_search_price > 0) {
     rows.push({
       label: t('File Search'),
       value: `${other.file_search_call_count}x${other.file_search_price ? ` (${fmtPrice(other.file_search_price)})` : ''}`,
     })
   }
 
-  if (other.image_generation_call && other.image_generation_call_price) {
+  if (other.image_generation_call && other.image_generation_call_price && other.image_generation_call_price > 0) {
     rows.push({
       label: t('Image Generation'),
       value: fmtPrice(other.image_generation_call_price),
     })
   }
 
-  if (other.audio_input_seperate_price && other.audio_input_price) {
+  if (other.audio_input_seperate_price && other.audio_input_token_count && other.audio_input_token_count > 0 && other.audio_input_price && other.audio_input_price > 0) {
     rows.push({
       label: t('Audio Input Price'),
       value: fmtPrice(other.audio_input_price),
@@ -339,10 +461,11 @@ function BillingBreakdown(props: {
     })
   }
 
-  rows.push({
-    label: t('Total Cost'),
-    value: formatLogQuota(log.quota),
-  })
+  const formula =
+    !isPerCall
+      ? billingFormula(log, other)
+      : null
+  if (formula) rows.push({ label: t('Calculation'), value: formula })
 
   if (rows.length === 0) return null
 
@@ -355,55 +478,84 @@ function BillingBreakdown(props: {
   )
 }
 
-function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
+function TokenBreakdown(props: {
+  log: UsageLog
+  other: LogOtherData
+  isTiered?: boolean
+}) {
   const { t } = useTranslation()
   const { log, other } = props
 
-  const promptTokens = log.prompt_tokens || 0
-  const completionTokens = log.completion_tokens || 0
-  const cacheRead = other.cache_tokens || 0
-  const cacheWrite = other.cache_creation_tokens || 0
-  const cacheWrite5m = other.cache_creation_tokens_5m || 0
-  const cacheWrite1h = other.cache_creation_tokens_1h || 0
-  const hasTokens = promptTokens > 0 || completionTokens > 0
+  const tieredPrices = props.isTiered
+    ? Object.fromEntries(
+        (getTieredBillingSummary(other)?.priceEntries ?? []).map((entry) => [
+          entry.shortLabel,
+          entry.price,
+        ])
+      )
+    : null
+  const parts = props.isTiered
+    ? getDynamicTokenBillingParts(log, other, tieredPrices || {})
+    : getTokenBillingParts(log, other)
+  const hasTokens = parts.input > 0 || parts.output > 0
 
   if (!hasTokens) return null
 
   const rows: Array<{ label: string; value: string }> = []
+  const baseInputUSD = props.isTiered
+    ? null
+    : other.model_ratio != null
+      ? other.model_ratio * 2
+      : null
+  const rate = (ratio: number | undefined) =>
+    baseInputUSD != null && ratio != null
+      ? `${formatBillingCurrencyFromUSD(baseInputUSD * ratio, { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
+      : null
+  const dynamicRate = (label: string) =>
+    tieredPrices?.[label] != null
+      ? `${formatBillingCurrencyFromUSD(tieredPrices[label], { digitsLarge: 4, digitsSmall: 6, abbreviate: false })}/M`
+      : null
 
-  rows.push({ label: t('Input Tokens'), value: promptTokens.toLocaleString() })
   rows.push({
-    label: t('Output Tokens'),
-    value: completionTokens.toLocaleString(),
+    label: t('Input'),
+    value: `${parts.baseInput.toLocaleString()}${dynamicRate('Input') || rate(1) ? ` · ${dynamicRate('Input') || rate(1)}` : ''}`,
   })
 
-  if (cacheRead > 0) {
+  if (parts.cacheRead > 0 && (!props.isTiered || tieredPrices?.['Cache Read'])) {
     rows.push({
       label: t('Cache Read'),
-      value: cacheRead.toLocaleString(),
+      value: `${parts.cacheRead.toLocaleString()}${dynamicRate('Cache Read') || rate(other.cache_ratio) ? ` · ${dynamicRate('Cache Read') || rate(other.cache_ratio)}` : ''}`,
     })
   }
 
-  if (cacheWrite > 0 && cacheWrite5m === 0 && cacheWrite1h === 0) {
+  if (
+    parts.cacheWriteResidual > 0 &&
+    (!props.isTiered || tieredPrices?.['Cache Write'])
+  ) {
     rows.push({
       label: t('Cache Write'),
-      value: cacheWrite.toLocaleString(),
+      value: `${parts.cacheWriteResidual.toLocaleString()}${dynamicRate('Cache Write') || rate(other.cache_creation_ratio) ? ` · ${dynamicRate('Cache Write') || rate(other.cache_creation_ratio)}` : ''}`,
     })
   }
 
-  if (cacheWrite5m > 0) {
+  if (parts.cacheWrite5m > 0 && (!props.isTiered || tieredPrices?.['Cache Write (5m)'])) {
     rows.push({
       label: t('Cache Write (5m)'),
-      value: cacheWrite5m.toLocaleString(),
+      value: `${parts.cacheWrite5m.toLocaleString()}${dynamicRate('Cache Write (5m)') || rate(other.cache_creation_ratio_5m) ? ` · ${dynamicRate('Cache Write (5m)') || rate(other.cache_creation_ratio_5m)}` : ''}`,
     })
   }
 
-  if (cacheWrite1h > 0) {
+  if (parts.cacheWrite1h > 0 && (!props.isTiered || tieredPrices?.['Cache Write (1h)'])) {
     rows.push({
       label: t('Cache Write (1h)'),
-      value: cacheWrite1h.toLocaleString(),
+      value: `${parts.cacheWrite1h.toLocaleString()}${dynamicRate('Cache Write (1h)') || rate(other.cache_creation_ratio_1h) ? ` · ${dynamicRate('Cache Write (1h)') || rate(other.cache_creation_ratio_1h)}` : ''}`,
     })
   }
+
+  rows.push({
+    label: t('Output'),
+    value: `${parts.output.toLocaleString()}${dynamicRate('Output') || rate(other.completion_ratio) ? ` · ${dynamicRate('Output') || rate(other.completion_ratio)}` : ''}`,
+  })
 
   if (other.image && other.image_output) {
     rows.push({
@@ -646,6 +798,25 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 formatPricingGroupName(props.log.group || other?.group || '')
               }
               mono
+            />
+          )}
+
+          {isConsume && other && (
+            <DetailRow
+              label={t('Billing Mode')}
+              value={
+                other.billing_mode === 'tiered_expr'
+                  ? t('Dynamic Pricing')
+                  : isPerCallBilling(other.model_price)
+                    ? t('Per-call')
+                    : t('Per-token')
+              }
+            />
+          )}
+          {isConsume && other?.billing_mode === 'tiered_expr' && (
+            <DetailRow
+              label={t('Matched Tier')}
+              value={other.matched_tier || t('No matching results')}
             />
           )}
 
@@ -1061,8 +1232,27 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Token breakdown (for consume/error types with token data) */}
-        {isDisplayableType(props.log.type) && other && (
-          <TokenBreakdown log={props.log} other={other} />
+        {isDisplayableType(props.log.type) && other && !isPerCallBilling(other.model_price) && (
+          <TokenBreakdown log={props.log} other={other} isTiered={isTieredBilling} />
+        )}
+
+        {isTieredBilling && other?.expr_b64 && (
+          <div className='bg-muted/30 min-w-0 overflow-hidden rounded-md border px-3 max-sm:px-2'>
+            <DynamicPricingBreakdown
+              billingExpr={decodeBillingExprB64(other.expr_b64)}
+              matchedTierLabel={other.matched_tier}
+              hideCacheColumns={!hasAnyCacheTokens(other)}
+              usage={{
+                p: Math.max(0, props.log.prompt_tokens || 0),
+                c: Math.max(0, props.log.completion_tokens || 0),
+                cr: Math.max(0, other.cache_tokens || 0),
+                cc: Math.max(0, other.cache_creation_tokens || 0),
+                cc1h: Math.max(0, other.cache_creation_tokens_1h || 0),
+                ai: Math.max(0, other.audio_input || 0),
+                ao: Math.max(0, other.audio_output || 0),
+              }}
+            />
+          </div>
         )}
 
         {/* Billing breakdown (consume type) */}
@@ -1072,17 +1262,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
             other={other}
             isAdmin={props.isAdmin}
           />
-        )}
-
-        {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
-        {isTieredBilling && other?.expr_b64 && (
-          <div className='bg-muted/30 min-w-0 overflow-hidden rounded-md border px-3 max-sm:px-2'>
-            <DynamicPricingBreakdown
-              billingExpr={decodeBillingExprB64(other.expr_b64)}
-              matchedTierLabel={other.matched_tier}
-              hideCacheColumns={!hasAnyCacheTokens(other)}
-            />
-          </div>
         )}
 
         {/* Admin billing mode indicator for non-consume */}

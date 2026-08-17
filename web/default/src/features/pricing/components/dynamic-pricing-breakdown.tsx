@@ -57,6 +57,8 @@ type DynamicPricingBreakdownProps = {
    * call they are inspecting. Defaults to false (show all configured prices).
    */
   hideCacheColumns?: boolean
+  /** Actual token usage; category prices are shown only when used. */
+  usage?: Partial<Record<string, number>>
 }
 
 const VAR_LABELS: Record<string, string> = {
@@ -150,6 +152,7 @@ export function DynamicPricingBreakdown({
   billingExpr,
   matchedTierLabel,
   hideCacheColumns = false,
+  usage,
 }: DynamicPricingBreakdownProps) {
   const { t } = useTranslation()
   const expr = billingExpr || ''
@@ -184,9 +187,13 @@ export function DynamicPricingBreakdown({
     matchedTierLabel ?? undefined
   )
 
-  if (!expr) return null
+  const hasMatchedTier =
+    normalizedMatchedTierLabel !== '' &&
+    tiers.some(
+      (tier) => normalizeTierLabel(tier.label) === normalizedMatchedTierLabel
+    )
 
-  if (!hasTiers) {
+  if (!expr || !hasTiers || !hasMatchedTier) {
     return (
       <section className='min-w-0 py-4'>
         <div className='mb-3 flex items-center gap-2'>
@@ -206,7 +213,7 @@ export function DynamicPricingBreakdown({
           {t('Raw expression')}
         </div>
         <code className='text-muted-foreground block text-xs break-all'>
-          {expr}
+          {expr || t('No billing expression')}
         </code>
       </section>
     )
@@ -215,13 +222,15 @@ export function DynamicPricingBreakdown({
   const visiblePriceFields = BILLING_PRICING_VARS.filter((v) => {
     if (!hasTiers) return false
     if (hideCacheColumns && v.group === 'cache') return false
+    if (v.group && usage?.[v.key] == null) return false
+    if (v.group && usage?.[v.key] != null && (usage[v.key] ?? 0) <= 0) return false
     return tiers.some(
       (tier) => Number(tier[v.field as string as keyof ParsedTier] || 0) > 0
     )
   })
 
   return (
-    <section className='min-w-0 py-3 sm:py-4'>
+    <section className='h-fit min-h-0 min-w-0 pt-2 pb-2 sm:pt-3 sm:pb-2'>
       <div className='mb-3 flex items-start gap-2 sm:mb-4'>
         <span className='mt-0.5 inline-flex size-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shadow-sm dark:bg-amber-500/20 dark:text-amber-300'>
           <TagIcon className='size-3.5' />
@@ -237,7 +246,7 @@ export function DynamicPricingBreakdown({
       </div>
 
       {hasTiers && (
-        <div className='mb-3 sm:mb-4'>
+        <div className={hasRules ? 'mb-3 sm:mb-4' : undefined}>
           <div className='text-foreground mb-2 text-sm font-semibold'>
             {t('Tiered price table')}
           </div>
@@ -301,7 +310,7 @@ export function DynamicPricingBreakdown({
             })}
           </div>
           <StaticDataTable
-            className='hidden rounded-none border-0 sm:block'
+            className='h-fit hidden rounded-none border-0 sm:block'
             tableClassName='text-sm'
             headerRowClassName='hover:bg-transparent'
             data={tiers}
@@ -320,7 +329,7 @@ export function DynamicPricingBreakdown({
                 id: 'tier',
                 header: t('Tier'),
                 className: 'text-muted-foreground py-2 font-medium',
-                cellClassName: 'py-2.5 align-top',
+                cellClassName: 'py-2.5 align-middle',
                 cell: (tier) => {
                   const condSummary = formatConditionSummary(tier.conditions, t)
                   const isMatched =
@@ -346,7 +355,7 @@ export function DynamicPricingBreakdown({
                         )}
                       </div>
                       {condSummary && (
-                        <div className='text-muted-foreground mt-1 text-xs'>
+                        <div className='text-muted-foreground mt-1 text-xs whitespace-nowrap'>
                           {condSummary}
                         </div>
                       )}
@@ -358,7 +367,7 @@ export function DynamicPricingBreakdown({
                 id: v.field ?? `price-${index}`,
                 header: t(v.shortLabel),
                 className: 'text-muted-foreground py-2 text-right font-medium',
-                cellClassName: 'py-2.5 text-right align-top font-mono',
+                cellClassName: 'py-2.5 text-right align-middle font-mono',
                 cell: (tier: ParsedTier) => {
                   const value = Number(
                     tier[v.field as string as keyof ParsedTier] || 0
