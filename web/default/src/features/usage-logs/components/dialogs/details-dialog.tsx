@@ -61,6 +61,7 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
+import { getTokenBillingParts } from '../../lib/token-billing'
 import type { LogOtherData } from '../../types'
 import { useUsageLogsContext } from '../usage-logs-provider'
 
@@ -142,33 +143,6 @@ function DetailSection(props: {
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
-}
-
-function getTokenBillingParts(log: UsageLog, other: LogOtherData) {
-  const input = Math.max(0, log.prompt_tokens || 0)
-  const output = Math.max(0, log.completion_tokens || 0)
-  const cacheRead = Math.max(0, other.cache_tokens || 0)
-  const cacheWrite = Math.max(0, other.cache_creation_tokens || 0)
-  const cacheWrite5m = Math.max(0, other.cache_creation_tokens_5m || 0)
-  const cacheWrite1h = Math.max(0, other.cache_creation_tokens_1h || 0)
-  const cacheWriteResidual = Math.max(
-    0,
-    cacheWrite - cacheWrite5m - cacheWrite1h
-  )
-
-  return {
-    input,
-    output,
-    cacheRead,
-    cacheWrite,
-    cacheWrite5m,
-    cacheWrite1h,
-    cacheWriteResidual,
-    baseInput: Math.max(
-      0,
-      input - cacheRead - cacheWrite5m - cacheWrite1h - cacheWriteResidual
-    ),
-  }
 }
 
 function getDynamicTokenBillingParts(

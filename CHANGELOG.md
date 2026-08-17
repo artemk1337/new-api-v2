@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.140
+
+- Fixed Claude usage-log details to keep text input separate from cache tokens.
+
 ## v1.1.139
 
 - Show input and output rates in billing details while keeping token breakdowns count-only.
