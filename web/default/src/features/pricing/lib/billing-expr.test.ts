@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { parseTiersFromExpr } from './billing-expr.ts'
+import {
+  canRenderStructuredPricing,
+  parseTiersFromExpr,
+} from './billing-expr.ts'
 import {
   evalExprLocally,
   generateExprFromVisualConfig,
@@ -19,6 +22,30 @@ test('renders and preserves reasoning-output pricing in tiered expressions', () 
   assert.ok(visualConfig)
   assert.equal(visualConfig.tiers[0].reasoning_output_unit_cost, 8)
   assert.match(generateExprFromVisualConfig(visualConfig), /rt \* 8/)
+})
+
+test('renders parsed tiers without a request matched tier', () => {
+  const tiers = parseTiersFromExpr('tier("step_1", p * 4 + c * 16)')
+
+  assert.equal(canRenderStructuredPricing(tiers), true)
+})
+
+test('falls back when a request matched tier is unknown', () => {
+  const tiers = parseTiersFromExpr('tier("step_1", p * 4 + c * 16)')
+
+  assert.equal(canRenderStructuredPricing(tiers, 'missing', true), false)
+})
+
+test('falls back when usage details have no matched tier', () => {
+  const tiers = parseTiersFromExpr('tier("step_1", p * 4 + c * 16)')
+
+  assert.equal(canRenderStructuredPricing(tiers, undefined, true), false)
+})
+
+test('renders when a request matched tier has normalized label', () => {
+  const tiers = parseTiersFromExpr('tier("Step 1", p * 4 + c * 16)')
+
+  assert.equal(canRenderStructuredPricing(tiers, ' step1 ', true), true)
 })
 
 test('opens a synchronized reasoning contract in the visual editor', () => {

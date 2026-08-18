@@ -321,6 +321,21 @@ export function normalizeTierLabel(label: string | undefined): string {
     .toLowerCase()
 }
 
+export function canRenderStructuredPricing(
+  tiers: ParsedTier[],
+  matchedTierLabel?: string | null,
+  requireMatchedTier = false
+): boolean {
+  if (tiers.length === 0) return false
+  if (!requireMatchedTier) return true
+
+  const normalizedLabel = normalizeTierLabel(matchedTierLabel ?? undefined)
+  return (
+    normalizedLabel !== '' &&
+    tiers.some((tier) => normalizeTierLabel(tier.label) === normalizedLabel)
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Request rule parser
 // ---------------------------------------------------------------------------

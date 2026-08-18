@@ -25,14 +25,15 @@ import { Badge } from '@/components/ui/badge'
 import { StaticDataTable } from '@/components/data-table'
 import {
   BILLING_PRICING_VARS,
+  canRenderStructuredPricing,
   MATCH_CONTAINS,
   MATCH_EQ,
   MATCH_EXISTS,
   MATCH_GTE,
   MATCH_LT,
   MATCH_RANGE,
-  SOURCE_TIME,
   normalizeTierLabel,
+  SOURCE_TIME,
   parseTiersFromExpr,
   splitBillingExprAndRequestRules,
   tryParseRequestRuleExpr,
@@ -50,6 +51,8 @@ type DynamicPricingBreakdownProps = {
    * the usage-log details dialog to show which tier the engine selected.
    */
   matchedTierLabel?: string | null
+  /** Require a request-selected tier, as in usage-log details. */
+  requireMatchedTier?: boolean
   /**
    * Hide cache-pricing columns regardless of the per-tier values. The log
    * details dialog passes this when the actual request did not consume any
@@ -151,6 +154,7 @@ function describeGroup(
 export function DynamicPricingBreakdown({
   billingExpr,
   matchedTierLabel,
+  requireMatchedTier = false,
   hideCacheColumns = false,
   usage,
 }: DynamicPricingBreakdownProps) {
@@ -183,17 +187,20 @@ export function DynamicPricingBreakdown({
 
   const hasTiers = tiers.length > 0
   const hasRules = ruleGroups.length > 0
+  // The pricing page does not have a tier selected by an individual request.
+  // A matched tier is only required for usage-log details, where the caller
+  // explicitly enables the requirement. Without this distinction valid tier
+  // tables were incorrectly rendered as an unparseable expression.
+  const canRenderStructured = canRenderStructuredPricing(
+    tiers,
+    matchedTierLabel,
+    requireMatchedTier
+  )
   const normalizedMatchedTierLabel = normalizeTierLabel(
     matchedTierLabel ?? undefined
   )
 
-  const hasMatchedTier =
-    normalizedMatchedTierLabel !== '' &&
-    tiers.some(
-      (tier) => normalizeTierLabel(tier.label) === normalizedMatchedTierLabel
-    )
-
-  if (!expr || !hasTiers || !hasMatchedTier) {
+  if (!expr || !canRenderStructured) {
     return (
       <section className='min-w-0 py-4'>
         <div className='mb-3 flex items-center gap-2'>
@@ -254,9 +261,8 @@ export function DynamicPricingBreakdown({
             {tiers.map((tier, i) => {
               const condSummary = formatConditionSummary(tier.conditions, t)
               const isMatched =
-                matchedTierLabel != null &&
-                matchedTierLabel !== '' &&
-                tier.label === matchedTierLabel
+                normalizedMatchedTierLabel !== '' &&
+                normalizeTierLabel(tier.label) === normalizedMatchedTierLabel
               return (
                 <div
                   key={`tier-mobile-${i}`}

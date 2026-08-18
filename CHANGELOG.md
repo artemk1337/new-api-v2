@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.142
+
+- Fixed structured dynamic pricing display on pricing pages without a request-selected tier.
+- Kept usage-log dynamic pricing details on a safe raw-expression fallback when the logged tier is missing or unknown.
+
 ## v1.1.141
 
 - Added configurable referral rewards from successful wallet top-ups, with atomic callback handling and referral-balance transfer support.
