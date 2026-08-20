@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.144
+
+- Preserve provider models used as mapping targets during channel auto-sync, including duplicate aliases pointing to one model.
+
 ## v1.1.143
 
 - Return HTTP 429 for explicitly saturated or overloaded upstream 502 responses while preserving ordinary 502 errors.

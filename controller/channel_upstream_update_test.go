@@ -167,6 +167,24 @@ func TestCollectPendingUpstreamModelChangesFromModels_WithModelMapping(t *testin
 	require.Equal(t, []string{"stale-model"}, pendingRemoveModels)
 }
 
+func TestCollectPendingUpstreamModelChangesFromModels_PreservesMappedTargets(t *testing.T) {
+	// A mapped target is the real provider model used for requests. Keep it in
+	// the channel model list even if an upstream listing temporarily omits it,
+	// just like the source alias.
+	pendingAddModels, pendingRemoveModels := collectPendingUpstreamModelChangesFromModels(
+		[]string{"alias-sonnet", "cursor-sonnet", "provider-sonnet", "stale-model"},
+		[]string{},
+		nil,
+		map[string]string{
+			"alias-sonnet":  "provider-sonnet",
+			"cursor-sonnet": "provider-sonnet",
+		},
+	)
+
+	require.Empty(t, pendingAddModels)
+	require.Equal(t, []string{"stale-model"}, pendingRemoveModels)
+}
+
 func TestCollectPendingUpstreamModelChangesFromModels_WithIgnoredRegexPatterns(t *testing.T) {
 	pendingAddModels, pendingRemoveModels := collectPendingUpstreamModelChangesFromModels(
 		[]string{"gpt-4o"},

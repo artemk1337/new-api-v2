@@ -220,9 +220,13 @@ func collectPendingUpstreamModelChangesFromModels(
 		return true
 	})
 	pendingRemove := lo.Filter(localModels, func(modelName string, _ int) bool {
-		// Redirect source models are virtual aliases and should not be removed
-		// only because they are absent from upstream model list.
+		// Model mapping sources are virtual aliases and targets are the
+		// provider models users depend on. Keep both sides of a mapping even
+		// when an upstream listing temporarily omits them.
 		if _, ok := redirectSourceSet[modelName]; ok {
+			return false
+		}
+		if _, ok := redirectTargetSet[modelName]; ok {
 			return false
 		}
 		_, ok := upstreamSet[modelName]
