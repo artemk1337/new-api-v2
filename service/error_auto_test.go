@@ -183,6 +183,46 @@ func TestRelayErrorHandlerFinancialOutcome(t *testing.T) {
 	}
 }
 
+func TestRelayErrorHandlerNormalizesSaturatedBadGateway(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		status int
+	}{
+		{
+			name:   "group saturation",
+			body:   `{"error":{"message":"The upstream load for the current group is saturated."}}`,
+			status: http.StatusTooManyRequests,
+		},
+		{
+			name:   "upstream overloaded",
+			body:   `{"message":"upstream overloaded, please try again later"}`,
+			status: http.StatusTooManyRequests,
+		},
+		{
+			name:   "ordinary bad gateway",
+			body:   `{"error":{"message":"bad gateway"}}`,
+			status: http.StatusBadGateway,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: http.StatusBadGateway,
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}
+
+			err := RelayErrorHandler(t.Context(), resp, false)
+			require.NotNil(t, err)
+			assert.Equal(t, tt.status, err.StatusCode)
+			if tt.status == http.StatusTooManyRequests {
+				assert.Equal(t, types.AttemptFinancialOutcomeNonBillable, err.GetFinancialOutcome())
+			}
+		})
+	}
+}
+
 func TestKnownSaturationEnablesAutoFallbackAfterDispatch(t *testing.T) {
 	outcome := ClassifyUpstreamErrorResponse(http.StatusTooManyRequests, []byte(`{"error":{"message":"The upstream load for the current group is saturated."}}`))
 	assert.True(t, ShouldRetryAutoAttempt(outcome, true, false, true))

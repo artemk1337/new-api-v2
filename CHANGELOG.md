@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.143
+
+- Return HTTP 429 for explicitly saturated or overloaded upstream 502 responses while preserving ordinary 502 errors.
+
 ## v1.1.142
 
 - Fixed structured dynamic pricing display on pricing pages without a request-selected tier.

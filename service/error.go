@@ -94,8 +94,9 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	}
 	value := gjson.ParseBytes(responseBody)
 	upstreamUsage, upstreamCost, upstreamCostSet := extractAuthoritativeBillingPayload(value)
-	financialOutcome := ClassifyUpstreamErrorResponse(resp.StatusCode, responseBody)
+	financialOutcome := ClassifyUpstreamErrorResponse(normalizedUpstreamStatusCode(resp.StatusCode, responseBody), responseBody)
 	defer func() {
+		normalizeUpstreamSaturationStatus(newApiErr, resp.StatusCode, responseBody)
 		if financialOutcome != types.AttemptFinancialOutcomeUnknown {
 			newApiErr.SetFinancialOutcome(financialOutcome)
 		}
@@ -141,6 +142,30 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	return
 }
 
+// normalizeUpstreamSaturationStatus maps a gateway response to the client
+// rate-limit status only when the body explicitly identifies upstream
+// saturation. Other 502 responses retain their original status.
+func normalizeUpstreamSaturationStatus(err *types.NewAPIError, statusCode int, body []byte) {
+	if err == nil {
+		return
+	}
+	err.StatusCode = normalizedUpstreamStatusCode(statusCode, body)
+}
+
+func normalizedUpstreamStatusCode(statusCode int, body []byte) int {
+	if statusCode == http.StatusBadGateway && isUpstreamSaturatedBody(body) {
+		return http.StatusTooManyRequests
+	}
+	return statusCode
+}
+
+func isUpstreamSaturatedBody(body []byte) bool {
+	if gjson.ValidBytes(body) {
+		return isUpstreamSaturatedResponse(gjson.ParseBytes(body))
+	}
+	return isUpstreamSaturatedMessage(string(body))
+}
+
 // ClassifyUpstreamErrorResponse classifies a complete, structured terminal
 // upstream response independently from retry policy and HTTP status. Invalid,
 // empty, or structurally unknown bodies stay unknown: after dispatch the caller
@@ -176,6 +201,8 @@ func isUpstreamSaturatedResponse(value gjson.Result) bool {
 func isUpstreamSaturatedMessage(message string) bool {
 	message = strings.ToLower(message)
 	return strings.Contains(message, "the upstream load for the current group is saturated") ||
+		strings.Contains(message, "upstream overloaded") ||
+		strings.Contains(message, "upstream is overloaded") ||
 		strings.Contains(message, "当前分组上游负载已饱和") ||
 		(strings.Contains(message, "当前模型") && strings.Contains(message, "上游已饱和")) ||
 		strings.Contains(message, "所有可用凭据均已达到并发上限")
