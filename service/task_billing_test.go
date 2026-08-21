@@ -97,6 +97,79 @@ func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
 	require.NoError(t, model.DB.Create(token).Error)
 }
 
+func TestTaskBillingModelNameUsesMappedUpstreamModel(t *testing.T) {
+	task := &model.Task{
+		Properties: model.Properties{
+			OriginModelName:   "alias-model",
+			UpstreamModelName: "provider-model",
+			IsModelMapped:     true,
+		},
+		PrivateData: model.TaskPrivateData{
+			BillingContext: &model.TaskBillingContext{OriginModelName: "alias-model"},
+		},
+	}
+
+	assert.Equal(t, "provider-model", taskBillingModelName(task))
+	assert.Equal(t, "alias-model", taskModelName(task))
+}
+
+func TestTaskBillingModelNameKeepsOriginForUnmappedUpstreamNormalization(t *testing.T) {
+	task := &model.Task{
+		Properties: model.Properties{
+			OriginModelName:   "requested-model",
+			UpstreamModelName: "adapter-normalized-model",
+		},
+	}
+
+	assert.Equal(t, "requested-model", taskBillingModelName(task))
+}
+
+func TestTaskBillingModelNameUsesPersistedCompactBillingTarget(t *testing.T) {
+	task := &model.Task{
+		Properties: model.Properties{
+			OriginModelName:   "alias-openai-compact",
+			UpstreamModelName: "provider-model",
+			IsModelMapped:     true,
+			BillingModelName:  "provider-model-openai-compact",
+		},
+	}
+
+	assert.Equal(t, "provider-model-openai-compact", taskBillingModelName(task))
+}
+
+func TestTaskBillingModelNameUsesLegacyMappedTargetWithoutMappingFlag(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"provider-model":0.5}`))
+
+	task := &model.Task{Properties: model.Properties{
+		OriginModelName:   "legacy-alias",
+		UpstreamModelName: "provider-model",
+	}}
+
+	assert.Equal(t, "provider-model", taskBillingModelName(task))
+	other := taskBillingOther(task)
+	assert.Equal(t, true, other["is_model_mapped"])
+	assert.Equal(t, "provider-model", other["upstream_model_name"])
+}
+
+func TestTaskBillingModelNameKeepsLegacyNormalizedOriginWhenItHasPrice(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"requested-model":0.5,"adapter-normalized-model":1}`))
+
+	task := &model.Task{Properties: model.Properties{
+		OriginModelName:   "requested-model",
+		UpstreamModelName: "adapter-normalized-model",
+	}}
+
+	assert.Equal(t, "requested-model", taskBillingModelName(task))
+}
+
 func seedSubscription(t *testing.T, id int, userId int, amountTotal int64, amountUsed int64) {
 	t.Helper()
 	sub := &model.UserSubscription{

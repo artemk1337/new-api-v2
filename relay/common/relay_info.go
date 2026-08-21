@@ -137,6 +137,9 @@ type RelayInfo struct {
 	RequestedModelName string
 	// SentUpstreamModelName is the model name selected for the upstream request.
 	SentUpstreamModelName string
+	// BillingModelName is resolved from the initially selected channel before
+	// pre-consume. It does not imply that a channel has been initialized yet.
+	BillingModelName string
 	// ProviderReturnedModelName is populated only from an explicit upstream
 	// response field; it is never inferred from the request.
 	ProviderReturnedModelName string

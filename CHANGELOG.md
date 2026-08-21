@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.145
+
+- Keep renamed channel models available to users while inheriting the original model's pricing, quota, compact, task, audio, and retry billing rules.
+- Preserve mapped targets during channel synchronization and pricing resolution, including duplicate aliases and empty mappings.
+
 ## v1.1.144
 
 - Preserve provider models used as mapping targets during channel auto-sync, including duplicate aliases pointing to one model.

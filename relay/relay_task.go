@@ -99,7 +99,7 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	info.LockedChannel = ch
 
 	if originTask.ChannelId != info.ChannelId {
-		key, _, newAPIError := ch.GetNextEnabledKey()
+		key, index, newAPIError := ch.GetNextEnabledKey()
 		if newAPIError != nil {
 			return service.TaskErrorWrapper(newAPIError, "channel_no_available_key", newAPIError.StatusCode)
 		}
@@ -107,6 +107,12 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		common.SetContextKey(c, constant.ContextKeyChannelType, ch.Type)
 		common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, ch.GetBaseURL())
 		common.SetContextKey(c, constant.ContextKeyChannelId, originTask.ChannelId)
+		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, ch.ChannelInfo.IsMultiKey)
+		if ch.ChannelInfo.IsMultiKey {
+			common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, index)
+		} else {
+			common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, 0)
+		}
 
 		info.ChannelBaseUrl = ch.GetBaseURL()
 		info.ChannelId = originTask.ChannelId
@@ -214,10 +220,10 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 				info.PriceData.AddOtherRatio(k, v)
 			}
 		}
-		applyTaskPriceUnit(modelName, info.PriceData.OtherRatios)
+		applyTaskPriceUnit(helper.GetBillingModelName(info), info.PriceData.OtherRatios)
 
 		// 6. 将 OtherRatios 应用到基础额度
-		if !common.StringsContains(constant.TaskPricePatches, modelName) {
+		if !common.StringsContains(constant.TaskPricePatches, helper.GetBillingModelName(info)) {
 			for _, ra := range info.PriceData.OtherRatios {
 				if ra != 1.0 {
 					info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)

@@ -79,6 +79,8 @@ type Properties struct {
 	Input             string `json:"input"`
 	UpstreamModelName string `json:"upstream_model_name,omitempty"`
 	OriginModelName   string `json:"origin_model_name,omitempty"`
+	IsModelMapped     bool   `json:"is_model_mapped,omitempty"`
+	BillingModelName  string `json:"billing_model_name,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {
@@ -189,6 +191,8 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 		if relayInfo.OriginModelName != "" {
 			properties.OriginModelName = relayInfo.OriginModelName
 		}
+		properties.IsModelMapped = relayInfo.IsModelMapped
+		properties.BillingModelName = relayInfo.BillingModelName
 	}
 
 	// 使用预生成的公开 ID（如果有），否则新生成

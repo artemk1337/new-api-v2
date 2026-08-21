@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -123,6 +124,163 @@ func TestHasModelBillingConfigRequiresPositiveBasePrice(t *testing.T) {
 	require.True(t, HasModelBillingConfig("positive-ratio"))
 	require.True(t, HasModelBillingConfig("tiered-price"))
 	require.False(t, HasModelBillingConfig("invalid-tiered"))
+}
+
+func TestModelPriceHelperUsesMappedTargetBillingConfig(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"alias-model":9,"provider-model":0.5}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "alias-model",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "provider-model",
+			IsModelMapped:     true,
+		},
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, 0.5, priceData.ModelPrice)
+	require.Equal(t, "alias-model", info.OriginModelName)
+	require.Equal(t, "provider-model", info.UpstreamModelName)
+}
+
+func TestModelPriceHelperUsesMappingResolvedBeforeChannelMeta(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"provider-model":0.5}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("model_mapping", `{"alias-model":"provider-model"}`)
+	modelName, isMapped, err := ResolveModelMapping(ctx.GetString("model_mapping"), "alias-model")
+	require.NoError(t, err)
+	require.True(t, isMapped)
+
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName:  "alias-model",
+		BillingModelName: modelName,
+		UserGroup:        "default",
+		UsingGroup:       "default",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Nil(t, info.ChannelMeta)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, 0.5, priceData.ModelPrice)
+	require.Equal(t, "alias-model", info.OriginModelName)
+}
+
+func TestResolveModelMappingTreatsEmptyAndIdentityValuesAsUnmapped(t *testing.T) {
+	target, mapped, err := ResolveModelMapping(`{"alias-model":""}`, "alias-model")
+	require.NoError(t, err)
+	require.False(t, mapped)
+	require.Equal(t, "alias-model", target)
+
+	target, mapped, err = ResolveModelMapping(`{"alias-model":"alias-model"}`, "alias-model")
+	require.NoError(t, err)
+	require.False(t, mapped)
+	require.Equal(t, "alias-model", target)
+}
+
+func TestResolveRelayModelMappingUsesCompactModelBase(t *testing.T) {
+	target, mapped, err := ResolveRelayModelMapping(
+		`{"alias-model":"provider-model"}`,
+		"alias-model"+ratio_setting.CompactModelSuffix,
+		relayconstant.RelayModeResponsesCompact,
+	)
+	require.NoError(t, err)
+	require.True(t, mapped)
+	require.Equal(t, "provider-model"+ratio_setting.CompactModelSuffix, target)
+}
+
+func TestModelPriceHelperUsesCompactMappedTargetWildcardPricing(t *testing.T) {
+	oldPrice := ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(oldPrice))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"*-openai-compact":0.5}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("model_mapping", `{"alias-model":"provider-model"}`)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "alias-model" + ratio_setting.CompactModelSuffix,
+		RelayMode:       relayconstant.RelayModeResponsesCompact,
+		UserGroup:       "default",
+		UsingGroup:      "default",
+	}
+	require.NoError(t, ModelMappedHelper(ctx, info, nil))
+	require.Equal(t, "provider-model", info.UpstreamModelName)
+	require.Equal(t, "provider-model"+ratio_setting.CompactModelSuffix, info.BillingModelName)
+
+	priceData, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.True(t, priceData.UsePrice)
+	require.Equal(t, 0.5, priceData.ModelPrice)
+}
+
+func TestResolveCandidateModelMappingRejectsConflictingTargets(t *testing.T) {
+	_, _, err := ResolveCandidateModelMapping([]string{
+		`{"alias-model":"provider-a"}`,
+		`{"alias-model":"provider-b"}`,
+	}, "alias-model", relayconstant.RelayModeChatCompletions)
+	require.EqualError(t, err, "model_mapping_has_conflicting_targets")
+}
+
+func TestResolveCandidateModelMappingUsesSharedTarget(t *testing.T) {
+	target, mapped, err := ResolveCandidateModelMapping([]string{
+		`{"alias-model":"provider-model"}`,
+		`{"alias-model":"provider-model"}`,
+	}, "alias-model", relayconstant.RelayModeChatCompletions)
+	require.NoError(t, err)
+	require.True(t, mapped)
+	require.Equal(t, "provider-model", target)
+}
+
+func TestModelPriceHelperUsesMappedTargetTieredExpression(t *testing.T) {
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		saved[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"provider-tiered":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"provider-tiered":"tier(\"base\", p * 2)"}`,
+	}))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "alias-tiered",
+		UserGroup:       "default",
+		UsingGroup:      "default",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "provider-tiered",
+			IsModelMapped:     true,
+		},
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 100, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Zero(t, priceData.ModelPrice)
+	require.NotNil(t, info.TieredBillingSnapshot)
+	require.Equal(t, "alias-tiered", info.TieredBillingSnapshot.ModelName)
+	require.Equal(t, `tier("base", p * 2)`, info.TieredBillingSnapshot.ExprString)
 }
 
 func TestBuildAutoRouteStateReservesMostExpensiveEffectiveGroup(t *testing.T) {

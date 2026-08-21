@@ -72,16 +72,7 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	if model_setting.GetGeminiSettings().ThinkingAdapterEnabled {
 		if isNoThinkingRequest(request) {
-			// check is thinking
-			if !strings.Contains(info.OriginModelName, "-nothinking") {
-				// try to get no thinking model price
-				noThinkingModelName := info.OriginModelName + "-nothinking"
-				containPrice := helper.HasModelBillingConfig(noThinkingModelName)
-				if containPrice {
-					info.OriginModelName = noThinkingModelName
-					info.UpstreamModelName = noThinkingModelName
-				}
-			}
+			applyGeminiNoThinkingModel(info)
 		}
 		if request.GenerationConfig.ThinkingConfig == nil {
 			gemini.ThinkingAdaptor(request, info)
@@ -205,6 +196,18 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+func applyGeminiNoThinkingModel(info *relaycommon.RelayInfo) {
+	billingModelName := helper.GetBillingModelName(info)
+	if strings.Contains(billingModelName, "-nothinking") {
+		return
+	}
+	noThinkingModelName := billingModelName + "-nothinking"
+	if helper.HasModelBillingConfig(noThinkingModelName) {
+		info.UpstreamModelName = noThinkingModelName
+		info.BillingModelName = noThinkingModelName
+	}
 }
 
 func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {

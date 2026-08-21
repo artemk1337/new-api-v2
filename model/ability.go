@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,7 +46,7 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 func getAllEnableAbilityWithChannelsForPricing() ([]AbilityWithChannel, error) {
 	var abilities []AbilityWithChannel
 	err := DB.Table("abilities").
-		Select("abilities.model, abilities."+commonGroupCol+", channels.type as channel_type").
+		Select("abilities.model, abilities."+commonGroupCol+", channels.type as channel_type, channels.model_mapping as channel_model_mapping").
 		Joins("left join channels on abilities.channel_id = channels.id").
 		Where("abilities.enabled = ?", true).
 		Scan(&abilities).Error
@@ -65,6 +66,72 @@ func GetEnabledModels() []string {
 	// Find distinct models
 	DB.Table("abilities").Where("enabled = ?", true).Distinct("model").Pluck("model", &models)
 	return models
+}
+
+// GetEnabledChannelModelMappings returns mappings of all enabled channels that
+// may serve modelName in the supplied groups. Callers use this to reject an
+// ambiguous billing target before an auto-route reserves quota.
+func GetEnabledChannelModelMappings(groups []string, modelName, requestPath string) ([]string, error) {
+	return GetEnabledChannelModelMappingsForModels(groups, []string{modelName}, requestPath)
+}
+
+func GetEnabledChannelModelMappingsForModels(groups, modelNames []string, requestPath string) ([]string, error) {
+	groupKeys := make([]string, 0, len(groups)*2)
+	seenGroups := make(map[string]struct{}, len(groups)*2)
+	for _, group := range groups {
+		for _, key := range pricingGroupAbilityKeys(group) {
+			if _, ok := seenGroups[key]; ok {
+				continue
+			}
+			seenGroups[key] = struct{}{}
+			groupKeys = append(groupKeys, key)
+		}
+	}
+	if len(groupKeys) == 0 {
+		return nil, nil
+	}
+
+	var abilities []Ability
+	if err := DB.Where(commonGroupCol+" IN ? and model IN ? and enabled = ?", groupKeys, modelNames, true).Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+	channelIDs := make([]int, 0, len(abilities))
+	seenChannels := make(map[int]struct{}, len(abilities))
+	for _, ability := range abilities {
+		if _, ok := seenChannels[ability.ChannelId]; ok {
+			continue
+		}
+		seenChannels[ability.ChannelId] = struct{}{}
+		channelIDs = append(channelIDs, ability.ChannelId)
+	}
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
+
+	var nullableMappings []sql.NullString
+	err := DB.Model(&Channel{}).
+		Distinct("model_mapping").
+		Where("id IN ? and status = ?", channelIDs, common.ChannelStatusEnabled).
+		Pluck("model_mapping", &nullableMappings).Error
+	if err != nil {
+		return nil, err
+	}
+
+	mappings := make([]string, 0, len(nullableMappings))
+	seenMappings := make(map[string]struct{}, len(nullableMappings))
+	for _, nullableMapping := range nullableMappings {
+		mapping := nullableMapping.String
+		if !nullableMapping.Valid || strings.TrimSpace(mapping) == "" {
+			mapping = "{}"
+		}
+		if _, ok := seenMappings[mapping]; ok {
+			continue
+		}
+		seenMappings[mapping] = struct{}{}
+		mappings = append(mappings, mapping)
+	}
+	return mappings, nil
 }
 
 func GetAllEnableAbilities() []Ability {

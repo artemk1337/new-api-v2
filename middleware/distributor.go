@@ -537,6 +537,16 @@ func getTaskOriginModelName(c *gin.Context) string {
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
+	return setupContextForChannel(c, channel, modelName, true)
+}
+
+// SetupContextForLockedChannel refreshes channel metadata without advancing a
+// multi-key channel selected for the originating task.
+func SetupContextForLockedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
+	return setupContextForChannel(c, channel, modelName, false)
+}
+
+func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName string, selectKey bool) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
@@ -560,6 +570,10 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, channel.GetAutoBan())
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
+
+	if !selectKey {
+		return nil
+	}
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {

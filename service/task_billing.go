@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, settlement 
 	tokenName := c.GetString("token_name")
 	logContent := fmt.Sprintf("操作 %s", info.Action)
 	// 支持任务仅按次计费
-	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
+	if common.StringsContains(constant.TaskPricePatches, helper.GetBillingModelName(info)) {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
 		if len(info.PriceData.OtherRatios) > 0 {
@@ -153,7 +154,7 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		}
 	}
 	props := task.Properties
-	if props.UpstreamModelName != "" && props.UpstreamModelName != props.OriginModelName {
+	if (props.IsModelMapped || isLegacyTaskModelMapping(task)) && props.UpstreamModelName != "" {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
@@ -166,6 +167,35 @@ func taskModelName(task *model.Task) string {
 		return bc.OriginModelName
 	}
 	return task.Properties.OriginModelName
+}
+
+func TaskBillingModelName(task *model.Task) string {
+	if task.Properties.BillingModelName != "" {
+		return task.Properties.BillingModelName
+	}
+	if task.Properties.IsModelMapped && task.Properties.UpstreamModelName != "" {
+		return task.Properties.UpstreamModelName
+	}
+	// Older tasks were saved before IsModelMapped existed. Treat a differing
+	// upstream name as a legacy mapping only when the requested model has no
+	// billing config at all; adapter normalization keeps the origin price.
+	if isLegacyTaskModelMapping(task) {
+		return task.Properties.UpstreamModelName
+	}
+	return taskModelName(task)
+}
+
+func taskBillingModelName(task *model.Task) string {
+	return TaskBillingModelName(task)
+}
+
+func isLegacyTaskModelMapping(task *model.Task) bool {
+	props := task.Properties
+	return !props.IsModelMapped && props.BillingModelName == "" &&
+		props.UpstreamModelName != "" &&
+		props.UpstreamModelName != taskModelName(task) &&
+		!helper.HasModelBillingConfig(taskModelName(task)) &&
+		helper.HasModelBillingConfig(props.UpstreamModelName)
 }
 
 func ResolveTaskPricingGroupKey(task *model.Task) string {
@@ -394,7 +424,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return
 	}
 
-	modelName := taskModelName(task)
+	modelName := taskBillingModelName(task)
 
 	// 获取模型价格和倍率
 	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)

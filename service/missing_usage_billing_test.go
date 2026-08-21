@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -96,6 +97,42 @@ func TestPostAudioConsumeQuotaMissingUsageKeepsEstimate(t *testing.T) {
 	assert.Equal(t, 41, settler.actualQuota)
 	assert.Equal(t, types.AttemptFinancialOutcomeAmbiguous, info.AttemptFinancialOutcome)
 	assertEstimatedMissingUsageLog(t, info.OriginModelName, 41)
+}
+
+func TestPostAudioConsumeQuotaUsesMappedBillingTargetRatios(t *testing.T) {
+	oldAudioRatio := ratio_setting.AudioRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateAudioRatioByJSONString(oldAudioRatio))
+	})
+	require.NoError(t, ratio_setting.UpdateAudioRatioByJSONString(`{"provider-model":3}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info, settler := missingUsageTestInfo("alias-model", 0)
+	info.BillingModelName = "provider-model"
+	info.IsModelMapped = true
+	info.UpstreamModelName = "provider-model"
+
+	usage := &dto.Usage{PromptTokensDetails: dto.InputTokenDetails{AudioTokens: 10}}
+	require.NoError(t, PostAudioConsumeQuota(ctx, info, usage, ""))
+	assert.Equal(t, 30, settler.actualQuota)
+}
+
+func TestCalculateAudioQuotaKeepsOriginIdentityAndUsesBillingTarget(t *testing.T) {
+	oldAudioRatio := ratio_setting.AudioRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateAudioRatioByJSONString(oldAudioRatio))
+	})
+	require.NoError(t, ratio_setting.UpdateAudioRatioByJSONString(`{"provider-model":3}`))
+
+	quotaInfo := QuotaInfo{
+		ModelName:        "alias-model",
+		BillingModelName: "provider-model",
+		InputDetails:     TokenDetails{AudioTokens: 10},
+		ModelRatio:       1,
+		GroupRatio:       1,
+	}
+	assert.Equal(t, "alias-model", quotaInfo.ModelName)
+	assert.Equal(t, 30, calculateAudioQuota(quotaInfo))
 }
 
 func TestPostWssConsumeQuotaMissingUsageKeepsEstimate(t *testing.T) {

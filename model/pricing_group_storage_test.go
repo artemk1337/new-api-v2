@@ -35,6 +35,21 @@ func TestInitTaskStoresPricingGroupID(t *testing.T) {
 	assert.Equal(t, "2", task.Group)
 }
 
+func TestInitTaskStoresModelMappingFlag(t *testing.T) {
+	task := InitTask(constant.TaskPlatformSuno, &relaycommon.RelayInfo{
+		OriginModelName: "alias-model",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "provider-model",
+			IsModelMapped:     true,
+		},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+	})
+
+	require.True(t, task.Properties.IsModelMapped)
+	assert.Equal(t, "alias-model", task.Properties.OriginModelName)
+	assert.Equal(t, "provider-model", task.Properties.UpstreamModelName)
+}
+
 func TestPricingGroupLogsStoreIDsAndFilterByID(t *testing.T) {
 	truncateTables(t)
 

@@ -162,6 +162,7 @@ func updatePricing() {
 	vendorsList = buildPricingVendorsList(vendorMap)
 
 	modelGroupsMap := make(map[string]*types.Set[string])
+	modelPricingSources, modelHasMapping := buildModelPricingSources(enableAbilities)
 
 	for _, ability := range enableAbilities {
 		groups, ok := modelGroupsMap[ability.Model]
@@ -260,7 +261,8 @@ func updatePricing() {
 
 	pricingMap = make([]Pricing, 0)
 	for model, groups := range modelGroupsMap {
-		if !hasAvailableModelPricing(model) {
+		pricingSource := resolveModelPricingSource(model, modelPricingSources[model], modelHasMapping[model])
+		if pricingSource == "" {
 			continue
 		}
 		pricing := Pricing{
@@ -282,35 +284,35 @@ func updatePricing() {
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
 		}
-		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
+		modelPrice, findPrice := ratio_setting.GetModelPrice(pricingSource, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
 			pricing.QuotaType = 1
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
+			modelRatio, _, _ := ratio_setting.GetModelRatio(pricingSource)
 			pricing.ModelRatio = modelRatio
-			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
+			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(pricingSource)
 			pricing.QuotaType = 0
 		}
-		if cacheRatio, ok := ratio_setting.GetCacheRatio(model); ok {
+		if cacheRatio, ok := ratio_setting.GetCacheRatio(pricingSource); ok {
 			pricing.CacheRatio = &cacheRatio
 		}
-		if createCacheRatio, ok := ratio_setting.GetCreateCacheRatio(model); ok {
+		if createCacheRatio, ok := ratio_setting.GetCreateCacheRatio(pricingSource); ok {
 			pricing.CreateCacheRatio = &createCacheRatio
 		}
-		if imageRatio, ok := ratio_setting.GetImageRatio(model); ok {
+		if imageRatio, ok := ratio_setting.GetImageRatio(pricingSource); ok {
 			pricing.ImageRatio = &imageRatio
 		}
-		if ratio_setting.ContainsAudioRatio(model) {
-			audioRatio := ratio_setting.GetAudioRatio(model)
+		if ratio_setting.ContainsAudioRatio(pricingSource) {
+			audioRatio := ratio_setting.GetAudioRatio(pricingSource)
 			pricing.AudioRatio = &audioRatio
 		}
-		if ratio_setting.ContainsAudioCompletionRatio(model) {
-			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
+		if ratio_setting.ContainsAudioCompletionRatio(pricingSource) {
+			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(pricingSource)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
 		}
-		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
-			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
+		if billingMode := billing_setting.GetBillingMode(pricingSource); billingMode == "tiered_expr" {
+			if expr, ok := billing_setting.GetBillingExpr(pricingSource); ok && strings.TrimSpace(expr) != "" {
 				pricing.BillingMode = billingMode
 				pricing.BillingExpr = expr
 			}
@@ -334,6 +336,96 @@ func updatePricing() {
 	modelEnableGroupsLock.Unlock()
 
 	lastGetPricingTime = time.Now()
+}
+
+func buildModelPricingSources(abilities []AbilityWithChannel) (map[string][]string, map[string]bool) {
+	sources := make(map[string][]string)
+	hasMapping := make(map[string]bool)
+	for _, ability := range abilities {
+		target, mapped := resolveChannelModelPricingTarget(ability.Model, ability.ChannelModelMapping)
+		if mapped {
+			hasMapping[ability.Model] = true
+		}
+		if target == "" || target == ability.Model {
+			continue
+		}
+		if !common.StringsContains(sources[ability.Model], target) {
+			sources[ability.Model] = append(sources[ability.Model], target)
+		}
+	}
+	return sources, hasMapping
+}
+
+func resolveModelPricingSource(modelName string, mappedTargets []string, hasMapping bool) string {
+	availableTargets := make([]string, 0, len(mappedTargets))
+	for _, target := range mappedTargets {
+		if hasAvailableModelPricing(target) {
+			availableTargets = append(availableTargets, target)
+		}
+	}
+	if len(availableTargets) == 1 {
+		return availableTargets[0]
+	}
+	if len(availableTargets) > 1 {
+		return ""
+	}
+	if hasMapping {
+		return ""
+	}
+	if hasAvailableModelPricing(modelName) {
+		return modelName
+	}
+	return ""
+}
+
+func resolveChannelModelMappingTarget(modelName string, rawMapping *string) string {
+	target, _ := resolveChannelModelPricingTarget(modelName, rawMapping)
+	return target
+}
+
+func resolveChannelModelPricingTarget(modelName string, rawMapping *string) (string, bool) {
+	if rawMapping == nil || strings.TrimSpace(*rawMapping) == "" {
+		return "", false
+	}
+
+	mapping := make(map[string]string)
+	if err := common.UnmarshalJsonStr(*rawMapping, &mapping); err != nil {
+		return "", true
+	}
+	isCompact := strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix)
+	lookupModelName := strings.TrimSuffix(modelName, ratio_setting.CompactModelSuffix)
+	current := lookupModelName
+	if _, ok := mapping[current]; !ok {
+		return "", false
+	}
+	visited := map[string]struct{}{current: {}}
+	for {
+		next, ok := mapping[current]
+		next = strings.TrimSpace(next)
+		if !ok || next == "" {
+			if current == lookupModelName {
+				return "", false
+			}
+			if isCompact {
+				return ratio_setting.WithCompactModelSuffix(current), true
+			}
+			return current, true
+		}
+		if next == current {
+			if current == lookupModelName {
+				return "", false
+			}
+			if isCompact {
+				return ratio_setting.WithCompactModelSuffix(current), true
+			}
+			return current, true
+		}
+		if _, ok := visited[next]; ok {
+			return "", true
+		}
+		visited[next] = struct{}{}
+		current = next
+	}
 }
 
 func buildPricingModelMap(allMeta []Model, modelNames []string) map[string]*Model {
