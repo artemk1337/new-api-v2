@@ -29,6 +29,11 @@ func normalizeClaudeHelperUsageSemantic(info *relaycommon.RelayInfo, usage any) 
 	if info != nil && len(info.RequestConversionChain) >= 2 &&
 		info.RequestConversionChain[0] == types.RelayFormatClaude &&
 		info.GetFinalRequestRelayFormat() != types.RelayFormatClaude {
+		cacheCreationTokens := typedUsage.PromptTokensDetails.CachedCreationTokens
+		splitCacheCreationTokens := typedUsage.ClaudeCacheCreation5mTokens + typedUsage.ClaudeCacheCreation1hTokens
+		if cacheCreationTokens < splitCacheCreationTokens {
+			typedUsage.PromptTokensDetails.CachedCreationTokens = splitCacheCreationTokens
+		}
 		// An Anthropic Messages request converted to an OpenAI-compatible
 		// upstream returns OpenAI-style totals, even though the client format is
 		// Claude. Preserve that billing contract at the conversion boundary.

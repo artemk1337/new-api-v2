@@ -25,7 +25,9 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc5m := float64(usage.PromptTokensDetails.CachedCreationTokens)
 	cc1h := float64(0)
 
-	if usage.UsageSemantic == "anthropic" {
+	if usage.UsageSemantic == "anthropic" ||
+		usage.UsageSource == "anthropic" ||
+		usage.UsageSource == "openai-compatible" {
 		cc1h = float64(usage.ClaudeCacheCreation1hTokens)
 		cc5m = float64(usage.ClaudeCacheCreation5mTokens)
 	}

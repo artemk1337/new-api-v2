@@ -15,9 +15,10 @@ func TestNormalizeClaudeHelperUsageSemanticMarksOpenAITotals(t *testing.T) {
 		PromptTokens:     211120,
 		CompletionTokens: 90,
 		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens:         210048,
-			CachedCreationTokens: 1070,
+			CachedTokens: 210048,
 		},
+		ClaudeCacheCreation5mTokens: 700,
+		ClaudeCacheCreation1hTokens: 370,
 	}
 	info := &relaycommon.RelayInfo{
 		RequestConversionChain:  []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAI},
@@ -29,8 +30,11 @@ func TestNormalizeClaudeHelperUsageSemanticMarksOpenAITotals(t *testing.T) {
 	require.Same(t, usage, result)
 	require.Equal(t, "openai", result.UsageSemantic)
 	require.Equal(t, "openai-compatible", result.UsageSource)
+	require.Equal(t, 1070, result.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 700, result.ClaudeCacheCreation5mTokens)
+	require.Equal(t, 370, result.ClaudeCacheCreation1hTokens)
 
-	params := service.BuildTieredTokenParams(result, false, map[string]bool{"cr": true, "cc": true})
+	params := service.BuildTieredTokenParams(result, false, map[string]bool{"cr": true, "cc": true, "cc1h": true})
 	require.Equal(t, float64(2), params.P)
 }
 

@@ -75,10 +75,10 @@ func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *d
 	if relayInfo == nil || usage == nil {
 		return false
 	}
-	if relayInfo.GetFinalRequestRelayFormat() == types.RelayFormatClaude {
+	if len(relayInfo.RequestConversionChain) < 2 || relayInfo.RequestConversionChain[0] != types.RelayFormatClaude {
 		return false
 	}
-	if usage.UsageSource != "" || usage.UsageSemantic != "" {
+	if relayInfo.GetFinalRequestRelayFormat() == types.RelayFormatClaude {
 		return false
 	}
 	return usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
@@ -196,6 +196,12 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
+	if legacyClaudeDerived {
+		splitCacheCreationTokens := summary.CacheCreationTokens5m + summary.CacheCreationTokens1h
+		if summary.CacheCreationTokens < splitCacheCreationTokens {
+			summary.CacheCreationTokens = splitCacheCreationTokens
+		}
+	}
 	isOpenRouterClaudeBilling := relayInfo.ChannelMeta != nil &&
 		relayInfo.ChannelType == constant.ChannelTypeOpenRouter &&
 		summary.IsClaudeUsageSemantic
@@ -238,7 +244,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 		var cachedTokensWithRatio decimal.Decimal
 		if !dCacheTokens.IsZero() {
-			if !summary.IsClaudeUsageSemantic && !legacyClaudeDerived {
+			if !summary.IsClaudeUsageSemantic {
 				baseTokens = baseTokens.Sub(dCacheTokens)
 			}
 			cachedTokensWithRatio = dCacheTokens.Mul(dCacheRatio)
@@ -247,9 +253,19 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		var cachedCreationTokensWithRatio decimal.Decimal
 		hasSplitCacheCreationTokens := summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0
 		if !dCachedCreationTokens.IsZero() || hasSplitCacheCreationTokens {
-			if !summary.IsClaudeUsageSemantic && !legacyClaudeDerived {
+			if !summary.IsClaudeUsageSemantic {
+				if !legacyClaudeDerived {
+					cachedCreationTokensWithRatio = dCachedCreationTokens.Mul(dCacheCreationRatio)
+				} else {
+					remaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
+					if remaining < 0 {
+						remaining = 0
+					}
+					cachedCreationTokensWithRatio = decimal.NewFromInt(int64(remaining)).Mul(dCacheCreationRatio)
+					cachedCreationTokensWithRatio = cachedCreationTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens5m)).Mul(dCacheCreationRatio5m))
+					cachedCreationTokensWithRatio = cachedCreationTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens1h)).Mul(dCacheCreationRatio1h))
+				}
 				baseTokens = baseTokens.Sub(dCachedCreationTokens)
-				cachedCreationTokensWithRatio = dCachedCreationTokens.Mul(dCacheCreationRatio)
 			} else {
 				remaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
 				if remaining < 0 {

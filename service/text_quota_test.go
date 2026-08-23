@@ -178,8 +178,10 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 	ctx, _ := gin.CreateTestContext(w)
 
 	relayInfo := &relaycommon.RelayInfo{
-		RelayFormat:     types.RelayFormatOpenAI,
-		OriginModelName: "claude-3-7-sonnet",
+		RelayFormat:             types.RelayFormatOpenAI,
+		RequestConversionChain:  []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAI},
+		FinalRequestRelayFormat: types.RelayFormatOpenAI,
+		OriginModelName:         "claude-3-7-sonnet",
 		PriceData: types.PriceData{
 			ModelRatio:           1,
 			CompletionRatio:      5,
@@ -193,7 +195,7 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 	}
 
 	usage := &dto.Usage{
-		PromptTokens:     62,
+		PromptTokens:     4192,
 		CompletionTokens: 95,
 		PromptTokensDetails: dto.InputTokenDetails{
 			CachedTokens: 3544,
@@ -203,8 +205,78 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	// 62 + 3544*0.1 + 586*1.25 + 95*5 = 1624.9 => 1624
+	// (4192 - 3544 - 586) + 3544*0.1 + 586*1.25 + 95*5 = 1624.9 => 1624
 	require.Equal(t, 1624, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryNormalizesClaudeConversionCacheCreation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:             types.RelayFormatClaude,
+		RequestConversionChain:  []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAI},
+		FinalRequestRelayFormat: types.RelayFormatOpenAI,
+		PriceData: types.PriceData{
+			ModelRatio:           5,
+			CompletionRatio:      5,
+			CacheRatio:           0.1,
+			CacheCreationRatio:   1.25,
+			CacheCreation5mRatio: 1.25,
+			CacheCreation1hRatio: 2,
+			GroupRatioInfo:       types.GroupRatioInfo{GroupRatio: 0.2},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     211120,
+		CompletionTokens: 90,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 210048,
+		},
+		ClaudeCacheCreation5mTokens: 1070,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 1070, summary.CacheCreationTokens)
+	// ((211120 - 210048 - 1070) + 210048*0.1 + 1070*1.25 + 90*5) * 5 * 0.2
+	require.Equal(t, 22794, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryClaudeConversionKeepsOneHourCacheRate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:             types.RelayFormatClaude,
+		RequestConversionChain:  []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAI},
+		FinalRequestRelayFormat: types.RelayFormatOpenAI,
+		PriceData: types.PriceData{
+			ModelRatio:           1,
+			CompletionRatio:      1,
+			CacheRatio:           0,
+			CacheCreationRatio:   1,
+			CacheCreation5mRatio: 2,
+			CacheCreation1hRatio: 3,
+			GroupRatioInfo:       types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 50,
+		},
+		ClaudeCacheCreation5mTokens: 10,
+		ClaudeCacheCreation1hTokens: 20,
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	// (100 - 50 - 30) + 50*0 + 10*2 + 20*3 = 100.
+	require.Equal(t, 100, summary.Quota)
 }
 
 func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheReadFromPromptBilling(t *testing.T) {
