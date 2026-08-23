@@ -21,6 +21,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func normalizeClaudeHelperUsageSemantic(info *relaycommon.RelayInfo, usage any) any {
+	typedUsage, ok := usage.(*dto.Usage)
+	if !ok || typedUsage == nil || typedUsage.UsageSemantic != "" {
+		return usage
+	}
+	if info != nil && len(info.RequestConversionChain) >= 2 &&
+		info.RequestConversionChain[0] == types.RelayFormatClaude &&
+		info.GetFinalRequestRelayFormat() != types.RelayFormatClaude {
+		// An Anthropic Messages request converted to an OpenAI-compatible
+		// upstream returns OpenAI-style totals, even though the client format is
+		// Claude. Preserve that billing contract at the conversion boundary.
+		typedUsage.UsageSemantic = "openai"
+		typedUsage.UsageSource = "openai-compatible"
+	}
+	return typedUsage
+}
+
 func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 
 	info.InitChannelMeta(c)
@@ -214,6 +231,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	usage = normalizeClaudeHelperUsageSemantic(info, usage)
 	if newAPIError != nil {
 		if service.CaptureAttemptUsageQuota(c, info, usage) {
 			newAPIError.SetFinancialOutcome(info.AttemptFinancialOutcome)
