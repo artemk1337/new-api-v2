@@ -22,7 +22,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
+
+func topUpPayMethods() ([]map[string]string, error) {
+	fallback := operation_setting.PayMethodsSnapshot()
+	methods, err := model.GetPayMethodsFromDB(model.DB)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fallback, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load PayMethods: %w", err)
+	}
+	return methods, nil
+}
 
 func GetTopUpInfo(c *gin.Context) {
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
@@ -35,11 +48,22 @@ func GetTopUpInfo(c *gin.Context) {
 	yooKassaConfig := setting.GetYooKassaConfig()
 
 	// 获取支付方式
-	payMethods := operation_setting.PayMethodsSnapshot()
+	payMethods, payMethodsErr := topUpPayMethods()
+	if payMethodsErr != nil {
+		common.ApiError(c, payMethodsErr)
+		return
+	}
 	if !complianceConfirmed {
 		payMethods = []map[string]string{}
 	}
-	enableYooKassa := isYooKassaTopUpEnabledForConfig(yooKassaConfig) && isYooKassaPaymentMethodEnabledForConfig(yooKassaConfig, "sbp")
+	hasYooKassaSBP := false
+	for _, method := range payMethods {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodYooKassaSBP) {
+			hasYooKassaSBP = true
+			break
+		}
+	}
+	enableYooKassa := isYooKassaTopUpEnabledForConfig(yooKassaConfig) && isYooKassaPaymentMethodEnabledForConfig(yooKassaConfig, "sbp") && hasYooKassaSBP
 	if !enableYooKassa {
 		filtered := make([]map[string]string, 0, len(payMethods))
 		for _, method := range payMethods {
@@ -118,27 +142,6 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
-	if enableYooKassa {
-		hasYooKassa := false
-		for _, method := range payMethods {
-			if method["type"] == model.PaymentMethodYooKassaSBP {
-				hasYooKassa = true
-				break
-			}
-		}
-
-		if !hasYooKassa {
-			payMethods = append(payMethods, map[string]string{
-				"name":        "СБП / YooKassa",
-				"type":        model.PaymentMethodYooKassaSBP,
-				"currency":    "RUB",
-				"topup_group": "default",
-				"color":       "#8B3FFD",
-				"min_topup":   strconv.FormatFloat(getMinTopup(), 'f', -1, 64),
-			})
-		}
-	}
-
 	enableNOWPayments := isNOWPaymentsTopUpEnabled()
 	if enableNOWPayments {
 		hasNOWPayments := false
@@ -162,12 +165,12 @@ func GetTopUpInfo(c *gin.Context) {
 			copyMethod[key] = value
 		}
 		copyMethod["currency"] = getPaymentMethodCurrency(copyMethod)
-		ratio := common.GetTopupGroupRatio(getPaymentTopupGroup(copyMethod["type"], userGroup))
+		ratio := common.GetTopupGroupRatio(getPaymentTopupGroupFromMethods(payMethods, copyMethod["type"], userGroup))
 		copyMethod["topup_ratio"] = strconv.FormatFloat(ratio, 'f', -1, 64)
 		// Preload the amount-independent quote inputs with the wallet page. The
 		// browser can render provider amounts immediately from these values; the
 		// payment endpoints still rebuild a fresh server quote on submit.
-		if displayConfig, configErr := service.GetPaymentQuoteDisplayConfig(copyMethod["type"], userGroup); configErr == nil {
+		if displayConfig, configErr := service.GetPaymentQuoteDisplayConfigWithPayMethods(copyMethod["type"], userGroup, payMethods); configErr == nil {
 			copyMethod["currency"] = displayConfig.Currency
 			copyMethod["rate_to_usd"] = strconv.FormatFloat(displayConfig.RateToUSD, 'f', -1, 64)
 			copyMethod["base_amount_multiplier"] = strconv.FormatFloat(displayConfig.BaseAmountMultiplier, 'f', -1, 64)
@@ -277,12 +280,30 @@ func GetTopUpQuote(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid parameters")
 		return
 	}
+	var payMethods []map[string]string
+	if strings.EqualFold(strings.TrimSpace(req.PaymentMethod), model.PaymentMethodYooKassaSBP) {
+		var payMethodsErr error
+		payMethods, payMethodsErr = topUpPayMethods()
+		if payMethodsErr != nil {
+			common.ApiError(c, payMethodsErr)
+			return
+		}
+		if !isYooKassaSBPAvailableForMethods(setting.GetYooKassaConfig(), payMethods) {
+			common.ApiErrorMsg(c, "Payment method does not exist")
+			return
+		}
+	}
 	group, err := model.GetUserGroup(c.GetInt("id"), true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group)
+	var quote service.PaymentQuote
+	if len(payMethods) > 0 {
+		quote, err = service.BuildPaymentQuoteWithPayMethods(req.Amount, req.PaymentMethod, group, payMethods)
+	} else {
+		quote, err = service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -305,7 +326,15 @@ func GetEpayClient() *epay.Client {
 }
 
 func getPaymentTopupGroup(paymentMethod, userGroup string) string {
-	for _, method := range operation_setting.PayMethodsSnapshot() {
+	payMethods, err := topUpPayMethods()
+	if err != nil {
+		return userGroup
+	}
+	return getPaymentTopupGroupFromMethods(payMethods, paymentMethod, userGroup)
+}
+
+func getPaymentTopupGroupFromMethods(payMethods []map[string]string, paymentMethod, userGroup string) string {
+	for _, method := range payMethods {
 		if method["type"] == paymentMethod && method["topup_group"] != "" {
 			return method["topup_group"]
 		}

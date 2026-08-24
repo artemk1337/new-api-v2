@@ -16,11 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { parseCurrencyDisplayType } from '@/lib/currency'
-
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PlatformCurrenciesSection } from '../general/platform-currencies-section'
-import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { ReferralSettingsSection } from '../general/referral-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
@@ -88,29 +85,6 @@ const BILLING_SECTIONS = [
           (settings['payment_setting.compliance_confirmed'] ?? false) &&
           settings['payment_setting.compliance_terms_version'] === 'v1'
         }
-      />
-    ),
-  },
-  {
-    id: 'currency',
-    titleKey: 'Currency & Display',
-    build: (settings: BillingSettings) => (
-      <PricingSection
-        defaultValues={{
-          QuotaPerUnit: settings.QuotaPerUnit,
-          USDExchangeRate: settings.USDExchangeRate,
-          DisplayInCurrencyEnabled: settings.DisplayInCurrencyEnabled,
-          DisplayTokenStatEnabled: settings.DisplayTokenStatEnabled,
-          general_setting: {
-            quota_display_type: parseCurrencyDisplayType(
-              settings['general_setting.quota_display_type']
-            ),
-            custom_currency_symbol:
-              settings['general_setting.custom_currency_symbol'] ?? '¤',
-            custom_currency_exchange_rate:
-              settings['general_setting.custom_currency_exchange_rate'] ?? 1,
-          },
-        }}
       />
     ),
   },

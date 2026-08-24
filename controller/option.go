@@ -514,6 +514,11 @@ func prospectiveOptionBool(values map[string]string, key string, current bool) b
 	return err == nil && parsed
 }
 
+func prospectiveYooKassaSBPEnabledFromDB(db *gorm.DB, values map[string]string) bool {
+	payMethods := prospectiveOptionValue(values, "PayMethods", latestPaymentOptionFromDB(db, "PayMethods", operation_setting.PayMethods2JsonString()))
+	return paymentMethodsJSONContainsType(payMethods, model.PaymentMethodYooKassaSBP)
+}
+
 func validatePaymentSettingsReadiness(values map[string]string, creem setting.CreemConfig) error {
 	return validatePaymentSettingsReadinessFromDB(model.DB, values, creem)
 }
@@ -528,7 +533,7 @@ func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]strin
 		}
 	}
 	yooKassaConfig := setting.GetYooKassaConfig()
-	if prospectiveOptionBool(values, "YooKassaEnabled", latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled)) && complianceConfirmed {
+	if prospectiveOptionBool(values, "YooKassaEnabled", latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled)) && complianceConfirmed && prospectiveYooKassaSBPEnabledFromDB(db, values) {
 		if err := validateEnabledPlatformCurrencyFromDB(db, "RUB", "YooKassa"); err != nil {
 			return err
 		}
@@ -711,7 +716,7 @@ func validatePaymentCurrencyReadinessForComplianceConfirmationFromDB(db *gorm.DB
 		}
 	}
 	yooKassaConfig := setting.GetYooKassaConfig()
-	if latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled) && latestPaymentOptionFromDB(db, "YooKassaShopID", yooKassaConfig.ShopID) != "" && latestPaymentOptionFromDB(db, "YooKassaSecretKey", yooKassaConfig.SecretKey) != "" && paymentMethodListContains(latestPaymentOptionFromDB(db, "YooKassaPaymentMethods", yooKassaConfig.PaymentMethods), "sbp") {
+	if latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled) && latestPaymentOptionFromDB(db, "YooKassaShopID", yooKassaConfig.ShopID) != "" && latestPaymentOptionFromDB(db, "YooKassaSecretKey", yooKassaConfig.SecretKey) != "" && paymentMethodsJSONContainsType(latestPaymentOptionFromDB(db, "PayMethods", operation_setting.PayMethods2JsonString()), model.PaymentMethodYooKassaSBP) {
 		if err := validateEnabledPlatformCurrencyFromDB(db, "RUB", "YooKassa"); err != nil {
 			return err
 		}

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.150
+
+- Hardened payment-method snapshots and server-authoritative top-up quotes, including exact decimal conversion, provider availability checks, and safer payment metadata lookups.
+- Aligned wallet previews with backend rounding and commission/cashback calculations, and redirected retired currency settings to platform currencies.
+
 ## v1.1.149
 
 - Redesigned wallet top-ups with payment-method comparison, paginated history, promo and referral details, and configurable cashback thresholds.

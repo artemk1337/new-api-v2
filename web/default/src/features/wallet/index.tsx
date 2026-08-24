@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { getSelf } from '@/lib/api'
+import { ROLE } from '@/lib/roles'
 
 import { syncYooKassaPayment, isApiSuccess } from './api'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
@@ -323,7 +324,9 @@ export function Wallet(props: WalletProps) {
                     waffoProcessing
                   }
                 />
-                <RecentOperationsCard />
+                <RecentOperationsCard
+                  isAdmin={Boolean(user && user.role >= ROLE.ADMIN)}
+                />
               </aside>
             </div>
 

@@ -126,8 +126,8 @@ func activePaymentCurrencyDependenciesFromDB(db *gorm.DB, code string) []string 
 	yooEnabled := latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled)
 	yooShopID := latestPaymentOptionFromDB(db, "YooKassaShopID", yooKassaConfig.ShopID)
 	yooSecret := latestPaymentOptionFromDB(db, "YooKassaSecretKey", yooKassaConfig.SecretKey)
-	yooMethods := latestPaymentOptionFromDB(db, "YooKassaPaymentMethods", yooKassaConfig.PaymentMethods)
-	if code == "RUB" && complianceConfirmed && yooEnabled && strings.TrimSpace(yooShopID) != "" && strings.TrimSpace(yooSecret) != "" && paymentMethodListContains(yooMethods, "sbp") {
+	payMethods := latestPaymentOptionFromDB(db, "PayMethods", operation_setting.PayMethods2JsonString())
+	if code == "RUB" && complianceConfirmed && yooEnabled && strings.TrimSpace(yooShopID) != "" && strings.TrimSpace(yooSecret) != "" && paymentMethodsJSONContainsType(payMethods, model.PaymentMethodYooKassaSBP) {
 		dependencies = append(dependencies, "YooKassa SBP")
 	}
 	nowEnabled := latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled)
@@ -196,6 +196,23 @@ func latestPaymentOptionBoolFromDB(db *gorm.DB, key string, fallback bool) bool 
 func paymentMethodListContains(methods, wanted string) bool {
 	for _, method := range strings.Split(methods, ",") {
 		if strings.EqualFold(strings.TrimSpace(method), wanted) {
+			return true
+		}
+	}
+	return false
+}
+
+func paymentMethodsJSONContainsType(value, wanted string) bool {
+	var methods []map[string]string
+	if err := common.Unmarshal([]byte(value), &methods); err != nil {
+		return false
+	}
+	return paymentMethodsContainType(methods, wanted)
+}
+
+func paymentMethodsContainType(methods []map[string]string, wanted string) bool {
+	for _, method := range methods {
+		if strings.EqualFold(strings.TrimSpace(method["type"]), wanted) {
 			return true
 		}
 	}

@@ -29,6 +29,7 @@ import {
   getCashbackTierSummary,
   getPaymentMethodDisplayQuote,
 } from '../lib/payment'
+import { getBackendTopupAmount } from '../lib/topup-input'
 import type { CashbackThreshold } from '../types'
 import {
   getAvailableWaffoMethods,
@@ -62,6 +63,12 @@ describe('custom top-up amount', () => {
   test('keeps partial values out of payment calculations', () => {
     assert.equal(parseTopupAmount('0,'), null)
     assert.equal(parseTopupAmount('0.'), null)
+  })
+
+  test('clears a previously valid amount when input becomes incomplete', () => {
+    assert.equal(getBackendTopupAmount(parseTopupAmount('10')), 10)
+    assert.equal(getBackendTopupAmount(parseTopupAmount('1.')), 0)
+    assert.equal(getBackendTopupAmount(parseTopupAmount('.')), 0)
   })
 
   test('removes invalid characters while preserving a fractional value', () => {
@@ -152,7 +159,10 @@ describe('cashback panel visibility', () => {
       getRenderableCashbackTiers([{ min_amount: 0, cashback_percent: 0 }]),
       [{ min_amount: 0, cashback_percent: 0 }]
     )
-    assert.equal(hasPositiveCashbackTier([{ min_amount: 0, cashback_percent: 0 }]), false)
+    assert.equal(
+      hasPositiveCashbackTier([{ min_amount: 0, cashback_percent: 0 }]),
+      false
+    )
     assert.deepEqual(
       getRenderableCashbackTiers([null] as unknown as CashbackThreshold[]),
       []

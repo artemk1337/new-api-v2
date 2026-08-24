@@ -27,6 +27,35 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+// GetPayMethodsFromDB reads the persisted payment-method catalog. A missing
+// options table is treated as an uninitialized database so callers can use
+// their bootstrap snapshot; other database failures are preserved and must
+// not silently re-enable stale payment methods.
+func GetPayMethodsFromDB(db *gorm.DB) ([]map[string]string, error) {
+	if db == nil {
+		return nil, gorm.ErrInvalidDB
+	}
+	var option Option
+	if err := db.Where("key = ?", "PayMethods").First(&option).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || isMissingOptionsTableError(err) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	var methods []map[string]string
+	if err := common.Unmarshal([]byte(option.Value), &methods); err != nil {
+		return nil, err
+	}
+	return methods, nil
+}
+
+func isMissingOptionsTableError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such table") ||
+		strings.Contains(message, `relation "options" does not exist`) ||
+		(strings.Contains(message, "table") && strings.Contains(message, "doesn't exist") && strings.Contains(message, "options"))
+}
+
 const removedChatsOptionKey = "Chats"
 
 // JSONObjectPatch describes changes to one JSON-object option. Set values are
@@ -1360,7 +1389,7 @@ func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) erro
 		return err
 	}
 
-	if yooReady {
+	if yooReady && !explicit {
 		var changed bool
 		methods, changed = operation_setting.EnsureYooKassaPayMethod(methods, true)
 		if changed {

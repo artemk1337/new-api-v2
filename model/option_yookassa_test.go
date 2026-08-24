@@ -13,6 +13,27 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestGetPayMethodsFromDBTreatsMissingOptionsTableAsBootstrap(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	methods, err := GetPayMethodsFromDB(db)
+	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
+	require.Nil(t, methods)
+}
+
+func TestGetPayMethodsFromDBPreservesUnavailableDatabaseError(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	methods, err := GetPayMethodsFromDB(db)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, gorm.ErrRecordNotFound)
+	require.Nil(t, methods)
+}
+
 func TestEnsureYooKassaPayMethodPersistsMigration(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -63,6 +84,53 @@ func TestEnsureYooKassaPayMethodPersistsMigration(t *testing.T) {
 	require.NoError(t, db.First(&option, "key = ?", "PayMethods").Error)
 	require.NoError(t, common.Unmarshal([]byte(option.Value), &methods))
 	require.Len(t, methods, 2)
+}
+
+func TestUpdateOptionsBulkKeepsExplicitPayMethodsWithoutYooKassa(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	require.NoError(t, db.Create(&Option{Key: "PayMethods", Value: `[{"type":"custom"},{"type":"yookassa_sbp"}]`}).Error)
+
+	previousDB := DB
+	previousMethods := operation_setting.PayMethods
+	previousYooKassaConfig := setting.GetYooKassaConfig()
+	paymentSetting := operation_setting.GetPaymentSetting()
+	previousCompliance := paymentSetting.ComplianceConfirmed
+	previousTermsVersion := paymentSetting.ComplianceTermsVersion
+	common.OptionMapRWMutex.Lock()
+	previousOptionMap := common.OptionMap
+	common.OptionMap = make(map[string]string)
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		setting.PublishYooKassaConfig(previousYooKassaConfig)
+		paymentSetting.ComplianceConfirmed = previousCompliance
+		paymentSetting.ComplianceTermsVersion = previousTermsVersion
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptionMap
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "custom"}, {"type": operation_setting.YooKassaSBPPaymentMethod}}
+	setting.PublishYooKassaConfig(setting.YooKassaConfig{Enabled: true, ShopID: "shop", SecretKey: "secret", PaymentMethods: "sbp"})
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	require.NoError(t, UpdateOptionsBulk(map[string]string{
+		"PayMethods": `[{"type":"custom"}]`,
+	}))
+
+	var option Option
+	require.NoError(t, db.First(&option, "key = ?", "PayMethods").Error)
+	var methods []map[string]string
+	require.NoError(t, common.Unmarshal([]byte(option.Value), &methods))
+	require.Len(t, methods, 1)
+	require.Equal(t, "custom", methods[0]["type"])
+	require.Len(t, operation_setting.PayMethods, 1)
+	require.Equal(t, "custom", operation_setting.PayMethods[0]["type"])
 }
 
 func TestUpdateOptionsBulkRollsBackWhenPayMethodMigrationFails(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/shopspring/decimal"
 	"golang.org/x/text/currency"
+	"gorm.io/gorm"
 )
 
 // ErrPaymentSnapshotValidation marks a provider callback that is permanently
@@ -105,12 +107,20 @@ func CalculateTopUpCredit(baseAmountUSD, commissionUSD float64) TopUpCredit {
 	} else if cashbackPercent > 100 {
 		cashbackPercent = 100
 	}
-	cashbackAmountUSD := baseAmountUSD * cashbackPercent / 100
+	baseAmountDecimal, err := quoteDecimalInput(baseAmountUSD)
+	if err != nil {
+		return TopUpCredit{CreditedAmountUSD: baseAmountUSD, CashbackPercent: cashbackPercent, TotalAmountUSD: baseAmountUSD}
+	}
+	cashbackPercentDecimal, err := quoteDecimalInput(cashbackPercent)
+	if err != nil {
+		return TopUpCredit{CreditedAmountUSD: baseAmountUSD, CashbackPercent: cashbackPercent, TotalAmountUSD: baseAmountUSD}
+	}
+	cashbackAmountDecimal := baseAmountDecimal.Mul(cashbackPercentDecimal).Div(decimal.NewFromInt(100))
 	return TopUpCredit{
 		CreditedAmountUSD: baseAmountUSD,
 		CashbackPercent:   cashbackPercent,
-		CashbackAmountUSD: cashbackAmountUSD,
-		TotalAmountUSD:    baseAmountUSD + cashbackAmountUSD,
+		CashbackAmountUSD: cashbackAmountDecimal.InexactFloat64(),
+		TotalAmountUSD:    baseAmountDecimal.Add(cashbackAmountDecimal).InexactFloat64(),
 	}
 }
 
@@ -138,7 +148,53 @@ func isFiniteNonNegative(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0
 }
 
+// quoteDecimalInput converts each public float input before doing arithmetic.
+// Converting an already multiplied float would preserve binary noise (for
+// example 0.1*1.1 becomes 0.11000000000000001), while the wallet preview
+// operates on the shortest decimal representation sent in the JSON payload.
+func quoteDecimalInput(value float64) (decimal.Decimal, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return decimal.Zero, fmt.Errorf("non-finite quote input")
+	}
+	return decimal.NewFromString(strconv.FormatFloat(value, 'f', -1, 64))
+}
+
 func PaymentMethodCurrency(paymentMethod string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(paymentMethod))
+	switch normalized {
+	case model.PaymentMethodStripe, model.PaymentMethodWaffoPancake:
+		return "USD", nil
+	case model.PaymentMethodYooKassaSBP:
+		return "RUB", nil
+	case model.PaymentMethodWaffo:
+		currency := strings.ToUpper(strings.TrimSpace(setting.WaffoCurrency))
+		if currency == "" {
+			return "", fmt.Errorf("Waffo currency is not configured")
+		}
+		return currency, nil
+	case model.PaymentMethodNOWPayments:
+		return "USDT", nil
+	}
+	methods, err := currentPayMethods()
+	if err != nil {
+		return "", err
+	}
+	return paymentMethodCurrencyWithMethods(normalized, methods)
+}
+
+func currentPayMethods() ([]map[string]string, error) {
+	fallback := operation_setting.PayMethodsSnapshot()
+	methods, err := model.GetPayMethodsFromDB(model.DB)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fallback, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load PayMethods: %w", err)
+	}
+	return methods, nil
+}
+
+func paymentMethodCurrencyWithMethods(paymentMethod string, methods []map[string]string) (string, error) {
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
 	// Built-in gateways own their settlement currency. Resolve these contracts
 	// before legacy PayMethods so stale JSON cannot override a provider rule.
@@ -156,7 +212,7 @@ func PaymentMethodCurrency(paymentMethod string) (string, error) {
 	case model.PaymentMethodNOWPayments:
 		return "USDT", nil
 	}
-	for _, method := range operation_setting.PayMethodsSnapshot() {
+	for _, method := range methods {
 		if strings.ToLower(strings.TrimSpace(method["type"])) == paymentMethod {
 			// EPay methods have no per-method settlement currency contract;
 			// they always settle in USD. Legacy PayMethods.currency is ignored.
@@ -204,8 +260,16 @@ func ValidatePaymentMethodCurrency(paymentMethod, currency string) error {
 }
 
 func paymentMethodGroup(paymentMethod, userGroup string) string {
+	methods, err := currentPayMethods()
+	if err != nil {
+		return userGroup
+	}
+	return paymentMethodGroupWithMethods(paymentMethod, userGroup, methods)
+}
+
+func paymentMethodGroupWithMethods(paymentMethod, userGroup string, methods []map[string]string) string {
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
-	for _, method := range operation_setting.PayMethodsSnapshot() {
+	for _, method := range methods {
 		if strings.ToLower(strings.TrimSpace(method["type"])) == paymentMethod && strings.TrimSpace(method["topup_group"]) != "" {
 			return method["topup_group"]
 		}
@@ -218,6 +282,14 @@ func paymentMethodGroup(paymentMethod, userGroup string) string {
 // PaymentQuote.ChargedAmount (the provider amount), never with the wallet
 // amount or the USD accounting amount.
 func paymentMethodMinimum(paymentMethod string) (float64, bool) {
+	methods, err := currentPayMethods()
+	if err != nil {
+		return 0, false
+	}
+	return paymentMethodMinimumWithMethods(paymentMethod, methods)
+}
+
+func paymentMethodMinimumWithMethods(paymentMethod string, methods []map[string]string) (float64, bool) {
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
 	switch paymentMethod {
 	case model.PaymentMethodStripe:
@@ -237,7 +309,7 @@ func paymentMethodMinimum(paymentMethod string) (float64, bool) {
 	// in PayMethods.  Missing or malformed values intentionally mean that no
 	// method-specific minimum is configured; the shared minimum remains the
 	// compatibility fallback enforced by each gateway endpoint.
-	for _, method := range operation_setting.PayMethodsSnapshot() {
+	for _, method := range methods {
 		if method == nil || strings.ToLower(strings.TrimSpace(method["type"])) != paymentMethod {
 			continue
 		}
@@ -254,8 +326,20 @@ func paymentMethodMinimum(paymentMethod string) (float64, bool) {
 // BuildPaymentQuote.  Keep this function free of a requested amount so the
 // top-up info endpoint can preload it once when the wallet opens.
 func GetPaymentQuoteDisplayConfig(paymentMethod, userGroup string) (PaymentQuoteDisplayConfig, error) {
+	methods, err := currentPayMethods()
+	if err != nil {
+		return PaymentQuoteDisplayConfig{}, err
+	}
+	return GetPaymentQuoteDisplayConfigWithPayMethods(paymentMethod, userGroup, methods)
+}
+
+// GetPaymentQuoteDisplayConfigWithPayMethods resolves quote inputs from the
+// caller's already-loaded PayMethods snapshot. Wallet responses use this to
+// keep all methods on one persisted configuration version without issuing a
+// database query for every card.
+func GetPaymentQuoteDisplayConfigWithPayMethods(paymentMethod, userGroup string, methods []map[string]string) (PaymentQuoteDisplayConfig, error) {
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
-	currency, err := PaymentMethodCurrency(paymentMethod)
+	currency, err := paymentMethodCurrencyWithMethods(paymentMethod, methods)
 	if err != nil {
 		return PaymentQuoteDisplayConfig{}, err
 	}
@@ -273,7 +357,7 @@ func GetPaymentQuoteDisplayConfig(paymentMethod, userGroup string) (PaymentQuote
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		baseAmountMultiplier /= common.GetQuotaPerUnit()
 	}
-	coefficient := common.GetTopupGroupRatio(paymentMethodGroup(paymentMethod, userGroup))
+	coefficient := common.GetTopupGroupRatio(paymentMethodGroupWithMethods(paymentMethod, userGroup, methods))
 	if coefficient <= 1 {
 		coefficient = 1
 	}
@@ -291,7 +375,15 @@ func GetPaymentQuoteDisplayConfig(paymentMethod, userGroup string) (PaymentQuote
 }
 
 func validatePaymentMethodMinimum(paymentMethod string, quote PaymentQuote) error {
-	minimum, configured := paymentMethodMinimum(paymentMethod)
+	methods, err := currentPayMethods()
+	if err != nil {
+		return err
+	}
+	return validatePaymentMethodMinimumWithMethods(paymentMethod, quote, methods)
+}
+
+func validatePaymentMethodMinimumWithMethods(paymentMethod string, quote PaymentQuote, methods []map[string]string) error {
+	minimum, configured := paymentMethodMinimumWithMethods(paymentMethod, methods)
 	if !configured || quote.ChargedAmount+1e-9 >= minimum {
 		return nil
 	}
@@ -299,42 +391,75 @@ func validatePaymentMethodMinimum(paymentMethod string, quote PaymentQuote) erro
 }
 
 func BuildPaymentQuote(amount float64, paymentMethod, userGroup string) (PaymentQuote, error) {
+	methods, err := currentPayMethods()
+	if err != nil {
+		return PaymentQuote{}, err
+	}
+	return BuildPaymentQuoteWithPayMethods(amount, paymentMethod, userGroup, methods)
+}
+
+// BuildPaymentQuoteWithPayMethods builds the authoritative quote from the
+// caller's already-loaded payment-method catalog. Payment creation handlers
+// pass the same persisted snapshot used for their readiness check, avoiding a
+// second read that could observe a different configuration version.
+func BuildPaymentQuoteWithPayMethods(amount float64, paymentMethod, userGroup string, methods []map[string]string) (PaymentQuote, error) {
 	if !isFinitePositive(amount) {
 		return PaymentQuote{}, fmt.Errorf("amount must be greater than zero")
 	}
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
 	// Provider integration settings own settlement currency. The legacy EPay
 	// Price/PayMethods currency fields are intentionally ignored.
-	displayConfig, err := GetPaymentQuoteDisplayConfig(paymentMethod, userGroup)
+	displayConfig, err := GetPaymentQuoteDisplayConfigWithPayMethods(paymentMethod, userGroup, methods)
 	if err != nil {
 		return PaymentQuote{}, err
 	}
-	baseUSD := amount * displayConfig.BaseAmountMultiplier
 	currency := displayConfig.Currency
-	rate := displayConfig.RateToUSD
-	coefficient := displayConfig.Coefficient
-	commission := 0.0
-	if coefficient > 1 {
-		commission = baseUSD * (coefficient - 1)
+	amountDecimal, err := quoteDecimalInput(amount)
+	if err != nil {
+		return PaymentQuote{}, err
 	}
-	chargedUSD := baseUSD + commission
+	multiplierDecimal, err := quoteDecimalInput(displayConfig.BaseAmountMultiplier)
+	if err != nil {
+		return PaymentQuote{}, err
+	}
+	rateDecimal, err := quoteDecimalInput(displayConfig.RateToUSD)
+	if err != nil {
+		return PaymentQuote{}, err
+	}
+	coefficientDecimal, err := quoteDecimalInput(displayConfig.Coefficient)
+	if err != nil {
+		return PaymentQuote{}, err
+	}
+	baseUSDDecimal := amountDecimal.Mul(multiplierDecimal)
+	effectiveCoefficientDecimal := coefficientDecimal
+	if effectiveCoefficientDecimal.LessThan(decimal.NewFromInt(1)) {
+		effectiveCoefficientDecimal = decimal.NewFromInt(1)
+	}
+	commissionUSDDecimal := decimal.Zero
+	if effectiveCoefficientDecimal.GreaterThan(decimal.NewFromInt(1)) {
+		commissionUSDDecimal = baseUSDDecimal.Mul(effectiveCoefficientDecimal.Sub(decimal.NewFromInt(1)))
+	}
+	chargedUSDDecimal := baseUSDDecimal.Add(commissionUSDDecimal)
 	// Providers settle in their own currency and may reject values with more
 	// fractional digits than they support. Round the amount upward before it is
 	// sent to a provider. Downward rounding could make the provider charge less
 	// than the immutable quote while the original quota is still credited.
 	providerDecimals := PaymentAmountRoundingDecimals(paymentMethod, currency)
-	chargedAmount := decimal.NewFromFloat(chargedUSD).
-		Mul(decimal.NewFromFloat(rate)).
+	chargedAmount := chargedUSDDecimal.
+		Mul(rateDecimal).
 		RoundUp(int32(providerDecimals))
-	chargedAmountInUSD := chargedAmount.Div(decimal.NewFromFloat(rate))
-	chargedUSD = chargedAmountInUSD.InexactFloat64()
-	commission = math.Max(0, chargedUSD-baseUSD)
+	chargedAmountInUSD := chargedAmount.Div(rateDecimal)
+	baseUSD := baseUSDDecimal.InexactFloat64()
+	commission := math.Max(0, chargedAmountInUSD.Sub(baseUSDDecimal).InexactFloat64())
+	chargedUSD := chargedAmountInUSD.InexactFloat64()
+	rate := rateDecimal.InexactFloat64()
+	coefficient := coefficientDecimal.InexactFloat64()
 	credit := CalculateTopUpCredit(baseUSD, commission)
 	quote := PaymentQuote{Currency: currency, RateToUSD: rate, Coefficient: coefficient,
 		BaseAmountUSD: baseUSD, CommissionUSD: commission, ChargedAmountUSD: chargedUSD,
 		CashbackPercent: credit.CashbackPercent, CashbackAmountUSD: credit.CashbackAmountUSD,
 		CreditedAmountUSD: credit.CreditedAmountUSD, ChargedAmount: chargedAmount.InexactFloat64()}
-	if err := validatePaymentMethodMinimum(paymentMethod, quote); err != nil {
+	if err := validatePaymentMethodMinimumWithMethods(paymentMethod, quote, methods); err != nil {
 		return PaymentQuote{}, err
 	}
 	return quote, nil

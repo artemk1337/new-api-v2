@@ -8,11 +8,13 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/waffo-com/waffo-go/core"
+	"gorm.io/gorm"
 )
 
 func TestValidateEpayPaymentAmountUsesSnapshot(t *testing.T) {
@@ -171,6 +173,19 @@ func TestRoundedProviderAmountKeepsUnroundedQuoteEconomics(t *testing.T) {
 }
 
 func TestWaffoPancakeSnapshotUsesPaymentMethodGroup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"waffo_pancake","topup_group":"premium"}]`}).Error)
+	previousDB := model.DB
+	model.DB = db
+	t.Cleanup(func() {
+		model.DB = previousDB
+		sqlDB, dbErr := db.DB()
+		if dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	originalMethods := operation_setting.PayMethods
 	originalRatios := common.TopupGroupRatio2JSONString()
 	originalUnitPrice := setting.WaffoPancakeUnitPrice

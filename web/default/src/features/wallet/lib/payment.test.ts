@@ -293,6 +293,46 @@ describe('wallet cashback', () => {
 })
 
 describe('payment method display quote', () => {
+  test('matches the decimal backend formula for fractional amounts', () => {
+    const quote = getPaymentMethodDisplayQuote(0.1, {
+      type: 'waffo',
+      name: 'Waffo',
+      currency: 'RUB',
+      rate_to_usd: 90,
+      base_amount_multiplier: 1.1,
+      topup_ratio: 1,
+      rounding_decimals: 2,
+    })
+
+    assert.deepEqual(quote, {
+      currency: 'RUB',
+      baseAmountUSD: 0.11,
+      commissionUSD: 0,
+      creditedAmountUSD: 0.11,
+      cashbackPercent: 0,
+      cashbackAmountUSD: 0,
+      chargedAmountUSD: 0.11,
+      chargedAmount: 9.9,
+    })
+  })
+
+  test('keeps the decimal commission after provider rounding', () => {
+    const quote = getPaymentMethodDisplayQuote(0.1, {
+      type: 'yookassa_sbp',
+      name: 'СБП',
+      currency: 'RUB',
+      rate_to_usd: 90,
+      base_amount_multiplier: 1,
+      topup_ratio: 1.1,
+      rounding_decimals: 2,
+    })
+
+    assert.equal(quote?.baseAmountUSD, 0.1)
+    assert.equal(quote?.commissionUSD, 0.01)
+    assert.equal(quote?.chargedAmountUSD, 0.11)
+    assert.equal(quote?.chargedAmount, 9.9)
+  })
+
   test('normalizes a coefficient below one to a fee-free gross amount', () => {
     const method = {
       type: 'test',

@@ -9,7 +9,17 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+func TestGetTopUpByTradeNoWithErrorReturnsInvalidDBWhenDatabaseIsUnavailable(t *testing.T) {
+	originalDB := DB
+	DB = nil
+	t.Cleanup(func() { DB = originalDB })
+
+	_, err := GetTopUpByTradeNoWithError("trade-no")
+	require.ErrorIs(t, err, gorm.ErrInvalidDB)
+}
 
 func TestPendingTopUpTTLDefaultsAndOverrides(t *testing.T) {
 	if common.OptionMap == nil {

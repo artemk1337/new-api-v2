@@ -389,6 +389,9 @@ func GetTopUpByTradeNoWithError(tradeNo string) (*TopUp, error) {
 	if strings.TrimSpace(tradeNo) == "" {
 		return nil, errors.New("tradeNo is empty")
 	}
+	if DB == nil {
+		return nil, gorm.ErrInvalidDB
+	}
 	var topUp TopUp
 	if err := DB.Where("trade_no = ?", tradeNo).First(&topUp).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

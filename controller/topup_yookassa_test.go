@@ -225,6 +225,125 @@ func TestTopUpInfoFiltersYooKassaSBPWhenSBPIsDisabled(t *testing.T) {
 	}
 }
 
+func TestTopUpInfoDoesNotReaddExplicitlyRemovedYooKassaSBP(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	previousPayMethods := operation_setting.PayMethods2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(previousPayMethods))
+	})
+	require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(`[{"type":"alipay","name":"Alipay"}]`))
+
+	router := gin.New()
+	router.GET("/topup/info", func(c *gin.Context) {
+		c.Set("id", 1)
+		GetTopUpInfo(c)
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/topup/info", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Data struct {
+			EnableYooKassa bool                `json:"enable_yookassa_topup"`
+			PayMethods     []map[string]string `json:"pay_methods"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Data.EnableYooKassa)
+	for _, method := range response.Data.PayMethods {
+		assert.NotEqual(t, model.PaymentMethodYooKassaSBP, method["type"])
+	}
+}
+
+func TestYooKassaDirectRoutesRejectDisabledPersistedSBP(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	// Keep the process-local snapshot stale on purpose; direct routes must use
+	// the authoritative persisted PayMethods row.
+	previousPayMethods := operation_setting.PayMethods2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(previousPayMethods))
+	})
+	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodYooKassaSBP}}
+	require.NoError(t, model.DB.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay"}]`}).Error)
+
+	router := gin.New()
+	for _, path := range []string{"/yookassa/amount", "/yookassa/pay", "/topup/quote"} {
+		router.POST(path, func(c *gin.Context) {
+			c.Set("id", 1)
+			switch c.Request.URL.Path {
+			case "/yookassa/amount":
+				RequestYooKassaAmount(c)
+			case "/yookassa/pay":
+				RequestYooKassaPay(c)
+			default:
+				GetTopUpQuote(c)
+			}
+		})
+	}
+	for _, path := range []string{"/yookassa/amount", "/yookassa/pay", "/topup/quote"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"amount":10,"payment_method":"yookassa_sbp"}`)))
+		require.Equal(t, http.StatusOK, recorder.Code, path)
+		var response struct {
+			Message string `json:"message"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		assert.NotEqual(t, "success", response.Message, path)
+	}
+}
+
+func TestYooKassaCurrentPayMethodsAllowsEnabledSBP(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	previousPayMethods := operation_setting.PayMethods2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(previousPayMethods))
+	})
+	require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(`[{"type":"yookassa_sbp"}]`))
+	require.NoError(t, model.DB.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"yookassa_sbp"}]`}).Error)
+	assert.True(t, isCurrentYooKassaSBPEnabled())
+	assert.True(t, isYooKassaPaymentMethodEnabled(model.PaymentMethodYooKassaSBP))
+}
+
+func TestTopUpInfoUsesPersistedPayMethodsOverStaleSnapshot(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	previousPayMethods := operation_setting.PayMethods2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(previousPayMethods))
+	})
+	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodYooKassaSBP, "name": "СБП"}}
+	require.NoError(t, model.DB.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay","name":"Alipay"}]`}).Error)
+
+	router := gin.New()
+	router.GET("/topup/info", func(c *gin.Context) {
+		c.Set("id", 1)
+		GetTopUpInfo(c)
+	})
+	containsSBP := func() bool {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/topup/info", nil))
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var response struct {
+			Data struct {
+				PayMethods []map[string]string `json:"pay_methods"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		for _, method := range response.Data.PayMethods {
+			if method["type"] == model.PaymentMethodYooKassaSBP {
+				return true
+			}
+		}
+		return false
+	}
+
+	assert.False(t, containsSBP(), "deleted persisted SBP must not be shown from a stale process snapshot")
+	require.NoError(t, model.DB.Model(&model.Option{}).Where("key = ?", "PayMethods").Update("value", `[{"type":"yookassa_sbp","name":"СБП"}]`).Error)
+	assert.True(t, containsSBP(), "currently persisted SBP must remain visible")
+}
+
 func TestYooKassaWebhookAcknowledgesExpiredOrder(t *testing.T) {
 	router := setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
 	insertYooKassaOrderForWebhookTest(t, "", 500000)
@@ -279,6 +398,22 @@ func TestYooKassaWebhookUsesPaymentMetadataWhenProviderMetadataMissingTradeNo(t 
 	assert.Equal(t, 123456, user.Quota)
 }
 
+func TestYooKassaWebhookKeepsMissingMetadataAsBadRequest(t *testing.T) {
+	paymentResponse := `{
+		"id":"pay_1",
+		"status":"succeeded",
+		"paid":true,
+		"amount":{"value":"100.00","currency":"RUB"},
+		"metadata":{"user_id":"1","topup_id":"1"}
+	}`
+	router := setupYooKassaWebhookTest(t, paymentResponse)
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Where("trade_no = ?", "trade-1").Delete(&model.PaymentMetadata{}).Error)
+
+	recorder := postYooKassaWebhook(t, router)
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
 func TestYooKassaSyncPaymentSucceeded(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
 	insertYooKassaOrderForWebhookTest(t, "", 500000)
@@ -292,6 +427,31 @@ func TestYooKassaSyncPaymentSucceeded(t *testing.T) {
 	var user model.User
 	require.NoError(t, model.DB.First(&user, 1).Error)
 	assert.Equal(t, 500000, user.Quota)
+}
+
+func TestYooKassaSyncReturnsServerErrorOnPaymentMetadataDatabaseError(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Migrator().DropTable(&model.PaymentMetadata{}))
+
+	recorder := postYooKassaSync(t, 1, common.RoleCommonUser)
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+}
+
+func TestYooKassaWebhookReturnsServerErrorOnPaymentMetadataDatabaseError(t *testing.T) {
+	paymentResponse := `{
+		"id":"pay_1",
+		"status":"succeeded",
+		"paid":true,
+		"amount":{"value":"100.00","currency":"RUB"},
+		"metadata":{"user_id":"1","topup_id":"1"}
+	}`
+	router := setupYooKassaWebhookTest(t, paymentResponse)
+	insertYooKassaOrderForWebhookTest(t, `{"quota_to_add":"123456"}`, 123456)
+	require.NoError(t, model.DB.Migrator().DropTable(&model.PaymentMetadata{}))
+
+	recorder := postYooKassaWebhook(t, router)
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
 }
 
 func TestYooKassaSyncRejectsOtherUserOrder(t *testing.T) {

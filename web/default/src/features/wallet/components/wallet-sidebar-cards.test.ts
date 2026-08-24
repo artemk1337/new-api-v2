@@ -14,10 +14,8 @@ import {
   useSystemConfigStore,
 } from '@/stores/system-config-store'
 
-import {
-  getTopupAmountToDisplay,
-  getTopupSourceLabel,
-} from '../lib/billing'
+import { getTopupAmountToDisplay, getTopupSourceLabel } from '../lib/billing'
+import { getTopupHistoryTitleKey } from '../lib/topup-history-title'
 import {
   formatPaymentSummaryAmount,
   getPaymentSummaryValues,
@@ -84,6 +82,13 @@ describe('top-up history pagination', () => {
     assert.equal(getTopupHistoryTotalPages(Number.NaN), 1)
     assert.equal(getTopupHistoryTotalPages(-10), 1)
     assert.equal(getTopupHistoryTotalPages(10, 10), 1)
+  })
+})
+
+describe('top-up history title', () => {
+  test('uses the admin title only for administrators', () => {
+    assert.equal(getTopupHistoryTitleKey(false), 'Top-up history')
+    assert.equal(getTopupHistoryTitleKey(true), "Users' top-up history")
   })
 })
 
@@ -206,6 +211,19 @@ describe('wallet summary currency values', () => {
         cashbackAmount: 0.25,
       }
     )
+  })
+
+  test('preserves the quote commission precision in the summary', () => {
+    const values = getPaymentSummaryValues({
+      baseAmountUSD: 0.1,
+      commissionUSD: 0.013333333333333333,
+      creditedAmountUSD: 0.1,
+      chargedAmountUSD: 0.11333333333333333,
+      cashbackPercent: 0,
+      cashbackAmountUSD: 0,
+    })
+
+    assert.equal(values.commission, 0.013333333333333333)
   })
 
   test('returns empty values until a valid server quote is available', () => {

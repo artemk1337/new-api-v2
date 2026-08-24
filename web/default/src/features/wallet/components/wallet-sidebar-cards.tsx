@@ -14,9 +14,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  formatBillingCurrencyFromUSD,
-} from '@/lib/currency'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
 import { useBillingHistory } from '../hooks/use-billing-history'
@@ -30,6 +28,7 @@ import {
   getTopupStatusLabel,
   formatTimestamp,
 } from '../lib/billing'
+import { getTopupHistoryTitleKey } from '../lib/topup-history-title'
 import type { CashbackThreshold, PaymentMethod, TopupRecord } from '../types'
 
 interface WalletSummaryCardProps {
@@ -196,17 +195,11 @@ export function getPaymentSummaryValues(
   }
   return {
     topup: quote.chargedAmountUSD,
-    commission: roundSummaryAmount(
-      quote.chargedAmountUSD - quote.baseAmountUSD
-    ),
+    commission: quote.commissionUSD,
     credited: quote.baseAmountUSD,
     cashbackPercent: quote.cashbackPercent,
     cashbackAmount: quote.cashbackAmountUSD,
   }
-}
-
-function roundSummaryAmount(value: number): number {
-  return Math.round((value + Number.EPSILON) * 1e12) / 1e12
 }
 
 export function getSelectedPaymentMethodName(
@@ -258,7 +251,11 @@ function SummaryRow(props: {
   )
 }
 
-export function RecentOperationsCard() {
+interface RecentOperationsCardProps {
+  isAdmin: boolean
+}
+
+export function RecentOperationsCard(props: RecentOperationsCardProps) {
   const { t } = useTranslation()
   const { records, total, page, loading, handlePageChange } = useBillingHistory(
     { initialPageSize: 5 }
@@ -313,7 +310,9 @@ export function RecentOperationsCard() {
       <CardHeader className='flex-row items-center justify-between border-b px-4 py-3 sm:px-5'>
         <div className='flex items-center gap-2'>
           <History className='text-muted-foreground size-4' />
-          <h2 className='text-sm font-semibold'>{t('Top-up history')}</h2>
+          <h2 className='text-sm font-semibold'>
+            {t(getTopupHistoryTitleKey(props.isAdmin))}
+          </h2>
         </div>
       </CardHeader>
       <CardContent className='px-4 pt-0 pb-2 sm:px-5'>

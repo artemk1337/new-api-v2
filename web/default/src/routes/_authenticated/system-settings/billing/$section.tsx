@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute, redirect } from '@tanstack/react-router'
+
 import { BillingSettings } from '@/features/system-settings/billing'
+import { getBillingSectionRedirect } from '@/features/system-settings/billing/section-redirect'
 import {
   BILLING_DEFAULT_SECTION,
   BILLING_SECTION_IDS,
@@ -27,10 +29,11 @@ export const Route = createFileRoute(
   '/_authenticated/system-settings/billing/$section'
 )({
   beforeLoad: ({ params }) => {
-    if (params.section === 'currency-exchange-rate') {
+    const redirectSection = getBillingSectionRedirect(params.section)
+    if (redirectSection) {
       throw redirect({
         to: '/system-settings/billing/$section',
-        params: { section: 'platform-currencies' },
+        params: { section: redirectSection },
       })
     }
     const validSections = BILLING_SECTION_IDS as unknown as string[]

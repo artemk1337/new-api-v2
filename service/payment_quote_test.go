@@ -33,6 +33,54 @@ func TestBuildPaymentQuoteCommissionRule(t *testing.T) {
 	assert.InDelta(t, quote.BaseAmountUSD*1.03, quote.ChargedAmountUSD, 0.000001)
 }
 
+func TestBuildPaymentQuoteUsesPersistedPayMethodGroup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	previousDB := model.DB
+	previousMethods := operation_setting.PayMethods
+	previousRatios := common.TopupGroupRatio2JSONString()
+	model.DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "test", "topup_group": "legacy"}}
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"test","topup_group":"premium"}]`}).Error)
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"legacy":1.01,"premium":1.2}`))
+	t.Cleanup(func() {
+		model.DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		_ = common.UpdateTopupGroupRatioByJSONString(previousRatios)
+	})
+
+	quote, err := BuildPaymentQuote(10, "test", "default")
+	require.NoError(t, err)
+	assert.InDelta(t, 1.2, quote.Coefficient, 0.000001)
+	assert.InDelta(t, 2.0, quote.CommissionUSD, 0.000001)
+	methods, err := model.GetPayMethodsFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&model.Option{}).Where("key = ?", "PayMethods").Update("value", `[{"type":"test","topup_group":"legacy"}]`).Error)
+	quote, err = BuildPaymentQuoteWithPayMethods(10, "test", "default", methods)
+	require.NoError(t, err)
+	assert.InDelta(t, 1.2, quote.Coefficient, 0.000001, "payment creation must keep the readiness snapshot")
+}
+
+func TestBuildPaymentQuoteFailsClosedOnPayMethodsDatabaseError(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	previousDB := model.DB
+	previousMethods := operation_setting.PayMethods
+	model.DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "test", "topup_group": "stale"}}
+	t.Cleanup(func() {
+		model.DB = previousDB
+		operation_setting.PayMethods = previousMethods
+	})
+
+	_, err = BuildPaymentQuote(10, "test", "default")
+	require.Error(t, err)
+}
+
 func TestBuildPaymentQuoteCreditsBaseAndChargesCommission(t *testing.T) {
 	previousMethods := operation_setting.PayMethods
 	previousRatios := common.TopupGroupRatio2JSONString()
@@ -216,6 +264,20 @@ func TestCalculateTopUpQuotaCreditsBaseAndAddsCommission(t *testing.T) {
 	// The user enters $1.00 to credit, pays $1.20 gross, and receives
 	// $1.00 plus 10% cashback: ($1.00 + $0.10) * 500,000.
 	assert.Equal(t, int(1.1*common.QuotaPerUnit), topUp.QuotaToAdd)
+}
+
+func TestCalculateTopUpCreditUsesDecimalCashbackArithmetic(t *testing.T) {
+	previousCashbacks := operation_setting.GetPaymentSetting().AmountCashback
+	t.Cleanup(func() {
+		operation_setting.GetPaymentSetting().AmountCashback = previousCashbacks
+	})
+	operation_setting.GetPaymentSetting().AmountCashback = operation_setting.AmountCashbackConfig{{MinAmount: 0, CashbackPercent: 3}}
+
+	credit := CalculateTopUpCredit(0.07, 0)
+	assert.Equal(t, 0.07, credit.CreditedAmountUSD)
+	assert.Equal(t, 3.0, credit.CashbackPercent)
+	assert.Equal(t, 0.0021, credit.CashbackAmountUSD)
+	assert.Equal(t, 0.0721, credit.TotalAmountUSD)
 }
 
 func TestCalculateTopUpQuotaHandlesBoundariesAndTruncatesOnce(t *testing.T) {
@@ -437,6 +499,41 @@ func TestBuildPaymentQuoteUsesWaffoNonUSDRate(t *testing.T) {
 	assert.Equal(t, 180.0, quote.ChargedAmount)
 	assert.InDelta(t, quote.ChargedAmountUSD*quote.RateToUSD, quote.ChargedAmount, 0.000001)
 	assert.InDelta(t, quote.BaseAmountUSD*90, quote.ChargedAmountUSD*quote.RateToUSD, 0.000001)
+}
+
+func TestBuildPaymentQuoteMatchesDecimalPreviewFormula(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.PlatformCurrency{}))
+	previousDB := model.DB
+	previousMethods := operation_setting.PayMethods
+	previousRatios := common.TopupGroupRatio2JSONString()
+	previousCurrency := setting.WaffoCurrency
+	previousUnitPrice := setting.WaffoUnitPrice
+	model.DB = db
+	operation_setting.PayMethods = nil
+	setting.WaffoCurrency = "RUB"
+	setting.WaffoUnitPrice = 1
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1.1}`))
+	require.NoError(t, db.Create(&model.PlatformCurrency{
+		Code: "RUB", Name: "Ruble", Symbol: "₽", Enabled: true,
+		ManualRateToUSD: 90, RateToUSD: 90,
+	}).Error)
+	t.Cleanup(func() {
+		model.DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		setting.WaffoCurrency = previousCurrency
+		setting.WaffoUnitPrice = previousUnitPrice
+		_ = common.UpdateTopupGroupRatioByJSONString(previousRatios)
+	})
+
+	// The browser evaluates the decimal inputs as 0.1 × 1.1 × 90 = 9.90.
+	// Float multiplication before decimal conversion produces 9.91 here.
+	quote, err := BuildPaymentQuote(0.1, model.PaymentMethodWaffo, "default")
+	require.NoError(t, err)
+	assert.Equal(t, 9.9, quote.ChargedAmount)
+	assert.Equal(t, 0.1, quote.BaseAmountUSD)
+	assert.Equal(t, 0.01, quote.CommissionUSD)
 }
 
 func TestWaffoDisplayConfigUsesZeroDecimalProviderCurrency(t *testing.T) {

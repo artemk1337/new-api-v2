@@ -19,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type YooKassaPayRequest struct {
@@ -71,6 +72,23 @@ func isYooKassaPaymentMethodEnabled(paymentMethod string) bool {
 	return isYooKassaPaymentMethodEnabledForConfig(setting.GetYooKassaConfig(), paymentMethod)
 }
 
+func isCurrentYooKassaSBPEnabled() bool {
+	payMethods, err := topUpPayMethods()
+	return err == nil && paymentMethodsContainType(payMethods, model.PaymentMethodYooKassaSBP)
+}
+
+func isYooKassaSBPAvailable() bool {
+	config := setting.GetYooKassaConfig()
+	payMethods, err := topUpPayMethods()
+	return err == nil && isYooKassaSBPAvailableForMethods(config, payMethods)
+}
+
+func isYooKassaSBPAvailableForMethods(config setting.YooKassaConfig, payMethods []map[string]string) bool {
+	return isYooKassaTopUpEnabledForConfig(config) &&
+		isYooKassaPaymentMethodEnabledForConfig(config, model.PaymentMethodYooKassaSBP) &&
+		paymentMethodsContainType(payMethods, model.PaymentMethodYooKassaSBP)
+}
+
 func isYooKassaPaymentMethodEnabledForConfig(config setting.YooKassaConfig, paymentMethod string) bool {
 	method := strings.TrimSpace(paymentMethod)
 	if method == "" {
@@ -91,6 +109,15 @@ func isYooKassaPaymentMethodEnabledForConfig(config setting.YooKassaConfig, paym
 }
 
 func RequestYooKassaAmount(c *gin.Context) {
+	payMethods, payMethodsErr := topUpPayMethods()
+	if payMethodsErr != nil {
+		common.ApiError(c, payMethodsErr)
+		return
+	}
+	if !isYooKassaSBPAvailableForMethods(setting.GetYooKassaConfig(), payMethods) {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Payment method does not exist"})
+		return
+	}
 	var req AmountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Invalid parameters"})
@@ -112,7 +139,7 @@ func RequestYooKassaAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to get user group"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodYooKassaSBP, group)
+	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
@@ -146,7 +173,12 @@ func RequestYooKassaPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup())})
 		return
 	}
-	if !isYooKassaPaymentMethodEnabledForConfig(yooKassaConfig, req.PaymentMethod) {
+	payMethods, payMethodsErr := topUpPayMethods()
+	if payMethodsErr != nil {
+		common.ApiError(c, payMethodsErr)
+		return
+	}
+	if !isYooKassaPaymentMethodEnabledForConfig(yooKassaConfig, req.PaymentMethod) || !paymentMethodsContainType(payMethods, model.PaymentMethodYooKassaSBP) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Payment method does not exist"})
 		return
 	}
@@ -162,7 +194,7 @@ func RequestYooKassaPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to get user group"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodYooKassaSBP, group)
+	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
@@ -292,7 +324,16 @@ func SyncYooKassaTopUp(c *gin.Context) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
-	metadata := model.GetPaymentMetadataByTradeNo(tradeNo)
+	metadata, metadataErr := model.GetPaymentMetadataByTradeNoWithError(tradeNo)
+	if metadataErr != nil {
+		if errors.Is(metadataErr, gorm.ErrRecordNotFound) {
+			common.ApiErrorMsg(c, "Payment information does not exist")
+			return
+		}
+		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to lookup payment metadata trade_no=%s error=%q", tradeNo, metadataErr.Error()))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	if metadata == nil || strings.TrimSpace(metadata.ExternalPaymentID) == "" {
 		common.ApiErrorMsg(c, "Payment information does not exist")
 		return
@@ -350,8 +391,12 @@ func completeYooKassaPaymentForConfig(ctx context.Context, config setting.YooKas
 	}
 	tradeNo := payment.Metadata["trade_no"]
 	if tradeNo == "" {
-		metadata := model.GetPaymentMetadataByExternalPaymentID(model.PaymentProviderYooKassa, payment.ID)
-		if metadata != nil {
+		metadata, metadataErr := model.GetPaymentMetadataByExternalPaymentIDWithError(model.PaymentProviderYooKassa, payment.ID)
+		if metadataErr != nil {
+			if !errors.Is(metadataErr, gorm.ErrRecordNotFound) {
+				return http.StatusInternalServerError, fmt.Errorf("lookup payment metadata: %w", metadataErr)
+			}
+		} else if metadata != nil {
 			tradeNo = metadata.TradeNo
 		}
 	}

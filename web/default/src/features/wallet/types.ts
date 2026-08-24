@@ -303,6 +303,8 @@ export interface AffiliateTransferRequest {
 export interface UserWalletData {
   /** User ID */
   id: number
+  /** User role received from the current-user endpoint */
+  role: number
   /** Username */
   username: string
   /** Current quota balance */

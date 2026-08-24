@@ -6,8 +6,11 @@ import (
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestValidatePlatformCurrencyAllowsZeroManualRateForSyncedCurrency(t *testing.T) {
@@ -50,6 +53,7 @@ func TestValidatePlatformCurrencyRejectsDisabledUSD(t *testing.T) {
 
 func TestActivePaymentCurrencyDependencies(t *testing.T) {
 	originalYooKassaConfig := setting.GetYooKassaConfig()
+	originalPayMethods := operation_setting.PayMethods
 	originalNOWEnabled := setting.NOWPaymentsEnabled
 	originalNOWAPIKey := setting.NOWPaymentsAPIKey
 	originalNOWSecret := setting.NOWPaymentsIPNSecret
@@ -62,6 +66,7 @@ func TestActivePaymentCurrencyDependencies(t *testing.T) {
 	originalWaffoCurrency := setting.WaffoCurrency
 	t.Cleanup(func() {
 		setting.PublishYooKassaConfig(originalYooKassaConfig)
+		operation_setting.PayMethods = originalPayMethods
 		setting.NOWPaymentsEnabled = originalNOWEnabled
 		setting.NOWPaymentsAPIKey = originalNOWAPIKey
 		setting.NOWPaymentsIPNSecret = originalNOWSecret
@@ -74,6 +79,7 @@ func TestActivePaymentCurrencyDependencies(t *testing.T) {
 		setting.WaffoCurrency = originalWaffoCurrency
 	})
 
+	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodYooKassaSBP}}
 	setting.PublishYooKassaConfig(setting.YooKassaConfig{Enabled: true, ShopID: "shop", SecretKey: "secret", PaymentMethods: "sbp"})
 	require.Error(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("RUB"))
 
@@ -96,4 +102,33 @@ func TestActivePaymentCurrencyDependencies(t *testing.T) {
 
 	setting.WaffoEnabled = false
 	require.NoError(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("EUR"))
+}
+
+func TestActivePaymentCurrencyDependenciesUsesPersistedPayMethods(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	for _, option := range []model.Option{
+		{Key: "payment_setting.compliance_confirmed", Value: "true"},
+		{Key: "YooKassaEnabled", Value: "true"},
+		{Key: "YooKassaShopID", Value: "shop"},
+		{Key: "YooKassaSecretKey", Value: "secret"},
+		// This legacy option is intentionally enabled. PayMethods is the
+		// source of truth for the currently exposed checkout methods.
+		{Key: "YooKassaPaymentMethods", Value: "sbp"},
+		{Key: "PayMethods", Value: `[{"type":"alipay"}]`},
+	} {
+		require.NoError(t, db.Create(&option).Error)
+	}
+
+	originalMethods := operation_setting.PayMethods
+	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
+	t.Cleanup(func() { operation_setting.PayMethods = originalMethods })
+
+	dependencies := activePaymentCurrencyDependenciesFromDB(db, "RUB")
+	assert.NotContains(t, dependencies, "YooKassa SBP")
+
+	require.NoError(t, db.Model(&model.Option{}).Where("key = ?", "PayMethods").Update("value", `[{"type":"alipay"},{"type":"yookassa_sbp"}]`).Error)
+	dependencies = activePaymentCurrencyDependenciesFromDB(db, "RUB")
+	assert.Contains(t, dependencies, "YooKassa SBP")
 }

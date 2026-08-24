@@ -30,7 +30,6 @@ import {
   backendAmountToWalletDisplay,
   getCurrencyDisplay,
   getCurrencyLabel,
-  walletDisplayAmountToBackend,
 } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -45,6 +44,7 @@ import {
 } from '../lib'
 import { getPaymentCurrencyLabel } from '../lib/format'
 import type { CashbackTierSummary } from '../lib/payment'
+import { getBackendTopupAmount } from '../lib/topup-input'
 import type {
   CashbackThreshold,
   PaymentMethod,
@@ -133,9 +133,7 @@ export function getRenderableCashbackTiers(
 export function hasPositiveCashbackTier(
   tiers: CashbackThreshold[] | null | undefined
 ): boolean {
-  return normalizeCashbackTiers(tiers).some(
-    (tier) => tier.cashback_percent > 0
-  )
+  return normalizeCashbackTiers(tiers).some((tier) => tier.cashback_percent > 0)
 }
 
 export function getRechargeStep(
@@ -161,7 +159,11 @@ export function getRechargeValidationTarget(
   minimum: number,
   hasPaymentMethod: boolean
 ): RechargeValidationTarget | null {
-  if (!Number.isFinite(topupAmount) || topupAmount <= 0 || topupAmount < minimum) {
+  if (
+    !Number.isFinite(topupAmount) ||
+    topupAmount <= 0 ||
+    topupAmount < minimum
+  ) {
     return 'amount'
   }
   return hasPaymentMethod ? null : 'payment-method'
@@ -293,16 +295,11 @@ export function RechargeFormCard({
   const handleAmountChange = (value: string) => {
     const sanitizedAmount = sanitizeTopupAmount(value)
     setLocalAmount(sanitizedAmount)
-    if (!sanitizedAmount) {
-      onTopupAmountChange(0)
-      return
-    }
-    const amount = parseTopupAmount(sanitizedAmount)
-    if (amount !== null) {
-      const backendAmount = walletDisplayAmountToBackend(amount)
-      lastInputBackendAmountRef.current = backendAmount
-      onTopupAmountChange(backendAmount)
-    }
+    const backendAmount = getBackendTopupAmount(
+      parseTopupAmount(sanitizedAmount)
+    )
+    lastInputBackendAmountRef.current = backendAmount
+    onTopupAmountChange(backendAmount)
   }
 
   const hasConfigurableTopup =
@@ -321,19 +318,13 @@ export function RechargeFormCard({
   const cashbackTiers = getRenderableCashbackTiers(topupInfo?.cashback)
   const hasCashback = hasPositiveCashbackTier(cashbackTiers)
   const cashbackSummary = getCashbackTierSummary(
-    getCashbackDisplayAmount(
-      topupAmount,
-      selectedPaymentMethod,
-      cashbackTiers
-    ),
+    getCashbackDisplayAmount(topupAmount, selectedPaymentMethod, cashbackTiers),
     cashbackTiers
   )
   const currencyLabel = getCurrencyLabel()
   const currencyDisplay = getCurrencyDisplay()
   const currencySymbol =
-    currencyDisplay.meta.kind === 'tokens'
-      ? ''
-      : currencyDisplay.meta.symbol
+    currencyDisplay.meta.kind === 'tokens' ? '' : currencyDisplay.meta.symbol
   const currentStep = getRechargeStep(
     topupAmount,
     minTopup,
@@ -507,9 +498,11 @@ export function RechargeFormCard({
                         // topupAmount is the wallet amount in USD. Do not
                         // compare them locally; the server quote enforces
                         // the exact provider minimum.
-                        const hasDisplayConfig = hasPaymentMethodDisplayConfig(method)
+                        const hasDisplayConfig =
+                          hasPaymentMethodDisplayConfig(method)
                         const unavailable =
-                          !canSelectPaymentMethod(topupAmount) || !hasDisplayConfig
+                          !canSelectPaymentMethod(topupAmount) ||
+                          !hasDisplayConfig
                         const quote = getPaymentQuoteDisplay(
                           method,
                           topupAmount,
@@ -539,7 +532,7 @@ export function RechargeFormCard({
                               className={cn(
                                 'size-4 shrink-0 rounded-full border',
                                 selectedPaymentMethod?.type === method.type &&
-                                  'border-primary border-[5px]',
+                                  'border-primary border-[5px]'
                               )}
                             />
                             {getPaymentIcon(
@@ -882,7 +875,10 @@ export function getCashbackTierDisplayThresholds(
   }))
 }
 
-export function getCashbackTierTranslate(index: number, tierCount: number): string {
+export function getCashbackTierTranslate(
+  index: number,
+  tierCount: number
+): string {
   if (tierCount === 1 || (index > 0 && index < tierCount - 1)) return '-50%'
   return index === 0 ? '0%' : '-100%'
 }
@@ -900,7 +896,9 @@ function CashbackTierPanel(props: {
   if (!summary.current && !summary.next) {
     return (
       <div className='border-muted bg-muted/20 space-y-1 rounded-lg border px-3 py-3 sm:px-4'>
-        <div className='text-base leading-6 font-semibold'>{t('Top-up cashback')}</div>
+        <div className='text-base leading-6 font-semibold'>
+          {t('Top-up cashback')}
+        </div>
         <p className='text-muted-foreground text-xs'>
           {t('Cashback is not configured yet')}
         </p>
@@ -925,11 +923,13 @@ function CashbackTierPanel(props: {
 
   return (
     <div className='space-y-3'>
-      <div className='text-base leading-6 font-semibold'>{t('Top-up cashback')}</div>
+      <div className='text-base leading-6 font-semibold'>
+        {t('Top-up cashback')}
+      </div>
       <div className='overflow-x-auto pb-1'>
         <div
           aria-label={t('Cashback progress')}
-          className='flex min-w-[360px] overflow-hidden rounded-full bg-muted/70'
+          className='bg-muted/70 flex min-w-[360px] overflow-hidden rounded-full'
           role='progressbar'
           aria-valuemin={0}
           aria-valuemax={tiers.length}
@@ -953,7 +953,13 @@ function CashbackTierPanel(props: {
                     : 'text-muted-foreground hover:bg-muted'
                 )}
               >
-                {getCashbackTierRangeLabel(displayTier, nextTier, currencyLabel, t)} · {tier.cashback_percent}%
+                {getCashbackTierRangeLabel(
+                  displayTier,
+                  nextTier,
+                  currencyLabel,
+                  t
+                )}{' '}
+                · {tier.cashback_percent}%
               </div>
             )
           })}

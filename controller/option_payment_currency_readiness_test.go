@@ -142,6 +142,45 @@ func TestUpdateOptionValidatesPaymentCurrencyReadiness(t *testing.T) {
 	require.False(t, confirmCompliance(), "compliance confirmation must not activate Creem with unavailable catalog currencies")
 }
 
+func TestYooKassaReadinessUsesProspectivePayMethods(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	for _, option := range []model.Option{
+		{Key: "payment_setting.compliance_confirmed", Value: "true"},
+		{Key: "YooKassaEnabled", Value: "true"},
+		{Key: "PayMethods", Value: `[{"type":"alipay"}]`},
+	} {
+		require.NoError(t, db.Create(&option).Error)
+	}
+
+	originalMethods := operation_setting.PayMethods
+	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
+	t.Cleanup(func() { operation_setting.PayMethods = originalMethods })
+
+	// A later YooKassa option update must not require RUB when the persisted
+	// checkout list no longer exposes SBP.
+	returnURLUpdate := map[string]string{"YooKassaReturnURL": "https://example.test/return"}
+	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, returnURLUpdate, setting.CreemConfig{}))
+
+	// Both single-option and bulk updates must evaluate the incoming
+	// PayMethods payload, not a stale legacy YooKassaPaymentMethods value.
+	activeMethods := `[{"type":"alipay"},{"type":"yookassa_sbp"}]`
+	require.Error(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
+		"PayMethods": activeMethods,
+	}, setting.CreemConfig{}))
+	require.Error(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
+		"PayMethods":        activeMethods,
+		"YooKassaReturnURL": "https://example.test/return",
+	}, setting.CreemConfig{}))
+
+	removedMethods := `[{"type":"alipay"}]`
+	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
+		"PayMethods":        removedMethods,
+		"YooKassaReturnURL": "https://example.test/return",
+	}, setting.CreemConfig{}))
+}
+
 func TestUpdateOptionRejectsCreemConfigKeys(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	original := setting.GetCreemConfig()
@@ -355,6 +394,7 @@ func TestFixedPaymentReadinessRequiresPlatformRate(t *testing.T) {
 	} {
 		require.NoError(t, db.Create(&currency).Error)
 	}
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"yookassa_sbp"}]`}).Error)
 	originalDB, originalLogDB := model.DB, model.LOG_DB
 	originalYooKassaConfig := setting.GetYooKassaConfig()
 	originalNowEnabled, originalNowAPI, originalNowSecret, originalNowCallback := setting.NOWPaymentsEnabled, setting.NOWPaymentsAPIKey, setting.NOWPaymentsIPNSecret, setting.NOWPaymentsIPNCallbackURL
