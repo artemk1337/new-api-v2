@@ -481,6 +481,42 @@ func TestBuildTieredTokenParams_GPT_WithCache(t *testing.T) {
 	}
 }
 
+func TestBuildTieredTokenParams_ConvertedOpenAIKeepsGenericCacheCreation(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens: 100,
+		UsageSource:  "openai-compatible",
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedCreationTokens: 20,
+		},
+	}
+
+	params := BuildTieredTokenParams(usage, false, map[string]bool{"cc": true})
+
+	require.Equal(t, float64(80), params.P)
+	require.Equal(t, float64(20), params.CC)
+}
+
+func TestBuildTieredTokenParams_ClaudeSplitCacheCreationKeepsAggregateRemainder(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:  100,
+		UsageSemantic: "anthropic",
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedCreationTokens: 50,
+		},
+		ClaudeCacheCreation5mTokens: 10,
+		ClaudeCacheCreation1hTokens: 20,
+	}
+	params := BuildTieredTokenParams(usage, true, map[string]bool{"cc": true, "cc1h": true})
+
+	require.Equal(t, float64(30), params.CC)
+	require.Equal(t, float64(20), params.CC1h)
+	require.Equal(t, float64(150), params.Len)
+
+	_, trace, err := billingexpr.RunExpr(`len < 150 ? tier("short", p) : tier("long", p)`, params)
+	require.NoError(t, err)
+	require.Equal(t, "long", trace.MatchedTier)
+}
+
 func TestBuildTieredTokenParams_GPT_NoCacheVar(t *testing.T) {
 	usage := &dto.Usage{
 		PromptTokens:     1000,
@@ -533,6 +569,24 @@ func TestBuildTieredTokenParams_Claude_WithCache(t *testing.T) {
 	if math.Abs(got-want) > 0.01 {
 		t.Fatalf("quota = %f, want %f", got, want)
 	}
+}
+
+func TestBuildTieredTokenParams_AnthropicKeepsGenericCacheCreation(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:  100,
+		UsageSemantic: "anthropic",
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedCreationTokens: 10,
+		},
+	}
+
+	params := BuildTieredTokenParams(usage, true, map[string]bool{"cc": true})
+
+	// Native Anthropic input tokens are text-only; generic cache creation stays
+	// in CC when no 5m/1h split is provided.
+	require.Equal(t, float64(100), params.P)
+	require.Equal(t, float64(10), params.CC)
+	require.Equal(t, float64(0), params.CC1h)
 }
 
 func TestBuildTieredTokenParams_GPT_AudioOutput(t *testing.T) {

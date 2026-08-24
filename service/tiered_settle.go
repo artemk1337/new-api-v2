@@ -25,11 +25,16 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc5m := float64(usage.PromptTokensDetails.CachedCreationTokens)
 	cc1h := float64(0)
 
-	if usage.UsageSemantic == "anthropic" ||
-		usage.UsageSource == "anthropic" ||
-		usage.UsageSource == "openai-compatible" {
-		cc1h = float64(usage.ClaudeCacheCreation1hTokens)
-		cc5m = float64(usage.ClaudeCacheCreation5mTokens)
+	hasSplitCacheCreation := usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
+	if hasSplitCacheCreation &&
+		(usage.UsageSemantic == "anthropic" || usage.UsageSource == "anthropic" || usage.UsageSource == "openai-compatible") {
+		cacheCreation5m, cacheCreation1h := NormalizeCacheCreationSplit(
+			usage.PromptTokensDetails.CachedCreationTokens,
+			usage.ClaudeCacheCreation5mTokens,
+			usage.ClaudeCacheCreation1hTokens,
+		)
+		cc5m = float64(cacheCreation5m)
+		cc1h = float64(cacheCreation1h)
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)

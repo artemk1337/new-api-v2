@@ -49,6 +49,25 @@ func TestNormalizeClaudeHelperUsageSemanticPreservesNativeClaude(t *testing.T) {
 	require.Empty(t, result.UsageSource)
 }
 
+func TestNormalizeClaudeHelperUsageSemanticForClaudeResponsesConversion(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:                100,
+		ClaudeCacheCreation5mTokens: 10,
+		ClaudeCacheCreation1hTokens: 10,
+	}
+	info := &relaycommon.RelayInfo{
+		RequestConversionChain:  []types.RelayFormat{types.RelayFormatClaude, types.RelayFormatOpenAIResponses},
+		FinalRequestRelayFormat: types.RelayFormatOpenAIResponses,
+	}
+
+	result := normalizeClaudeHelperUsageSemantic(info, usage).(*dto.Usage)
+	params := service.BuildTieredTokenParams(result, false, map[string]bool{"cc": true, "cc1h": true})
+
+	require.Equal(t, float64(80), params.P)
+	require.Equal(t, float64(10), params.CC)
+	require.Equal(t, float64(10), params.CC1h)
+}
+
 func TestNormalizeClaudeHelperUsageSemanticNoOpForNonConvertedRequests(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -169,6 +169,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return newApiErr
 		}
 
+		usage = normalizeClaudeHelperUsageSemantic(info, usage).(*dto.Usage)
 		service.PostTextConsumeQuota(c, info, usage, nil)
 		return nil
 	}

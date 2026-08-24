@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.148
+
+- Normalize Claude-to-OpenAI-compatible cache usage before billing so cached input is not charged twice.
+- Preserve generic and split 5-minute/1-hour cache-creation tokens in tiered billing and context-length tiers.
+
 ## v1.1.145
 
 - Keep renamed channel models available to users while inheriting the original model's pricing, quota, compact, task, audio, and retry billing rules.
