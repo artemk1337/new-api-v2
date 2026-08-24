@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+
 import type {
   RedemptionRequest,
   PaymentRequest,
@@ -43,6 +44,7 @@ import type {
   YooKassaSyncRequest,
   NOWPaymentsPaymentRequest,
   NOWPaymentsPaymentResponse,
+  TopupQuoteResponse,
 } from './types'
 
 // ============================================================================
@@ -61,6 +63,38 @@ export function isApiSuccess(response: ApiResponse): boolean {
  */
 export async function getTopupInfo(): Promise<TopupInfoResponse> {
   const res = await api.get('/api/user/topup/info')
+  return res.data
+}
+
+export type AvailableCurrency = {
+  code: string
+  symbol: string
+  name: string
+  enabled: boolean
+}
+
+export async function getAvailableCurrencies(): Promise<AvailableCurrency[]> {
+  const res = await api.get<{ success?: boolean; data?: AvailableCurrency[] }>(
+    '/api/currencies',
+    { skipBusinessError: true, skipErrorHandler: true } as Record<
+      string,
+      unknown
+    >
+  )
+  return Array.isArray(res.data.data) ? res.data.data : []
+}
+
+export async function getTopupQuote(
+  request: PaymentRequest
+): Promise<TopupQuoteResponse> {
+  const res = await api.post<TopupQuoteResponse>(
+    '/api/user/topup/quote',
+    request,
+    {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    } as Record<string, unknown>
+  )
   return res.data
 }
 

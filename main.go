@@ -291,6 +291,12 @@ func InitResources() error {
 
 	// Initialize options, should after model.InitDB()
 	model.InitOptionMap()
+	if err = model.SeedDefaultPlatformCurrencies(); err != nil {
+		return fmt.Errorf("seed platform currencies: %w", err)
+	}
+	if err = model.SeedDevData(); err != nil {
+		return fmt.Errorf("seed dev data: %w", err)
+	}
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

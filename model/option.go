@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -83,6 +84,7 @@ func AllOption() ([]*Option, error) {
 func InitOptionMap() {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
+	yooKassaConfig := setting.GetYooKassaConfig()
 
 	common.OptionMapRWMutex.Lock()
 	common.OptionMap = make(map[string]string)
@@ -172,11 +174,11 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.FormatFloat(setting.WaffoPancakeMinTopUp, 'f', -1, 64)
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
-	common.OptionMap["YooKassaEnabled"] = strconv.FormatBool(setting.YooKassaEnabled)
-	common.OptionMap["YooKassaShopID"] = setting.YooKassaShopID
-	common.OptionMap["YooKassaSecretKey"] = setting.YooKassaSecretKey
-	common.OptionMap["YooKassaReturnURL"] = setting.YooKassaReturnURL
-	common.OptionMap["YooKassaPaymentMethods"] = setting.YooKassaPaymentMethods
+	common.OptionMap["YooKassaEnabled"] = strconv.FormatBool(yooKassaConfig.Enabled)
+	common.OptionMap["YooKassaShopID"] = yooKassaConfig.ShopID
+	common.OptionMap["YooKassaSecretKey"] = yooKassaConfig.SecretKey
+	common.OptionMap["YooKassaReturnURL"] = yooKassaConfig.ReturnURL
+	common.OptionMap["YooKassaPaymentMethods"] = yooKassaConfig.PaymentMethods
 	common.OptionMap["NOWPaymentsEnabled"] = strconv.FormatBool(setting.NOWPaymentsEnabled)
 	common.OptionMap["NOWPaymentsAPIKey"] = setting.NOWPaymentsAPIKey
 	common.OptionMap["NOWPaymentsIPNSecret"] = setting.NOWPaymentsIPNSecret
@@ -188,6 +190,9 @@ func InitOptionMap() {
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
 	common.OptionMap["DefaultUseAutoGroup"] = strconv.FormatBool(setting.DefaultUseAutoGroup)
 	common.OptionMap["PayMethods"] = operation_setting.PayMethods2JsonString()
+	common.OptionMap[operation_setting.PaymentPendingTTLMinutes] = "1440"
+	common.OptionMap[operation_setting.PaymentCreationRateLimit] = "5"
+	common.OptionMap[operation_setting.PaymentCreationRateLimitDurationMinutes] = "1"
 	common.OptionMap["GitHubClientId"] = ""
 	common.OptionMap["GitHubClientSecret"] = ""
 	common.OptionMap["TelegramBotToken"] = ""
@@ -200,7 +205,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
-	common.OptionMap["ReferralDepositPercent"] = strconv.FormatFloat(common.ReferralDepositPercent, 'f', -1, 64)
+	common.OptionMap["ReferralDepositPercent"] = strconv.FormatFloat(common.GetReferralDepositPercent(), 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -226,7 +231,7 @@ func InitOptionMap() {
 	common.OptionMap["TopUpLink"] = common.TopUpLink
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
-	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.QuotaPerUnit, 'f', -1, 64)
+	common.OptionMap["QuotaPerUnit"] = strconv.FormatFloat(common.GetQuotaPerUnit(), 'f', -1, 64)
 	common.OptionMap["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
@@ -328,6 +333,17 @@ func loadOptionsFromDatabaseLocked() {
 				return
 			}
 		}
+	}
+	setting.PublishCreemConfig(setting.CreemConfig{
+		APIKey: setting.CreemApiKey, Products: setting.CreemProducts,
+		TestMode: setting.CreemTestMode, WebhookSecret: setting.CreemWebhookSecret,
+	})
+	publishYooKassaConfig()
+	if err := ensureYooKassaPayMethodPersisted(); err != nil {
+		common.SysLog("failed to migrate YooKassa payment method: " + err.Error())
+	}
+	if err := ensureNOWPaymentsPayMethodPersisted(); err != nil {
+		common.SysLog("failed to migrate NOWPayments payment method: " + err.Error())
 	}
 	resolvedRateLimitDuration, err := applyModelRequestRateLimitDuration(
 		modelRequestRateLimitDuration,
@@ -520,6 +536,32 @@ func optionLoadPriority(key string) int {
 	}
 }
 
+func ensureYooKassaPayMethodPersisted() error {
+	values := make(map[string]string)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return ensurePaymentMethodsPersistedTx(tx, values)
+	}); err != nil {
+		return err
+	}
+	if value, ok := values["PayMethods"]; ok {
+		return updateOptionMapFromDatabase("PayMethods", value)
+	}
+	return nil
+}
+
+func ensureNOWPaymentsPayMethodPersisted() error {
+	values := make(map[string]string)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		return ensurePaymentMethodsPersistedTx(tx, values)
+	}); err != nil {
+		return err
+	}
+	if value, ok := values["PayMethods"]; ok {
+		return updateOptionMapFromDatabase("PayMethods", value)
+	}
+	return nil
+}
+
 func SyncOptions(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
@@ -531,6 +573,33 @@ func SyncOptions(frequency int) {
 func UpdateOption(key string, value string) error {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
+	return updateOptionLocked(key, value, nil)
+}
+
+// UpdateOptionWithPaymentCurrencyGuard applies an option update while holding
+// the shared platform-currency guard. Controllers use the callback to
+// re-check provider readiness after acquiring the lock, closing the race with
+// an administrator disabling or deleting that currency.
+func UpdateOptionWithPaymentCurrencyGuard(key, value string, guard func() error) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+	return updateOptionLocked(key, value, guard)
+}
+
+func UpdateOptionWithPaymentCurrencyTxGuard(key, value string, guard func(*gorm.DB) error) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+	return updateOptionLockedWithTxGuard(key, value, guard)
+}
+
+func updateOptionLocked(key string, value string, paymentCurrencyGuard func() error) error {
+	if paymentCurrencyGuard == nil {
+		return updateOptionLockedWithTxGuard(key, value, nil)
+	}
+	return updateOptionLockedWithTxGuard(key, value, func(*gorm.DB) error { return paymentCurrencyGuard() })
+}
+
+func updateOptionLockedWithTxGuard(key string, value string, paymentCurrencyGuard func(*gorm.DB) error) error {
 
 	if key == removedChatsOptionKey {
 		common.OptionMapRWMutex.Lock()
@@ -540,6 +609,9 @@ func UpdateOption(key string, value string) error {
 	}
 	if key == "UserUsableGroups" {
 		return nil
+	}
+	if isCreemConfigOption(key) {
+		return errors.New("Creem configuration must be updated atomically via UpdateOptionsBulk")
 	}
 	if err := validateOptionValue(key, value); err != nil {
 		return err
@@ -581,7 +653,7 @@ func UpdateOption(key string, value string) error {
 	if key == setting.ModelRequestRateLimitDurationActivatedOption && value == "true" && !activationWasEnabled {
 		values[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(modelRequestRateLimitActivationNow()+modelRequestRateLimitActivationDelay(), 10)
 	}
-	if err := persistOptionsAndRuntime(values); err != nil {
+	if err := persistOptionsAndRuntimeWithTxGuard(values, paymentCurrencyGuard, nil); err != nil {
 		return err
 	}
 	if modelRequestRateLimitDurationChanged {
@@ -646,6 +718,30 @@ func validateOptionValue(key string, value string) error {
 		percent, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 		if err != nil || math.IsNaN(percent) || math.IsInf(percent, 0) || percent < 0 || percent > 100 {
 			return errors.New("referral deposit percent must be between 0 and 100")
+		}
+		return nil
+	case "QuotaPerUnit":
+		quotaPerUnit, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) || quotaPerUnit <= 0 {
+			return errors.New("quota per unit must be greater than zero")
+		}
+		return nil
+	case operation_setting.PaymentPendingTTLMinutes:
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxPaymentPendingTTLMinutes {
+			return fmt.Errorf("payment pending TTL must be between 1 and %d minutes", operation_setting.MaxPaymentPendingTTLMinutes)
+		}
+		return nil
+	case operation_setting.PaymentCreationRateLimit:
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxPaymentCreationRateLimit {
+			return fmt.Errorf("payment creation rate limit must be between 1 and %d", operation_setting.MaxPaymentCreationRateLimit)
+		}
+		return nil
+	case operation_setting.PaymentCreationRateLimitDurationMinutes:
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxPaymentCreationRateLimitWindowMinutes {
+			return fmt.Errorf("payment creation rate limit window must be between 1 and %d minutes", operation_setting.MaxPaymentCreationRateLimitWindowMinutes)
 		}
 		return nil
 	case setting.ModelRequestRateLimitDurationStagedOption,
@@ -728,7 +824,42 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 func UpdateOptionsBulk(values map[string]string) error {
 	optionUpdateMutex.Lock()
 	defer optionUpdateMutex.Unlock()
-	return updateOptionsBulkLocked(values)
+	return updateOptionsBulkLocked(values, nil)
+}
+
+func UpdateOptionsBulkWithPaymentCurrencyGuard(values map[string]string, guard func() error) error {
+	if guard == nil {
+		return UpdateOptionsBulk(values)
+	}
+	return UpdateOptionsBulkWithPaymentCurrencyTxGuard(values, func(*gorm.DB) error { return guard() })
+}
+
+// UpdateOptionsBulkWithPaymentCurrencyTxGuard runs the readiness callback on
+// the same transaction that owns the USD currency mutex.
+func UpdateOptionsBulkWithPaymentCurrencyTxGuard(values map[string]string, guard func(*gorm.DB) error) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+	return updateOptionsBulkLockedWithPrepareTx(values, nil, guard)
+}
+
+// UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepare applies a related option
+// update after prepare has merged its values under the database transaction.
+// The callback is intended for cross-instance read/merge/write flows: it can
+// lock the rows it reads and update values before the final readiness guard
+// and option writes run.
+func UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepare(values map[string]string, prepare func(*gorm.DB, map[string]string) error, guard func() error) error {
+	if guard == nil {
+		return UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, nil)
+	}
+	return UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, func(*gorm.DB) error { return guard() })
+}
+
+// UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx is the transaction-
+// aware variant used by cross-replica payment readiness checks.
+func UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values map[string]string, prepare func(*gorm.DB, map[string]string) error, guard func(*gorm.DB) error) error {
+	optionUpdateMutex.Lock()
+	defer optionUpdateMutex.Unlock()
+	return updateOptionsBulkLockedWithPrepareTx(values, prepare, guard)
 }
 
 // ApplyJSONOptionPatches merges model-pricing JSON-object changes with the
@@ -939,7 +1070,21 @@ func UpdatePricingOptionManual(key, value string) error {
 	return updateOptionMapFromDatabase(key, value)
 }
 
-func updateOptionsBulkLocked(values map[string]string) error {
+func updateOptionsBulkLocked(values map[string]string, paymentCurrencyGuard func() error) error {
+	if paymentCurrencyGuard == nil {
+		return updateOptionsBulkLockedWithPrepareTx(values, nil, nil)
+	}
+	return updateOptionsBulkLockedWithPrepareTx(values, nil, func(*gorm.DB) error { return paymentCurrencyGuard() })
+}
+
+func updateOptionsBulkLockedWithPrepare(values map[string]string, paymentCurrencyGuard func() error, prepare func(*gorm.DB, map[string]string) error) error {
+	if paymentCurrencyGuard == nil {
+		return updateOptionsBulkLockedWithPrepareTx(values, prepare, nil)
+	}
+	return updateOptionsBulkLockedWithPrepareTx(values, prepare, func(*gorm.DB) error { return paymentCurrencyGuard() })
+}
+
+func updateOptionsBulkLockedWithPrepareTx(values map[string]string, prepare func(*gorm.DB, map[string]string) error, paymentCurrencyGuard func(*gorm.DB) error) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -1012,7 +1157,7 @@ func updateOptionsBulkLocked(values map[string]string) error {
 	if normalizedValues[setting.ModelRequestRateLimitDurationActivatedOption] == "true" && !activationWasEnabled {
 		normalizedValues[setting.ModelRequestRateLimitDurationActivationAtOption] = strconv.FormatInt(modelRequestRateLimitActivationNow()+modelRequestRateLimitActivationDelay(), 10)
 	}
-	if err := persistOptionsAndRuntime(normalizedValues); err != nil {
+	if err := persistOptionsAndRuntimeWithTxGuard(normalizedValues, paymentCurrencyGuard, prepare); err != nil {
 		return err
 	}
 	if removedChats {
@@ -1032,13 +1177,68 @@ func updateOptionsBulkLocked(values map[string]string) error {
 	return nil
 }
 
-func persistOptionsAndRuntime(values map[string]string) error {
+func isCreemConfigOption(key string) bool {
+	switch key {
+	case "CreemApiKey", "CreemProducts", "CreemTestMode", "CreemWebhookSecret":
+		return true
+	default:
+		return false
+	}
+}
+
+func publishCreemConfig() {
+	setting.PublishCreemConfig(setting.CreemConfig{
+		APIKey: setting.CreemApiKey, Products: setting.CreemProducts,
+		TestMode: setting.CreemTestMode, WebhookSecret: setting.CreemWebhookSecret,
+	})
+}
+
+func isYooKassaConfigOption(key string) bool {
+	switch key {
+	case "YooKassaEnabled", "YooKassaShopID", "YooKassaSecretKey", "YooKassaReturnURL", "YooKassaPaymentMethods":
+		return true
+	default:
+		return false
+	}
+}
+
+func publishYooKassaConfig() {
+	setting.PublishYooKassaConfig(setting.YooKassaConfig{
+		Enabled:        setting.YooKassaEnabled,
+		ShopID:         setting.YooKassaShopID,
+		SecretKey:      setting.YooKassaSecretKey,
+		ReturnURL:      setting.YooKassaReturnURL,
+		PaymentMethods: setting.YooKassaPaymentMethods,
+	})
+}
+
+func persistOptionsAndRuntime(values map[string]string, paymentCurrencyGuard func() error, prepare func(*gorm.DB, map[string]string) error) error {
+	if paymentCurrencyGuard == nil {
+		return persistOptionsAndRuntimeWithTxGuard(values, nil, prepare)
+	}
+	return persistOptionsAndRuntimeWithTxGuard(values, func(*gorm.DB) error { return paymentCurrencyGuard() }, prepare)
+}
+
+func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurrencyGuard func(*gorm.DB) error, prepare func(*gorm.DB, map[string]string) error) error {
 	keys := sortedOptionKeys(values)
 	pricingNormalizer, pricingGroupsChanged, err := pricingGroupNormalizerForOptions(keys, values)
 	if err != nil {
 		return err
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if prepare != nil {
+			if err := prepare(tx, values); err != nil {
+				return err
+			}
+		}
+		if paymentCurrencyGuard != nil {
+			if err := lockPlatformCurrencyGuard(tx); err != nil {
+				return err
+			}
+			if err := paymentCurrencyGuard(tx); err != nil {
+				return err
+			}
+		}
 		for _, key := range keys {
 			option := Option{Key: key}
 			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
@@ -1048,6 +1248,9 @@ func persistOptionsAndRuntime(values map[string]string) error {
 			if err := tx.Save(&option).Error; err != nil {
 				return err
 			}
+		}
+		if err := ensurePaymentMethodsPersistedTx(tx, values); err != nil {
+			return err
 		}
 		if !pricingGroupsChanged {
 			return nil
@@ -1068,10 +1271,138 @@ func persistOptionsAndRuntime(values map[string]string) error {
 			return err
 		}
 	}
+	if _, included := values["PayMethods"]; included {
+		seen := false
+		for _, key := range keys {
+			if key == "PayMethods" {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			if err := updateOptionMapFromDatabase("PayMethods", values["PayMethods"]); err != nil {
+				return err
+			}
+		}
+	}
+	for _, key := range keys {
+		if isCreemConfigOption(key) {
+			publishCreemConfig()
+			break
+		}
+	}
+	for _, key := range keys {
+		if isYooKassaConfigOption(key) {
+			publishYooKassaConfig()
+			break
+		}
+	}
 	if pricingGroupsChanged {
 		InvalidatePricingCache()
 	}
 	return nil
+}
+
+// ensurePaymentMethodsPersistedTx performs provider migrations while the
+// option update transaction is still open. It always starts from the latest
+// PayMethods row (locked for update), so a stale process snapshot cannot
+// overwrite edits made by another instance.
+func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) error {
+	_, explicit := values["PayMethods"]
+	yooKassaConfig := setting.GetYooKassaConfig()
+	yooEnabled := optionBoolValue(values, "YooKassaEnabled", yooKassaConfig.Enabled)
+	yooShopID := optionStringValue(values, "YooKassaShopID", yooKassaConfig.ShopID)
+	yooSecret := optionStringValue(values, "YooKassaSecretKey", yooKassaConfig.SecretKey)
+	yooMethods := optionStringValue(values, "YooKassaPaymentMethods", yooKassaConfig.PaymentMethods)
+	sbpEnabled := false
+	for _, configured := range strings.Split(yooMethods, ",") {
+		if strings.EqualFold(strings.TrimSpace(configured), "sbp") {
+			sbpEnabled = true
+			break
+		}
+	}
+	yooReady := yooEnabled && strings.TrimSpace(yooShopID) != "" && strings.TrimSpace(yooSecret) != "" && operation_setting.IsPaymentComplianceConfirmed() && sbpEnabled
+	localHasNOW := false
+	for _, method := range operation_setting.PayMethodsSnapshot() {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), PaymentMethodNOWPayments) {
+			localHasNOW = true
+			break
+		}
+	}
+	if !explicit && !yooReady && !localHasNOW {
+		return nil
+	}
+	option := Option{Key: "PayMethods", Value: operation_setting.PayMethods2JsonString()}
+	dirty := false
+	if !explicit {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", option.Key).Error; err != nil {
+			return err
+		}
+	} else {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", option.Key).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			option.Value = values["PayMethods"]
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+				return err
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", option.Key).Error; err != nil {
+				return err
+			}
+		}
+	}
+	methods := make([]map[string]string, 0)
+	if err := common.Unmarshal([]byte(option.Value), &methods); err != nil {
+		return err
+	}
+
+	if yooReady {
+		var changed bool
+		methods, changed = operation_setting.EnsureYooKassaPayMethod(methods, true)
+		if changed {
+			encoded, err := common.Marshal(methods)
+			if err != nil {
+				return err
+			}
+			option.Value = string(encoded)
+			dirty = true
+		}
+	}
+
+	// NOWPayments used to be persisted from the process-local list. If the
+	// durable row already exists, retain it; only initialize a missing row from
+	// the local snapshot.
+	if strings.TrimSpace(option.Value) == "" {
+		encoded, err := common.Marshal(methods)
+		if err != nil {
+			return err
+		}
+		option.Value = string(encoded)
+	}
+	if dirty {
+		if err := tx.Save(&option).Error; err != nil {
+			return err
+		}
+	}
+	values["PayMethods"] = option.Value
+	return nil
+}
+
+func optionStringValue(values map[string]string, key, fallback string) string {
+	if value, ok := values[key]; ok {
+		return value
+	}
+	return fallback
+}
+
+func optionBoolValue(values map[string]string, key string, fallback bool) bool {
+	value := optionStringValue(values, key, strconv.FormatBool(fallback))
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && parsed
 }
 
 type pricingGroupNormalizer struct {
@@ -1166,6 +1497,11 @@ func sortedOptionKeys(values map[string]string) []string {
 }
 
 func updateOptionMapFromDatabase(key string, value string) error {
+	if key == "QuotaPerUnit" {
+		if err := validateOptionValue(key, value); err != nil {
+			return err
+		}
+	}
 	if key == "payment_setting.amount_cashback" {
 		normalized, err := normalizeOptionValueForSave(key, value)
 		if err != nil {
@@ -1430,9 +1766,11 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 	case "NOWPaymentsIPNSecret":
 		setting.NOWPaymentsIPNSecret = value
 	case "NOWPaymentsPriceCurrency":
-		setting.NOWPaymentsPriceCurrency = value
+		setting.NOWPaymentsPriceCurrency = "usdt"
+		common.OptionMap[key] = "usdt"
 	case "NOWPaymentsPayCurrency":
-		setting.NOWPaymentsPayCurrency = value
+		setting.NOWPaymentsPayCurrency = "usdt"
+		common.OptionMap[key] = "usdt"
 	case "NOWPaymentsIPNCallbackURL":
 		setting.NOWPaymentsIPNCallbackURL = value
 	case "TopupGroupRatio":
@@ -1478,7 +1816,7 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		if parseErr != nil || math.IsNaN(percent) || math.IsInf(percent, 0) || percent < 0 || percent > 100 {
 			percent = 0
 		}
-		common.ReferralDepositPercent = percent
+		common.SetReferralDepositPercent(percent)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":
@@ -1536,7 +1874,11 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 	case "ChannelDisableThreshold":
 		common.ChannelDisableThreshold, _ = strconv.ParseFloat(value, 64)
 	case "QuotaPerUnit":
-		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
+		quotaPerUnit, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil {
+			return parseErr
+		}
+		common.SetQuotaPerUnit(quotaPerUnit)
 	case "SensitiveWords":
 		setting.SensitiveWordsFromString(value)
 	case "AutomaticDisableKeywords":

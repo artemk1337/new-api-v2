@@ -49,7 +49,6 @@ import {
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
-import { useUpdateOption } from '../hooks/use-update-option'
 import {
   safeDecimalFieldProps,
   safeNumberFieldProps,
@@ -60,7 +59,14 @@ import {
 } from './amount-cashback'
 import { AmountCashbackVisualEditor } from './amount-cashback-visual-editor'
 import { AmountOptionsVisualEditor } from './amount-options-visual-editor'
+import {
+  buildPaymentSettingsPayload,
+  getPaymentSettingsSaveErrorMessage,
+  savePaymentSettings,
+  shouldUpdateCreemSecret,
+} from './creem-config-api'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
+import { PaymentCurrencyField } from './payment-currency-field'
 import type { TopupGroupOption } from './payment-method-dialog'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
@@ -103,8 +109,10 @@ const paymentSchema = z.object({
   }, 'Provide a valid callback URL starting with http:// or https://'),
   EpayId: z.string(),
   EpayKey: z.string(),
-  Price: z.coerce.number().min(0),
   MinTopUp: z.coerce.number().min(0),
+  PaymentPendingTTLMinutes: z.coerce.number().int().min(1),
+  PaymentCreationRateLimit: z.coerce.number().int().min(1),
+  PaymentCreationRateLimitDurationMinutes: z.coerce.number().int().min(1),
   CustomCallbackAddress: z
     .string()
     .refine(
@@ -173,6 +181,7 @@ const paymentSchema = z.object({
   WaffoPancakeMerchantID: z.string(),
   WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
+  WaffoPancakeMinTopUp: z.coerce.number().min(0.01),
   YooKassaEnabled: z.boolean(),
   YooKassaShopID: z.string(),
   YooKassaSecretKey: z.string(),
@@ -187,8 +196,6 @@ const paymentSchema = z.object({
   NOWPaymentsEnabled: z.boolean(),
   NOWPaymentsAPIKey: z.string(),
   NOWPaymentsIPNSecret: z.string(),
-  NOWPaymentsPriceCurrency: z.string().min(1),
-  NOWPaymentsPayCurrency: z.string(),
   NOWPaymentsIPNCallbackURL: z.string().refine((value) => {
     const trimmed = value.trim()
     if (!trimmed) return true
@@ -240,7 +247,6 @@ export function PaymentSettingsSection({
     useSystemConfigStore((state) => state.config.currency.quotaDisplayType) ===
     'TOKENS'
   const queryClient = useQueryClient()
-  const updateOption = useUpdateOption()
   const initialFormValues = React.useMemo<PaymentFormValues>(
     () => ({
       ...defaultValues,
@@ -317,7 +323,11 @@ export function PaymentSettingsSection({
     },
   })
 
-  const { isSubmitting } = form.formState
+  const waffoCurrency = form.watch('WaffoCurrency')
+  const [creemSecretClearRequested, setCreemSecretClearRequested] =
+    React.useState({ apiKey: false, webhookSecret: false })
+
+  const { isSubmitting, dirtyFields } = form.formState
 
   const setPaymentValue = React.useCallback(
     (
@@ -365,6 +375,7 @@ export function PaymentSettingsSection({
   React.useEffect(() => {
     const parsedDefaults = JSON.parse(defaultsSignature) as PaymentFormValues
     initialRef.current = parsedDefaults
+    setCreemSecretClearRequested({ apiKey: false, webhookSecret: false })
     form.reset({
       ...parsedDefaults,
       PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
@@ -379,8 +390,11 @@ export function PaymentSettingsSection({
       PayAddress: removeTrailingSlash(values.PayAddress),
       EpayId: values.EpayId.trim(),
       EpayKey: values.EpayKey.trim(),
-      Price: values.Price,
       MinTopUp: values.MinTopUp,
+      PaymentPendingTTLMinutes: values.PaymentPendingTTLMinutes,
+      PaymentCreationRateLimit: values.PaymentCreationRateLimit,
+      PaymentCreationRateLimitDurationMinutes:
+        values.PaymentCreationRateLimitDurationMinutes,
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
@@ -415,6 +429,7 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeMinTopUp: values.WaffoPancakeMinTopUp,
       YooKassaEnabled: values.YooKassaEnabled,
       YooKassaShopID: values.YooKassaShopID.trim(),
       YooKassaSecretKey: values.YooKassaSecretKey.trim(),
@@ -425,10 +440,6 @@ export function PaymentSettingsSection({
       NOWPaymentsEnabled: values.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: values.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: values.NOWPaymentsIPNSecret.trim(),
-      NOWPaymentsPriceCurrency:
-        values.NOWPaymentsPriceCurrency.trim().toLowerCase(),
-      NOWPaymentsPayCurrency:
-        values.NOWPaymentsPayCurrency.trim().toLowerCase(),
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         values.NOWPaymentsIPNCallbackURL.trim()
       ),
@@ -438,8 +449,11 @@ export function PaymentSettingsSection({
       PayAddress: removeTrailingSlash(initialRef.current.PayAddress),
       EpayId: initialRef.current.EpayId.trim(),
       EpayKey: initialRef.current.EpayKey.trim(),
-      Price: initialRef.current.Price,
       MinTopUp: initialRef.current.MinTopUp,
+      PaymentPendingTTLMinutes: initialRef.current.PaymentPendingTTLMinutes,
+      PaymentCreationRateLimit: initialRef.current.PaymentCreationRateLimit,
+      PaymentCreationRateLimitDurationMinutes:
+        initialRef.current.PaymentCreationRateLimitDurationMinutes,
       CustomCallbackAddress: removeTrailingSlash(
         initialRef.current.CustomCallbackAddress
       ),
@@ -481,6 +495,7 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeMinTopUp: initialRef.current.WaffoPancakeMinTopUp,
       YooKassaEnabled: initialRef.current.YooKassaEnabled,
       YooKassaShopID: initialRef.current.YooKassaShopID.trim(),
       YooKassaSecretKey: initialRef.current.YooKassaSecretKey.trim(),
@@ -491,10 +506,6 @@ export function PaymentSettingsSection({
       NOWPaymentsEnabled: initialRef.current.NOWPaymentsEnabled,
       NOWPaymentsAPIKey: initialRef.current.NOWPaymentsAPIKey.trim(),
       NOWPaymentsIPNSecret: initialRef.current.NOWPaymentsIPNSecret.trim(),
-      NOWPaymentsPriceCurrency:
-        initialRef.current.NOWPaymentsPriceCurrency.trim().toLowerCase(),
-      NOWPaymentsPayCurrency:
-        initialRef.current.NOWPaymentsPayCurrency.trim().toLowerCase(),
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         initialRef.current.NOWPaymentsIPNCallbackURL.trim()
       ),
@@ -514,12 +525,36 @@ export function PaymentSettingsSection({
       updates.push({ key: 'EpayKey', value: sanitized.EpayKey })
     }
 
-    if (sanitized.Price !== initial.Price) {
-      updates.push({ key: 'Price', value: sanitized.Price })
-    }
-
     if (sanitized.MinTopUp !== initial.MinTopUp) {
       updates.push({ key: 'MinTopUp', value: sanitized.MinTopUp })
+    }
+
+    if (
+      sanitized.PaymentPendingTTLMinutes !== initial.PaymentPendingTTLMinutes
+    ) {
+      updates.push({
+        key: 'PaymentPendingTTLMinutes',
+        value: sanitized.PaymentPendingTTLMinutes,
+      })
+    }
+
+    if (
+      sanitized.PaymentCreationRateLimit !== initial.PaymentCreationRateLimit
+    ) {
+      updates.push({
+        key: 'PaymentCreationRateLimit',
+        value: sanitized.PaymentCreationRateLimit,
+      })
+    }
+
+    if (
+      sanitized.PaymentCreationRateLimitDurationMinutes !==
+      initial.PaymentCreationRateLimitDurationMinutes
+    ) {
+      updates.push({
+        key: 'PaymentCreationRateLimitDurationMinutes',
+        value: sanitized.PaymentCreationRateLimitDurationMinutes,
+      })
     }
 
     if (sanitized.CustomCallbackAddress !== initial.CustomCallbackAddress) {
@@ -560,7 +595,10 @@ export function PaymentSettingsSection({
       sanitized.StripeApiSecret &&
       sanitized.StripeApiSecret !== initial.StripeApiSecret
     ) {
-      updates.push({ key: 'StripeApiSecret', value: sanitized.StripeApiSecret })
+      updates.push({
+        key: 'StripeApiSecret',
+        value: sanitized.StripeApiSecret,
+      })
     }
 
     if (
@@ -578,7 +616,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.StripeUnitPrice !== initial.StripeUnitPrice) {
-      updates.push({ key: 'StripeUnitPrice', value: sanitized.StripeUnitPrice })
+      updates.push({
+        key: 'StripeUnitPrice',
+        value: sanitized.StripeUnitPrice,
+      })
     }
 
     if (sanitized.StripeMinTopUp !== initial.StripeMinTopUp) {
@@ -595,36 +636,48 @@ export function PaymentSettingsSection({
       })
     }
 
+    const creemUpdate: {
+      api_key?: string
+      webhook_secret?: string
+      test_mode?: boolean
+      products?: string
+    } = {}
     if (
-      sanitized.CreemApiKey &&
-      sanitized.CreemApiKey !== initial.CreemApiKey
+      shouldUpdateCreemSecret(
+        sanitized.CreemApiKey,
+        initial.CreemApiKey,
+        !!dirtyFields.CreemApiKey,
+        creemSecretClearRequested.apiKey
+      )
     ) {
-      updates.push({ key: 'CreemApiKey', value: sanitized.CreemApiKey })
+      creemUpdate.api_key = sanitized.CreemApiKey
     }
-
     if (
-      sanitized.CreemWebhookSecret &&
-      sanitized.CreemWebhookSecret !== initial.CreemWebhookSecret
+      shouldUpdateCreemSecret(
+        sanitized.CreemWebhookSecret,
+        initial.CreemWebhookSecret,
+        !!dirtyFields.CreemWebhookSecret,
+        creemSecretClearRequested.webhookSecret
+      )
     ) {
-      updates.push({
-        key: 'CreemWebhookSecret',
-        value: sanitized.CreemWebhookSecret,
-      })
+      creemUpdate.webhook_secret = sanitized.CreemWebhookSecret
     }
-
     if (sanitized.CreemTestMode !== initial.CreemTestMode) {
-      updates.push({ key: 'CreemTestMode', value: sanitized.CreemTestMode })
+      creemUpdate.test_mode = sanitized.CreemTestMode
     }
-
     if (
       normalizeJsonForComparison(sanitized.CreemProducts) !==
       normalizeJsonForComparison(initial.CreemProducts)
     ) {
-      updates.push({ key: 'CreemProducts', value: sanitized.CreemProducts })
+      creemUpdate.products = sanitized.CreemProducts
     }
+    const hasCreemChanges = Object.keys(creemUpdate).length > 0
 
     if (sanitized.YooKassaEnabled !== initial.YooKassaEnabled) {
-      updates.push({ key: 'YooKassaEnabled', value: sanitized.YooKassaEnabled })
+      updates.push({
+        key: 'YooKassaEnabled',
+        value: sanitized.YooKassaEnabled,
+      })
     }
 
     if (sanitized.YooKassaShopID !== initial.YooKassaShopID) {
@@ -683,22 +736,6 @@ export function PaymentSettingsSection({
     }
 
     if (
-      sanitized.NOWPaymentsPriceCurrency !== initial.NOWPaymentsPriceCurrency
-    ) {
-      updates.push({
-        key: 'NOWPaymentsPriceCurrency',
-        value: sanitized.NOWPaymentsPriceCurrency,
-      })
-    }
-
-    if (sanitized.NOWPaymentsPayCurrency !== initial.NOWPaymentsPayCurrency) {
-      updates.push({
-        key: 'NOWPaymentsPayCurrency',
-        value: sanitized.NOWPaymentsPayCurrency,
-      })
-    }
-
-    if (
       sanitized.NOWPaymentsIPNCallbackURL !== initial.NOWPaymentsIPNCallbackURL
     ) {
       updates.push({
@@ -716,7 +753,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoMerchantId !== initial.WaffoMerchantId) {
-      updates.push({ key: 'WaffoMerchantId', value: sanitized.WaffoMerchantId })
+      updates.push({
+        key: 'WaffoMerchantId',
+        value: sanitized.WaffoMerchantId,
+      })
     }
 
     if (sanitized.WaffoCurrency !== initial.WaffoCurrency) {
@@ -740,7 +780,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoPublicCert !== initial.WaffoPublicCert) {
-      updates.push({ key: 'WaffoPublicCert', value: sanitized.WaffoPublicCert })
+      updates.push({
+        key: 'WaffoPublicCert',
+        value: sanitized.WaffoPublicCert,
+      })
     }
 
     if (sanitized.WaffoSandboxPublicCert !== initial.WaffoSandboxPublicCert) {
@@ -755,7 +798,10 @@ export function PaymentSettingsSection({
     }
 
     if (sanitized.WaffoPrivateKey) {
-      updates.push({ key: 'WaffoPrivateKey', value: sanitized.WaffoPrivateKey })
+      updates.push({
+        key: 'WaffoPrivateKey',
+        value: sanitized.WaffoPrivateKey,
+      })
     }
 
     if (sanitized.WaffoSandboxApiKey) {
@@ -776,7 +822,10 @@ export function PaymentSettingsSection({
       normalizeJsonForComparison(sanitized.WaffoPayMethods) !==
       normalizeJsonForComparison(initial.WaffoPayMethods)
     ) {
-      updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
+      updates.push({
+        key: 'WaffoPayMethods',
+        value: sanitized.WaffoPayMethods,
+      })
     }
 
     const hasWaffoPancakeChanges =
@@ -786,14 +835,36 @@ export function PaymentSettingsSection({
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
 
-    if (updates.length === 0 && !hasWaffoPancakeChanges) {
+    if (sanitized.WaffoPancakeMinTopUp !== initial.WaffoPancakeMinTopUp) {
+      updates.push({
+        key: 'WaffoPancakeMinTopUp',
+        value: sanitized.WaffoPancakeMinTopUp,
+      })
+    }
+
+    if (updates.length === 0 && !hasCreemChanges && !hasWaffoPancakeChanges) {
       toast.info(t('No changes to save'))
       return
     }
 
-    for (const update of updates) {
-      await updateOption.mutateAsync(update)
+    try {
+      await savePaymentSettings(
+        buildPaymentSettingsPayload(
+          updates,
+          hasCreemChanges ? creemUpdate : undefined
+        )
+      )
+    } catch (error) {
+      toast.error(
+        getPaymentSettingsSaveErrorMessage(
+          error,
+          t('Failed to save payment settings')
+        )
+      )
+      return
     }
+    queryClient.invalidateQueries({ queryKey: ['system-options'] })
+    toast.success(t('Setting updated successfully'))
 
     if (!hasWaffoPancakeChanges) {
       return
@@ -872,6 +943,7 @@ export function PaymentSettingsSection({
     WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
     WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
     WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
+    WaffoPancakeMinTopUp: currentFormValues.WaffoPancakeMinTopUp,
   }
 
   return (
@@ -884,7 +956,7 @@ export function PaymentSettingsSection({
         >
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending || isSubmitting}
+            isSaving={isSubmitting}
             saveLabel='Save all settings'
           />
           <Tabs defaultValue='general' className='min-w-0'>
@@ -915,31 +987,6 @@ export function PaymentSettingsSection({
                 <div className='grid gap-6 md:grid-cols-2'>
                   <FormField
                     control={form.control}
-                    name='Price'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Price (local currency / USD)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='text'
-                            inputMode='decimal'
-                            {...safeDecimalFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'How much to charge for each US dollar of balance (Epay)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name='MinTopUp'
                     render={({ field }) => (
                       <FormItem>
@@ -948,11 +995,88 @@ export function PaymentSettingsSection({
                           <Input
                             type='text'
                             inputMode='decimal'
+                            min={0}
+                            step='0.01'
                             {...safeDecimalFieldProps(field)}
                           />
                         </FormControl>
                         <FormDescription>
                           {t('Smallest USD amount users can recharge (Epay)')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='PaymentPendingTTLMinutes'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Default payment waiting TTL (minutes)')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min='1'
+                            step='1'
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Fallback lifetime for unpaid payments when a method has no individual TTL. YooKassa SBP uses a 15-minute default.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='PaymentCreationRateLimit'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Payment creation limit (requests/minute)')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min='1'
+                            step='1'
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Maximum number of payment requests one user can create in the selected window. Default: 5 requests per minute.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='PaymentCreationRateLimitDurationMinutes'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Payment creation limit window (minutes)')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min='1'
+                            step='1'
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Time window used for the per-user payment creation limit. Default: 1 minute.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -995,6 +1119,10 @@ export function PaymentSettingsSection({
                             value={field.value}
                             onChange={field.onChange}
                             topupGroups={topupGroups}
+                            waffoCurrency={waffoCurrency}
+                            defaultPendingTtlMinutes={
+                              currentFormValues.PaymentPendingTTLMinutes
+                            }
                           />
                         ) : (
                           <Textarea
@@ -1149,6 +1277,8 @@ export function PaymentSettingsSection({
                   </p>
                 </div>
 
+                <PaymentCurrencyField value='USD' fixedCurrency='USD' />
+
                 <Alert>
                   <ShieldAlert className='h-4 w-4' />
                   <AlertTitle>{t('Epay safety reminder')}</AlertTitle>
@@ -1273,6 +1403,8 @@ export function PaymentSettingsSection({
                   </p>
                 </div>
 
+                <PaymentCurrencyField value='RUB' fixedCurrency='RUB' />
+
                 <div className='rounded-md bg-purple-50 p-4 text-sm text-purple-900 dark:bg-purple-950 dark:text-purple-100'>
                   <p className='mb-2 font-medium'>
                     {t('Webhook Configuration:')}
@@ -1382,29 +1514,6 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name='YooKassaPaymentMethods'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Payment methods')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder='sbp'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Only SBP is supported for YooKassa payments')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
               </div>
             </TabsContent>
@@ -1420,6 +1529,8 @@ export function PaymentSettingsSection({
                     {t('Accept cryptocurrency payments through NOWPayments')}
                   </p>
                 </div>
+
+                <PaymentCurrencyField value='USDT' fixedCurrency='USDT' />
 
                 <div className='rounded-md bg-orange-50 p-4 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-100'>
                   <p className='mb-2 font-medium'>
@@ -1505,49 +1616,6 @@ export function PaymentSettingsSection({
                   />
                 </div>
 
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='NOWPaymentsPriceCurrency'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Invoice currency')}</FormLabel>
-                        <FormControl>
-                          <Input placeholder='usd' {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Currency used to price the invoice, usually USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='NOWPaymentsPayCurrency'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Fixed payment currency')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder={t(
-                              'Leave blank to let the customer choose'
-                            )}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'For example, USDTTRC20. Leave blank to show all supported assets.'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
                 <FormField
                   control={form.control}
                   name='NOWPaymentsIPNCallbackURL'
@@ -1580,6 +1648,8 @@ export function PaymentSettingsSection({
                     {t('Configuration for Stripe payment integration')}
                   </p>
                 </div>
+
+                <PaymentCurrencyField value='USD' fixedCurrency='USD' />
 
                 <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
                   <p className='mb-2 font-medium'>
@@ -1699,9 +1769,7 @@ export function PaymentSettingsSection({
                     name='StripeUnitPrice'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>
-                          {t('Unit price (local currency / USD)')}
-                        </FormLabel>
+                        <FormLabel>{t('Unit price (USD)')}</FormLabel>
                         <FormControl>
                           <Input
                             type='number'
@@ -1711,7 +1779,9 @@ export function PaymentSettingsSection({
                           />
                         </FormControl>
                         <FormDescription>
-                          {t('e.g., 8 means 8 local currency per USD')}
+                          {t(
+                            'The provider will charge in this currency using its configured USD rate.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1796,15 +1866,34 @@ export function PaymentSettingsSection({
                       <FormItem>
                         <FormLabel>{t('API Key')}</FormLabel>
                         <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter Creem API key')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
+                          <div className='flex gap-2'>
+                            <Input
+                              type='password'
+                              placeholder={t('Enter Creem API key')}
+                              autoComplete='new-password'
+                              {...field}
+                              onChange={(event) => {
+                                setCreemSecretClearRequested((previous) => ({
+                                  ...previous,
+                                  apiKey: false,
+                                }))
+                                field.onChange(event.target.value)
+                              }}
+                            />
+                            <Button
+                              type='button'
+                              variant='outline'
+                              onClick={() => {
+                                setCreemSecretClearRequested((previous) => ({
+                                  ...previous,
+                                  apiKey: true,
+                                }))
+                                field.onChange('')
+                              }}
+                            >
+                              {t('Clear')}
+                            </Button>
+                          </div>
                         </FormControl>
                         <FormDescription>
                           {t('Creem API key (leave blank unless updating)')}
@@ -1821,15 +1910,34 @@ export function PaymentSettingsSection({
                       <FormItem>
                         <FormLabel>{t('Webhook Secret')}</FormLabel>
                         <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Enter webhook secret')}
-                            autoComplete='new-password'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
+                          <div className='flex gap-2'>
+                            <Input
+                              type='password'
+                              placeholder={t('Enter webhook secret')}
+                              autoComplete='new-password'
+                              {...field}
+                              onChange={(event) => {
+                                setCreemSecretClearRequested((previous) => ({
+                                  ...previous,
+                                  webhookSecret: false,
+                                }))
+                                field.onChange(event.target.value)
+                              }}
+                            />
+                            <Button
+                              type='button'
+                              variant='outline'
+                              onClick={() => {
+                                setCreemSecretClearRequested((previous) => ({
+                                  ...previous,
+                                  webhookSecret: true,
+                                }))
+                                field.onChange('')
+                              }}
+                            >
+                              {t('Clear')}
+                            </Button>
+                          </div>
                         </FormControl>
                         <FormDescription>
                           {t(
@@ -1923,6 +2031,7 @@ export function PaymentSettingsSection({
               value='waffo-pancake'
               className={paymentTabContentClassName}
             >
+              <PaymentCurrencyField value='USD' fixedCurrency='USD' />
               <WaffoPancakeSettingsSection
                 defaultValues={waffoPancakeDefaultValues}
                 values={waffoPancakeValues}

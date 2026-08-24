@@ -1,14 +1,18 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/currency_exchange_rate_setting"
@@ -17,6 +21,8 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var completionRatioMetaOptionKeys = []string{
@@ -32,6 +38,10 @@ var completionRatioMetaOptionKeys = []string{
 
 const maskedOptionValue = "********"
 
+// SaveCreemConfig keeps local requests ordered; the transactional row lock in
+// mergeCreemConfigForUpdate also serializes partial updates across replicas.
+var creemConfigUpdateMutex sync.Mutex
+
 func isPaymentComplianceOptionKey(key string) bool {
 	return strings.HasPrefix(key, "payment_setting.compliance_")
 }
@@ -43,6 +53,675 @@ func isPositiveOptionValue(value string) bool {
 	}
 	floatValue, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	return err == nil && floatValue > 0
+}
+
+func optionUpdateValue(key, updatingKey, updatingValue, currentValue string) string {
+	if key == updatingKey {
+		return updatingValue
+	}
+	return currentValue
+}
+
+func optionUpdateBool(key, updatingKey, updatingValue string, currentValue bool) bool {
+	value := optionUpdateValue(key, updatingKey, updatingValue, strconv.FormatBool(currentValue))
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && parsed
+}
+
+func validateEnabledPlatformCurrency(code, paymentName string) error {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return fmt.Errorf("%s payment currency is required", paymentName)
+	}
+	if _, err := service.GetPlatformCurrencyRate(code); err != nil {
+		return fmt.Errorf("%s payment currency is unavailable: %w", paymentName, err)
+	}
+	return nil
+}
+
+func isWaffoTopUpEnabledAfterOptionUpdate(key, value string, complianceConfirmed bool) bool {
+	if !complianceConfirmed ||
+		!optionUpdateBool("WaffoEnabled", key, value, setting.WaffoEnabled) {
+		return false
+	}
+	sandbox := optionUpdateBool("WaffoSandbox", key, value, setting.WaffoSandbox)
+	if sandbox {
+		return strings.TrimSpace(optionUpdateValue("WaffoSandboxApiKey", key, value, setting.WaffoSandboxApiKey)) != "" &&
+			strings.TrimSpace(optionUpdateValue("WaffoSandboxPrivateKey", key, value, setting.WaffoSandboxPrivateKey)) != "" &&
+			strings.TrimSpace(optionUpdateValue("WaffoSandboxPublicCert", key, value, setting.WaffoSandboxPublicCert)) != ""
+	}
+	return strings.TrimSpace(optionUpdateValue("WaffoApiKey", key, value, setting.WaffoApiKey)) != "" &&
+		strings.TrimSpace(optionUpdateValue("WaffoPrivateKey", key, value, setting.WaffoPrivateKey)) != "" &&
+		strings.TrimSpace(optionUpdateValue("WaffoPublicCert", key, value, setting.WaffoPublicCert)) != ""
+}
+
+func isCreemTopUpEnabledAfterOptionUpdate(key, value string, complianceConfirmed bool) bool {
+	config := setting.GetCreemConfig()
+	return isCreemTopUpEnabledWithConfig(
+		optionUpdateValue("CreemApiKey", key, value, config.APIKey),
+		optionUpdateValue("CreemProducts", key, value, config.Products),
+		optionUpdateBool("CreemTestMode", key, value, config.TestMode),
+		optionUpdateValue("CreemWebhookSecret", key, value, config.WebhookSecret),
+		complianceConfirmed,
+	)
+}
+
+func isCreemTopUpEnabledWithConfig(apiKey, products string, testMode bool, webhookSecret string, complianceConfirmed bool) bool {
+	if !complianceConfirmed || strings.TrimSpace(apiKey) == "" {
+		return false
+	}
+	products = strings.TrimSpace(products)
+	return products != "" && products != "[]" && (testMode || strings.TrimSpace(webhookSecret) != "")
+}
+
+func isYooKassaTopUpEnabledAfterOptionUpdate(key, value string, complianceConfirmed bool) bool {
+	config := setting.GetYooKassaConfig()
+	if !complianceConfirmed ||
+		!optionUpdateBool("YooKassaEnabled", key, value, config.Enabled) ||
+		strings.TrimSpace(optionUpdateValue("YooKassaShopID", key, value, config.ShopID)) == "" ||
+		strings.TrimSpace(optionUpdateValue("YooKassaSecretKey", key, value, config.SecretKey)) == "" {
+		return false
+	}
+	methods := optionUpdateValue("YooKassaPaymentMethods", key, value, config.PaymentMethods)
+	for _, method := range strings.Split(methods, ",") {
+		if strings.EqualFold(strings.TrimSpace(method), "sbp") {
+			return true
+		}
+	}
+	return false
+}
+
+func isNOWPaymentsTopUpEnabledAfterOptionUpdate(key, value string, complianceConfirmed bool) bool {
+	return complianceConfirmed &&
+		optionUpdateBool("NOWPaymentsEnabled", key, value, setting.NOWPaymentsEnabled) &&
+		strings.TrimSpace(optionUpdateValue("NOWPaymentsAPIKey", key, value, setting.NOWPaymentsAPIKey)) != "" &&
+		strings.TrimSpace(optionUpdateValue("NOWPaymentsIPNSecret", key, value, setting.NOWPaymentsIPNSecret)) != "" &&
+		strings.TrimSpace(optionUpdateValue("NOWPaymentsIPNCallbackURL", key, value, setting.NOWPaymentsIPNCallbackURL)) != ""
+}
+
+func validateCreemProductCurrencies(productsJSON string) error {
+	return validateCreemProductCurrenciesFromDB(model.DB, productsJSON)
+}
+
+func validateCreemProductCurrenciesFromDB(db *gorm.DB, productsJSON string) error {
+	var products []CreemProduct
+	if err := common.UnmarshalJsonStr(productsJSON, &products); err != nil {
+		return fmt.Errorf("CreemProducts must be valid JSON")
+	}
+	if products == nil {
+		return fmt.Errorf("CreemProducts must be a JSON array")
+	}
+	for _, product := range products {
+		if strings.TrimSpace(product.ProductId) == "" {
+			return errors.New("Creem productId is required")
+		}
+		if product.Price <= 0 {
+			return errors.New("Creem product price must be greater than zero")
+		}
+		if product.Quota <= 0 {
+			return errors.New("Creem product quota must be greater than zero")
+		}
+		if err := validateEnabledPlatformCurrencyFromDB(db, product.Currency, "Creem"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeCreemProducts(productsJSON string) (string, error) {
+	var products []CreemProduct
+	if err := common.UnmarshalJsonStr(productsJSON, &products); err != nil {
+		return "", errors.New("CreemProducts must be valid JSON")
+	}
+	if products == nil {
+		return "", errors.New("CreemProducts must be a JSON array")
+	}
+	for i := range products {
+		if strings.TrimSpace(products[i].ProductId) == "" {
+			return "", errors.New("Creem productId is required")
+		}
+		if products[i].Price <= 0 {
+			return "", errors.New("Creem product price must be greater than zero")
+		}
+		if products[i].Quota <= 0 {
+			return "", errors.New("Creem product quota must be greater than zero")
+		}
+		currency := strings.ToUpper(strings.TrimSpace(products[i].Currency))
+		if currency != "USD" && currency != "EUR" {
+			return "", errors.New("Creem product currency must be USD or EUR")
+		}
+		configured, err := model.GetPlatformCurrency(currency)
+		if err != nil || !configured.Enabled {
+			return "", errors.New("Creem product currency is not enabled on the platform")
+		}
+		products[i].Currency = currency
+	}
+	normalized, err := common.Marshal(products)
+	if err != nil {
+		return "", errors.New("CreemProducts must be valid JSON")
+	}
+	return string(normalized), nil
+}
+
+type saveCreemConfigRequest struct {
+	APIKey        *string `json:"api_key"`
+	WebhookSecret *string `json:"webhook_secret"`
+	TestMode      *bool   `json:"test_mode"`
+	Products      *string `json:"products"`
+}
+
+// currentCreemConfigForUpdate reads the latest persisted values instead of
+// relying solely on the process snapshot. This matters when a previous
+// partial update has just committed, or when another instance has replicated
+// a config change before this request arrives.
+func currentCreemConfigForUpdate() (setting.CreemConfig, error) {
+	return currentCreemConfigForUpdateFromDB(model.DB)
+}
+
+func currentCreemConfigForUpdateFromDB(db *gorm.DB) (setting.CreemConfig, error) {
+	config := setting.GetCreemConfig()
+	var options []model.Option
+	if err := db.Where("key IN ?", []string{"CreemApiKey", "CreemWebhookSecret", "CreemTestMode", "CreemProducts"}).Find(&options).Error; err != nil {
+		return config, err
+	}
+	for _, option := range options {
+		switch option.Key {
+		case "CreemApiKey":
+			config.APIKey = option.Value
+		case "CreemWebhookSecret":
+			config.WebhookSecret = option.Value
+		case "CreemProducts":
+			config.Products = option.Value
+		case "CreemTestMode":
+			parsed, err := strconv.ParseBool(option.Value)
+			if err != nil {
+				return config, fmt.Errorf("invalid persisted CreemTestMode: %w", err)
+			}
+			config.TestMode = parsed
+		}
+	}
+	return config, nil
+}
+
+func mergeCreemConfigForUpdate(db *gorm.DB, request *saveCreemConfigRequest, values map[string]string) (setting.CreemConfig, error) {
+	if db != nil {
+		current := setting.GetCreemConfig()
+		defaults := map[string]string{
+			"CreemApiKey":        current.APIKey,
+			"CreemWebhookSecret": current.WebhookSecret,
+			"CreemTestMode":      strconv.FormatBool(current.TestMode),
+			"CreemProducts":      current.Products,
+		}
+		for _, key := range []string{"CreemApiKey", "CreemWebhookSecret", "CreemTestMode", "CreemProducts"} {
+			option := model.Option{Key: key, Value: defaults[key]}
+			if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+				return setting.CreemConfig{}, err
+			}
+			if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", key).Error; err != nil {
+				return setting.CreemConfig{}, err
+			}
+		}
+	}
+	dbForRead := model.DB
+	if db != nil {
+		dbForRead = db
+	}
+	config, err := currentCreemConfigForUpdateFromDB(dbForRead)
+	if err != nil {
+		return config, err
+	}
+	if request == nil {
+		return config, nil
+	}
+	if request.APIKey != nil {
+		config.APIKey = strings.TrimSpace(*request.APIKey)
+	}
+	if request.WebhookSecret != nil {
+		config.WebhookSecret = strings.TrimSpace(*request.WebhookSecret)
+	}
+	if request.TestMode != nil {
+		config.TestMode = *request.TestMode
+	}
+	if request.Products != nil {
+		normalized, err := normalizeCreemProducts(*request.Products)
+		if err != nil {
+			return config, err
+		}
+		config.Products = normalized
+	} else if strings.TrimSpace(config.Products) != "" && strings.TrimSpace(config.Products) != "[]" {
+		normalized, err := normalizeCreemProducts(config.Products)
+		if err != nil {
+			return config, err
+		}
+		config.Products = normalized
+	}
+	if values != nil {
+		values["CreemApiKey"] = config.APIKey
+		values["CreemWebhookSecret"] = config.WebhookSecret
+		values["CreemTestMode"] = strconv.FormatBool(config.TestMode)
+		values["CreemProducts"] = config.Products
+	}
+	return config, nil
+}
+
+func SaveCreemConfig(c *gin.Context) {
+	creemConfigUpdateMutex.Lock()
+	defer creemConfigUpdateMutex.Unlock()
+
+	var request saveCreemConfigRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "invalid Creem configuration payload")
+		return
+	}
+	if request.APIKey == nil && request.WebhookSecret == nil && request.TestMode == nil && request.Products == nil {
+		common.ApiErrorMsg(c, "no Creem configuration changes")
+		return
+	}
+
+	config, err := currentCreemConfigForUpdate()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	apiKey := config.APIKey
+	webhookSecret := config.WebhookSecret
+	testMode := config.TestMode
+	products := config.Products
+	if request.APIKey != nil {
+		apiKey = strings.TrimSpace(*request.APIKey)
+	}
+	if request.WebhookSecret != nil {
+		webhookSecret = strings.TrimSpace(*request.WebhookSecret)
+	}
+	if request.TestMode != nil {
+		testMode = *request.TestMode
+	}
+	if request.Products != nil {
+		normalized, err := normalizeCreemProducts(*request.Products)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		products = normalized
+	} else if strings.TrimSpace(products) != "" && strings.TrimSpace(products) != "[]" {
+		// Validate the retained catalog as well: a partial update must not
+		// activate or preserve a malformed legacy product snapshot.
+		normalized, err := normalizeCreemProducts(products)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		products = normalized
+	}
+	if isCreemTopUpEnabledWithConfig(apiKey, products, testMode, webhookSecret, isPaymentComplianceConfirmed()) {
+		if err := validateCreemProductCurrencies(products); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
+	values := map[string]string{
+		"CreemApiKey":        apiKey,
+		"CreemWebhookSecret": webhookSecret,
+		"CreemTestMode":      strconv.FormatBool(testMode),
+		"CreemProducts":      products,
+	}
+	prepare := func(tx *gorm.DB, txValues map[string]string) error {
+		var err error
+		config, err = mergeCreemConfigForUpdate(tx, &request, txValues)
+		if err != nil {
+			return err
+		}
+		apiKey, webhookSecret, testMode, products = config.APIKey, config.WebhookSecret, config.TestMode, config.Products
+		return nil
+	}
+	if err := model.UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, func(tx *gorm.DB) error {
+		if isCreemTopUpEnabledWithConfigAndCompliance(setting.CreemConfig{APIKey: apiKey, Products: products, TestMode: testMode, WebhookSecret: webhookSecret}, latestPaymentOptionBoolFromDB(tx, "payment_setting.compliance_confirmed", isPaymentComplianceConfirmed())) {
+			return validateCreemProductCurrenciesFromDB(tx, products)
+		}
+		return nil
+	}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+type savePaymentSettingsRequest struct {
+	Options []OptionUpdateRequest   `json:"options"`
+	Creem   *saveCreemConfigRequest `json:"creem"`
+}
+
+func optionUpdateString(value any) (string, error) {
+	switch value := value.(type) {
+	case string:
+		return value, nil
+	case bool:
+		return strconv.FormatBool(value), nil
+	case float64:
+		return common.Interface2String(value), nil
+	case int:
+		return common.Interface2String(value), nil
+	default:
+		return "", errors.New("payment option value must be a scalar")
+	}
+}
+
+func preparePaymentOptionUpdate(option OptionUpdateRequest) (string, string, error) {
+	value, err := optionUpdateString(option.Value)
+	if err != nil {
+		return "", "", err
+	}
+	if isCreemConfigOption(option.Key) || isPaymentComplianceOptionKey(option.Key) {
+		return "", "", errors.New("Creem and compliance settings must be updated through their dedicated atomic APIs")
+	}
+	switch option.Key {
+	case "NOWPaymentsPriceCurrency", "NOWPaymentsPayCurrency":
+		value = "usdt"
+	case "PayMethods":
+		var methods []map[string]string
+		if err := common.UnmarshalJsonStr(value, &methods); err != nil {
+			return "", "", errors.New("PayMethods must be valid JSON")
+		}
+		if err := operation_setting.ValidatePayMethods(methods); err != nil {
+			return "", "", err
+		}
+		operation_setting.NormalizePayMethods(methods)
+		for _, method := range methods {
+			if method == nil {
+				continue
+			}
+			currency := strings.TrimSpace(method["currency"])
+			if strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodNOWPayments) {
+				currency = "USDT"
+			}
+			if currency == "" {
+				continue
+			}
+			if err := service.ValidatePaymentMethodCurrency(method["type"], currency); err != nil {
+				return "", "", err
+			}
+			if !strings.EqualFold(currency, "USD") {
+				configured, err := model.GetPlatformCurrency(currency)
+				if err != nil || !configured.Enabled {
+					return "", "", errors.New("payment currency is not enabled on the platform")
+				}
+			}
+		}
+		encoded, err := common.Marshal(methods)
+		if err != nil {
+			return "", "", errors.New("PayMethods must be valid JSON")
+		}
+		value = string(encoded)
+	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken":
+		if value == maskedOptionValue {
+			return "", "", nil
+		}
+	}
+	return option.Key, value, nil
+}
+
+func creemConfigForAtomicSave(request *saveCreemConfigRequest) (setting.CreemConfig, map[string]string, error) {
+	config, err := currentCreemConfigForUpdate()
+	if err != nil {
+		return config, nil, err
+	}
+	values := make(map[string]string, 4)
+	if request == nil {
+		return config, values, nil
+	}
+	if request.APIKey == nil && request.WebhookSecret == nil && request.TestMode == nil && request.Products == nil {
+		return config, values, nil
+	}
+	if request.APIKey != nil {
+		config.APIKey = strings.TrimSpace(*request.APIKey)
+	}
+	if request.WebhookSecret != nil {
+		config.WebhookSecret = strings.TrimSpace(*request.WebhookSecret)
+	}
+	if request.TestMode != nil {
+		config.TestMode = *request.TestMode
+	}
+	if request.Products != nil {
+		normalized, err := normalizeCreemProducts(*request.Products)
+		if err != nil {
+			return config, nil, err
+		}
+		config.Products = normalized
+	} else if strings.TrimSpace(config.Products) != "" && strings.TrimSpace(config.Products) != "[]" {
+		normalized, err := normalizeCreemProducts(config.Products)
+		if err != nil {
+			return config, nil, err
+		}
+		config.Products = normalized
+	}
+	values["CreemApiKey"] = config.APIKey
+	values["CreemWebhookSecret"] = config.WebhookSecret
+	values["CreemTestMode"] = strconv.FormatBool(config.TestMode)
+	values["CreemProducts"] = config.Products
+	return config, values, nil
+}
+
+func prospectiveOptionValue(values map[string]string, key, current string) string {
+	if value, ok := values[key]; ok {
+		return value
+	}
+	return current
+}
+
+func prospectiveOptionBool(values map[string]string, key string, current bool) bool {
+	value := prospectiveOptionValue(values, key, strconv.FormatBool(current))
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && parsed
+}
+
+func validatePaymentSettingsReadiness(values map[string]string, creem setting.CreemConfig) error {
+	return validatePaymentSettingsReadinessFromDB(model.DB, values, creem)
+}
+
+func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]string, creem setting.CreemConfig) error {
+	complianceConfirmed := latestPaymentOptionBoolFromDB(db, "payment_setting.compliance_confirmed", isPaymentComplianceConfirmed())
+	waffoEnabled := prospectiveOptionBool(values, "WaffoEnabled", latestPaymentOptionBoolFromDB(db, "WaffoEnabled", setting.WaffoEnabled))
+	if waffoEnabled && complianceConfirmed {
+		currency := prospectiveOptionValue(values, "WaffoCurrency", latestPaymentOptionFromDB(db, "WaffoCurrency", setting.WaffoCurrency))
+		if err := validateEnabledPlatformCurrencyFromDB(db, currency, "Waffo"); err != nil {
+			return err
+		}
+	}
+	yooKassaConfig := setting.GetYooKassaConfig()
+	if prospectiveOptionBool(values, "YooKassaEnabled", latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled)) && complianceConfirmed {
+		if err := validateEnabledPlatformCurrencyFromDB(db, "RUB", "YooKassa"); err != nil {
+			return err
+		}
+	}
+	if prospectiveOptionBool(values, "NOWPaymentsEnabled", latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled)) && complianceConfirmed {
+		if err := validateEnabledPlatformCurrencyFromDB(db, "USDT", "NOWPayments"); err != nil {
+			return err
+		}
+	}
+	if isCreemTopUpEnabledWithConfigAndCompliance(creem, complianceConfirmed) {
+		if err := validateCreemProductCurrenciesFromDB(db, creem.Products); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateEnabledPlatformCurrencyFromDB(db *gorm.DB, code, paymentName string) error {
+	if db == nil {
+		return validateEnabledPlatformCurrency(code, paymentName)
+	}
+	var currency model.PlatformCurrency
+	if err := db.Where("code = ?", strings.ToUpper(strings.TrimSpace(code))).First(&currency).Error; err != nil {
+		return fmt.Errorf("%s payment currency is unavailable: %w", paymentName, err)
+	}
+	if !currency.Enabled {
+		return fmt.Errorf("%s payment currency is unavailable: currency %s is disabled", paymentName, strings.ToUpper(strings.TrimSpace(code)))
+	}
+	if currency.SyncEnabled {
+		if currency.RateToUSD <= 0 || currency.LastSyncAt == nil || time.Since(*currency.LastSyncAt) > 48*time.Hour {
+			return fmt.Errorf("%s payment currency is unavailable: currency %s has no synchronized USD rate", paymentName, strings.ToUpper(strings.TrimSpace(code)))
+		}
+	} else if currency.ManualRateToUSD <= 0 && currency.RateToUSD <= 0 {
+		return fmt.Errorf("%s payment currency is unavailable: currency %s has no USD rate", paymentName, strings.ToUpper(strings.TrimSpace(code)))
+	}
+	return nil
+}
+
+func isCreemTopUpEnabledWithConfigAndCompliance(config setting.CreemConfig, complianceConfirmed bool) bool {
+	products := strings.TrimSpace(config.Products)
+	return complianceConfirmed && strings.TrimSpace(config.APIKey) != "" && products != "" && products != "[]" && (config.TestMode || strings.TrimSpace(config.WebhookSecret) != "")
+}
+
+// SavePaymentSettings commits generic payment options and a partial Creem
+// configuration in one transaction. Existing single-option endpoints remain
+// available for backwards compatibility.
+func SavePaymentSettings(c *gin.Context) {
+	creemConfigUpdateMutex.Lock()
+	defer creemConfigUpdateMutex.Unlock()
+
+	var request savePaymentSettingsRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorMsg(c, "invalid payment settings payload")
+		return
+	}
+	if len(request.Options) == 0 && request.Creem == nil {
+		common.ApiErrorMsg(c, "no payment settings changes")
+		return
+	}
+	values := make(map[string]string, len(request.Options)+4)
+	for _, option := range request.Options {
+		key, value, err := preparePaymentOptionUpdate(option)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		if key != "" {
+			values[key] = value
+		}
+	}
+	creem, creemValues, err := creemConfigForAtomicSave(request.Creem)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	for key, value := range creemValues {
+		values[key] = value
+	}
+	if len(values) == 0 {
+		common.ApiErrorMsg(c, "no payment settings changes")
+		return
+	}
+	if err := validatePaymentSettingsReadiness(values, creem); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	prepare := func(tx *gorm.DB, txValues map[string]string) error {
+		if request.Creem == nil {
+			return nil
+		}
+		var err error
+		creem, err = mergeCreemConfigForUpdate(tx, request.Creem, txValues)
+		return err
+	}
+	if err := model.UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, func(tx *gorm.DB) error {
+		return validatePaymentSettingsReadinessFromDB(tx, values, creem)
+	}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// validatePaymentCurrencyReadiness prevents a generic option update from
+// activating a checkout path whose settlement currency is absent or disabled.
+// Currency management has the inverse guard; this covers the order where an
+// operator configures the catalog/credentials first and enables a provider
+// only afterwards.
+func validatePaymentCurrencyReadiness(key, value string) error {
+	return validatePaymentCurrencyReadinessFromDB(model.DB, key, value)
+}
+
+func validatePaymentCurrencyReadinessFromDB(db *gorm.DB, key, value string) error {
+	values := map[string]string{key: value}
+	config := setting.GetCreemConfig()
+	config.APIKey = latestPaymentOptionFromDB(db, "CreemApiKey", config.APIKey)
+	config.Products = latestPaymentOptionFromDB(db, "CreemProducts", config.Products)
+	config.WebhookSecret = latestPaymentOptionFromDB(db, "CreemWebhookSecret", config.WebhookSecret)
+	config.TestMode = latestPaymentOptionBoolFromDB(db, "CreemTestMode", config.TestMode)
+	if key == "CreemApiKey" {
+		config.APIKey = value
+	} else if key == "CreemProducts" {
+		config.Products = value
+	} else if key == "CreemWebhookSecret" {
+		config.WebhookSecret = value
+	} else if key == "CreemTestMode" {
+		config.TestMode = value == "true"
+	}
+	if key == "WaffoCurrency" {
+		return validateEnabledPlatformCurrencyFromDB(db, value, "Waffo")
+	}
+	return validatePaymentSettingsReadinessFromDB(db, values, config)
+}
+
+func isPaymentCurrencyGuardOption(key, value string) bool {
+	if strings.HasPrefix(key, "Waffo") ||
+		strings.HasPrefix(key, "YooKassa") ||
+		strings.HasPrefix(key, "NOWPayments") {
+		return true
+	}
+	if key != "PayMethods" {
+		return false
+	}
+	value = strings.ToLower(value)
+	return strings.Contains(value, "nowpayments") || strings.Contains(value, "yookassa") ||
+		strings.Contains(value, "waffo") || strings.Contains(value, "currency")
+}
+
+// validatePaymentCurrencyReadinessForComplianceConfirmation uses the same
+// checkout contracts as option updates, but evaluates them as if compliance
+// were already confirmed. Without this, credentials/catalogs configured while
+// checkout is gated could bypass currency validation at activation time.
+func validatePaymentCurrencyReadinessForComplianceConfirmation() error {
+	return validatePaymentCurrencyReadinessForComplianceConfirmationFromDB(model.DB)
+}
+
+func validatePaymentCurrencyReadinessForComplianceConfirmationFromDB(db *gorm.DB) error {
+	waffoEnabled := latestPaymentOptionBoolFromDB(db, "WaffoEnabled", setting.WaffoEnabled)
+	waffoSandbox := latestPaymentOptionBoolFromDB(db, "WaffoSandbox", setting.WaffoSandbox)
+	waffoReady := waffoEnabled
+	if waffoSandbox {
+		waffoReady = waffoReady && latestPaymentOptionFromDB(db, "WaffoSandboxApiKey", setting.WaffoSandboxApiKey) != "" && latestPaymentOptionFromDB(db, "WaffoSandboxPrivateKey", setting.WaffoSandboxPrivateKey) != "" && latestPaymentOptionFromDB(db, "WaffoSandboxPublicCert", setting.WaffoSandboxPublicCert) != ""
+	} else {
+		waffoReady = waffoReady && latestPaymentOptionFromDB(db, "WaffoApiKey", setting.WaffoApiKey) != "" && latestPaymentOptionFromDB(db, "WaffoPrivateKey", setting.WaffoPrivateKey) != "" && latestPaymentOptionFromDB(db, "WaffoPublicCert", setting.WaffoPublicCert) != ""
+	}
+	if waffoReady {
+		currency := latestPaymentOptionFromDB(db, "WaffoCurrency", setting.WaffoCurrency)
+		if err := validateEnabledPlatformCurrencyFromDB(db, currency, "Waffo"); err != nil {
+			return err
+		}
+	}
+	config := setting.GetCreemConfig()
+	config.APIKey = latestPaymentOptionFromDB(db, "CreemApiKey", config.APIKey)
+	config.Products = latestPaymentOptionFromDB(db, "CreemProducts", config.Products)
+	config.WebhookSecret = latestPaymentOptionFromDB(db, "CreemWebhookSecret", config.WebhookSecret)
+	config.TestMode = latestPaymentOptionBoolFromDB(db, "CreemTestMode", config.TestMode)
+	if isCreemTopUpEnabledWithConfigAndCompliance(config, true) {
+		if err := validateCreemProductCurrenciesFromDB(db, config.Products); err != nil {
+			return err
+		}
+	}
+	yooKassaConfig := setting.GetYooKassaConfig()
+	if latestPaymentOptionBoolFromDB(db, "YooKassaEnabled", yooKassaConfig.Enabled) && latestPaymentOptionFromDB(db, "YooKassaShopID", yooKassaConfig.ShopID) != "" && latestPaymentOptionFromDB(db, "YooKassaSecretKey", yooKassaConfig.SecretKey) != "" && paymentMethodListContains(latestPaymentOptionFromDB(db, "YooKassaPaymentMethods", yooKassaConfig.PaymentMethods), "sbp") {
+		if err := validateEnabledPlatformCurrencyFromDB(db, "RUB", "YooKassa"); err != nil {
+			return err
+		}
+	}
+	if latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled) && latestPaymentOptionFromDB(db, "NOWPaymentsAPIKey", setting.NOWPaymentsAPIKey) != "" && latestPaymentOptionFromDB(db, "NOWPaymentsIPNSecret", setting.NOWPaymentsIPNSecret) != "" && latestPaymentOptionFromDB(db, "NOWPaymentsIPNCallbackURL", setting.NOWPaymentsIPNCallbackURL) != "" {
+		if err := validateEnabledPlatformCurrencyFromDB(db, "USDT", "NOWPayments"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
@@ -130,6 +809,15 @@ type OptionUpdateRequest struct {
 	Value any    `json:"value"`
 }
 
+func isCreemConfigOption(key string) bool {
+	switch key {
+	case "CreemApiKey", "CreemProducts", "CreemTestMode", "CreemWebhookSecret":
+		return true
+	default:
+		return false
+	}
+}
+
 func UpdateOption(c *gin.Context) {
 	var option OptionUpdateRequest
 	err := common.DecodeJson(c.Request.Body, &option)
@@ -150,7 +838,68 @@ func UpdateOption(c *gin.Context) {
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
+	if isCreemConfigOption(option.Key) {
+		common.ApiErrorMsg(c, "Creem configuration must be updated atomically via /api/option/creem/save")
+		return
+	}
 	switch option.Key {
+	case "NOWPaymentsPriceCurrency", "NOWPaymentsPayCurrency":
+		option.Value = "usdt"
+	case "CreemProducts":
+		normalized, err := normalizeCreemProducts(option.Value.(string))
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		option.Value = normalized
+	case "PayMethods":
+		var methods []map[string]string
+		if err := common.UnmarshalJsonStr(option.Value.(string), &methods); err != nil {
+			common.ApiErrorMsg(c, "PayMethods must be valid JSON")
+			return
+		}
+		if err := operation_setting.ValidatePayMethods(methods); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		// Normalize gateway-owned currencies before validation and persistence.
+		// This keeps legacy/stale JSON (for example Stripe/RUB or YooKassa/USD)
+		// aligned with the provider contract instead of rejecting a repairable
+		// configuration.
+		operation_setting.NormalizePayMethods(methods)
+		for _, method := range methods {
+			if method == nil {
+				continue
+			}
+			currency := strings.TrimSpace(method["currency"])
+			if currency == "" {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodNOWPayments) {
+				currency = "USDT"
+			}
+			if err := service.ValidatePaymentMethodCurrency(method["type"], currency); err != nil {
+				common.ApiErrorMsg(c, err.Error())
+				return
+			}
+			if !strings.EqualFold(currency, "USD") {
+				configured, err := model.GetPlatformCurrency(currency)
+				if err != nil {
+					common.ApiErrorMsg(c, "payment currency is not configured on the platform")
+					return
+				}
+				if !configured.Enabled {
+					common.ApiErrorMsg(c, "payment currency is disabled on the platform")
+					return
+				}
+			}
+		}
+		normalized, err := common.Marshal(methods)
+		if err != nil {
+			common.ApiErrorMsg(c, "PayMethods must be valid JSON")
+			return
+		}
+		option.Value = string(normalized)
 	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken":
 		if option.Value == maskedOptionValue {
 			c.JSON(http.StatusOK, gin.H{
@@ -312,8 +1061,16 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
+	if err := validatePaymentCurrencyReadiness(option.Key, option.Value.(string)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 	if model.IsModelPricingOption(option.Key) {
 		err = model.UpdatePricingOptionManual(option.Key, option.Value.(string))
+	} else if isPaymentCurrencyGuardOption(option.Key, option.Value.(string)) {
+		err = model.UpdateOptionWithPaymentCurrencyTxGuard(option.Key, option.Value.(string), func(tx *gorm.DB) error {
+			return validatePaymentCurrencyReadinessFromDB(tx, option.Key, option.Value.(string))
+		})
 	} else {
 		err = model.UpdateOption(option.Key, option.Value.(string))
 	}

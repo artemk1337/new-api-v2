@@ -71,14 +71,18 @@ type YooKassaClient struct {
 }
 
 func NewYooKassaClient(httpClient *http.Client) *YooKassaClient {
+	return NewYooKassaClientWithConfig(httpClient, setting.GetYooKassaConfig())
+}
+
+func NewYooKassaClientWithConfig(httpClient *http.Client, config setting.YooKassaConfig) *YooKassaClient {
 	if httpClient == nil {
 		httpClient = YooKassaHTTPClient
 	}
 	return &YooKassaClient{
 		httpClient: httpClient,
 		baseURL:    YooKassaAPIBaseURL,
-		shopID:     setting.YooKassaShopID,
-		secretKey:  setting.YooKassaSecretKey,
+		shopID:     config.ShopID,
+		secretKey:  config.SecretKey,
 	}
 }
 

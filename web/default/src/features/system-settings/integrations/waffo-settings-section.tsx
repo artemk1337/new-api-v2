@@ -37,6 +37,7 @@ import { StaticRowActions } from '@/components/data-table/static/static-row-acti
 import { Dialog } from '@/components/dialog'
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { parseDecimalValue } from '../utils/numeric-field'
+import { PaymentCurrencyField } from './payment-currency-field'
 
 export interface WaffoSettingsValues {
   WaffoEnabled: boolean
@@ -271,10 +272,10 @@ export function WaffoSettingsSection({
         </div>
 
         <div className='grid grid-cols-3 gap-4'>
-          <div className='grid gap-1.5'>
-            <Label>{t('Currency')}</Label>
-            <Input value={values.WaffoCurrency} disabled />
-          </div>
+          <PaymentCurrencyField
+            value={values.WaffoCurrency}
+            onChange={(currency) => onValueChange('WaffoCurrency', currency)}
+          />
           <div className='grid gap-1.5'>
             <Label>{t('Unit price (USD)')}</Label>
             <Input
@@ -291,7 +292,10 @@ export function WaffoSettingsSection({
             />
           </div>
           <div className='grid gap-1.5'>
-            <Label>{t('Minimum top-up quantity')}</Label>
+            <Label>
+              {t('Minimum top-up quantity')} (
+              {values.WaffoCurrency.trim().toUpperCase() || 'USD'})
+            </Label>
             <Input
               type='text'
               inputMode='decimal'
@@ -306,6 +310,10 @@ export function WaffoSettingsSection({
                 }
               }}
             />
+            <p className='text-muted-foreground text-xs'>
+              {t('Optional minimum recharge amount for this method.')} (
+              {values.WaffoCurrency.trim().toUpperCase() || 'USD'})
+            </p>
           </div>
         </div>
 

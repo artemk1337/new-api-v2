@@ -25,11 +25,7 @@ func setupYooKassaWebhookTest(t *testing.T, paymentResponse string) *gin.Engine 
 	originalMainDatabaseType := common.MainDatabaseType()
 	originalLogDatabaseType := common.LogDatabaseType()
 	originalRedisEnabled := common.RedisEnabled
-	originalYooKassaEnabled := setting.YooKassaEnabled
-	originalYooKassaShopID := setting.YooKassaShopID
-	originalYooKassaSecretKey := setting.YooKassaSecretKey
-	originalYooKassaReturnURL := setting.YooKassaReturnURL
-	originalYooKassaPaymentMethods := setting.YooKassaPaymentMethods
+	originalYooKassaConfig := setting.GetYooKassaConfig()
 	originalPaymentSetting := *operation_setting.GetPaymentSetting()
 	originalYooKassaAPIBaseURL := service.YooKassaAPIBaseURL
 	originalYooKassaHTTPClient := service.YooKassaHTTPClient
@@ -42,18 +38,12 @@ func setupYooKassaWebhookTest(t *testing.T, paymentResponse string) *gin.Engine 
 	common.RedisEnabled = false
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.Log{}))
 
-	setting.YooKassaEnabled = true
-	setting.YooKassaShopID = "shop"
-	setting.YooKassaSecretKey = "secret"
+	setting.PublishYooKassaConfig(setting.YooKassaConfig{Enabled: true, ShopID: "shop", SecretKey: "secret", PaymentMethods: "sbp"})
 	operation_setting.GetPaymentSetting().ComplianceConfirmed = true
 	operation_setting.GetPaymentSetting().ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
 	t.Cleanup(func() {
 		common.RedisEnabled = originalRedisEnabled
-		setting.YooKassaEnabled = originalYooKassaEnabled
-		setting.YooKassaShopID = originalYooKassaShopID
-		setting.YooKassaSecretKey = originalYooKassaSecretKey
-		setting.YooKassaReturnURL = originalYooKassaReturnURL
-		setting.YooKassaPaymentMethods = originalYooKassaPaymentMethods
+		setting.PublishYooKassaConfig(originalYooKassaConfig)
 		*operation_setting.GetPaymentSetting() = originalPaymentSetting
 		service.YooKassaAPIBaseURL = originalYooKassaAPIBaseURL
 		service.YooKassaHTTPClient = originalYooKassaHTTPClient
@@ -178,12 +168,80 @@ func TestYooKassaWebhookIsIdempotent(t *testing.T) {
 	assert.Equal(t, 500000, user.Quota)
 }
 
-func TestYooKassaWebhookRejectsInvalidAmount(t *testing.T) {
+func TestTopUpInfoFiltersYooKassaSBPWhenSBPIsDisabled(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	originalPayMethods := operation_setting.PayMethods2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(originalPayMethods))
+	})
+	require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(`[
+		{"type":"alipay","name":"Alipay"},
+		{"type":"yookassa_sbp","name":"СБП"}
+	]`))
+
+	router := gin.New()
+	router.GET("/topup/info", func(c *gin.Context) {
+		c.Set("id", 1)
+		GetTopUpInfo(c)
+	})
+
+	for _, tt := range []struct {
+		name         string
+		methods      string
+		wantYooKassa bool
+	}{
+		{name: "no methods", methods: "", wantYooKassa: false},
+		{name: "SBP disabled", methods: "bank_card", wantYooKassa: false},
+		{name: "SBP enabled", methods: "sbp,bank_card", wantYooKassa: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			config := setting.GetYooKassaConfig()
+			config.PaymentMethods = tt.methods
+			setting.PublishYooKassaConfig(config)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/topup/info", nil))
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			var response struct {
+				Data struct {
+					EnableYooKassa bool                `json:"enable_yookassa_topup"`
+					PayMethods     []map[string]string `json:"pay_methods"`
+				} `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			hasYooKassa, hasAlipay := false, false
+			for _, method := range response.Data.PayMethods {
+				switch method["type"] {
+				case model.PaymentMethodYooKassaSBP:
+					hasYooKassa = true
+				case "alipay":
+					hasAlipay = true
+				}
+			}
+			assert.Equal(t, tt.wantYooKassa, hasYooKassa)
+			assert.Equal(t, tt.wantYooKassa, response.Data.EnableYooKassa)
+			assert.True(t, hasAlipay)
+		})
+	}
+}
+
+func TestYooKassaWebhookAcknowledgesExpiredOrder(t *testing.T) {
+	router := setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Update("status", common.TopUpStatusExpired).Error)
+
+	assert.Equal(t, http.StatusOK, postYooKassaWebhook(t, router).Code)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Zero(t, user.Quota)
+}
+
+func TestYooKassaWebhookAcknowledgesInvalidAmount(t *testing.T) {
 	router := setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "99.99"))
 	insertYooKassaOrderForWebhookTest(t, "", 500000)
 
 	recorder := postYooKassaWebhook(t, router)
-	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, http.StatusOK, recorder.Code)
 
 	topUp := model.GetTopUpByTradeNo("trade-1")
 	require.NotNil(t, topUp)
@@ -252,12 +310,14 @@ func TestYooKassaSyncRejectsOtherUserOrder(t *testing.T) {
 }
 
 func TestYooKassaPaymentMethodIsSBPOnly(t *testing.T) {
-	originalPaymentMethods := setting.YooKassaPaymentMethods
+	originalYooKassaConfig := setting.GetYooKassaConfig()
 	t.Cleanup(func() {
-		setting.YooKassaPaymentMethods = originalPaymentMethods
+		setting.PublishYooKassaConfig(originalYooKassaConfig)
 	})
 
-	setting.YooKassaPaymentMethods = "sbp,bank_card"
+	config := setting.GetYooKassaConfig()
+	config.PaymentMethods = "sbp,bank_card"
+	setting.PublishYooKassaConfig(config)
 
 	assert.True(t, isYooKassaPaymentMethodEnabled(model.PaymentMethodYooKassaSBP))
 	assert.True(t, isYooKassaPaymentMethodEnabled("sbp"))

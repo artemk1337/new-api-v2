@@ -44,6 +44,7 @@ export type WaffoPancakeSettingsValues = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
+  WaffoPancakeMinTopUp: number
 }
 
 export interface WaffoPancakeBinding {
@@ -445,6 +446,25 @@ export function WaffoPancakeSettingsSection({
             {t(
               'The environment (test vs production) is decided by the key you paste here — use the Test key while integrating, then swap to the Production key when going live.'
             )}
+          </p>
+        </div>
+
+        <div className='grid gap-1.5 sm:max-w-sm'>
+          <Label>{t('Minimum top-up (USD)')}</Label>
+          <Input
+            type='number'
+            min={0.01}
+            step='0.01'
+            value={values.WaffoPancakeMinTopUp}
+            onChange={(event) =>
+              onValueChange(
+                'WaffoPancakeMinTopUp',
+                event.target.value === '' ? 0 : event.target.valueAsNumber
+              )
+            }
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t('Minimum recharge amount in USD')}
           </p>
         </div>
 

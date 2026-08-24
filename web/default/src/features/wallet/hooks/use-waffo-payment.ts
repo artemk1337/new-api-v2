@@ -20,6 +20,7 @@ import { useState, useCallback } from 'react'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { requestWaffoPayment, isApiSuccess } from '../api'
+import { getPaymentErrorMessage, redirectToPaymentPage } from '../lib/payment'
 
 function getPaymentUrl(data: unknown): string | null {
   if (!data || typeof data !== 'object') {
@@ -33,12 +34,12 @@ function getPaymentUrl(data: unknown): string | null {
   return null
 }
 
-function getErrorMessage(message: string | undefined, data: unknown): string {
-  if (typeof data === 'string' && data.trim()) {
-    return data
-  }
-
-  return message || i18next.t('Payment request failed')
+export function isIncompleteSuccessfulWaffoPaymentResponse(response: {
+  success?: boolean
+  message?: string
+  data?: unknown
+}): boolean {
+  return isApiSuccess(response) && getPaymentUrl(response.data) === null
 }
 
 /**
@@ -61,15 +62,25 @@ export function useWaffoPayment() {
           const paymentUrl = getPaymentUrl(response.data)
 
           if (paymentUrl) {
-            window.open(paymentUrl, '_blank')
+            if (!redirectToPaymentPage(paymentUrl)) {
+              toast.error(i18next.t('Invalid payment redirect URL'))
+              return false
+            }
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
+
+          if (isIncompleteSuccessfulWaffoPaymentResponse(response)) {
+            toast.error(i18next.t('Payment request failed'))
+            return false
+          }
         }
 
-        toast.error(getErrorMessage(response.message, response.data))
+        toast.error(
+          getPaymentErrorMessage(response, i18next.t('Payment request failed'))
+        )
         return false
-      } catch (_error) {
+      } catch {
         toast.error(i18next.t('Payment request failed'))
         return false
       } finally {

@@ -349,6 +349,27 @@ export function getCurrencyDisplay() {
 }
 
 /**
+ * Convert an amount entered in the wallet's selected display unit to the
+ * accounting unit expected by top-up endpoints. USD/CNY/custom displays use
+ * USD accounting values; token display already uses the token unit expected by
+ * the backend.
+ */
+export function walletDisplayAmountToBackend(amount: number): number {
+  if (!Number.isFinite(amount)) return 0
+  const { meta } = getCurrencyDisplay()
+  if (meta.kind === 'tokens') return amount
+  return meta.exchangeRate > 0 ? amount / meta.exchangeRate : amount
+}
+
+/** Convert a backend top-up amount back to the wallet's selected display unit. */
+export function backendAmountToWalletDisplay(amount: number): number {
+  if (!Number.isFinite(amount)) return 0
+  const { meta } = getCurrencyDisplay()
+  if (meta.kind === 'tokens') return amount
+  return amount * meta.exchangeRate
+}
+
+/**
  * Format a USD amount according to the admin-configured display settings.
  *
  * This is the PRIMARY function for displaying quota/balance/credit amounts

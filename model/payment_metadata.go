@@ -1,5 +1,7 @@
 package model
 
+import "gorm.io/gorm"
+
 type PaymentMetadata struct {
 	Id                int    `json:"id"`
 	TradeNo           string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
@@ -19,8 +21,19 @@ func (paymentMetadata *PaymentMetadata) Update() error {
 }
 
 func GetPaymentMetadataByTradeNo(tradeNo string) *PaymentMetadata {
+	return getPaymentMetadataByTradeNo(DB, tradeNo)
+}
+
+// getPaymentMetadataByTradeNo reads metadata through the supplied database
+// handle. Completion callbacks must pass their settlement transaction here:
+// SQLite cannot acquire a second connection while the transaction holds the
+// write lock.
+func getPaymentMetadataByTradeNo(db *gorm.DB, tradeNo string) *PaymentMetadata {
+	if db == nil {
+		return nil
+	}
 	var paymentMetadata PaymentMetadata
-	err := DB.Where("trade_no = ?", tradeNo).First(&paymentMetadata).Error
+	err := db.Where("trade_no = ?", tradeNo).First(&paymentMetadata).Error
 	if err != nil {
 		return nil
 	}

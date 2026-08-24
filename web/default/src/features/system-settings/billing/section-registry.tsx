@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { parseCurrencyDisplayType } from '@/lib/currency'
 
 import { CheckinSettingsSection } from '../general/checkin-settings-section'
-import { CurrencyExchangeRateSection } from '../general/currency-exchange-rate-section'
+import { PlatformCurrenciesSection } from '../general/platform-currencies-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { ReferralSettingsSection } from '../general/referral-settings-section'
@@ -128,17 +128,9 @@ const BILLING_SECTIONS = [
     ),
   },
   {
-    id: 'currency-exchange-rate',
-    titleKey: 'Exchange Rate Updates',
-    build: (settings: BillingSettings) => (
-      <CurrencyExchangeRateSection
-        defaultValues={{
-          provider: settings['currency_exchange_rate.provider'] ?? 'bybit_p2p',
-          updateInterval:
-            settings['currency_exchange_rate.update_interval'] ?? 'day',
-        }}
-      />
-    ),
+    id: 'platform-currencies',
+    titleKey: 'Platform currencies',
+    build: () => <PlatformCurrenciesSection />,
   },
   {
     id: 'group-pricing',
@@ -163,8 +155,11 @@ const BILLING_SECTIONS = [
           PayAddress: settings.PayAddress,
           EpayId: settings.EpayId,
           EpayKey: settings.EpayKey,
-          Price: settings.Price,
           MinTopUp: settings.MinTopUp,
+          PaymentPendingTTLMinutes: settings.PaymentPendingTTLMinutes,
+          PaymentCreationRateLimit: settings.PaymentCreationRateLimit,
+          PaymentCreationRateLimitDurationMinutes:
+            settings.PaymentCreationRateLimitDurationMinutes,
           CustomCallbackAddress: settings.CustomCallbackAddress,
           PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
@@ -187,8 +182,6 @@ const BILLING_SECTIONS = [
           NOWPaymentsEnabled: settings.NOWPaymentsEnabled ?? false,
           NOWPaymentsAPIKey: settings.NOWPaymentsAPIKey ?? '',
           NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
-          NOWPaymentsPriceCurrency: settings.NOWPaymentsPriceCurrency ?? 'usd',
-          NOWPaymentsPayCurrency: settings.NOWPaymentsPayCurrency ?? '',
           NOWPaymentsIPNCallbackURL: settings.NOWPaymentsIPNCallbackURL ?? '',
         }}
         waffoDefaultValues={{
@@ -212,6 +205,7 @@ const BILLING_SECTIONS = [
           WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
           WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
           WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
+          WaffoPancakeMinTopUp: settings.WaffoPancakeMinTopUp ?? 1,
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}

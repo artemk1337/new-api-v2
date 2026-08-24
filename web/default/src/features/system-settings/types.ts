@@ -346,6 +346,9 @@ export type BillingSettings = {
   EpayKey: string
   Price: number
   MinTopUp: number
+  PaymentPendingTTLMinutes: number
+  PaymentCreationRateLimit: number
+  PaymentCreationRateLimitDurationMinutes: number
   CustomCallbackAddress: string
   PayMethods: string
   'payment_setting.amount_options': string
@@ -383,6 +386,7 @@ export type BillingSettings = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
+  WaffoPancakeMinTopUp: number
   YooKassaEnabled: boolean
   YooKassaShopID: string
   YooKassaSecretKey: string

@@ -15,9 +15,15 @@ func isStripeTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
-	return strings.TrimSpace(setting.StripeApiSecret) != "" &&
-		strings.TrimSpace(setting.StripeWebhookSecret) != "" &&
-		strings.TrimSpace(setting.StripePriceId) != ""
+	return isStripeAPISecretConfigured() &&
+		strings.TrimSpace(setting.StripeWebhookSecret) != ""
+}
+
+// isStripeAPISecretConfigured keeps the readiness check in sync with the
+// Stripe client, which accepts only secret or restricted API keys.
+func isStripeAPISecretConfigured() bool {
+	secret := strings.TrimSpace(setting.StripeApiSecret)
+	return strings.HasPrefix(secret, "sk_") || strings.HasPrefix(secret, "rk_")
 }
 
 func isStripeWebhookConfigured() bool {
@@ -25,25 +31,39 @@ func isStripeWebhookConfigured() bool {
 }
 
 func isStripeWebhookEnabled() bool {
-	return isStripeTopUpEnabled()
+	// Existing pending checkouts only need the verification secret. Keep this
+	// independent from create-time API/price/compliance settings so disabling
+	// new checkouts does not strand already-paid orders.
+	return isStripeWebhookConfigured()
 }
 
 func isCreemTopUpEnabled() bool {
+	return isCreemTopUpEnabledForConfig(setting.GetCreemConfig())
+}
+
+func isCreemTopUpEnabledForConfig(config setting.CreemConfig) bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
-	products := strings.TrimSpace(setting.CreemProducts)
-	return strings.TrimSpace(setting.CreemApiKey) != "" &&
+	products := strings.TrimSpace(config.Products)
+	return strings.TrimSpace(config.APIKey) != "" &&
 		products != "" &&
-		products != "[]"
+		products != "[]" &&
+		isCreemWebhookConfiguredForConfig(config)
 }
 
 func isCreemWebhookConfigured() bool {
-	return strings.TrimSpace(setting.CreemWebhookSecret) != ""
+	return isCreemWebhookConfiguredForConfig(setting.GetCreemConfig())
+}
+
+func isCreemWebhookConfiguredForConfig(config setting.CreemConfig) bool {
+	// Test mode changes the provider endpoint, not the trust model. A public
+	// webhook without a secret would let anyone forge a paid callback.
+	return strings.TrimSpace(config.WebhookSecret) != ""
 }
 
 func isCreemWebhookEnabled() bool {
-	return isCreemTopUpEnabled() && isCreemWebhookConfigured()
+	return isCreemWebhookConfigured()
 }
 
 func isWaffoTopUpEnabled() bool {
@@ -70,7 +90,7 @@ func isWaffoWebhookConfigured() bool {
 }
 
 func isWaffoWebhookEnabled() bool {
-	return isWaffoTopUpEnabled()
+	return isWaffoWebhookConfigured()
 }
 
 func isWaffoPancakeTopUpEnabled() bool {
@@ -85,25 +105,37 @@ func isWaffoPancakeTopUpEnabled() bool {
 }
 
 func isWaffoPancakeWebhookConfigured() bool {
-	return isWaffoPancakeTopUpEnabled()
+	// Pancake webhook signatures are verified with the provider's embedded
+	// public keys (see service.VerifyConfiguredWaffoPancakeWebhook), so the
+	// merchant/private credentials used to create new checkout sessions are not
+	// required to process an existing pending payment.
+	return true
 }
 
 func isWaffoPancakeWebhookEnabled() bool {
-	return isWaffoPancakeTopUpEnabled()
+	return isWaffoPancakeWebhookConfigured()
 }
 
 func isYooKassaTopUpEnabled() bool {
+	return isYooKassaTopUpEnabledForConfig(setting.GetYooKassaConfig())
+}
+
+func isYooKassaTopUpEnabledForConfig(config setting.YooKassaConfig) bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
-	return setting.YooKassaEnabled &&
-		strings.TrimSpace(setting.YooKassaShopID) != "" &&
-		strings.TrimSpace(setting.YooKassaSecretKey) != ""
+	return config.Enabled &&
+		strings.TrimSpace(config.ShopID) != "" &&
+		strings.TrimSpace(config.SecretKey) != ""
 }
 
 func isYooKassaWebhookConfigured() bool {
-	return strings.TrimSpace(setting.YooKassaShopID) != "" &&
-		strings.TrimSpace(setting.YooKassaSecretKey) != ""
+	return isYooKassaWebhookConfiguredForConfig(setting.GetYooKassaConfig())
+}
+
+func isYooKassaWebhookConfiguredForConfig(config setting.YooKassaConfig) bool {
+	return strings.TrimSpace(config.ShopID) != "" &&
+		strings.TrimSpace(config.SecretKey) != ""
 }
 
 func isYooKassaWebhookEnabled() bool {
@@ -128,7 +160,7 @@ func isEpayTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
-	return isEpayWebhookConfigured() && len(operation_setting.PayMethods) > 0
+	return isEpayWebhookConfigured() && len(operation_setting.PayMethodsSnapshot()) > 0
 }
 
 func isEpayWebhookConfigured() bool {
@@ -138,5 +170,5 @@ func isEpayWebhookConfigured() bool {
 }
 
 func isEpayWebhookEnabled() bool {
-	return isEpayTopUpEnabled()
+	return isEpayWebhookConfigured()
 }

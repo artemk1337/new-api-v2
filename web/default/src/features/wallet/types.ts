@@ -38,6 +38,19 @@ export type AmountResponse = ApiResponse<string>
 export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
   url?: string
 }
+export type TopupQuote = {
+  currency: string
+  rate_to_usd: number
+  coefficient: number
+  base_amount_usd: number
+  charged_amount: number
+  commission_usd: number
+  cashback_percent: number
+  cashback_amount_usd: number
+  credited_amount_usd: number
+  charged_amount_usd: number
+}
+export type TopupQuoteResponse = ApiResponse<TopupQuote>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
@@ -116,6 +129,16 @@ export interface PaymentMethod {
   icon?: string
   /** Top-up price multiplier configured for this payment method */
   topup_ratio?: number
+  /** Public display config preloaded by the server with top-up info. */
+  rate_to_usd?: number
+  base_amount_multiplier?: number
+  rounding_decimals?: number
+  /** Currency configured for the provider (defaults to USD). */
+  currency?: string
+  /** Optional server-calculated quote amount in the provider currency. */
+  payment_amount?: number
+  /** Optional symbol supplied by the server for the provider currency. */
+  currency_symbol?: string
 }
 
 /**
@@ -130,6 +153,13 @@ export interface WaffoPayMethod {
   payMethodType?: string
   /** Waffo pay method name */
   payMethodName?: string
+  /** Public display config preloaded by the server with top-up info. */
+  currency?: string
+  rate_to_usd?: number
+  base_amount_multiplier?: number
+  topup_ratio?: number
+  rounding_decimals?: number
+  currency_symbol?: string
 }
 
 /**
@@ -294,7 +324,7 @@ export interface UserWalletData {
 /**
  * Topup record status
  */
-export type TopupStatus = 'success' | 'pending' | 'expired'
+export type TopupStatus = 'success' | 'pending' | 'failed' | 'expired'
 
 /**
  * Topup billing record
@@ -314,12 +344,26 @@ export interface TopupRecord {
   trade_no: string
   /** Payment method type */
   payment_method: string
+  /** Provider identifier used only for legacy history amount fallbacks. */
+  payment_provider?: string
+  /** Public display name of the configured payment method */
+  payment_method_name?: string
+  /** Optional source category returned by newer API versions */
+  source?: string
   /** Creation timestamp */
   create_time: number
   /** Completion timestamp */
   complete_time?: number
   /** Payment status */
   status: TopupStatus
+  /** Immutable wallet/accounting amount in USD for history display */
+  accounting_amount_usd?: number
+  /** Currency captured for provider-currency history entries (for example EUR). */
+  payment_currency?: string
+  /** Immutable amount charged by the payment provider, when available. */
+  payment_charged_amount?: number
+  /** Immutable wallet amount in USD captured at checkout, when available. */
+  payment_base_amount?: number
 }
 
 /**

@@ -241,7 +241,7 @@ func CaptureAttemptUsageQuota(c *gin.Context, info *relaycommon.RelayInfo, usage
 		}
 	}
 	if costKnown && cost > 0 && summary.Quota == 0 && summary.TotalTokens == 0 {
-		summary.Quota = int(math.Round(cost * common.QuotaPerUnit * info.PriceData.GroupRatioInfo.GroupRatio))
+		summary.Quota = int(math.Round(cost * common.GetQuotaPerUnit() * info.PriceData.GroupRatioInfo.GroupRatio))
 		if summary.Quota == 0 && info.PriceData.GroupRatioInfo.GroupRatio > 0 {
 			summary.Quota = 1
 		}

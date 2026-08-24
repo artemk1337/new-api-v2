@@ -30,7 +30,7 @@ import type {
  * react-hook-form internals (e.g. `disabled`) that need overriding per call.
  */
 export type SafeNumberFieldProps = {
-  value: number | ''
+  value: number | string
   onChange: (event: ChangeEvent<HTMLInputElement>) => void
   onBlur: () => void
   name: string
@@ -47,20 +47,34 @@ export function parseDecimalValue(value: string): number | null {
   return Number.isFinite(next) ? next : null
 }
 
+/** Normalize the editable decimal text used by settings fields. */
+export function normalizeDecimalInput(value: string): string | null {
+  const normalized = value.trim().replace(',', '.')
+  return !normalized || /^\d*(\.\d{0,2})?$/.test(normalized)
+    ? normalized
+    : null
+}
+
 export function safeDecimalFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
 >(field: ControllerRenderProps<TFieldValues, TName>): SafeNumberFieldProps {
   const raw = field.value as unknown
-  const display: number | '' =
-    typeof raw === 'number' && Number.isFinite(raw) ? raw : ''
+  const display: number | string =
+    (typeof raw === 'number' && Number.isFinite(raw)) ||
+    typeof raw === 'string'
+      ? raw
+      : ''
 
   return {
     value: display,
     onChange: (event) => {
-      const next = parseDecimalValue(event.target.value)
-      if (next !== null) {
-        ;(field.onChange as (value: number) => void)(next)
+      const normalized = normalizeDecimalInput(event.target.value)
+      // Keep the raw decimal text in form state while the user is typing.
+      // Converting to a number after the first digit would turn `0.` back
+      // into `0`, making it impossible to enter values such as `0.01`.
+      if (normalized !== null) {
+        ;(field.onChange as (value: string) => void)(normalized)
       }
     },
     onBlur: field.onBlur,

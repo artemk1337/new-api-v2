@@ -1,3 +1,4 @@
+import { Lightbulb, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,7 +18,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useMemo } from 'react'
-import { Lightbulb, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
@@ -38,11 +38,14 @@ import {
   type PaymentMethodData,
   type TopupGroupOption,
 } from './payment-method-dialog'
+import { getPaymentMethodMinimumForDisplay } from './payment-method-minimum'
 
 type PaymentMethodsVisualEditorProps = {
   value: string
   onChange: (value: string) => void
   topupGroups: TopupGroupOption[]
+  waffoCurrency?: string
+  defaultPendingTtlMinutes?: number
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -60,10 +63,39 @@ function getEffectiveIconName(method: PaymentMethodData) {
   return method.icon || getDefaultIconName(method.type)
 }
 
+export function getPaymentMethodPendingTtl(
+  method: PaymentMethodData,
+  defaultPendingTtlMinutes = 1440
+) {
+  const configured = Number(method.pending_ttl_minutes)
+  if (Number.isInteger(configured) && configured > 0) return configured
+  return method.type === 'yookassa_sbp' ? 15 : defaultPendingTtlMinutes
+}
+
+export function isPaymentMethodData(item: unknown): item is PaymentMethodData {
+  return (
+    typeof item === 'object' &&
+    item !== null &&
+    'name' in item &&
+    'type' in item &&
+    typeof item.name === 'string' &&
+    typeof item.type === 'string' &&
+    (!('icon' in item) || typeof item.icon === 'string') &&
+    (!('min_topup' in item) || typeof item.min_topup === 'string') &&
+    (!('pending_ttl_minutes' in item) ||
+      typeof item.pending_ttl_minutes === 'string') &&
+    (!('color' in item) || typeof item.color === 'string') &&
+    (!('topup_group' in item) || typeof item.topup_group === 'string') &&
+    (!('currency' in item) || typeof item.currency === 'string')
+  )
+}
+
 export function PaymentMethodsVisualEditor({
   value,
   onChange,
   topupGroups,
+  waffoCurrency,
+  defaultPendingTtlMinutes = 1440,
 }: PaymentMethodsVisualEditorProps) {
   const { t } = useTranslation()
   const paymentTemplates = [
@@ -130,19 +162,7 @@ export function PaymentMethodsVisualEditor({
       context: 'payment methods',
     })
 
-    return parsed.filter(
-      (item): item is PaymentMethodData =>
-        typeof item === 'object' &&
-        item !== null &&
-        'name' in item &&
-        'type' in item &&
-        typeof item.name === 'string' &&
-        typeof item.type === 'string' &&
-        (!('icon' in item) || typeof item.icon === 'string') &&
-        (!('min_topup' in item) || typeof item.min_topup === 'string') &&
-        (!('color' in item) || typeof item.color === 'string') &&
-        (!('topup_group' in item) || typeof item.topup_group === 'string')
-    )
+    return parsed.filter(isPaymentMethodData)
   }, [value])
 
   const filteredMethods = useMemo(() => {
@@ -163,7 +183,14 @@ export function PaymentMethodsVisualEditor({
       silent: true,
     })
 
-    const updatedArray = [...parsed]
+    const updatedArray = parsed.map((item) => {
+      if (!isPaymentMethodData(item)) return item
+      const { currency: _legacyCurrency, ...metadata } =
+        item as PaymentMethodData & {
+          currency?: string
+        }
+      return metadata
+    })
 
     if (editData) {
       const index = updatedArray.findIndex(
@@ -330,7 +357,7 @@ export function PaymentMethodsVisualEditor({
               },
               {
                 id: 'type',
-                header: t('Payment type key'),
+                header: t('Payment type'),
                 cell: (method) => (
                   <code className='bg-muted rounded px-1.5 py-0.5 text-sm'>
                     {method.type}
@@ -362,14 +389,35 @@ export function PaymentMethodsVisualEditor({
               {
                 id: 'min-top-up',
                 header: t('Min Top-up'),
-                cell: (method) =>
-                  method.min_topup ? (
-                    <span className='font-mono text-sm'>
-                      {method.min_topup}
-                    </span>
+                cell: (method) => {
+                  const minimum = getPaymentMethodMinimumForDisplay(
+                    method.type,
+                    method.min_topup
+                  )
+                  return minimum ? (
+                    <span className='font-mono text-sm'>{minimum}</span>
                   ) : (
                     <span className='text-muted-foreground text-sm'>—</span>
-                  ),
+                  )
+                },
+              },
+              {
+                id: 'topup-group',
+                header: t('Top-up coefficient group'),
+                cell: (method) => method.topup_group || '—',
+              },
+              {
+                id: 'pending-ttl',
+                header: t('Payment TTL'),
+                cell: (method) => (
+                  <span className='font-mono text-sm'>
+                    {getPaymentMethodPendingTtl(
+                      method,
+                      defaultPendingTtlMinutes
+                    )}{' '}
+                    {t('min')}
+                  </span>
+                ),
               },
               {
                 id: 'actions',
@@ -398,6 +446,7 @@ export function PaymentMethodsVisualEditor({
                 method.name,
                 method.icon,
                 method.min_topup,
+                method.pending_ttl_minutes,
                 method.color,
               ]
                 .filter(Boolean)
@@ -459,14 +508,40 @@ export function PaymentMethodsVisualEditor({
                         <span className='text-muted-foreground text-xs'>—</span>
                       )}
                     </div>
-                    {method.min_topup && (
+                    <div className='flex items-center gap-2'>
+                      <span className='text-muted-foreground min-w-20'>
+                        {t('Payment TTL')}
+                      </span>
+                      <span className='font-mono'>
+                        {getPaymentMethodPendingTtl(
+                          method,
+                          defaultPendingTtlMinutes
+                        )}{' '}
+                        {t('min')}
+                      </span>
+                    </div>
+                    {getPaymentMethodMinimumForDisplay(
+                      method.type,
+                      method.min_topup
+                    ) && (
                       <div className='flex items-center gap-2'>
                         <span className='text-muted-foreground min-w-20'>
                           {t('Min Top-up:')}
                         </span>
-                        <span className='font-mono'>{method.min_topup}</span>
+                        <span className='font-mono'>
+                          {getPaymentMethodMinimumForDisplay(
+                            method.type,
+                            method.min_topup
+                          )}
+                        </span>
                       </div>
                     )}
+                    <div className='flex items-center gap-2'>
+                      <span className='text-muted-foreground min-w-20'>
+                        {t('Top-up coefficient group')}
+                      </span>
+                      <span>{method.topup_group || '—'}</span>
+                    </div>
                   </div>
                 </div>
               )
@@ -481,6 +556,8 @@ export function PaymentMethodsVisualEditor({
         onSave={handleSave}
         editData={editData}
         topupGroups={topupGroups}
+        waffoCurrency={waffoCurrency}
+        defaultPendingTtlMinutes={defaultPendingTtlMinutes}
       />
     </div>
   )

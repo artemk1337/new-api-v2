@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test'
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -38,15 +39,15 @@ describe('usage log token billing parts', () => {
   it('keeps Claude text input separate from cache tokens', () => {
     const parts = getTokenBillingParts(log, { ...cacheUsage, claude: true })
 
-    expect(parts.baseInput).toBe(5)
-    expect(parts.cacheRead).toBe(22)
-    expect(parts.cacheWrite5m).toBe(240)
+    assert.equal(parts.baseInput, 5)
+    assert.equal(parts.cacheRead, 22)
+    assert.equal(parts.cacheWrite5m, 240)
   })
 
   it('subtracts cache categories from non-Claude total input', () => {
     const nonClaudeLog = { ...log, prompt_tokens: 267 }
     const parts = getTokenBillingParts(nonClaudeLog, cacheUsage)
 
-    expect(parts.baseInput).toBe(5)
+    assert.equal(parts.baseInput, 5)
   })
 })

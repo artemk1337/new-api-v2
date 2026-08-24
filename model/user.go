@@ -325,8 +325,9 @@ func inviteUser(inviterId int) (err error) {
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
 	// 检查quota是否小于最小额度
-	if float64(quota) < common.QuotaPerUnit {
-		return fmt.Errorf("转移额度最小为%s！", logger.LogQuota(int(common.QuotaPerUnit)))
+	quotaPerUnit := common.GetQuotaPerUnit()
+	if float64(quota) < quotaPerUnit {
+		return fmt.Errorf("转移额度最小为%s！", logger.LogQuota(int(quotaPerUnit)))
 	}
 
 	// 开始数据库事务
@@ -376,6 +377,7 @@ func (user *User) Insert(inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	user.InviterId = inviterId
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 

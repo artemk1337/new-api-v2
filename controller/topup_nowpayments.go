@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/hmac"
 	"crypto/sha512"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -27,6 +28,10 @@ type NOWPaymentsPayRequest struct {
 	PaymentMethod string  `json:"payment_method"`
 }
 
+func nowPaymentsInvoicePriceCurrency(_ *model.TopUp) string {
+	return "usdt"
+}
+
 func RequestNOWPaymentsAmount(c *gin.Context) {
 	var req AmountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,7 +47,12 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	paymentAmount := getPayMoney(req.Amount, model.PaymentMethodNOWPayments, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	paymentAmount := quote.ChargedAmount
 	if paymentAmount <= 0.01 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return
@@ -69,12 +79,22 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		return
 	}
 	userID := c.GetInt("id")
+	if user, userErr := model.GetUserById(userID, false); userErr != nil || user == nil {
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("NOWPayments user does not exist user_id=%d error=%v", userID, userErr))
+		common.ApiErrorMsg(c, "User does not exist")
+		return
+	}
 	group, err := model.GetUserGroup(userID, true)
 	if err != nil {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	paymentAmount := getPayMoney(req.Amount, model.PaymentMethodNOWPayments, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	paymentAmount := quote.ChargedAmount
 	if paymentAmount <= 0.01 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return
@@ -85,7 +105,14 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 	}
 	tradeNo := fmt.Sprintf("NOW%d%s%d", userID, common.GetRandomString(6), time.Now().Unix())
 	quotaToAdd := getTopUpQuotaToAdd(req.Amount)
-	topUp := &model.TopUp{UserId: userID, Amount: int64(req.Amount), RequestedAmount: req.Amount, Money: paymentAmount, TradeNo: tradeNo, PaymentMethod: model.PaymentMethodNOWPayments, PaymentProvider: model.PaymentProviderNOWPayments, QuotaToAdd: quotaToAdd, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}
+	topUp := &model.TopUp{UserId: userID, Amount: int64(req.Amount), RequestedAmount: req.Amount, Money: paymentAmount, TradeNo: tradeNo, PaymentMethod: model.PaymentMethodNOWPayments, PaymentMethodName: model.PaymentMethodDisplayName(model.PaymentMethodNOWPayments), PaymentProvider: model.PaymentProviderNOWPayments, QuotaToAdd: quotaToAdd, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}
+	service.ApplyPaymentQuote(topUp, quote)
+	// NOWPayments receives a two-decimal price. Persist exactly that amount in
+	// the immutable snapshot so the callback compares the provider charge, not
+	// an unrounded preview value.
+	providerPaymentAmount := decimal.NewFromFloat(paymentAmount).Round(2).InexactFloat64()
+	topUp.PaymentChargedAmount = providerPaymentAmount
+	topUp.Money = providerPaymentAmount
 	if err := topUp.Insert(); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments failed to create top-up user_id=%d trade_no=%s error=%q", userID, tradeNo, err.Error()))
 		common.ApiErrorMsg(c, "Failed to create order")
@@ -93,18 +120,24 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 	}
 	returnURL := paymentReturnPath("/console/topup?show_history=true")
 	invoice, err := service.NewNOWPaymentsClient(nil).CreateInvoice(c.Request.Context(), service.NOWPaymentsInvoiceRequest{
-		PriceAmount:   decimal.NewFromFloat(paymentAmount).Round(2).StringFixed(2),
-		PriceCurrency: strings.ToLower(setting.NOWPaymentsPriceCurrency),
-		PayCurrency:   strings.ToLower(strings.TrimSpace(setting.NOWPaymentsPayCurrency)),
+		PriceAmount:   decimal.NewFromFloat(providerPaymentAmount).StringFixed(2),
+		PriceCurrency: nowPaymentsInvoicePriceCurrency(topUp),
+		PayCurrency:   "usdt",
 		OrderID:       tradeNo, OrderDescription: "Top up " + tradeNo,
 		IPNCallbackURL: setting.NOWPaymentsIPNCallbackURL,
 		SuccessURL:     returnURL, CancelURL: returnURL,
 	})
-	if err != nil || strings.TrimSpace(invoice.InvoiceURL) == "" {
+	// A transport timeout or an incomplete response is ambiguous: NOWPayments
+	// may have accepted the idempotent request even though the client did not
+	// receive the invoice. Keep the local order pending so a late IPN can still
+	// settle it; only an explicit, terminal provider rejection should fail an
+	// order (the SDK currently exposes no reliable terminal error type).
+	if err != nil || invoice == nil || strings.TrimSpace(invoice.InvoiceURL) == "" {
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments failed to create invoice trade_no=%s error=%q", tradeNo, err.Error()))
+		} else {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments returned incomplete invoice trade_no=%s", tradeNo))
 		}
-		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderNOWPayments, common.TopUpStatusFailed)
 		common.ApiErrorMsg(c, "Failed to start payment")
 		return
 	}
@@ -146,9 +179,14 @@ func NOWPaymentsWebhook(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadGateway)
 		return
 	}
-	if err := completeNOWPaymentsPayment(payment, c.ClientIP()); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments payment completion failed payment_id=%s error=%q", payment.PaymentID, err.Error()))
-		c.AbortWithStatus(http.StatusBadRequest)
+	statusCode, err := completeNOWPaymentsPayment(payment, c.ClientIP())
+	if err != nil {
+		paymentID := ""
+		if payment != nil {
+			paymentID = payment.PaymentID
+		}
+		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments payment completion failed payment_id=%s error=%q", paymentID, err.Error()))
+		c.AbortWithStatus(statusCode)
 		return
 	}
 	c.Status(http.StatusOK)
@@ -171,26 +209,53 @@ func verifyNOWPaymentsSignature(body []byte, signature, secret string) bool {
 	return hmac.Equal([]byte(strings.ToLower(strings.TrimSpace(signature))), []byte(fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func completeNOWPaymentsPayment(payment *service.NOWPaymentsPayment, callerIP string) error {
+func completeNOWPaymentsPayment(payment *service.NOWPaymentsPayment, callerIP string) (int, error) {
+	if payment == nil {
+		return http.StatusBadRequest, fmt.Errorf("missing NOWPayments payment")
+	}
 	if payment.PaymentStatus != "finished" && payment.PaymentStatus != "confirmed" {
-		return fmt.Errorf("unexpected payment status %s", payment.PaymentStatus)
+		return http.StatusBadRequest, fmt.Errorf("unexpected payment status %s", payment.PaymentStatus)
 	}
 	tradeNo := strings.TrimSpace(payment.OrderID)
-	topUp := model.GetTopUpByTradeNo(tradeNo)
-	if topUp == nil || topUp.PaymentProvider != model.PaymentProviderNOWPayments {
-		return fmt.Errorf("topup not found or provider mismatch")
+	topUp, lookupErr := model.GetTopUpByTradeNoWithError(tradeNo)
+	if lookupErr != nil {
+		if errors.Is(lookupErr, model.ErrTopUpNotFound) {
+			return http.StatusBadRequest, fmt.Errorf("topup not found or provider mismatch")
+		}
+		return http.StatusInternalServerError, fmt.Errorf("lookup topup: %w", lookupErr)
 	}
-	if !strings.EqualFold(payment.PriceCurrency, setting.NOWPaymentsPriceCurrency) {
-		return fmt.Errorf("unexpected price currency %s", payment.PriceCurrency)
+	if topUp == nil {
+		return http.StatusBadRequest, fmt.Errorf("topup not found or provider mismatch")
+	}
+	if topUp.PaymentProvider != model.PaymentProviderNOWPayments {
+		return http.StatusOK, nil
+	}
+	if topUp.Status != common.TopUpStatusPending {
+		// The payment has already reached a terminal local state (including an
+		// expired checkout). Acknowledge a genuine provider retry; it can no
+		// longer result in a credit.
+		return http.StatusOK, nil
 	}
 	actual, err := decimal.NewFromString(payment.PriceAmount)
 	if err != nil {
-		return err
+		return http.StatusBadRequest, err
 	}
-	if !actual.Equal(decimal.NewFromFloat(topUp.Money).Round(2)) {
-		return fmt.Errorf("amount mismatch")
+	if err := service.ValidateAndBackfillLegacyPaymentSnapshot(topUp, model.PaymentProviderNOWPayments, payment.PriceCurrency, actual.InexactFloat64()); err != nil {
+		if service.IsPermanentPaymentSnapshotError(err) {
+			return http.StatusOK, nil
+		}
+		return http.StatusInternalServerError, err
 	}
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
-	return model.RechargeNOWPayments(tradeNo, callerIP)
+	if err := model.RechargeNOWPayments(tradeNo, callerIP); err != nil {
+		if errors.Is(err, model.ErrTopUpStatusInvalid) || errors.Is(err, model.ErrTopUpExpired) {
+			return http.StatusOK, nil
+		}
+		if model.IsPermanentTopUpError(err, topUp) {
+			return http.StatusBadRequest, err
+		}
+		return http.StatusInternalServerError, err
+	}
+	return http.StatusOK, nil
 }

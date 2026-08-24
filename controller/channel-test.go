@@ -550,7 +550,7 @@ func settleTestQuota(info *relaycommon.RelayInfo, priceData types.PriceData, usa
 		return quota, nil
 	}
 
-	return int(priceData.ModelPrice * common.QuotaPerUnit), nil
+	return int(priceData.ModelPrice * common.GetQuotaPerUnit()), nil
 }
 
 func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData types.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) map[string]interface{} {

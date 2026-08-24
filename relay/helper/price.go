@@ -124,7 +124,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		preConsumedQuota = int(modelPrice * common.GetQuotaPerUnit() * groupRatioInfo.GroupRatio)
 	}
 
 	// check if free model pre-consume is disabled
@@ -311,7 +311,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	freeModel := false
 
 	if usePrice {
-		quota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quota = int(modelPrice * common.GetQuotaPerUnit() * groupRatioInfo.GroupRatio)
 		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 			if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 {
 				quota = 0
@@ -320,7 +320,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 	} else {
 		// 按量计费：以模型倍率的一半作为预扣额度
-		quota = int(modelRatio / 2 * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		quota = int(modelRatio / 2 * common.GetQuotaPerUnit() * groupRatioInfo.GroupRatio)
 		modelPrice = -1
 		if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 			if groupRatioInfo.GroupRatio == 0 || modelRatio == 0 {
@@ -428,7 +428,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	}
 
 	// Expression coefficients are $/1M tokens prices; convert to quota the same way per-call billing does.
-	quotaBeforeGroup := rawCost / 1_000_000 * common.QuotaPerUnit
+	quotaBeforeGroup := rawCost / 1_000_000 * common.GetQuotaPerUnit()
 	preConsumedQuota := billingexpr.QuotaRound(quotaBeforeGroup * groupRatioInfo.GroupRatio)
 
 	freeModel := false
@@ -451,7 +451,7 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 		EstimatedQuotaBeforeGroup: quotaBeforeGroup,
 		EstimatedQuotaAfterGroup:  preConsumedQuota,
 		EstimatedTier:             trace.MatchedTier,
-		QuotaPerUnit:              common.QuotaPerUnit,
+		QuotaPerUnit:              common.GetQuotaPerUnit(),
 		ExprVersion:               billingexpr.ExprVersion(exprStr),
 	}
 	info.TieredBillingSnapshot = snapshot

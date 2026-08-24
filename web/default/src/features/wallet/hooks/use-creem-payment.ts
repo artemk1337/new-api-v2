@@ -20,6 +20,26 @@ import { useState, useCallback } from 'react'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { requestCreemPayment, isApiSuccess } from '../api'
+import {
+  getPaymentErrorMessage,
+  isSafeHttpRedirectUrl,
+  redirectToPaymentPage,
+} from '../lib/payment'
+
+export function getSafeCreemCheckoutUrl(
+  data: { checkout_url?: string } | undefined
+): string | null {
+  const checkoutUrl = data?.checkout_url?.trim()
+  return checkoutUrl && isSafeHttpRedirectUrl(checkoutUrl) ? checkoutUrl : null
+}
+
+export function isIncompleteSuccessfulCreemPaymentResponse(response: {
+  success?: boolean
+  message?: string
+  data?: { checkout_url?: string }
+}): boolean {
+  return isApiSuccess(response) && !response.data?.checkout_url?.trim()
+}
 
 /**
  * Hook for handling Creem payment processing
@@ -35,15 +55,28 @@ export function useCreemPayment() {
         payment_method: 'creem',
       })
 
-      if (isApiSuccess(response) && response.data?.checkout_url) {
-        window.open(response.data.checkout_url, '_blank')
+      const checkoutUrl = getSafeCreemCheckoutUrl(response.data)
+      if (isApiSuccess(response) && checkoutUrl) {
+        redirectToPaymentPage(checkoutUrl)
         toast.success(i18next.t('Redirecting to Creem checkout...'))
         return true
       }
 
-      toast.error(response.message || i18next.t('Payment request failed'))
+      if (isApiSuccess(response) && response.data?.checkout_url) {
+        toast.error(i18next.t('Invalid payment redirect URL'))
+        return false
+      }
+
+      if (isIncompleteSuccessfulCreemPaymentResponse(response)) {
+        toast.error(i18next.t('Payment request failed'))
+        return false
+      }
+
+      toast.error(
+        getPaymentErrorMessage(response, i18next.t('Payment request failed'))
+      )
       return false
-    } catch (_error) {
+    } catch {
       toast.error(i18next.t('Payment request failed'))
       return false
     } finally {

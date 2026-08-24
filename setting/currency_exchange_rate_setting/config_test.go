@@ -9,6 +9,7 @@ import (
 func TestValidateProvider(t *testing.T) {
 	assert.NoError(t, ValidateProvider(ProviderBybitP2P))
 	assert.NoError(t, ValidateProvider(ProviderCBR))
+	assert.NoError(t, ValidateProvider(ProviderCoinGecko))
 	assert.Error(t, ValidateProvider("unknown"))
 }
 
@@ -17,4 +18,11 @@ func TestValidateUpdateInterval(t *testing.T) {
 		assert.NoError(t, ValidateUpdateInterval(interval))
 	}
 	assert.Error(t, ValidateUpdateInterval("week"))
+}
+
+func TestSupportedProvidersForCurrencyUsesUSDQuotes(t *testing.T) {
+	assert.Equal(t, []string{ProviderCBR}, SupportedProvidersForCurrency("rub"))
+	assert.Equal(t, []string{ProviderCoinGecko}, SupportedProvidersForCurrency("USDT"))
+	assert.Empty(t, SupportedProvidersForCurrency("USD"))
+	assert.False(t, IsProviderSupportedForCurrency(ProviderBybitP2P, "RUB"))
 }

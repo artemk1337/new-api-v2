@@ -54,7 +54,7 @@ func calculateAudioQuota(info QuotaInfo) int {
 	}
 	if info.UsePrice {
 		modelPrice := decimal.NewFromFloat(info.ModelPrice)
-		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quotaPerUnit := decimal.NewFromFloat(common.GetQuotaPerUnit())
 		groupRatio := decimal.NewFromFloat(info.GroupRatio)
 
 		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
@@ -304,7 +304,7 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 	if priceData.CacheCreationRatio == 1 {
 		return 0
 	}
-	quotaPrice := priceData.ModelRatio / common.QuotaPerUnit
+	quotaPrice := priceData.ModelRatio / common.GetQuotaPerUnit()
 	promptCacheCreatePrice := quotaPrice * priceData.CacheCreationRatio
 	promptCacheReadPrice := quotaPrice * priceData.CacheRatio
 	completionPrice := quotaPrice * priceData.CompletionRatio

@@ -264,7 +264,20 @@ func TestRechargeYooKassaLegacyPendingUsesMetadataQuota(t *testing.T) {
 				UpdateTime:        time.Now().Unix(),
 			}).Insert())
 
-			require.NoError(t, RechargeYooKassa(tradeNo, "127.0.0.1"))
+			// Legacy YooKassa settlement resolves its quota from PaymentMetadata
+			// while completeTopUpCAS holds the settlement transaction. Keep a
+			// bounded wait here so a regression to a second SQLite connection
+			// fails the test instead of hanging the whole model suite.
+			settled := make(chan error, 1)
+			go func() {
+				settled <- RechargeYooKassa(tradeNo, "127.0.0.1")
+			}()
+			select {
+			case err := <-settled:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("legacy YooKassa settlement did not complete within 2s")
+			}
 			require.NoError(t, RechargeYooKassa(tradeNo, "127.0.0.1"))
 
 			assert.Equal(t, common.TopUpStatusSuccess, getTopUpStatusForPaymentGuardTest(t, tradeNo))
@@ -691,7 +704,7 @@ func TestManualCompleteTopUpRetryDoesNotWriteZeroUserLog(t *testing.T) {
 	assert.Zero(t, zeroUserLogs)
 }
 
-func TestRechargeEpayLegacyPendingUsesBaseQuota(t *testing.T) {
+func TestRechargeEpayLegacyPendingFailsClosedWithoutSnapshot(t *testing.T) {
 	truncateTables(t)
 	insertUserForPaymentGuardTest(t, 104, 0)
 	require.NoError(t, (&TopUp{
@@ -705,8 +718,10 @@ func TestRechargeEpayLegacyPendingUsesBaseQuota(t *testing.T) {
 		CreateTime:      time.Now().Unix(),
 	}).Insert())
 
-	require.NoError(t, RechargeEpay("epay-legacy", "epay", "127.0.0.1"))
-	assert.Equal(t, int(10*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 104))
+	err := RechargeEpay("epay-legacy", "epay", "127.0.0.1")
+	require.ErrorIs(t, err, ErrTopUpSettlementAmbiguous)
+	assert.Equal(t, common.TopUpStatusFailed, getTopUpStatusForPaymentGuardTest(t, "epay-legacy"))
+	assert.Zero(t, getUserQuotaForPaymentGuardTest(t, 104))
 }
 
 func TestRechargeEpayRollsBackWhenUserMissing(t *testing.T) {
@@ -758,7 +773,7 @@ func TestRechargeProviders_UsePersistedQuotaForFractionalTopUp(t *testing.T) {
 	}
 }
 
-func TestRechargeStripe_UsesLegacyMoneyForIntegerTopUp(t *testing.T) {
+func TestRechargeStripeLegacyPendingFailsClosedWithoutSnapshot(t *testing.T) {
 	truncateTables(t)
 	insertUserForPaymentGuardTest(t, 202, 0)
 	require.NoError(t, (&TopUp{
@@ -772,8 +787,32 @@ func TestRechargeStripe_UsesLegacyMoneyForIntegerTopUp(t *testing.T) {
 		CreateTime:      time.Now().Unix(),
 	}).Insert())
 
-	require.NoError(t, Recharge("stripe-group-ratio", "", "127.0.0.1"))
-	assert.Equal(t, int(20*common.QuotaPerUnit), getUserQuotaForPaymentGuardTest(t, 202))
+	originalQuotaPerUnit := common.GetQuotaPerUnit()
+	common.SetQuotaPerUnit(originalQuotaPerUnit * 2)
+	t.Cleanup(func() { common.SetQuotaPerUnit(originalQuotaPerUnit) })
+	err := Recharge("stripe-group-ratio", "", "127.0.0.1")
+	require.ErrorIs(t, err, ErrTopUpSettlementAmbiguous)
+	assert.Equal(t, common.TopUpStatusFailed, getTopUpStatusForPaymentGuardTest(t, "stripe-group-ratio"))
+	assert.Zero(t, getUserQuotaForPaymentGuardTest(t, 202))
+}
+
+func TestRechargeEpayLegacyZeroAmountFailsClosedWithoutSnapshot(t *testing.T) {
+	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 203, 0)
+	require.NoError(t, (&TopUp{
+		UserId:          203,
+		Money:           10,
+		TradeNo:         "epay-legacy-zero-amount",
+		PaymentMethod:   PaymentProviderEpay,
+		PaymentProvider: PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}).Insert())
+
+	err := RechargeEpay("epay-legacy-zero-amount", "epay", "127.0.0.1")
+	require.ErrorIs(t, err, ErrTopUpSettlementAmbiguous)
+	assert.Equal(t, common.TopUpStatusFailed, getTopUpStatusForPaymentGuardTest(t, "epay-legacy-zero-amount"))
+	assert.Zero(t, getUserQuotaForPaymentGuardTest(t, 203))
 }
 
 func TestRechargeYooKassa_RollsBackWhenUserMissing(t *testing.T) {

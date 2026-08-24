@@ -205,7 +205,14 @@ func InitDB() (err error) {
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
 
 		if !common.IsMasterNode {
-			return nil
+			// Slaves do not run the full schema migration, but they still serve
+			// currency-aware checkout/readiness endpoints. Ensure the registry
+			// table and mandatory USD row exist before the process continues; the
+			// operation is idempotent and safe when a master migrates concurrently.
+			if err := DB.AutoMigrate(&PlatformCurrency{}); err != nil {
+				return err
+			}
+			return SeedDefaultPlatformCurrencies()
 		}
 		if common.UsingMainDatabase(common.DatabaseTypeMySQL) {
 			//_, _ = sqlDB.Exec("ALTER TABLE channels MODIFY model_mapping TEXT;") // TODO: delete this line when most users have upgraded
@@ -306,6 +313,7 @@ func migrateDB() error {
 		&CasbinRule{},
 		&AuthzRole{},
 		&CurrencyExchangeRate{},
+		&PlatformCurrency{},
 	)
 	if err != nil {
 		return err
@@ -367,6 +375,7 @@ func migrateDBFast() error {
 		{&PricingSyncQuote{}, "PricingSyncQuote"},
 		{&PricingSyncModelState{}, "PricingSyncModelState"},
 		{&CurrencyExchangeRate{}, "CurrencyExchangeRate"},
+		{&PlatformCurrency{}, "PlatformCurrency"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

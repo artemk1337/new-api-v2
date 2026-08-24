@@ -307,7 +307,8 @@ func (t *Task) UpdateWithStatusAndTaskRefund(fromStatus TaskStatus, reason strin
 
 	won := false
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
+		updated := *t
+		result := tx.Model(&Task{}).Where("id = ? AND status = ?", t.ID, fromStatus).Select("*").Updates(&updated)
 		if result.Error != nil {
 			return result.Error
 		}

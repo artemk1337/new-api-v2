@@ -1,3 +1,4 @@
+import { zodResolver } from '@hookform/resolvers/zod'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,10 +18,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect } from 'react'
-import * as z from 'zod'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useTranslation } from 'react-i18next'
+import * as z from 'zod'
+
+import { Dialog } from '@/components/dialog'
+import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import {
@@ -33,15 +36,29 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Dialog } from '@/components/dialog'
-import { ReactIconByName } from '@/components/react-icon-by-name'
+
+import {
+  getPaymentMethodMinimumCurrency,
+  hasEditablePaymentMethodMinimum,
+} from './payment-method-minimum'
+import { getPaymentTypeOptions } from './payment-method-options'
 
 const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
   z.object({
     name: z.string().min(1, t('Payment method name is required')),
-    type: z.string().min(1, t('Payment type key is required')),
+    type: z.string().min(1, t('Payment type is required')),
     icon: z.string().optional(),
     min_topup: z.string().optional(),
+    pending_ttl_minutes: z
+      .string()
+      .refine(
+        (value) =>
+          value.trim() === '' ||
+          (/^\d+$/.test(value.trim()) && Number(value) > 0),
+        t(
+          'Enter a positive whole number of minutes or leave blank for the default'
+        )
+      ),
     topup_group: z.string().optional(),
   })
 
@@ -56,6 +73,7 @@ export type PaymentMethodData = {
   type: string
   icon?: string
   min_topup?: string
+  pending_ttl_minutes?: string
   color?: string
   topup_group?: string
 }
@@ -71,6 +89,9 @@ type PaymentMethodDialogProps = {
   onSave: (data: PaymentMethodData) => void
   editData?: PaymentMethodData | null
   topupGroups: TopupGroupOption[]
+  /** Settlement currency used by the legacy Waffo gateway. */
+  waffoCurrency?: string
+  defaultPendingTtlMinutes?: number
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
@@ -88,36 +109,13 @@ export function PaymentMethodDialog({
   onSave,
   editData,
   topupGroups,
+  waffoCurrency,
+  defaultPendingTtlMinutes = 1440,
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
   const paymentMethodDialogSchema = createPaymentMethodDialogSchema(t)
-  const paymentTypeOptions = [
-    {
-      iconName: 'SiAlipay',
-      label: `${t('Alipay')} (Epay: alipay)`,
-      name: t('Alipay'),
-      value: 'alipay',
-    },
-    {
-      iconName: 'SiWechat',
-      label: `${t('WeChat Pay')} (Epay: wxpay)`,
-      name: t('WeChat Pay'),
-      value: 'wxpay',
-    },
-    {
-      iconName: 'SiStripe',
-      label: `${t('Stripe')} (stripe)`,
-      name: t('Stripe'),
-      value: 'stripe',
-    },
-    {
-      iconName: 'LuCreditCard',
-      label: 'Waffo Pancake (waffo_pancake)',
-      name: 'Waffo Pancake',
-      value: 'waffo_pancake',
-    },
-  ]
+  const paymentTypeOptions = getPaymentTypeOptions(t)
   const getPaymentTypeOption = (value: string) =>
     paymentTypeOptions.find((option) => option.value === value)
 
@@ -128,12 +126,20 @@ export function PaymentMethodDialog({
       type: '',
       icon: '',
       min_topup: '',
+      pending_ttl_minutes: '',
       topup_group: '',
     },
   })
 
   const iconValue = form.watch('icon')
-
+  const paymentType = form.watch('type')
+  const minimumCurrency = getPaymentMethodMinimumCurrency(
+    paymentType,
+    waffoCurrency
+  )
+  const hasEditableMinimum = hasEditablePaymentMethodMinimum(paymentType)
+  const effectiveDefaultPendingTtlMinutes =
+    paymentType === 'yookassa_sbp' ? 15 : defaultPendingTtlMinutes
   useEffect(() => {
     if (editData) {
       form.reset({
@@ -141,6 +147,7 @@ export function PaymentMethodDialog({
         type: editData.type,
         icon: editData.icon ?? getDefaultIconName(editData.type),
         min_topup: editData.min_topup ?? '',
+        pending_ttl_minutes: editData.pending_ttl_minutes ?? '',
         topup_group: editData.topup_group ?? '',
       })
     } else {
@@ -149,6 +156,7 @@ export function PaymentMethodDialog({
         type: '',
         icon: '',
         min_topup: '',
+        pending_ttl_minutes: '',
         topup_group: '',
       })
     }
@@ -162,8 +170,15 @@ export function PaymentMethodDialog({
     if (values.icon && values.icon.trim() !== '') {
       data.icon = values.icon.trim()
     }
-    if (values.min_topup && values.min_topup.trim() !== '') {
+    if (
+      hasEditableMinimum &&
+      values.min_topup &&
+      values.min_topup.trim() !== ''
+    ) {
       data.min_topup = values.min_topup
+    }
+    if (values.pending_ttl_minutes.trim() !== '') {
+      data.pending_ttl_minutes = values.pending_ttl_minutes.trim()
     }
     if (values.topup_group && values.topup_group.trim() !== '') {
       data.topup_group = values.topup_group.trim()
@@ -225,7 +240,7 @@ export function PaymentMethodDialog({
             name='type'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Payment type key')}</FormLabel>
+                <FormLabel>{t('Payment type')}</FormLabel>
                 <FormControl>
                   <Combobox
                     options={paymentTypeOptions}
@@ -256,8 +271,8 @@ export function PaymentMethodDialog({
                         })
                       }
                     }}
-                    placeholder={t('Select or enter payment type key')}
-                    searchPlaceholder={t('Search payment type keys...')}
+                    placeholder={t('Select or enter payment type')}
+                    searchPlaceholder={t('Search payment types...')}
                     allowCustomValue
                   />
                 </FormControl>
@@ -303,27 +318,32 @@ export function PaymentMethodDialog({
             )}
           />
 
-          <FormField
-            control={form.control}
-            name='min_topup'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Minimum top-up (optional)')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='number'
-                    step='0.01'
-                    placeholder={t('e.g., 50')}
-                    {...field}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t('Optional minimum recharge amount for this method.')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {hasEditableMinimum && (
+            <FormField
+              control={form.control}
+              name='min_topup'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Minimum top-up (optional)')} ({minimumCurrency})
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type='number'
+                      step='0.01'
+                      placeholder={t('e.g., 50')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Optional minimum recharge amount for this method.')} (
+                    {minimumCurrency})
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <FormField
             control={form.control}
             name='topup_group'
@@ -344,7 +364,36 @@ export function PaymentMethodDialog({
                   />
                 </FormControl>
                 <FormDescription>
-                  {t('The selected group coefficient determines the amount shown and charged for this method.')}
+                  {t(
+                    'Commission coefficient: values up to 1 have no commission; values above 1 are shown as a percentage commission.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='pending_ttl_minutes'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Payment waiting TTL (minutes)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min='1'
+                    step='1'
+                    placeholder={t('Default: {{minutes}} minutes', {
+                      minutes: effectiveDefaultPendingTtlMinutes,
+                    })}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Leave blank to use the default payment waiting TTL of {{minutes}} minutes.',
+                    { minutes: effectiveDefaultPendingTtlMinutes }
+                  )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

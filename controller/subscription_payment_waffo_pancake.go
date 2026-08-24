@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -62,17 +63,9 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 		common.ApiErrorMsg(c, "用户不存在")
 		return
 	}
-
-	if plan.MaxPurchasePerUser > 0 {
-		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		if count >= int64(plan.MaxPurchasePerUser) {
-			common.ApiErrorMsg(c, "已达到该套餐购买上限")
-			return
-		}
+	if !model.SubscriptionProviderAmountRepresentable(plan.PriceAmount, "USD") {
+		common.ApiErrorMsg(c, "сумма тарифа должна быть указана с точностью до минимальной единицы валюты")
+		return
 	}
 
 	// WAFFO_PANCAKE_SUB- prefix (vs. wallet's WAFFO_PANCAKE-) drives webhook
@@ -80,16 +73,31 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	tradeNo := fmt.Sprintf("WAFFO_PANCAKE_SUB-%d-%d-%s", userId, time.Now().UnixMilli(), randstr.String(6))
 
 	order := &model.SubscriptionOrder{
-		UserId:          userId,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         tradeNo,
-		PaymentMethod:   model.PaymentMethodWaffoPancake,
-		PaymentProvider: model.PaymentProviderWaffoPancake,
-		CreateTime:      time.Now().Unix(),
-		Status:          common.TopUpStatusPending,
+		UserId:            userId,
+		PlanId:            plan.Id,
+		Money:             plan.PriceAmount,
+		TradeNo:           tradeNo,
+		PaymentMethod:     model.PaymentMethodWaffoPancake,
+		PaymentMethodName: model.PaymentMethodDisplayName(model.PaymentMethodWaffoPancake),
+		PaymentProvider:   model.PaymentProviderWaffoPancake,
+		CreateTime:        time.Now().Unix(),
+		Status:            common.TopUpStatusPending,
 	}
-	if err := order.Insert(); err != nil {
+	providerAmount, err := waffoPancakeSubscriptionProviderAmount(plan.PriceAmount)
+	if err != nil {
+		common.ApiErrorMsg(c, "Waffo Pancake payment amount is invalid")
+		return
+	}
+	order.PlanSnapshot, err = model.NewSubscriptionOrderSnapshotWithProvider(plan, model.PaymentProviderWaffoPancake, providerAmount, "USD", plan.WaffoPancakeProductId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.CreatePendingSubscriptionOrder(order, plan.MaxPurchasePerUser); err != nil {
+		if errors.Is(err, model.ErrSubscriptionPurchaseLimit) {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 订阅订单创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
@@ -100,17 +108,18 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 		ProductID:     plan.WaffoPancakeProductId,
 		BuyerIdentity: service.WaffoPancakeBuyerIdentityFromUserID(user.Id),
 		PriceSnapshot: &service.WaffoPancakePriceSnapshot{
-			Amount:      decimal.NewFromFloat(plan.PriceAmount).StringFixed(2),
+			Amount:      decimal.NewFromFloat(providerAmount).StringFixed(2),
 			TaxCategory: "saas",
 		},
 		BuyerEmail:              getWaffoPancakeBuyerEmail(user),
 		ExpiresInSeconds:        &expiresInSeconds,
 		OrderMerchantExternalID: tradeNo,
+		Metadata:                map[string]string{"product_id": plan.WaffoPancakeProductId},
 	})
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 订阅结账会话创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
-		order.Status = common.TopUpStatusFailed
-		_ = order.Update()
+		// The request may have reached Pancake before the transport error. Keep
+		// pending until a webhook or reconciliation proves it was not created.
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
@@ -127,4 +136,16 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 			"token_expires_at": session.TokenExpiresAt,
 		},
 	})
+}
+
+func waffoPancakeSubscriptionProviderAmount(amount float64) (float64, error) {
+	if !model.SubscriptionProviderAmountRepresentable(amount, "USD") {
+		return 0, fmt.Errorf("Waffo Pancake subscription amount must be exact to cents")
+	}
+	formatted := formatWaffoPancakeAmount(amount)
+	parsed, err := decimal.NewFromString(formatted)
+	if err != nil {
+		return 0, err
+	}
+	return parsed.InexactFloat64(), nil
 }

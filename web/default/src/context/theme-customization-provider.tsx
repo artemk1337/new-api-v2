@@ -43,6 +43,26 @@ import {
 } from '@/lib/theme-customization'
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365 // 1 year
+const LEGACY_FONT_COOKIE_NAME = 'font'
+
+function readThemeFont(): ThemeFont {
+  const savedThemeFont = getCookie(THEME_COOKIE_KEYS.font)
+  if (savedThemeFont && THEME_FONT_VALUES.has(savedThemeFont as ThemeFont)) {
+    return savedThemeFont as ThemeFont
+  }
+
+  // Keep the pre-theme-customization `font` cookie working for existing users.
+  const legacyFont = getCookie(LEGACY_FONT_COOKIE_NAME)
+  if (
+    legacyFont === 'inter' ||
+    legacyFont === 'manrope' ||
+    legacyFont === 'system'
+  ) {
+    return legacyFont
+  }
+
+  return DEFAULT_THEME_CUSTOMIZATION.font
+}
 
 function readCookie<T extends string>(
   name: string,
@@ -103,13 +123,7 @@ export function ThemeCustomizationProvider(props: {
       DEFAULT_THEME_CUSTOMIZATION.preset
     )
   )
-  const [font, _setFont] = useState<ThemeFont>(() =>
-    readCookie<ThemeFont>(
-      THEME_COOKIE_KEYS.font,
-      THEME_FONT_VALUES,
-      DEFAULT_THEME_CUSTOMIZATION.font
-    )
-  )
+  const [font, _setFont] = useState<ThemeFont>(() => readThemeFont())
   const [radius, _setRadius] = useState<ThemeRadius>(() =>
     readCookie<ThemeRadius>(
       THEME_COOKIE_KEYS.radius,

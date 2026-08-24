@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -108,6 +109,30 @@ func CriticalRateLimit() func(c *gin.Context) {
 	return defNext
 }
 
+// PaymentCreationRateLimit is a per-user limiter for payment creation. The
+// count and window are read from the live options map for every request so an
+// operator can tighten abuse protection without restarting the process.
+func PaymentCreationRateLimit() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		userID := c.GetInt("id")
+		if userID == 0 {
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+		count, window := operation_setting.PaymentCreationLimit()
+		if common.RedisEnabled {
+			userRedisSlidingRateLimiter(c, count, int64(window/time.Second), int64(operation_setting.PaymentCreationRateLimitRetention/time.Second), fmt.Sprintf("rateLimit:PAY:user:%d", userID))
+			return
+		}
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+		if !inMemoryRateLimiter.RequestWithRetention(fmt.Sprintf("PAY:user:%d", userID), count, window, operation_setting.PaymentCreationRateLimitRetention) {
+			c.Status(http.StatusTooManyRequests)
+			c.Abort()
+		}
+	}
+}
+
 func DownloadRateLimit() func(c *gin.Context) {
 	return rateLimitFactory(common.DownloadRateLimitNum, common.DownloadRateLimitDuration, "DW")
 }
@@ -192,6 +217,42 @@ func userRedisRateLimiter(c *gin.Context, maxRequestNum int, duration int64, key
 			rdb.LTrim(ctx, key, 0, int64(maxRequestNum-1))
 			rdb.Expire(ctx, key, common.RateLimitKeyExpirationDuration)
 		}
+	}
+}
+
+// userRedisSlidingRateLimiter uses one Lua transaction so concurrent payment
+// requests cannot all observe the same pre-limit count.
+func userRedisSlidingRateLimiter(c *gin.Context, maxRequestNum int, duration, retention int64, key string) {
+	if maxRequestNum <= 0 || duration <= 0 || retention < duration {
+		c.Status(http.StatusTooManyRequests)
+		c.Abort()
+		return
+	}
+	now := time.Now().UnixMilli()
+	sequenceKey := key + ":seq"
+	result, err := common.RDB.Eval(context.Background(), `
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2]) * 1000
+local retention = tonumber(ARGV[3]) * 1000
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - retention)
+local count = redis.call('ZCOUNT', KEYS[1], now - window, '+inf')
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]) + 1)
+if count >= tonumber(ARGV[4]) then return 0 end
+local sequence = redis.call('INCR', KEYS[2])
+redis.call('ZADD', KEYS[1], now, tostring(now) .. ':' .. tostring(sequence))
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]) + 1)
+redis.call('EXPIRE', KEYS[2], tonumber(ARGV[3]) + 1)
+return 1
+`, []string{key, sequenceKey}, now, duration, retention, maxRequestNum).Result()
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		c.Abort()
+		return
+	}
+	allowed, ok := result.(int64)
+	if !ok || allowed != 1 {
+		c.Status(http.StatusTooManyRequests)
+		c.Abort()
 	}
 }
 

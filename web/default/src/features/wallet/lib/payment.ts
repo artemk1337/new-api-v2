@@ -22,24 +22,58 @@ import {
   DEFAULT_PAYMENT_TYPE,
   DEFAULT_MIN_TOPUP,
 } from '../constants'
-import type { CashbackThreshold, PresetAmount, TopupInfo } from '../types'
+import type {
+  CashbackThreshold,
+  PaymentMethod,
+  PresetAmount,
+  TopupInfo,
+} from '../types'
 
 // ============================================================================
 // Payment Processing Functions
 // ============================================================================
 
 /**
- * Check if browser is Safari
+ * Accept only absolute HTTP(S) URLs returned by payment providers.
+ *
+ * Provider responses are untrusted input: non-web schemes such as
+ * javascript: and data: must never be passed to a browser navigation API.
  */
-function isSafariBrowser(): boolean {
-  return (
-    navigator.userAgent.indexOf('Safari') > -1 &&
-    navigator.userAgent.indexOf('Chrome') < 1
-  )
+export function isSafeHttpRedirectUrl(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 /**
- * Submit payment form (for non-Stripe payments)
+ * Navigate to a verified provider checkout in the current tab. Keeping this
+ * synchronous navigation primitive separate makes it safe to call after an
+ * async payment request without relying on a popup user gesture.
+ */
+export function redirectToPaymentPage(
+  value: string,
+  navigate: (url: string) => void = (url) => {
+    window.location.href = url
+  }
+): boolean {
+  if (!isSafeHttpRedirectUrl(value)) {
+    return false
+  }
+  navigate(value.trim())
+  return true
+}
+
+/**
+ * Submit payment form in the current tab. The provider response arrives after
+ * an async request, so using a new tab can be blocked as a popup.
  */
 export function submitPaymentForm(
   url: string,
@@ -48,11 +82,6 @@ export function submitPaymentForm(
   const form = document.createElement('form')
   form.action = url
   form.method = 'POST'
-
-  // Don't open in new tab for Safari
-  if (!isSafariBrowser()) {
-    form.target = '_blank'
-  }
 
   // Add form parameters
   Object.entries(params).forEach(([key, value]) => {
@@ -84,6 +113,66 @@ export function isStripePayment(paymentType: string): boolean {
  */
 export function isWaffoPancakePayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.WAFFO_PANCAKE
+}
+
+/**
+ * Check if the payment type must use Waffo's dedicated checkout endpoint.
+ * Waffo may be present in the generic method list for display purposes, but
+ * it cannot be submitted through the legacy EPay form endpoint.
+ */
+export function isWaffoPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.WAFFO
+}
+
+export type PaymentCheckoutKind = 'waffo' | 'waffo-pancake' | 'generic'
+
+// Select the browser payment flow from the configured method type. This must
+// stay independent of which Waffo sub-method the user selected: an omitted
+// sub-method is a valid Waffo auto-selection, not an EPay fallback.
+export function getPaymentCheckoutKind(paymentType: string): PaymentCheckoutKind {
+  if (isWaffoPayment(paymentType)) {
+    return 'waffo'
+  }
+  if (isWaffoPancakePayment(paymentType)) {
+    return 'waffo-pancake'
+  }
+  return 'generic'
+}
+
+type PaymentErrorResponse = {
+  message?: unknown
+  data?: unknown
+}
+
+// Payment providers may return a useful user-facing error in `data`, while
+// legacy endpoints use the non-actionable literal `error` as `message`.
+// Keep provider payloads out of the UI unless they are short, plain text and
+// do not look like a credential-bearing diagnostic.
+export function getPaymentErrorMessage(
+  response: PaymentErrorResponse,
+  fallback: string
+): string {
+  const isSafeMessage = (value: unknown): value is string => {
+    if (typeof value !== 'string') return false
+    const text = value.trim()
+    if (!text || text.length > 280 || /[<>\u0000-\u001f]/.test(text)) {
+      return false
+    }
+    return !/\b(api[ _-]?key|secret|token|password|authorization|bearer|signature|private key)\b/i.test(
+      text
+    )
+  }
+
+  if (isSafeMessage(response.data)) {
+    return response.data.trim()
+  }
+  if (
+    isSafeMessage(response.message) &&
+    !['error', 'success'].includes(response.message.trim().toLowerCase())
+  ) {
+    return response.message.trim()
+  }
+  return fallback
 }
 
 /**
@@ -194,13 +283,43 @@ export function mergePresetAmounts(
   }))
 }
 
+/**
+ * Keep the client-side cashback model aligned with the server contract.
+ * Legacy settings are untrusted input: thresholds must be non-negative and
+ * percentages must stay within the meaningful 0..100 range. Zero-percent
+ * tiers are intentional and must remain so they can disable cashback at a
+ * higher threshold.
+ */
+export function normalizeCashbackTiers(data: unknown): CashbackThreshold[] {
+  if (!Array.isArray(data)) return []
+
+  return data
+    .filter(
+      (tier): tier is Record<string, unknown> =>
+        typeof tier === 'object' && tier !== null
+    )
+    .map((tier) => ({
+      min_amount: Number(tier.min_amount),
+      cashback_percent: Number(tier.cashback_percent),
+    }))
+    .filter(
+      (tier) =>
+        Number.isFinite(tier.min_amount) &&
+        tier.min_amount >= 0 &&
+        Number.isFinite(tier.cashback_percent) &&
+        tier.cashback_percent >= 0 &&
+        tier.cashback_percent <= 100
+    )
+    .sort((left, right) => left.min_amount - right.min_amount)
+}
+
 export function getCashbackPercentForAmount(
   amount: number,
   cashback: CashbackThreshold[] = []
 ): number {
   let cashbackPercent = 0
   let bestMinAmount = -1
-  for (const threshold of cashback) {
+  for (const threshold of normalizeCashbackTiers(cashback)) {
     const minAmount = Number(threshold.min_amount)
     const percent = Number(threshold.cashback_percent)
     if (
@@ -214,4 +333,143 @@ export function getCashbackPercentForAmount(
     }
   }
   return cashbackPercent
+}
+
+export type PaymentMethodDisplayQuote = {
+  currency: string
+  baseAmountUSD: number
+  commissionUSD: number
+  creditedAmountUSD: number
+  cashbackPercent: number
+  cashbackAmountUSD: number
+  chargedAmountUSD: number
+  chargedAmount: number
+}
+
+function getDecimalParts(
+  value: number
+): { digits: bigint; scale: number } | null {
+  const [coefficient, exponentValue] = value.toString().toLowerCase().split('e')
+  const exponent = exponentValue ? Number(exponentValue) : 0
+  const [whole, fraction = ''] = coefficient.split('.')
+  const scale = fraction.length - exponent
+  if (!Number.isInteger(exponent) || Math.abs(scale) > 20) return null
+  const digits = `${whole}${fraction}`.replace(/^0+(?=\d)/, '') || '0'
+  return { digits: BigInt(digits), scale }
+}
+
+function roundDisplayAmount(values: number[], decimals: number): number | null {
+  let digits = 1n
+  let scale = 0
+  for (const value of values) {
+    const parts = getDecimalParts(value)
+    if (!parts) return null
+    digits *= parts.digits
+    scale += parts.scale
+  }
+  if (Math.abs(scale) > 20) return null
+
+  const factor = 10n ** BigInt(decimals)
+  if (scale <= decimals) {
+    return Number(digits * 10n ** BigInt(decimals - scale)) / Number(factor)
+  }
+  const divisor = 10n ** BigInt(scale - decimals)
+  // Provider invoices are rounded upward on the server. Keeping the same
+  // positive-value ceiling here prevents the preview from showing a smaller
+  // amount (for example 1.001 -> 1.01 at two decimals) than the immutable
+  // settlement quote created on submit.
+  return Number((digits + divisor - 1n) / divisor) / Number(factor)
+}
+
+export function getPaymentMethodDisplayQuote(
+  amount: number,
+  method: PaymentMethod,
+  cashback: CashbackThreshold[] = []
+): PaymentMethodDisplayQuote | null {
+  // The wallet receives these values once with top-up metadata. Never fill in
+  // a missing currency locally: doing so can make an incompletely configured
+  // gateway look payable while the server cannot build the same quote.
+  const currency = method.currency?.trim().toUpperCase()
+  const rateToUSD = Number(method.rate_to_usd)
+  const multiplier = Number(method.base_amount_multiplier)
+  const coefficient = Number(method.topup_ratio)
+  const roundingDecimals = Number(method.rounding_decimals)
+  if (
+    !currency ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    !Number.isFinite(rateToUSD) ||
+    rateToUSD <= 0 ||
+    !Number.isFinite(multiplier) ||
+    multiplier <= 0 ||
+    !Number.isFinite(coefficient) ||
+    coefficient <= 0 ||
+    !Number.isInteger(roundingDecimals) ||
+    roundingDecimals < 0 ||
+    roundingDecimals > 8
+  ) {
+    return null
+  }
+
+  const effectiveCoefficient = coefficient > 1 ? coefficient : 1
+  const baseAmountUSD = amount * multiplier
+  const cashbackPercent = getCashbackPercentForAmount(baseAmountUSD, cashback)
+  const chargedAmount = roundDisplayAmount(
+    [amount, multiplier, effectiveCoefficient, rateToUSD],
+    roundingDecimals
+  )
+  if (chargedAmount === null) return null
+  const chargedAmountUSD = chargedAmount / rateToUSD
+  const commissionUSD = Math.max(0, chargedAmountUSD - baseAmountUSD)
+  return {
+    currency,
+    baseAmountUSD,
+    commissionUSD,
+    // The entered amount is the wallet credit. The fee is charged on top of
+    // it and is represented separately in the summary.
+    creditedAmountUSD: baseAmountUSD,
+    cashbackPercent,
+    cashbackAmountUSD: (baseAmountUSD * cashbackPercent) / 100,
+    chargedAmountUSD,
+    chargedAmount,
+  }
+}
+
+export interface CashbackTierSummary {
+  current: CashbackThreshold | null
+  next: CashbackThreshold | null
+  progress: number
+}
+
+export function getCashbackTierSummary(
+  amount: number,
+  cashback: CashbackThreshold[] = []
+): CashbackTierSummary {
+  const tiers = normalizeCashbackTiers(cashback)
+
+  const normalizedAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0
+  let current: CashbackThreshold | null = null
+  let next: CashbackThreshold | null = null
+
+  for (const tier of tiers) {
+    if (tier.min_amount <= normalizedAmount) {
+      current = tier
+    } else {
+      next = tier
+      break
+    }
+  }
+
+  if (!next) {
+    return { current, next: null, progress: current ? 100 : 0 }
+  }
+
+  const start = current?.min_amount ?? 0
+  const range = next.min_amount - start
+  const progress =
+    range > 0
+      ? Math.min(100, Math.max(0, ((normalizedAmount - start) / range) * 100))
+      : 0
+
+  return { current, next, progress }
 }

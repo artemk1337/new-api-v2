@@ -2,7 +2,9 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -253,4 +255,80 @@ func TestUpdateWithStatus_ConcurrentWinner(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, winCount, "exactly one goroutine should win the CAS")
+}
+
+func TestUpdateWithStatusAndTaskRefundKeepsCallerSnapshotReadOnly(t *testing.T) {
+	truncateTables(t)
+
+	task := &Task{
+		TaskID:   "task_refund_snapshot",
+		Status:   TaskStatusInProgress,
+		Progress: "30%",
+		PrivateData: TaskPrivateData{
+			UpstreamTaskID: "upstream_refund_snapshot",
+		},
+		Data: json.RawMessage(`{}`),
+	}
+	insertTask(t, task)
+	task.Status = TaskStatusFailure
+	task.Progress = "100%"
+	task.FailReason = "upstream did not charge"
+	callerUpdatedAt := task.UpdatedAt
+
+	callbackName := "test:pause-task-refund-update"
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var pauseOnce sync.Once
+	require.NoError(t, DB.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != "tasks" {
+			return
+		}
+		pauseOnce.Do(func() {
+			close(entered)
+			<-release
+		})
+	}))
+	t.Cleanup(func() {
+		_ = DB.Callback().Update().Remove(callbackName)
+	})
+
+	result := make(chan error, 1)
+	updateDone := make(chan struct{})
+	go func() {
+		defer close(updateDone)
+		won, _, err := task.UpdateWithStatusAndTaskRefund(TaskStatusInProgress, task.FailReason)
+		if err == nil && !won {
+			err = errors.New("task refund update lost CAS")
+		}
+		result <- err
+	}()
+	<-entered
+
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			select {
+			case <-updateDone:
+				return
+			default:
+				_ = task.UpdatedAt
+				_ = task.Status
+				_ = task.Progress
+				_ = task.FailReason
+				_ = task.GetUpstreamTaskID()
+			}
+		}
+	}()
+	close(release)
+	require.NoError(t, <-result)
+	<-readerDone
+
+	var stored Task
+	require.NoError(t, DB.First(&stored, task.ID).Error)
+	assert.EqualValues(t, TaskStatusFailure, stored.Status)
+	assert.Equal(t, callerUpdatedAt, task.UpdatedAt)
+	var events int64
+	require.NoError(t, DB.Model(&BillingOutbox{}).Where("event_id = ?", "task_refund_"+strconv.FormatInt(task.ID, 10)).Count(&events).Error)
+	assert.EqualValues(t, 1, events)
 }

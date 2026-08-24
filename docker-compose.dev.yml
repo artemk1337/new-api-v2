@@ -31,6 +31,9 @@ services:
       - REDIS_CONN_STRING=redis://redis
       - TZ=Asia/Shanghai
       - BATCH_UPDATE_ENABLED=true
+      # Explicit local fixture switch: creates admin/admin and enables
+      # visible test payment methods without real provider credentials.
+      - NEW_API_DEV_SEED=true
     depends_on:
       redis:
         condition: service_started

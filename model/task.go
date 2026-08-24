@@ -434,7 +434,11 @@ func (Task *Task) Update() error {
 // falls back to INSERT ON CONFLICT when the WHERE-guarded UPDATE matches
 // zero rows, which silently bypasses the CAS guard.
 func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
-	result := DB.Model(t).Where("status = ?", fromStatus).Select("*").Updates(t)
+	// GORM mutates the struct passed to Updates while preparing its assignments.
+	// Pollers share task pointers with response/reporting code, so write through
+	// a value copy and keep the caller-owned snapshot read-only during the DB IO.
+	updated := *t
+	result := DB.Model(&Task{}).Where("id = ? AND status = ?", t.ID, fromStatus).Select("*").Updates(&updated)
 	if result.Error != nil {
 		return false, result.Error
 	}

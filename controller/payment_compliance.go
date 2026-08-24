@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type PaymentComplianceRequest struct {
@@ -45,6 +46,10 @@ func ConfirmPaymentCompliance(c *gin.Context) {
 		common.ApiErrorMsg(c, "请确认合规声明")
 		return
 	}
+	if err := validatePaymentCurrencyReadinessForComplianceConfirmation(); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 
 	now := time.Now().Unix()
 	userId := c.GetInt("id")
@@ -58,11 +63,11 @@ func ConfirmPaymentCompliance(c *gin.Context) {
 		"payment_setting.compliance_confirmed_ip":  clientIP,
 	}
 
-	for key, value := range updates {
-		if err := model.UpdateOption(key, value); err != nil {
-			common.ApiError(c, err)
-			return
-		}
+	if err := model.UpdateOptionsBulkWithPaymentCurrencyTxGuard(updates, func(tx *gorm.DB) error {
+		return validatePaymentCurrencyReadinessForComplianceConfirmationFromDB(tx)
+	}); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf(

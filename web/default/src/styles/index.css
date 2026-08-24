@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '@fontsource-variable/inter';
 @import '@fontsource-variable/public-sans';
 /* Editorial serif (Lora) backing the `serif` font axis and the Anthropic
  * preset's default typography. See `--font-serif` in theme.css for the
@@ -60,7 +61,7 @@ For commercial licensing, please contact support@quantumnous.com
     @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
     /* Font is driven by the theme's font axis via `--font-body`
      * (defined in theme.css, swapped by `[data-theme-font='...']` blocks
-     * in theme-presets.css). Defaults to the project's humanist sans. */
+     * in theme-presets.css). Defaults to Inter. */
     font-family: var(--font-body);
   }
 
@@ -603,6 +604,24 @@ For commercial licensing, please contact support@quantumnous.com
 }
 .terminal-demo-pulse {
   animation: terminal-demo-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes wallet-payment-contour-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.wallet-payment-contour-pulse {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wallet-payment-contour-pulse {
+    animation: wallet-payment-contour-pulse 2.4s ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

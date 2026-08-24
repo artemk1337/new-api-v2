@@ -34,8 +34,9 @@ For commercial licensing, please contact support@quantumnous.com
     'NSimSun', '宋体', 'FangSong', '仿宋', 'KaiTi', '楷体', Georgia,
     'Times New Roman', Cambria, 'Liberation Serif', serif;
   --font-inter:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    'Inter', sans-serif;
+  --font-system:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-manrope:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
     'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
@@ -95,11 +96,10 @@ For commercial licensing, please contact support@quantumnous.com
   --app-header-height: 3rem;
   /* Static build-channel fallback consumed when JS hasn't booted yet. */
   --app-rev: '2k6e8r7p';
-  /* Currently active body font. The font axis swaps this between
-   * `--font-sans` and `--font-serif` via `[data-theme-font='...']` blocks
-   * in theme-presets.css. Default mirrors `--font-sans` so behavior is
-   * identical when no font preference is set. */
-  --font-body: var(--font-sans);
+  /* Currently active body font. The font axis swaps this between the
+   * available font tokens via `[data-theme-font='...']` blocks in
+   * theme-presets.css. */
+  --font-body: var(--font-system);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

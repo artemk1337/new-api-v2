@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,12 +27,15 @@ const (
 
 const maxLogCount = 1000000
 
-var logCount int
+var logCount atomic.Int64
 var setupLogLock sync.Mutex
-var setupLogWorking bool
+var setupLogWorking atomic.Bool
 var currentLogPath string
 var currentLogPathMu sync.RWMutex
 var currentLogFile *os.File
+var scheduleLogSetup = func() {
+	gopool.Go(SetupLogger)
+}
 
 func GetCurrentLogPath() string {
 	currentLogPathMu.RLock()
@@ -41,7 +45,7 @@ func GetCurrentLogPath() string {
 
 func SetupLogger() {
 	defer func() {
-		setupLogWorking = false
+		setupLogWorking.Store(false)
 	}()
 	if *common.LogDir != "" {
 		ok := setupLogLock.TryLock()
@@ -109,13 +113,9 @@ func logHelper(ctx context.Context, level string, msg string) {
 	}
 	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
 	common.LogWriterMu.RUnlock()
-	logCount++ // we don't need accurate count, so no lock here
-	if logCount > maxLogCount && !setupLogWorking {
-		logCount = 0
-		setupLogWorking = true
-		gopool.Go(func() {
-			SetupLogger()
-		})
+	if logCount.Add(1) > maxLogCount && setupLogWorking.CompareAndSwap(false, true) {
+		logCount.Store(0)
+		scheduleLogSetup()
 	}
 }
 
@@ -124,11 +124,11 @@ func LogQuota(quota int) string {
 	q := float64(quota)
 	switch operation_setting.GetQuotaDisplayType() {
 	case operation_setting.QuotaDisplayTypeCNY:
-		usd := q / common.QuotaPerUnit
+		usd := q / common.GetQuotaPerUnit()
 		cny := usd * operation_setting.USDExchangeRate
 		return fmt.Sprintf("¥%.6f quota", cny)
 	case operation_setting.QuotaDisplayTypeCustom:
-		usd := q / common.QuotaPerUnit
+		usd := q / common.GetQuotaPerUnit()
 		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
 		symbol := operation_setting.GetGeneralSetting().CustomCurrencySymbol
 		if symbol == "" {
@@ -142,7 +142,7 @@ func LogQuota(quota int) string {
 	case operation_setting.QuotaDisplayTypeTokens:
 		return fmt.Sprintf("%d token points", quota)
 	default: // USD
-		return fmt.Sprintf("$%.6f quota", q/common.QuotaPerUnit)
+		return fmt.Sprintf("$%.6f quota", q/common.GetQuotaPerUnit())
 	}
 }
 
@@ -150,11 +150,11 @@ func FormatQuota(quota int) string {
 	q := float64(quota)
 	switch operation_setting.GetQuotaDisplayType() {
 	case operation_setting.QuotaDisplayTypeCNY:
-		usd := q / common.QuotaPerUnit
+		usd := q / common.GetQuotaPerUnit()
 		cny := usd * operation_setting.USDExchangeRate
 		return fmt.Sprintf("¥%.6f", cny)
 	case operation_setting.QuotaDisplayTypeCustom:
-		usd := q / common.QuotaPerUnit
+		usd := q / common.GetQuotaPerUnit()
 		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
 		symbol := operation_setting.GetGeneralSetting().CustomCurrencySymbol
 		if symbol == "" {
@@ -168,8 +168,8 @@ func FormatQuota(quota int) string {
 	case operation_setting.QuotaDisplayTypeTokens:
 		return fmt.Sprintf("%d", quota)
 	default:
-		return fmt.Sprintf("$%.6f", q/common.QuotaPerUnit)
-}
+		return fmt.Sprintf("$%.6f", q/common.GetQuotaPerUnit())
+	}
 }
 
 // LogJson 仅供测试使用 only for test

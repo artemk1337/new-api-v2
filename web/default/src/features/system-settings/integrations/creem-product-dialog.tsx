@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -43,6 +44,7 @@ import {
 import { Dialog } from '@/components/dialog'
 import type { CreemProduct } from '@/features/wallet/types'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import { getPlatformCurrencies } from '../general/platform-currencies-api'
 
 const creemProductDialogSchema = z.object({
   name: z.string().min(1, 'Product name is required'),
@@ -74,6 +76,29 @@ export function CreemProductDialog({
 }: CreemProductDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
+  const currenciesQuery = useQuery({
+    queryKey: ['platform-currencies', 'enabled'],
+    queryFn: () => getPlatformCurrencies(),
+    staleTime: 60_000,
+  })
+  const currencyOptions = (currenciesQuery.data?.data ?? [])
+    .filter((currency) => currency.enabled && ['USD', 'EUR'].includes(currency.code))
+    .map((currency) => ({
+      value: currency.code,
+      label: `${currency.code} (${currency.symbol})`,
+    }))
+  const availableCurrencyOptions = [...currencyOptions]
+  if (
+    editData?.currency &&
+    !availableCurrencyOptions.some(
+      (currency) => currency.value === editData.currency
+    )
+  ) {
+    availableCurrencyOptions.unshift({
+      value: editData.currency,
+      label: `${editData.currency} (${t('Disabled')})`,
+    })
+  }
 
   const form = useForm<CreemProductDialogFormValues>({
     resolver: zodResolver(creemProductDialogSchema),
@@ -85,6 +110,10 @@ export function CreemProductDialog({
       currency: 'USD',
     },
   })
+  const selectedCurrency = form.watch('currency')
+  const currencyIsActive = currencyOptions.some(
+    (currency) => currency.value === selectedCurrency
+  )
 
   useEffect(() => {
     if (editData) {
@@ -131,7 +160,11 @@ export function CreemProductDialog({
           >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form={CREEM_PRODUCT_FORM_ID}>
+          <Button
+            type='submit'
+            form={CREEM_PRODUCT_FORM_ID}
+            disabled={!currencyIsActive}
+          >
             {isEditMode ? t('Update') : t('Add')}
           </Button>
         </>
@@ -189,10 +222,7 @@ export function CreemProductDialog({
                 <FormItem>
                   <FormLabel>{t('Currency')}</FormLabel>
                   <Select
-                    items={[
-                      { value: 'USD', label: 'USD ($)' },
-                      { value: 'EUR', label: 'EUR (€)' },
-                    ]}
+                    items={availableCurrencyOptions}
                     onValueChange={field.onChange}
                     value={field.value}
                   >
@@ -203,8 +233,11 @@ export function CreemProductDialog({
                     </FormControl>
                     <SelectContent alignItemWithTrigger={false}>
                       <SelectGroup>
-                        <SelectItem value='USD'>USD ($)</SelectItem>
-                        <SelectItem value='EUR'>EUR (€)</SelectItem>
+                        {availableCurrencyOptions.map((currency) => (
+                          <SelectItem key={currency.value} value={currency.value}>
+                            {currency.label}
+                          </SelectItem>
+                        ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>

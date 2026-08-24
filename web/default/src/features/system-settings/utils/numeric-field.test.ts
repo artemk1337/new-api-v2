@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { parseDecimalValue } from './numeric-field'
+import { normalizeDecimalInput, parseDecimalValue } from './numeric-field'
 
 describe('decimal settings input', () => {
   test('accepts dot and comma decimal separators', () => {
@@ -32,5 +32,11 @@ describe('decimal settings input', () => {
     assert.equal(parseDecimalValue('0.'), null)
     assert.equal(parseDecimalValue('0,'), null)
     assert.equal(parseDecimalValue('0,1.2'), null)
+  })
+
+  test('allows a hundredth while preserving in-progress decimal text', () => {
+    assert.equal(normalizeDecimalInput('0.01'), '0.01')
+    assert.equal(normalizeDecimalInput('0,'), '0.')
+    assert.equal(normalizeDecimalInput('0.001'), null)
   })
 })

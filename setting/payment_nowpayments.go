@@ -3,6 +3,8 @@ package setting
 var NOWPaymentsEnabled = false
 var NOWPaymentsAPIKey = ""
 var NOWPaymentsIPNSecret = ""
-var NOWPaymentsPriceCurrency = "usd"
-var NOWPaymentsPayCurrency = ""
+
+// Kept as legacy option keys, but NOWPayments top-ups always settle in USDT.
+var NOWPaymentsPriceCurrency = "usdt"
+var NOWPaymentsPayCurrency = "usdt"
 var NOWPaymentsIPNCallbackURL = ""

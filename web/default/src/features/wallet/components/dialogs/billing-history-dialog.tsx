@@ -19,8 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState } from 'react'
 import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { formatCurrencyFromUSD } from '@/lib/currency'
-import { formatNumber } from '@/lib/format'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import {
   AlertDialog,
@@ -49,7 +47,12 @@ import { StatusBadge } from '@/components/status-badge'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
   getStatusConfig,
-  getPaymentMethodName,
+  getTopupStatusLabel,
+  getTopupSourceLabel,
+  getTopupDisplayAmount,
+  getTopupPaymentDisplayAmount,
+  formatTopupDisplayAmount,
+  formatTopupPaymentDisplayAmount,
   formatTimestamp,
 } from '../../lib/billing'
 
@@ -58,16 +61,7 @@ interface BillingHistoryDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-export function getTopupAmountToDisplay(
-  amount: number,
-  requestedAmount?: number
-): number {
-  return typeof requestedAmount === 'number' &&
-    Number.isFinite(requestedAmount) &&
-    requestedAmount > 0
-    ? requestedAmount
-    : amount
-}
+export { getTopupAmountToDisplay } from '../../lib/billing'
 
 export function BillingHistoryDialog({
   open,
@@ -137,7 +131,7 @@ export function BillingHistoryDialog({
               ]}
               value={pageSize.toString()}
               onValueChange={(value) =>
-                value !== null && handlePageSizeChange(parseInt(value))
+                value !== null && handlePageSizeChange(Number.parseInt(value))
               }
             >
               <SelectTrigger className='h-9 w-[92px] sm:w-32'>
@@ -190,10 +184,22 @@ export function BillingHistoryDialog({
               <div className='space-y-3'>
                 {records.map((record) => {
                   const statusConfig = getStatusConfig(record.status)
-                  const topupAmount = getTopupAmountToDisplay(
-                    record.amount,
-                    record.requested_amount
-                  )
+                  const topupAmount = getTopupDisplayAmount({
+                    amount: record.amount,
+                    requestedAmount: record.requested_amount,
+                    money: record.money,
+                    accountingAmountUSD: record.accounting_amount_usd,
+                    paymentBaseAmount: record.payment_base_amount,
+                    paymentCurrency: record.payment_currency,
+                    paymentProvider: record.payment_provider,
+                  })
+                  const paymentAmount = getTopupPaymentDisplayAmount({
+                    money: record.money,
+                    paymentChargedAmount: record.payment_charged_amount,
+                    paymentCurrency: record.payment_currency,
+                    paymentProvider: record.payment_provider,
+                    source: record.source,
+                  })
                   return (
                     <div
                       key={record.id}
@@ -203,7 +209,7 @@ export function BillingHistoryDialog({
                       <div className='flex items-start justify-between gap-2'>
                         <div className='flex-1 space-y-1'>
                           <div className='flex min-w-0 items-center gap-2'>
-                            <code className='text-foreground truncate font-mono text-sm'>
+                            <code className='text-foreground truncate text-sm'>
                               {record.trade_no}
                             </code>
                             <Button
@@ -232,7 +238,7 @@ export function BillingHistoryDialog({
                           </div>
                         </div>
                         <StatusBadge
-                          label={statusConfig.label}
+                          label={getTopupStatusLabel(record.status, t)}
                           variant={statusConfig.variant}
                           showDot
                           copyable={false}
@@ -246,7 +252,12 @@ export function BillingHistoryDialog({
                             {t('Payment Method')}
                           </Label>
                           <div className='text-sm font-medium'>
-                            {getPaymentMethodName(record.payment_method, t)}
+                            {getTopupSourceLabel(
+                              record.source,
+                              record.payment_method,
+                              t,
+                              record.payment_method_name
+                            )}
                           </div>
                         </div>
                         <div className='space-y-1'>
@@ -254,19 +265,21 @@ export function BillingHistoryDialog({
                             {t('Amount')}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(topupAmount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
+                            {formatTopupDisplayAmount(topupAmount)}
                           </div>
                         </div>
                         <div className='space-y-1'>
                           <Label className='text-muted-foreground text-xs'>
                             {t('Payment')}
                           </Label>
-                          <div className='text-sm font-semibold text-red-600'>
-                            {formatNumber(record.money)}
+                          <div
+                            className={
+                              paymentAmount
+                                ? 'text-sm font-semibold text-red-600'
+                                : 'text-muted-foreground text-sm font-semibold'
+                            }
+                          >
+                            {formatTopupPaymentDisplayAmount(paymentAmount)}
                           </div>
                         </div>
                       </div>

@@ -2,6 +2,7 @@ package common
 
 import (
 	"crypto/tls"
+	"math"
 	//"os"
 	//"strconv"
 	"strings"
@@ -36,6 +37,26 @@ func ThemeAwarePath(suffix string) string {
 // var ChatLink = ""
 // var ChatLink2 = ""
 var QuotaPerUnit = 500 * 1000.0 // $0.002 / 1K tokens
+var quotaPerUnitMu sync.RWMutex
+
+// GetQuotaPerUnit returns the current quota-to-currency conversion factor.
+// The public variable remains for backwards compatibility with integrations,
+// while runtime option updates must use SetQuotaPerUnit so settlements do not
+// race with a live configuration change.
+func GetQuotaPerUnit() float64 {
+	quotaPerUnitMu.RLock()
+	defer quotaPerUnitMu.RUnlock()
+	return QuotaPerUnit
+}
+
+// SetQuotaPerUnit updates the quota-to-currency conversion factor atomically
+// with respect to financial calculations.
+func SetQuotaPerUnit(value float64) {
+	quotaPerUnitMu.Lock()
+	QuotaPerUnit = value
+	quotaPerUnitMu.Unlock()
+}
+
 // 保留旧变量以兼容历史逻辑，实际展示由 general_setting.quota_display_type 控制
 var DisplayInCurrencyEnabled = true
 var DisplayTokenStatEnabled = true
@@ -124,8 +145,39 @@ var QuotaForInviter = 0
 var QuotaForInvitee = 0
 
 // ReferralDepositPercent is the percentage of a successful referred user's
-// top-up quota credited to the inviter. It is disabled by default.
+// top-up quota credited to that user's direct inviter. It is disabled by default.
 var ReferralDepositPercent = 0.0
+var referralDepositPercentMu sync.RWMutex
+
+// GetReferralDepositPercent returns the live referral reward setting. Keeping
+// access behind the mutex makes admin updates safe while settlements are
+// running concurrently.
+func GetReferralDepositPercent() float64 {
+	referralDepositPercentMu.RLock()
+	defer referralDepositPercentMu.RUnlock()
+	return ReferralDepositPercent
+}
+
+// SetReferralDepositPercent updates the live referral reward setting.
+func SetReferralDepositPercent(percent float64) {
+	referralDepositPercentMu.Lock()
+	ReferralDepositPercent = percent
+	referralDepositPercentMu.Unlock()
+}
+
+// IsValidQuotaPerUnit reports whether quota-to-currency conversions are safe.
+// Existing databases may contain an invalid legacy value, so callers that
+// perform optional conversions must still handle false without dividing.
+func IsValidQuotaPerUnit() bool {
+	return IsValidQuotaPerUnitValue(GetQuotaPerUnit())
+}
+
+// IsValidQuotaPerUnitValue validates a previously captured conversion factor
+// without taking another live settings snapshot.
+func IsValidQuotaPerUnitValue(value float64) bool {
+	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false

@@ -311,7 +311,7 @@ function PresetConfig() {
  * `Auto` deliberately leaves `fontFamily` undefined so the preview inherits
  * the currently active body font — that way the user sees what `Auto` will
  * actually look like for the active preset (Anthropic → serif glyphs,
- * everything else → sans glyphs) without us having to duplicate the
+ * everything else → Inter glyphs) without us having to duplicate the
  * preset-default mapping in the UI.
  */
 const FONT_OPTIONS: {
@@ -322,7 +322,9 @@ const FONT_OPTIONS: {
   preview?: string
 }[] = [
   { value: 'default', label: 'Auto', preview: undefined },
-  { value: 'sans', label: 'Sans', preview: 'var(--font-sans)' },
+  { value: 'system', label: 'System', preview: 'var(--font-system)' },
+  { value: 'sans', label: 'Public Sans', preview: 'var(--font-sans)' },
+  { value: 'inter', label: 'Inter', preview: 'var(--font-inter)' },
   { value: 'serif', label: 'Serif', preview: 'var(--font-serif)' },
 ]
 
@@ -339,7 +341,7 @@ function FontConfig() {
       <Radio
         value={customization.font}
         onValueChange={(v) => setFont(v as ThemeFont)}
-        className='grid w-full grid-cols-3 gap-4'
+        className='grid w-full grid-cols-2 gap-4 sm:grid-cols-5'
         aria-label={t('Select body font')}
       >
         {FONT_OPTIONS.map((option) => (

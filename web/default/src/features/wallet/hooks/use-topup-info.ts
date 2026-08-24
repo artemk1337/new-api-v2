@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback } from 'react'
-import { getTopupInfo } from '../api'
+
+import { getAvailableCurrencies, getTopupInfo } from '../api'
 import {
   generatePresetAmounts,
   mergePresetAmounts,
   getMinTopupAmount,
+  normalizeCashbackTiers,
 } from '../lib'
 import type {
   TopupInfo,
@@ -67,6 +69,10 @@ function parsePaymentMethods(
       const normalizedMinTopup = Number.isFinite(rawMinTopup) ? rawMinTopup : 0
       const type = typeof item.type === 'string' ? item.type : ''
       const rawTopupRatio = Number(item.topup_ratio)
+      const rawPaymentAmount = Number(item.payment_amount)
+      const rawRateToUSD = Number(item.rate_to_usd)
+      const rawBaseAmountMultiplier = Number(item.base_amount_multiplier)
+      const rawRoundingDecimals = Number(item.rounding_decimals)
 
       return {
         name: typeof item.name === 'string' ? item.name : '',
@@ -78,9 +84,30 @@ function parsePaymentMethods(
             ? stripeMinTopup
             : normalizedMinTopup,
         topup_ratio: Number.isFinite(rawTopupRatio) ? rawTopupRatio : 1,
+        rate_to_usd: Number.isFinite(rawRateToUSD) ? rawRateToUSD : undefined,
+        base_amount_multiplier: Number.isFinite(rawBaseAmountMultiplier)
+          ? rawBaseAmountMultiplier
+          : undefined,
+        rounding_decimals: Number.isInteger(rawRoundingDecimals)
+          ? rawRoundingDecimals
+          : undefined,
+        // Currency is part of the amount-independent quote snapshot. Keep a
+        // missing value missing so the wallet renders the method as
+        // unavailable instead of inventing USD for an incomplete config.
+        currency:
+          typeof item.currency === 'string' && item.currency.trim()
+            ? item.currency.trim().toUpperCase()
+            : undefined,
+        payment_amount: Number.isFinite(rawPaymentAmount)
+          ? rawPaymentAmount
+          : undefined,
+        currency_symbol:
+          typeof item.currency_symbol === 'string'
+            ? item.currency_symbol
+            : undefined,
       }
     })
-    .filter((item) => item.name && item.type && item.type !== 'waffo')
+    .filter((item) => item.name && item.type)
 }
 
 function parseWaffoPayMethods(data: unknown): WaffoPayMethod[] {
@@ -89,14 +116,41 @@ function parseWaffoPayMethods(data: unknown): WaffoPayMethod[] {
       (item): item is Record<string, unknown> =>
         !!item && typeof item === 'object'
     )
-    .map((item) => ({
-      name: typeof item.name === 'string' ? item.name : '',
-      icon: typeof item.icon === 'string' ? item.icon : undefined,
-      payMethodType:
-        typeof item.payMethodType === 'string' ? item.payMethodType : undefined,
-      payMethodName:
-        typeof item.payMethodName === 'string' ? item.payMethodName : undefined,
-    }))
+    .map((item) => {
+      const rateToUSD = Number(item.rate_to_usd)
+      const multiplier = Number(item.base_amount_multiplier)
+      const ratio = Number(item.topup_ratio)
+      const roundingDecimals = Number(item.rounding_decimals)
+
+      return {
+        name: typeof item.name === 'string' ? item.name : '',
+        icon: typeof item.icon === 'string' ? item.icon : undefined,
+        payMethodType:
+          typeof item.payMethodType === 'string'
+            ? item.payMethodType
+            : undefined,
+        payMethodName:
+          typeof item.payMethodName === 'string'
+            ? item.payMethodName
+            : undefined,
+        currency:
+          typeof item.currency === 'string' && item.currency.trim()
+            ? item.currency.trim().toUpperCase()
+            : undefined,
+        rate_to_usd: Number.isFinite(rateToUSD) ? rateToUSD : undefined,
+        base_amount_multiplier: Number.isFinite(multiplier)
+          ? multiplier
+          : undefined,
+        topup_ratio: Number.isFinite(ratio) ? ratio : undefined,
+        rounding_decimals: Number.isInteger(roundingDecimals)
+          ? roundingDecimals
+          : undefined,
+        currency_symbol:
+          typeof item.currency_symbol === 'string'
+            ? item.currency_symbol
+            : undefined,
+      }
+    })
     .filter((item) => item.name)
 }
 
@@ -127,6 +181,37 @@ function parseAmountOptions(data: unknown): number[] {
     .filter((item) => Number.isFinite(item) && item > 0)
 }
 
+export function filterAvailablePaymentMethods(
+  methods: PaymentMethod[],
+  topupInfo: Pick<
+    TopupInfo,
+    | 'enable_online_topup'
+    | 'enable_stripe_topup'
+    | 'enable_waffo_topup'
+    | 'enable_waffo_pancake_topup'
+    | 'enable_yookassa_topup'
+    | 'enable_nowpayments_topup'
+  >,
+  hasVisibleWaffoMethod: boolean
+): PaymentMethod[] {
+  return methods.filter((method) => {
+    switch (method.type) {
+      case 'stripe':
+        return Boolean(topupInfo.enable_stripe_topup)
+      case 'waffo':
+        return Boolean(topupInfo.enable_waffo_topup) && !hasVisibleWaffoMethod
+      case 'waffo_pancake':
+        return Boolean(topupInfo.enable_waffo_pancake_topup)
+      case 'yookassa_sbp':
+        return Boolean(topupInfo.enable_yookassa_topup)
+      case 'nowpayments':
+        return Boolean(topupInfo.enable_nowpayments_topup)
+      default:
+        return Boolean(topupInfo.enable_online_topup)
+    }
+  })
+}
+
 export function parseCashbackConfig(data: unknown): CashbackThreshold[] {
   if (!data) {
     return []
@@ -147,35 +232,15 @@ export function parseCashbackConfig(data: unknown): CashbackThreshold[] {
   }
 
   if (Array.isArray(parsedData)) {
-    const thresholds = parsedData
-      .map((item) => {
-        if (!item || typeof item !== 'object') {
-          return null
-        }
-        const candidate = item as Record<string, unknown>
-        const minAmount = Number(candidate.min_amount)
-        const cashbackPercent = Number(candidate.cashback_percent)
-        if (!Number.isFinite(minAmount) || !Number.isFinite(cashbackPercent)) {
-          return null
-        }
-        return { min_amount: minAmount, cashback_percent: cashbackPercent }
-      })
-      .filter((item): item is CashbackThreshold => item !== null)
-      .sort((a, b) => a.min_amount - b.min_amount)
-    return thresholds
+    return normalizeCashbackTiers(parsedData)
   }
 
-  return Object.entries(parsedData)
-    .map(([key, value]) => ({
+  return normalizeCashbackTiers(
+    Object.entries(parsedData).map(([key, value]) => ({
       min_amount: Number(key),
       cashback_percent: Number(value),
     }))
-    .filter(
-      (item) =>
-        Number.isFinite(item.min_amount) &&
-        Number.isFinite(item.cashback_percent)
-    )
-    .sort((a, b) => a.min_amount - b.min_amount)
+  )
 }
 
 export function useTopupInfo() {
@@ -187,7 +252,10 @@ export function useTopupInfo() {
     try {
       setLoading(true)
 
-      const response = await getTopupInfo()
+      const [response, availableCurrencies] = await Promise.all([
+        getTopupInfo(),
+        getAvailableCurrencies().catch(() => []),
+      ])
 
       if (!response.success || !response.data) {
         // eslint-disable-next-line no-console
@@ -196,19 +264,42 @@ export function useTopupInfo() {
       }
 
       const cashback = parseCashbackConfig(response.data.cashback)
+      const symbolsByCode = new Map(
+        availableCurrencies.map((currency) => [
+          currency.code.toUpperCase(),
+          currency.symbol,
+        ])
+      )
+      const waffoPayMethods = parseWaffoPayMethods(
+        response.data.waffo_pay_methods
+      )
+      const hasVisibleWaffoMethod = waffoPayMethods.some((method) => {
+        const values = [method.name, method.payMethodType, method.payMethodName]
+        return !values.some(
+          (value) => value?.trim().toLowerCase() === 'custom1'
+        )
+      })
       const processedData: TopupInfo = {
         ...response.data,
-        pay_methods: parsePaymentMethods(
-          response.data.pay_methods,
-          response.data.stripe_min_topup
+        pay_methods: filterAvailablePaymentMethods(
+          parsePaymentMethods(
+            response.data.pay_methods,
+            response.data.stripe_min_topup
+          ),
+          response.data,
+          hasVisibleWaffoMethod
         ),
         amount_options: parseAmountOptions(response.data.amount_options),
         cashback,
         creem_products: parseCreemProducts(response.data.creem_products),
-        waffo_pay_methods: parseWaffoPayMethods(
-          response.data.waffo_pay_methods
-        ),
+        waffo_pay_methods: waffoPayMethods,
       }
+      processedData.pay_methods = processedData.pay_methods.map((method) => ({
+        ...method,
+        currency_symbol:
+          method.currency_symbol ||
+          symbolsByCode.get(method.currency?.toUpperCase() || 'USD'),
+      }))
 
       setTopupInfo(processedData)
 

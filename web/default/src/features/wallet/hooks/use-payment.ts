@@ -36,6 +36,9 @@ import {
   isWaffoPancakePayment,
   isYooKassaPayment,
   isNOWPaymentsPayment,
+  getPaymentErrorMessage,
+  isSafeHttpRedirectUrl,
+  redirectToPaymentPage,
   submitPaymentForm,
 } from '../lib'
 
@@ -47,13 +50,24 @@ function getStringField(data: unknown, field: string): string | null {
   return typeof value === 'string' && value.trim() ? value : null
 }
 
-function isSafeHttpRedirectUrl(value: string): boolean {
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
+export function isIncompleteSuccessfulPaymentResponse(
+  response: { success?: boolean; message?: string; data?: unknown; url?: unknown },
+  paymentType: string
+): boolean {
+  if (!isApiSuccess(response)) {
     return false
   }
+
+  if (isStripePayment(paymentType)) {
+    return getStringField(response.data, 'pay_link') === null
+  }
+  if (isYooKassaPayment(paymentType)) {
+    return getStringField(response.data, 'confirmation_url') === null
+  }
+  if (isNOWPaymentsPayment(paymentType)) {
+    return getStringField(response.data, 'payment_url') === null
+  }
+  return !response.data || typeof response.url !== 'string' || !response.url.trim()
 }
 
 // ============================================================================
@@ -92,7 +106,7 @@ export function usePayment() {
         }
 
         if (isApiSuccess(response) && response.data) {
-          const calculatedAmount = parseFloat(response.data)
+          const calculatedAmount = Number.parseFloat(response.data)
           setAmount(calculatedAmount)
           return calculatedAmount
         }
@@ -100,7 +114,7 @@ export function usePayment() {
         // Don't show error for calculation, just set to 0
         setAmount(0)
         return 0
-      } catch (_error) {
+      } catch {
         setAmount(0)
         return 0
       } finally {
@@ -143,14 +157,19 @@ export function usePayment() {
         }
 
         if (!isApiSuccess(response)) {
-          toast.error(response.message || i18next.t('Payment request failed'))
+          toast.error(
+            getPaymentErrorMessage(response, i18next.t('Payment request failed'))
+          )
           return false
         }
 
         // Handle Stripe payment
         const payLink = getStringField(response.data, 'pay_link')
         if (isStripe && payLink) {
-          window.open(payLink, '_blank')
+          if (!redirectToPaymentPage(payLink)) {
+            toast.error(i18next.t('Invalid payment redirect URL'))
+            return false
+          }
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
         }
@@ -184,14 +203,21 @@ export function usePayment() {
         if (!isStripe && !isYooKassa && !isNOWPayments && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
+            if (!isSafeHttpRedirectUrl(url)) {
+              toast.error(i18next.t('Invalid payment redirect URL'))
+              return false
+            }
             submitPaymentForm(url, response.data)
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }
         }
 
+        if (isIncompleteSuccessfulPaymentResponse(response, paymentType)) {
+          toast.error(i18next.t('Payment request failed'))
+        }
         return false
-      } catch (_error) {
+      } catch {
         toast.error(i18next.t('Payment request failed'))
         return false
       } finally {

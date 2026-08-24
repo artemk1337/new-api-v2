@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.149
+
+- Redesigned wallet top-ups with payment-method comparison, paginated history, promo and referral details, and configurable cashback thresholds.
+- Added platform currencies and per-payment-method settlement currency, commission, rate synchronization, and server-authoritative checkout quotes.
+- Hardened payment settlement with immutable provider snapshots, configurable pending-payment expiry and creation limits, direct-referral rewards, and concurrency-safe quota updates.
+
 ## v1.1.148
 
 - Normalize Claude-to-OpenAI-compatible cache usage before billing so cached input is not charged twice.

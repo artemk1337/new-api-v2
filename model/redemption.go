@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -137,15 +138,46 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("该兑换码已过期")
 		}
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error
-		if err != nil {
-			return err
+		result := tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errors.New("user not found")
 		}
 		redemption.RedeemedTime = common.GetTimestamp()
 		redemption.Status = common.RedemptionCodeStatusUsed
 		redemption.UsedUserId = userId
-		err = tx.Save(redemption).Error
-		return err
+		if err = tx.Save(redemption).Error; err != nil {
+			return err
+		}
+
+		// Record code-based deposits in the same history as payment deposits and
+		// apply the direct-inviter reward from the actual credited amount.
+		requestedAmount := 0.0
+		quotaPerUnit := common.GetQuotaPerUnit()
+		if common.IsValidQuotaPerUnitValue(quotaPerUnit) {
+			requestedAmount = decimal.NewFromInt(int64(redemption.Quota)).Div(decimal.NewFromFloat(quotaPerUnit)).InexactFloat64()
+		}
+		promoTopUp := &TopUp{
+			UserId:            userId,
+			Amount:            int64(redemption.Quota),
+			RequestedAmount:   requestedAmount,
+			TradeNo:           fmt.Sprintf("PROMO-%s", common.GetRandomString(16)),
+			PaymentMethod:     "promo_code",
+			PaymentProvider:   "redemption",
+			PaymentCurrency:   "USD",
+			PaymentBaseAmount: quotaToUSD(int64(redemption.Quota)),
+			Source:            "promo_code",
+			QuotaToAdd:        redemption.Quota,
+			CreateTime:        common.GetTimestamp(),
+			CompleteTime:      common.GetTimestamp(),
+			Status:            common.TopUpStatusSuccess,
+		}
+		if err = tx.Create(promoTopUp).Error; err != nil {
+			return err
+		}
+		return creditReferralDepositReward(tx, promoTopUp, redemption.Quota)
 	})
 	if err != nil {
 		common.SysError("redemption failed: " + err.Error())

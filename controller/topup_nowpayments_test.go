@@ -7,8 +7,12 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestVerifyNOWPaymentsSignature(t *testing.T) {
@@ -27,4 +31,18 @@ func TestVerifyNOWPaymentsSignature(t *testing.T) {
 	assert.True(t, verifyNOWPaymentsSignature(body, signature, "secret"))
 	assert.False(t, verifyNOWPaymentsSignature(body, signature, "other-secret"))
 	assert.False(t, verifyNOWPaymentsSignature(body, "invalid", "secret"))
+}
+
+func TestCompleteNOWPaymentsPaymentAcknowledgesExpiredOrder(t *testing.T) {
+	previousDB := model.DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.TopUp{}))
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+	require.NoError(t, db.Create(&model.TopUp{TradeNo: "now-expired", PaymentProvider: model.PaymentProviderNOWPayments, Status: common.TopUpStatusExpired}).Error)
+
+	status, err := completeNOWPaymentsPayment(&service.NOWPaymentsPayment{PaymentStatus: "finished", OrderID: "now-expired"}, "127.0.0.1")
+	require.NoError(t, err)
+	assert.Equal(t, 200, status)
 }

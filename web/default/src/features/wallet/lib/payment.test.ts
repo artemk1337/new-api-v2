@@ -23,18 +23,136 @@ import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
 } from '@/stores/system-config-store'
+import {
+  backendAmountToWalletDisplay,
+  walletDisplayAmountToBackend,
+} from '@/lib/currency'
 
 import type { TopupInfo } from '../types'
 import {
   calculateCashbackAmount,
   calculatePresetPricing,
   formatCashbackCredit,
+  getPaymentCurrencyLabel,
 } from './format'
 import {
   generatePresetAmounts,
   getCashbackPercentForAmount,
+  getCashbackTierSummary,
   getMinTopupAmount,
+  getPaymentMethodDisplayQuote,
+  getPaymentCheckoutKind,
+  getPaymentErrorMessage,
+  isWaffoPayment,
+  redirectToPaymentPage,
+  isSafeHttpRedirectUrl,
+  normalizeCashbackTiers,
+  submitPaymentForm,
 } from './payment'
+
+describe('payment redirect URL validation', () => {
+  test('allows absolute HTTPS provider redirects', () => {
+    assert.equal(
+      isSafeHttpRedirectUrl(' https://checkout.example.test/pay?id=123 '),
+      true
+    )
+  })
+
+  test('rejects executable and data URLs', () => {
+    assert.equal(isSafeHttpRedirectUrl('javascript:alert(1)'), false)
+    assert.equal(isSafeHttpRedirectUrl('data:text/html,<script>alert(1)</script>'), false)
+  })
+
+  test('navigates safe provider redirects in the current tab only', () => {
+    let navigatedTo = ''
+    const navigate = (url: string) => {
+      navigatedTo = url
+    }
+
+    assert.equal(
+      redirectToPaymentPage(' https://checkout.example.test/pay?id=123 ', navigate),
+      true
+    )
+    assert.equal(navigatedTo, 'https://checkout.example.test/pay?id=123')
+
+    assert.equal(redirectToPaymentPage('javascript:alert(1)', navigate), false)
+    assert.equal(navigatedTo, 'https://checkout.example.test/pay?id=123')
+  })
+
+  test('submits EPay form in the current tab', () => {
+    const previousDocument = globalThis.document
+    let submitted = false
+    const form = {
+      action: '',
+      method: '',
+      target: '',
+      appendChild: () => null,
+      submit: () => {
+        submitted = true
+      },
+    }
+    const fakeDocument = {
+      createElement: (tagName: string) =>
+        tagName === 'form' ? form : { type: '', name: '', value: '' },
+      body: {
+        appendChild: () => null,
+        removeChild: () => null,
+      },
+    }
+
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: fakeDocument,
+    })
+    try {
+      submitPaymentForm('https://epay.example.test/pay', { order: '123' })
+      assert.equal(form.action, 'https://epay.example.test/pay')
+      assert.equal(form.method, 'POST')
+      assert.equal(form.target, '')
+      assert.equal(submitted, true)
+    } finally {
+      Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: previousDocument,
+      })
+    }
+  })
+})
+
+describe('payment checkout dispatch', () => {
+  test('routes Waffo methods to the dedicated checkout instead of EPay', () => {
+    assert.equal(isWaffoPayment('waffo'), true)
+    assert.equal(isWaffoPayment('alipay'), false)
+    assert.equal(getPaymentCheckoutKind('waffo'), 'waffo')
+    assert.equal(getPaymentCheckoutKind('waffo_pancake'), 'waffo-pancake')
+    assert.equal(getPaymentCheckoutKind('alipay'), 'generic')
+  })
+})
+
+describe('payment error messages', () => {
+  test('uses safe endpoint details instead of the legacy error literal', () => {
+    assert.equal(
+      getPaymentErrorMessage(
+        { message: 'error', data: 'Payment method is unavailable' },
+        'Payment request failed'
+      ),
+      'Payment method is unavailable'
+    )
+  })
+
+  test('falls back for generic, HTML, and credential-bearing provider details', () => {
+    for (const response of [
+      { message: 'error' },
+      { message: 'error', data: '<strong>provider error</strong>' },
+      { message: 'error', data: 'secret token: value' },
+    ]) {
+      assert.equal(
+        getPaymentErrorMessage(response, 'Payment request failed'),
+        'Payment request failed'
+      )
+    }
+  })
+})
 
 describe('wallet cashback', () => {
   test('uses the highest matching minimum amount threshold', () => {
@@ -62,6 +180,67 @@ describe('wallet cashback', () => {
     assert.equal(getCashbackPercentForAmount(19.99, cashback), 1)
     assert.equal(getCashbackPercentForAmount(20, cashback), 0)
     assert.equal(getCashbackPercentForAmount(100, cashback), 0)
+  })
+
+  test('keeps zero-percent tier behavior in the payment preview', () => {
+    const method = {
+      type: 'test',
+      name: 'Test',
+      currency: 'USD',
+      rate_to_usd: 1,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+      rounding_decimals: 2,
+    }
+    const cashback = [
+      { min_amount: 10, cashback_percent: 1 },
+      { min_amount: 20, cashback_percent: 0 },
+    ]
+
+    assert.equal(
+      getPaymentMethodDisplayQuote(15, method, cashback)?.cashbackPercent,
+      1
+    )
+    assert.equal(
+      getPaymentMethodDisplayQuote(25, method, cashback)?.cashbackPercent,
+      0
+    )
+    assert.equal(
+      getPaymentMethodDisplayQuote(25, method, cashback)?.cashbackAmountUSD,
+      0
+    )
+  })
+
+  test('ignores invalid legacy tiers while retaining valid zero tiers', () => {
+    const cashback = normalizeCashbackTiers([
+      { min_amount: -1, cashback_percent: 5 },
+      { min_amount: 10, cashback_percent: 1 },
+      { min_amount: 20, cashback_percent: 0 },
+      { min_amount: 30, cashback_percent: 101 },
+      { min_amount: 40, cashback_percent: Number.NaN },
+    ])
+
+    assert.deepEqual(cashback, [
+      { min_amount: 10, cashback_percent: 1 },
+      { min_amount: 20, cashback_percent: 0 },
+    ])
+    assert.equal(getCashbackPercentForAmount(25, cashback), 0)
+  })
+
+  test('exposes current and next cashback tiers with bounded progress', () => {
+    const cashback = [
+      { min_amount: 5, cashback_percent: 1 },
+      { min_amount: 20, cashback_percent: 2 },
+      { min_amount: 50, cashback_percent: 4 },
+    ]
+
+    assert.deepEqual(getCashbackTierSummary(10, cashback), {
+      current: cashback[0],
+      next: cashback[1],
+      progress: (5 / 15) * 100,
+    })
+    assert.equal(getCashbackTierSummary(100, cashback).progress, 100)
+    assert.equal(getCashbackTierSummary(1, cashback).current, null)
   })
 
   test('calculates the balance credit without changing the payment amount', () => {
@@ -107,6 +286,70 @@ describe('wallet cashback', () => {
       const tokenCashback = calculateCashbackAmount(100000, 1)
       assert.equal(tokenCashback, 1000)
       assert.equal(formatCashbackCredit(tokenCashback), '1000')
+    } finally {
+      useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+    }
+  })
+})
+
+describe('payment method display quote', () => {
+  test('normalizes a coefficient below one to a fee-free gross amount', () => {
+    const method = {
+      type: 'test',
+      name: 'Test',
+      currency: 'USD',
+      rate_to_usd: 1,
+      base_amount_multiplier: 1,
+      topup_ratio: 0.8,
+      rounding_decimals: 2,
+    }
+    assert.deepEqual(
+      getPaymentMethodDisplayQuote(10, method),
+      {
+        currency: 'USD',
+        baseAmountUSD: 10,
+        commissionUSD: 0,
+        creditedAmountUSD: 10,
+        cashbackPercent: 0,
+        cashbackAmountUSD: 0,
+        chargedAmountUSD: 10,
+        chargedAmount: 10,
+      }
+    )
+  })
+})
+
+describe('payment currency display', () => {
+  test('uses configured symbols and falls back to the currency code', () => {
+    assert.equal(getPaymentCurrencyLabel('RUB'), '₽')
+    assert.equal(getPaymentCurrencyLabel('eur', '€'), '€')
+    assert.equal(getPaymentCurrencyLabel('xyz'), 'XYZ')
+    assert.equal(getPaymentCurrencyLabel(undefined), '$')
+  })
+
+  test('converts wallet display input to backend accounting units', () => {
+    const originalCurrency = useSystemConfigStore.getState().config.currency
+
+    try {
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'CNY',
+          usdExchangeRate: 7,
+        },
+      })
+      assert.equal(walletDisplayAmountToBackend(70), 10)
+      assert.equal(backendAmountToWalletDisplay(10), 70)
+
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'TOKENS',
+          quotaPerUnit: 500000,
+        },
+      })
+      assert.equal(walletDisplayAmountToBackend(500000), 500000)
+      assert.equal(backendAmountToWalletDisplay(500000), 500000)
     } finally {
       useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
     }
