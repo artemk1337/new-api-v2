@@ -111,9 +111,9 @@ func invalidatePlatformCurrencySyncState(currency *model.PlatformCurrency) {
 }
 
 // activePaymentCurrencyDependencies returns enabled checkout integrations that
-// require a registry currency. Keep this alongside the admin currency API so
-// disabling or deleting a row cannot leave an otherwise enabled gateway with
-// no rate source.
+// require a registry currency. Deleting such a row remains prohibited: unlike
+// disabling it, deletion prevents an administrator from restoring the same
+// configuration without recreating the currency.
 func activePaymentCurrencyDependencies(code string) []string {
 	return activePaymentCurrencyDependenciesFromDB(model.DB, code)
 }
@@ -219,35 +219,16 @@ func paymentMethodsContainType(methods []map[string]string, wanted string) bool 
 	return false
 }
 
-func ensurePlatformCurrencyCanBeDisabledOrDeleted(code string) error {
-	return ensurePlatformCurrencyCanBeDisabledOrDeletedFromDB(model.DB, code)
+func ensurePlatformCurrencyCanBeDeleted(code string) error {
+	return ensurePlatformCurrencyCanBeDeletedFromDB(model.DB, code)
 }
 
-func ensurePlatformCurrencyCanBeDisabledOrDeletedFromDB(db *gorm.DB, code string) error {
+func ensurePlatformCurrencyCanBeDeletedFromDB(db *gorm.DB, code string) error {
 	dependencies := activePaymentCurrencyDependenciesFromDB(db, code)
 	if len(dependencies) == 0 {
 		return nil
 	}
 	return fmt.Errorf("currency %s is used by active payment methods: %s", strings.ToUpper(strings.TrimSpace(code)), strings.Join(dependencies, ", "))
-}
-
-// ensurePlatformCurrencySyncTransitionIsSafe rejects a transition that clears
-// a currently usable quote for an active checkout provider. Sync quotes are
-// fetched asynchronously, so accepting this update would make checkout fail
-// between the successful admin response and the next background refresh.
-func ensurePlatformCurrencySyncTransitionIsSafe(code string, syncConfigChanged, syncEnabled bool) error {
-	return ensurePlatformCurrencySyncTransitionIsSafeFromDB(model.DB, code, syncConfigChanged, syncEnabled)
-}
-
-func ensurePlatformCurrencySyncTransitionIsSafeFromDB(db *gorm.DB, code string, syncConfigChanged, syncEnabled bool) error {
-	if !syncConfigChanged || !syncEnabled {
-		return nil
-	}
-	dependencies := activePaymentCurrencyDependenciesFromDB(db, code)
-	if len(dependencies) == 0 {
-		return nil
-	}
-	return fmt.Errorf("currency %s is used by active payment methods: %s; synchronize it before enabling or changing synchronization", strings.ToUpper(strings.TrimSpace(code)), strings.Join(dependencies, ", "))
 }
 
 func GetPlatformCurrencies(c *gin.Context) {
@@ -356,16 +337,6 @@ func AdminUpdatePlatformCurrency(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if err := ensurePlatformCurrencySyncTransitionIsSafe(currency.Code, syncConfigChanged, currency.SyncEnabled); err != nil {
-		common.ApiErrorMsg(c, err.Error())
-		return
-	}
-	if request.Enabled != nil && !currency.Enabled {
-		if err := ensurePlatformCurrencyCanBeDisabledOrDeleted(currency.Code); err != nil {
-			common.ApiErrorMsg(c, err.Error())
-			return
-		}
-	}
 	updates := map[string]interface{}{}
 	if nameChanged {
 		updates["name"] = currency.Name
@@ -395,12 +366,6 @@ func AdminUpdatePlatformCurrency(c *gin.Context) {
 		expectedSyncEnabled = &previousSyncEnabled
 	}
 	if err := model.UpdatePlatformCurrencySettingsWithTxGuard(currency.Code, updates, expectedSyncEnabled, previousSyncProvider, func(tx *gorm.DB) error {
-		if err := ensurePlatformCurrencySyncTransitionIsSafeFromDB(tx, currency.Code, syncConfigChanged, currency.SyncEnabled); err != nil {
-			return err
-		}
-		if request.Enabled != nil && !currency.Enabled {
-			return ensurePlatformCurrencyCanBeDisabledOrDeletedFromDB(tx, currency.Code)
-		}
 		return nil
 	}); err != nil {
 		if errors.Is(err, model.ErrPlatformCurrencySyncConfigChanged) {
@@ -425,7 +390,7 @@ func AdminUpdatePlatformCurrency(c *gin.Context) {
 
 func AdminDeletePlatformCurrency(c *gin.Context) {
 	if err := model.DeletePlatformCurrencyWithTxGuard(c.Param("code"), func(tx *gorm.DB) error {
-		return ensurePlatformCurrencyCanBeDisabledOrDeletedFromDB(tx, c.Param("code"))
+		return ensurePlatformCurrencyCanBeDeletedFromDB(tx, c.Param("code"))
 	}); err != nil {
 		if strings.Contains(err.Error(), "USD is the required") {
 			common.ApiErrorMsg(c, err.Error())

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.151
+
+- Allow active payment currencies to be edited, synchronized, or disabled while keeping deletion protected and rejecting unusable currencies at checkout.
+
 ## v1.1.150
 
 - Hardened payment-method snapshots and server-authoritative top-up quotes, including exact decimal conversion, provider availability checks, and safer payment metadata lookups.

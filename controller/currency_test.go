@@ -81,13 +81,13 @@ func TestActivePaymentCurrencyDependencies(t *testing.T) {
 
 	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodYooKassaSBP}}
 	setting.PublishYooKassaConfig(setting.YooKassaConfig{Enabled: true, ShopID: "shop", SecretKey: "secret", PaymentMethods: "sbp"})
-	require.Error(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("RUB"))
+	require.Error(t, ensurePlatformCurrencyCanBeDeleted("RUB"))
 
 	setting.NOWPaymentsEnabled = true
 	setting.NOWPaymentsAPIKey = "api-key"
 	setting.NOWPaymentsIPNSecret = "ipn-secret"
 	setting.NOWPaymentsIPNCallbackURL = "https://example.test/ipn"
-	require.Error(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("USDT"))
+	require.Error(t, ensurePlatformCurrencyCanBeDeleted("USDT"))
 
 	config := setting.GetYooKassaConfig()
 	config.Enabled = false
@@ -98,10 +98,10 @@ func TestActivePaymentCurrencyDependencies(t *testing.T) {
 	setting.WaffoSandboxPrivateKey = "private-key"
 	setting.WaffoSandboxPublicCert = "public-cert"
 	setting.WaffoCurrency = "EUR"
-	require.Error(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("EUR"))
+	require.Error(t, ensurePlatformCurrencyCanBeDeleted("EUR"))
 
 	setting.WaffoEnabled = false
-	require.NoError(t, ensurePlatformCurrencyCanBeDisabledOrDeleted("EUR"))
+	require.NoError(t, ensurePlatformCurrencyCanBeDeleted("EUR"))
 }
 
 func TestActivePaymentCurrencyDependenciesUsesPersistedPayMethods(t *testing.T) {
