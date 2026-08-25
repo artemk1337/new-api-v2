@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/dustin/go-humanize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -69,20 +70,24 @@ func DescribeAutoReserveFailure(c *gin.Context, info *relaycommon.RelayInfo, cau
 		}
 	}
 
-	recommendation := "Top up your balance or restrict Auto to cheaper groups. Auto reserves quota using the most expensive group in the selected list."
-	if len(common.GetContextKeyStringSlice(c, constant.ContextKeyTokenAutoGroupCandidates)) == 0 {
-		recommendation = "Top up your balance or switch Auto to specific groups and keep only cheaper groups. Auto reserves quota using the most expensive available group."
-	}
+	recommendation := "Add funds or keep only cheaper Auto groups."
 	if failure.Source == "api_key_limit" {
-		recommendation += " You can also increase this API key's quota limit."
+		recommendation = "Increase this API key's quota limit or keep only cheaper Auto groups."
 	}
 	failure.Message = fmt.Sprintf(
-		"Insufficient funds for Auto reserve: required %s for the most expensive available group %q, available %s. No funds were charged. %s",
+		"Auto needs %s to reserve this request in the most expensive available group %q, but only %s is available.",
 		logger.FormatQuota(failure.Required),
 		failure.Group,
 		logger.FormatQuota(failure.Available),
-		recommendation,
 	)
+	if info.AutoRoute.HasTokenReserveEstimate {
+		failure.Message += fmt.Sprintf(
+			" Reserve estimate: %s input tokens + up to %s output tokens.",
+			humanize.Comma(int64(info.AutoRoute.EstimatedInputTokens)),
+			humanize.Comma(int64(info.AutoRoute.MaxOutputTokens)),
+		)
+	}
+	failure.Message += " No funds were charged. " + recommendation
 	return failure
 }
 

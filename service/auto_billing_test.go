@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -587,8 +586,11 @@ func TestDescribeAutoReserveFailureExplainsHowToReduceReserve(t *testing.T) {
 	ctx.Set("token_quota", 10)
 	info := &relaycommon.RelayInfo{
 		AutoRoute: relaycommon.AutoRouteState{
-			ReservedQuota: 50,
-			ReserveGroup:  "premium",
+			ReservedQuota:           50,
+			ReserveGroup:            "premium",
+			HasTokenReserveEstimate: true,
+			EstimatedInputTokens:    1432,
+			MaxOutputTokens:         4096,
 		},
 	}
 	cause := types.NewError(errors.New("token quota exceeded"), types.ErrorCodePreConsumeTokenQuotaFailed)
@@ -599,14 +601,25 @@ func TestDescribeAutoReserveFailureExplainsHowToReduceReserve(t *testing.T) {
 	assert.Equal(t, 10, failure.Available)
 	assert.Equal(t, "premium", failure.Group)
 	assert.Equal(t, "api_key_limit", failure.Source)
-	assert.True(t, strings.Contains(failure.Message, "specific groups"))
-	assert.True(t, strings.Contains(failure.Message, "most expensive available group"))
-	assert.True(t, strings.Contains(failure.Message, "No funds were charged"))
+	assert.Equal(t, "Auto needs $0.000100 to reserve this request in the most expensive available group \"premium\", but only $0.000020 is available. Reserve estimate: 1,432 input tokens + up to 4,096 output tokens. No funds were charged. Increase this API key's quota limit or keep only cheaper Auto groups.", failure.Message)
+}
 
-	common.SetContextKey(ctx, constant.ContextKeyTokenAutoGroupCandidates, []string{"budget", "premium"})
-	failure = DescribeAutoReserveFailure(ctx, info, cause)
-	assert.True(t, strings.Contains(failure.Message, "restrict Auto to cheaper groups"))
-	assert.True(t, strings.Contains(failure.Message, "most expensive group in the selected list"))
+func TestDescribeAutoReserveFailureOmitsTokenEstimateForPerCallReserve(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("token_quota", 10)
+	info := &relaycommon.RelayInfo{
+		AutoRoute: relaycommon.AutoRouteState{
+			ReservedQuota: 50,
+			ReserveGroup:  "premium",
+		},
+	}
+	cause := types.NewError(errors.New("token quota exceeded"), types.ErrorCodePreConsumeTokenQuotaFailed)
+
+	failure := DescribeAutoReserveFailure(ctx, info, cause)
+
+	assert.NotContains(t, failure.Message, "Reserve estimate:")
+	assert.NotContains(t, failure.Message, "0 input tokens")
+	assert.NotContains(t, failure.Message, "0 output tokens")
 }
 
 func TestDescribeAutoReserveFailureUsesSelectedSubscriptionSource(t *testing.T) {

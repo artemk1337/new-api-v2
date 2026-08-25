@@ -105,13 +105,16 @@ type AutoFailedGroup struct {
 }
 
 type AutoRouteState struct {
-	Candidates    []AutoRouteCandidate
-	InitialGroup  string
-	UsedGroup     string
-	ReserveGroup  string
-	FailedGroups  []AutoFailedGroup
-	ReservedQuota int
-	ReleasedQuota int
+	Candidates              []AutoRouteCandidate
+	InitialGroup            string
+	UsedGroup               string
+	ReserveGroup            string
+	FailedGroups            []AutoFailedGroup
+	ReservedQuota           int
+	ReleasedQuota           int
+	HasTokenReserveEstimate bool
+	EstimatedInputTokens    int
+	MaxOutputTokens         int
 }
 
 type RelayInfo struct {

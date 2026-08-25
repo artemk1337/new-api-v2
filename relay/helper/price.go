@@ -202,6 +202,15 @@ func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []s
 			PriceData:      priceData,
 			TieredSnapshot: candidateInfo.TieredBillingSnapshot,
 		})
+		if candidateInfo.TieredBillingSnapshot != nil {
+			state.HasTokenReserveEstimate = true
+			state.EstimatedInputTokens = promptTokens
+			state.MaxOutputTokens = meta.MaxTokens
+		} else if !priceData.UsePrice {
+			state.HasTokenReserveEstimate = true
+			state.EstimatedInputTokens = common.Max(promptTokens, common.PreConsumedQuota)
+			state.MaxOutputTokens = meta.MaxTokens
+		}
 		if priceData.QuotaToPreConsume >= state.ReservedQuota {
 			state.ReservedQuota = priceData.QuotaToPreConsume
 			state.ReserveGroup = group

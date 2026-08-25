@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.154
+
+- Make insufficient Auto-reserve errors show the input and maximum output token estimate used for token-based reservation, while keeping task and fixed-price errors accurate.
+
 ## v1.1.153
 
 - Synchronize a platform currency's first USD rate before enabling it, so payment quotes cannot be created with an empty exchange rate.
