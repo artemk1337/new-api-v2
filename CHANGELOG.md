@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.152
+
+- Added Russian localization for the users' top-up history label.
+
 ## v1.1.151
 
 - Allow active payment currencies to be edited, synchronized, or disabled while keeping deletion protected and rejecting unusable currencies at checkout.
