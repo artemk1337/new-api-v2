@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +26,7 @@ func TestAdminUpdatePlatformCurrencyAllowsActiveYooKassaCurrencyChanges(t *testi
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.PlatformCurrency{}, &model.User{}, &model.TopUp{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.PlatformCurrency{}, &model.CurrencyExchangeRate{}, &model.User{}, &model.TopUp{}, &model.Log{}))
 	require.NoError(t, db.Create([]model.PlatformCurrency{
 		{Code: "USD", Name: "US Dollar", Symbol: "$", Enabled: true, ManualRateToUSD: 1, RateToUSD: 1},
 		{Code: "RUB", Name: "Russian Ruble", Symbol: "₽", Enabled: true, ManualRateToUSD: 90, RateToUSD: 90},
@@ -38,6 +39,10 @@ func TestAdminUpdatePlatformCurrencyAllowsActiveYooKassaCurrencyChanges(t *testi
 	originalRedisEnabled := common.RedisEnabled
 	model.DB, model.LOG_DB = db, db
 	common.RedisEnabled = false
+	previousFetch := fetchPlatformCurrencyRate
+	fetchPlatformCurrencyRate = func(context.Context, string, string) (float64, error) {
+		return 95, nil
+	}
 	setting.PublishYooKassaConfig(setting.YooKassaConfig{Enabled: true, ShopID: "shop", SecretKey: "secret", PaymentMethods: "sbp"})
 	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodYooKassaSBP, "currency": "RUB", "topup_group": "default"}}
 	t.Cleanup(func() {
@@ -45,6 +50,7 @@ func TestAdminUpdatePlatformCurrencyAllowsActiveYooKassaCurrencyChanges(t *testi
 		setting.PublishYooKassaConfig(originalYooKassaConfig)
 		operation_setting.PayMethods = originalPayMethods
 		common.RedisEnabled = originalRedisEnabled
+		fetchPlatformCurrencyRate = previousFetch
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
 			_ = sqlDB.Close()
@@ -82,15 +88,41 @@ func TestAdminUpdatePlatformCurrencyAllowsActiveYooKassaCurrencyChanges(t *testi
 
 	updated = update(platformCurrencyRequest{SyncEnabled: common.GetPointer(true), SyncProvider: "cbr"})
 	assert.True(t, updated.SyncEnabled)
-	assert.Zero(t, updated.RateToUSD)
-	_, err = service.BuildPaymentQuote(10, model.PaymentMethodYooKassaSBP, "default")
-	require.Error(t, err, "new orders must not use the invalidated synchronized rate")
+	assert.Equal(t, 95.0, updated.RateToUSD)
+	assert.NotNil(t, updated.LastSyncAt)
+	quote, err = service.BuildPaymentQuote(10, model.PaymentMethodYooKassaSBP, "default")
+	require.NoError(t, err)
+	assert.Equal(t, 95.0, quote.RateToUSD)
+	var quoteCount int64
+	require.NoError(t, db.Model(&model.CurrencyExchangeRate{}).Where("quote_currency = ?", "RUB").Count(&quoteCount).Error)
+	assert.Equal(t, int64(1), quoteCount)
 
 	updated = update(platformCurrencyRequest{SyncEnabled: common.GetPointer(false), ManualRateToUSD: 100})
 	assert.False(t, updated.SyncEnabled)
 	rate, err = service.GetPlatformCurrencyRate("RUB")
 	require.NoError(t, err)
 	assert.Equal(t, 100.0, rate)
+
+	fetchPlatformCurrencyRate = func(context.Context, string, string) (float64, error) {
+		return 0, fmt.Errorf("source is unavailable")
+	}
+	body, err := common.Marshal(platformCurrencyRequest{SyncEnabled: common.GetPointer(true), SyncProvider: "cbr"})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "code", Value: "RUB"}}
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/currencies/admin/RUB", strings.NewReader(string(body)))
+	AdminUpdatePlatformCurrency(ctx)
+	var failedResponse struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &failedResponse))
+	assert.False(t, failedResponse.Success)
+	stored, err := model.GetPlatformCurrency("RUB")
+	require.NoError(t, err)
+	assert.False(t, stored.SyncEnabled)
+	assert.Equal(t, 100.0, stored.RateToUSD)
+	fetchPlatformCurrencyRate = previousFetch
 
 	require.NoError(t, db.Create(&model.User{Id: 701, Username: "snapshot-user", Status: common.UserStatusEnabled}).Error)
 	tradeNo := "yookassa-rub-snapshot"

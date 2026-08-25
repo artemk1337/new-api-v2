@@ -1,12 +1,14 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -32,6 +34,8 @@ type platformCurrencyRequest struct {
 type currencySyncConfigRequest struct {
 	UpdateInterval string `json:"update_interval"`
 }
+
+var fetchPlatformCurrencyRate = service.FetchPlatformCurrencyRate
 
 func AdminGetCurrencySyncConfig(c *gin.Context) {
 	config := currency_exchange_rate_setting.GetConfig()
@@ -108,6 +112,27 @@ func invalidatePlatformCurrencySyncState(currency *model.PlatformCurrency) {
 		return
 	}
 	currency.RateToUSD = currency.ManualRateToUSD
+}
+
+// preparePlatformCurrencySync obtains a quote before synchronization is made
+// visible. This prevents an enabled payment currency from ever exposing an
+// empty rate while its first background synchronization is pending.
+func preparePlatformCurrencySync(ctx context.Context, currency *model.PlatformCurrency) (model.CurrencyExchangeRate, bool, error) {
+	if !currency.SyncEnabled {
+		return model.CurrencyExchangeRate{}, false, nil
+	}
+	rate, err := fetchPlatformCurrencyRate(ctx, currency.SyncProvider, currency.Code)
+	if err != nil {
+		return model.CurrencyExchangeRate{}, false, err
+	}
+	syncedAt := time.Now().UTC()
+	currency.RateToUSD = rate
+	currency.LastSyncAt = &syncedAt
+	currency.LastSyncError = ""
+	return model.CurrencyExchangeRate{
+		BaseCurrency: "USD", QuoteCurrency: currency.Code, Provider: currency.SyncProvider,
+		Rate: rate, RecordedAt: syncedAt,
+	}, true, nil
 }
 
 // activePaymentCurrencyDependencies returns enabled checkout integrations that
@@ -279,7 +304,20 @@ func AdminCreatePlatformCurrency(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	if err := model.DB.Create(&currency).Error; err != nil {
+	syncQuote, syncEnabled, err := preparePlatformCurrencySync(c.Request.Context(), &currency)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&currency).Error; err != nil {
+			return err
+		}
+		if syncEnabled {
+			return tx.Create(&syncQuote).Error
+		}
+		return nil
+	}); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -337,6 +375,15 @@ func AdminUpdatePlatformCurrency(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	var syncQuote model.CurrencyExchangeRate
+	syncQuoteReady := false
+	if syncConfigChanged && currency.SyncEnabled {
+		syncQuote, syncQuoteReady, err = preparePlatformCurrencySync(c.Request.Context(), currency)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	updates := map[string]interface{}{}
 	if nameChanged {
 		updates["name"] = currency.Name
@@ -366,6 +413,9 @@ func AdminUpdatePlatformCurrency(c *gin.Context) {
 		expectedSyncEnabled = &previousSyncEnabled
 	}
 	if err := model.UpdatePlatformCurrencySettingsWithTxGuard(currency.Code, updates, expectedSyncEnabled, previousSyncProvider, func(tx *gorm.DB) error {
+		if syncQuoteReady {
+			return tx.Create(&syncQuote).Error
+		}
 		return nil
 	}); err != nil {
 		if errors.Is(err, model.ErrPlatformCurrencySyncConfigChanged) {

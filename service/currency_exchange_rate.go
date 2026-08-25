@@ -312,7 +312,7 @@ func SyncPlatformCurrency(ctx context.Context, code string) error {
 	if provider == "" {
 		return fmt.Errorf("currency %s has no synchronization provider", currency.Code)
 	}
-	quote, err := currencyExchangeRateFetchForPair(ctx, provider, "USD", currency.Code)
+	rate, err := FetchPlatformCurrencyRate(ctx, provider, currency.Code)
 	if err != nil {
 		if stateErr := model.RecordPlatformCurrencySyncError(currency.Code, provider, err.Error()); errors.Is(stateErr, model.ErrPlatformCurrencySyncConfigChanged) {
 			return nil
@@ -320,11 +320,25 @@ func SyncPlatformCurrency(ctx context.Context, code string) error {
 		return err
 	}
 	now := time.Now().UTC()
-	err = model.CommitPlatformCurrencySyncQuote(currency.Code, provider, quote.Rate, now)
+	err = model.CommitPlatformCurrencySyncQuote(currency.Code, provider, rate, now)
 	if errors.Is(err, model.ErrPlatformCurrencySyncConfigChanged) {
 		return nil
 	}
 	return err
+}
+
+// FetchPlatformCurrencyRate returns the current amount of code for one USD
+// without publishing it. Callers can use it to obtain an initial quote before
+// enabling a currency's synchronization.
+func FetchPlatformCurrencyRate(ctx context.Context, provider, code string) (float64, error) {
+	quote, err := currencyExchangeRateFetchForPair(ctx, provider, "USD", code)
+	if err != nil {
+		return 0, err
+	}
+	if quote.Rate <= 0 {
+		return 0, fmt.Errorf("invalid USD/%s rate", strings.ToUpper(strings.TrimSpace(code)))
+	}
+	return quote.Rate, nil
 }
 
 // UpdatePlatformCurrencies synchronizes all enabled registry rows. One bad

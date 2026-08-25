@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.153
+
+- Synchronize a platform currency's first USD rate before enabling it, so payment quotes cannot be created with an empty exchange rate.
+
 ## v1.1.152
 
 - Added Russian localization for the users' top-up history label.
