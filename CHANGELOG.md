@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.155
+
+- Enable Passkey (WebAuthn) login by default while preserving the administrator's ability to disable it explicitly.
+
 ## v1.1.154
 
 - Make insufficient Auto-reserve errors show the input and maximum output token estimate used for token-based reservation, while keeping task and fixed-price errors accurate.
