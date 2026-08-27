@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.156
+
+- Исправлен адаптивный перенос кнопок управления 2FA: кнопка отключения переносится под генерацию резервных кодов при недостатке ширины.
+
 ## v1.1.155
 
 - Enable Passkey (WebAuthn) login by default while preserving the administrator's ability to disable it explicitly.

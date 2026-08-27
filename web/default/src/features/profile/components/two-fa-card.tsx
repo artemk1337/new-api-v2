@@ -123,7 +123,7 @@ export function TwoFACard({ loading: pageLoading }: TwoFACardProps) {
 
             {/* Actions Section - Only show when enabled */}
             {status.enabled && (
-              <div className='flex flex-col gap-3 border-t pt-6 sm:flex-row xl:flex-col 2xl:flex-row'>
+              <div className='flex flex-col gap-3 border-t pt-6 sm:flex-row sm:flex-wrap xl:flex-col 2xl:flex-row'>
                 <Button
                   variant='outline'
                   className='flex-1'
