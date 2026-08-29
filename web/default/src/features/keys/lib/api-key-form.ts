@@ -35,6 +35,7 @@ export function getApiKeyFormSchema(t: TFunction) {
       expired_time: z.date().optional(),
       unlimited_quota: z.boolean(),
       model_limits: z.array(z.string()),
+      model_mapping: z.string(),
       allow_ips: z.string().optional(),
       group: z.string().min(1, t('Please select a group')),
       auto_group_mode: z.enum(['all', 'specific']),
@@ -99,6 +100,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   expired_time: undefined,
   unlimited_quota: true,
   model_limits: [],
+  model_mapping: '',
   allow_ips: '',
   group: 'auto',
   auto_group_mode: 'all',
@@ -110,6 +112,7 @@ export function getApiKeyFormDefaultValues(): ApiKeyFormValues {
   return {
     ...API_KEY_FORM_DEFAULT_VALUES,
     model_limits: [],
+    model_mapping: '',
     auto_group_candidates: [],
   }
 }
@@ -135,6 +138,7 @@ export function transformFormDataToPayload(
     unlimited_quota: data.unlimited_quota,
     model_limits_enabled: data.model_limits.length > 0,
     model_limits: data.model_limits.join(','),
+    model_mapping: data.model_mapping,
     allow_ips: data.allow_ips || '',
     group: data.group || 'auto',
     auto_group_candidates:
@@ -164,6 +168,7 @@ export function transformApiKeyToFormDefaults(
     model_limits: apiKey.model_limits
       ? apiKey.model_limits.split(',').filter(Boolean)
       : [],
+    model_mapping: apiKey.model_mapping || '',
     allow_ips: apiKey.allow_ips || '',
     group: apiKey.group || 'auto',
     auto_group_mode: autoGroupCandidates.length > 0 ? 'specific' : 'all',

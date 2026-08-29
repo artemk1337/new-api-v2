@@ -208,7 +208,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	mappings, mappingErr = model.GetEnabledChannelModelMappingsForModels(candidateGroups, candidateAbilityModelNames(relayInfo), c.Request.URL.Path)
 	if mappingErr == nil {
 		mappings = append(mappings, c.GetString("model_mapping"))
-		billingModelName, isModelMapped, mappingErr = helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+		mappingErr = helper.ValidateModelMappingCandidates(
+			common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+			relayInfo.RequestedModelName,
+			relayInfo.RelayMode,
+			mappings,
+		)
+		if mappingErr == nil {
+			billingModelName, isModelMapped, mappingErr = helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+		}
 	}
 	if mappingErr != nil {
 		newAPIError = types.NewError(mappingErr, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
@@ -607,6 +615,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["channel_id"] = channelId
 		other["channel_name"] = channelError.ChannelName
 		other["channel_type"] = channelError.ChannelType
+		if requestedModel := common.GetContextKeyString(c, constant.ContextKeyRequestedModel); requestedModel != "" && requestedModel != modelName {
+			other["requested_model"] = requestedModel
+		}
 		if outcome := err.GetFinancialOutcome(); outcome != types.AttemptFinancialOutcomeUnknown {
 			other["financial_outcome"] = outcome
 		}
@@ -815,7 +826,16 @@ func RelayTask(c *gin.Context) {
 			}
 		}
 		if taskErr == nil {
-			billingModelName, isMapped, mappingErr := helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+			mappingErr := helper.ValidateModelMappingCandidates(
+				common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+				relayInfo.RequestedModelName,
+				relayInfo.RelayMode,
+				mappings,
+			)
+			billingModelName, isMapped := "", false
+			if mappingErr == nil {
+				billingModelName, isMapped, mappingErr = helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+			}
 			if mappingErr != nil {
 				taskErr = service.TaskErrorWrapperLocal(mappingErr, "model_mapping_failed", http.StatusBadRequest)
 			} else if isMapped {

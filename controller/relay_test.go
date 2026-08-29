@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -147,4 +148,29 @@ func TestErrorLogPricingGroupUsesAutoGroupWhenSelected(t *testing.T) {
 	common.SetContextKey(ctx, constant.ContextKeyAutoGroup, "3")
 
 	assert.Equal(t, "3", errorLogPricingGroup(ctx))
+}
+
+func TestProcessChannelErrorRecordsRequestedModelAlias(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	constant.ErrorLogEnabled = true
+	t.Cleanup(func() { constant.ErrorLogEnabled = previousErrorLogEnabled })
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	ctx.Set("original_model", "provider-model")
+	common.SetContextKey(ctx, constant.ContextKeyRequestedModel, "client-alias")
+
+	processChannelError(ctx, types.ChannelError{
+		ChannelId:   42,
+		ChannelName: "provider",
+	}, types.NewErrorWithStatusCode(errors.New("upstream failed"), types.ErrorCodeBadResponse, http.StatusBadGateway))
+
+	var logs []model.Log
+	require.NoError(t, db.Find(&logs).Error)
+	require.Len(t, logs, 1)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
+	assert.Equal(t, "client-alias", other["requested_model"])
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -247,6 +248,59 @@ func TestResolveCandidateModelMappingUsesSharedTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, mapped)
 	require.Equal(t, "provider-model", target)
+}
+
+func TestValidateModelMappingCompositionRejectsCrossLayerCycle(t *testing.T) {
+	err := ValidateModelMappingComposition(
+		`{"client-alias":"provider-model"}`,
+		`{"provider-model":"client-alias"}`,
+		"client-alias",
+		relayconstant.RelayModeChatCompletions,
+	)
+	require.EqualError(t, err, "model_mapping_contains_cycle")
+}
+
+func TestValidateModelMappingCandidatesRejectsCrossLayerCycleBeforePreConsume(t *testing.T) {
+	err := ValidateModelMappingCandidates(
+		`{"client-alias":"provider-model"}`,
+		"client-alias",
+		relayconstant.RelayModeChatCompletions,
+		[]string{`{"provider-model":"client-alias"}`},
+	)
+	require.EqualError(t, err, "model_mapping_contains_cycle")
+}
+
+func TestModelMappedHelperRejectsCrossLayerCycle(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelMapping, `{"client-alias":"provider-model"}`)
+	common.SetContextKey(ctx, constant.ContextKeyRequestedModel, "client-alias")
+	ctx.Set("model_mapping", `{"provider-model":"client-alias"}`)
+
+	err := ModelMappedHelper(ctx, &relaycommon.RelayInfo{OriginModelName: "provider-model"}, nil)
+	require.EqualError(t, err, "model_mapping_contains_cycle")
+}
+
+func TestValidateModelMappingCandidatesRejectsCompactCrossLayerCycleBeforePreConsume(t *testing.T) {
+	err := ValidateModelMappingCandidates(
+		`{"client-alias":"provider-model"}`,
+		ratio_setting.WithCompactModelSuffix("client-alias"),
+		relayconstant.RelayModeResponsesCompact,
+		[]string{`{"provider-model":"client-alias"}`},
+	)
+	require.EqualError(t, err, "model_mapping_contains_cycle")
+}
+
+func TestModelMappedHelperRejectsCompactCrossLayerCycle(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(ctx, constant.ContextKeyTokenModelMapping, `{"client-alias":"provider-model"}`)
+	common.SetContextKey(ctx, constant.ContextKeyRequestedModel, ratio_setting.WithCompactModelSuffix("client-alias"))
+	ctx.Set("model_mapping", `{"provider-model":"client-alias"}`)
+
+	err := ModelMappedHelper(ctx, &relaycommon.RelayInfo{
+		OriginModelName: ratio_setting.WithCompactModelSuffix("provider-model"),
+		RelayMode:       relayconstant.RelayModeResponsesCompact,
+	}, nil)
+	require.EqualError(t, err, "model_mapping_contains_cycle")
 }
 
 func TestModelPriceHelperUsesMappedTargetTieredExpression(t *testing.T) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.157
+
+- Added per-API-key model mapping with JSON aliases, group access validation, model listing support, and key-level cache invalidation.
+- Apply key aliases before channel routing and billing, including compact responses and fixed-channel requests; reject conflicting or cyclic key-to-channel mapping chains before quota reservation.
+- Preserved requested aliases in usage and error logs, with safe compatibility for rolling database migrations.
+
 ## v1.1.156
 
 - Исправлен адаптивный перенос кнопок управления 2FA: кнопка отключения переносится под генерацию резервных кодов при недостатке ширины.

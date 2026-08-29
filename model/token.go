@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -27,6 +28,7 @@ type Token struct {
 	UnlimitedQuota      bool                           `json:"unlimited_quota"`
 	ModelLimitsEnabled  bool                           `json:"model_limits_enabled"`
 	ModelLimits         string                         `json:"model_limits" gorm:"type:text"`
+	ModelMapping        string                         `json:"model_mapping" gorm:"type:text"`
 	AllowIps            *string                        `json:"allow_ips" gorm:"default:''"`
 	UsedQuota           int                            `json:"used_quota" gorm:"default:0"` // used quota
 	Group               string                         `json:"group" gorm:"default:auto"`
@@ -42,7 +44,56 @@ var ErrTokenRoutingMigrationPending = errors.New(
 	"Auto group selection is temporarily unavailable while the database migration is pending; select all groups or try again shortly",
 )
 
+var ErrTokenModelMappingMigrationPending = errors.New(
+	"Model mapping is temporarily unavailable while the database migration is pending; try again shortly",
+)
+
 var ErrUserTokenLimitReached = errors.New("user token limit reached")
+
+const tokenModelMappingColumnRefreshInterval = 5 * time.Second
+
+var tokenModelMappingColumnCache struct {
+	sync.RWMutex
+	db        *gorm.DB
+	checkedAt time.Time
+	available bool
+}
+
+// hasTokenModelMappingColumn caches the schema capability for regular reads.
+// A missing column is rechecked periodically so a non-master started before a
+// migration begins using it without a restart. A successful master migration
+// calls refreshTokenModelMappingColumnCache immediately.
+func hasTokenModelMappingColumn() bool {
+	db := DB
+	now := time.Now()
+	tokenModelMappingColumnCache.RLock()
+	cacheFresh := tokenModelMappingColumnCache.db == db &&
+		(tokenModelMappingColumnCache.available || now.Sub(tokenModelMappingColumnCache.checkedAt) < tokenModelMappingColumnRefreshInterval)
+	available := tokenModelMappingColumnCache.available
+	tokenModelMappingColumnCache.RUnlock()
+	if cacheFresh {
+		return available
+	}
+
+	tokenModelMappingColumnCache.Lock()
+	defer tokenModelMappingColumnCache.Unlock()
+	if tokenModelMappingColumnCache.db == db &&
+		(tokenModelMappingColumnCache.available || now.Sub(tokenModelMappingColumnCache.checkedAt) < tokenModelMappingColumnRefreshInterval) {
+		return tokenModelMappingColumnCache.available
+	}
+	tokenModelMappingColumnCache.db = db
+	tokenModelMappingColumnCache.checkedAt = now
+	tokenModelMappingColumnCache.available = db.Migrator().HasColumn(&Token{}, "model_mapping")
+	return tokenModelMappingColumnCache.available
+}
+
+func refreshTokenModelMappingColumnCache() {
+	tokenModelMappingColumnCache.Lock()
+	tokenModelMappingColumnCache.db = DB
+	tokenModelMappingColumnCache.checkedAt = time.Now()
+	tokenModelMappingColumnCache.available = DB.Migrator().HasColumn(&Token{}, "model_mapping")
+	tokenModelMappingColumnCache.Unlock()
+}
 
 func NewPricingGroupCandidates(groups []string) PricingGroupCandidates {
 	normalized := make([]string, 0, len(groups))
@@ -168,8 +219,15 @@ func (token *Token) GetIpLimits() []string {
 func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
 	var tokens []*Token
 	var err error
-	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
+	err = tokenReadDB(DB).Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
+}
+
+func tokenReadDB(db *gorm.DB) *gorm.DB {
+	if hasTokenModelMappingColumn() {
+		return db
+	}
+	return db.Omit("model_mapping")
 }
 
 // sanitizeLikePattern 校验并清洗用户输入的 LIKE 搜索模式。
@@ -245,7 +303,7 @@ func SearchUserTokens(userId int, keyword string, token string, offset int, limi
 		}
 	}
 
-	baseQuery := DB.Model(&Token{}).Where("user_id = ?", userId)
+	baseQuery := tokenReadDB(DB.Model(&Token{})).Where("user_id = ?", userId)
 
 	// 非空才加 LIKE 条件，空则跳过（不过滤该字段）
 	if keyword != "" {
@@ -325,7 +383,7 @@ func GetTokenByIds(id int, userId int) (*Token, error) {
 	}
 	token := Token{Id: id, UserId: userId}
 	var err error = nil
-	err = DB.First(&token, "id = ? and user_id = ?", id, userId).Error
+	err = tokenReadDB(DB).First(&token, "id = ? and user_id = ?", id, userId).Error
 	return &token, err
 }
 
@@ -335,7 +393,7 @@ func GetTokenById(id int) (*Token, error) {
 	}
 	token := Token{Id: id}
 	var err error = nil
-	err = DB.First(&token, "id = ?", id).Error
+	err = tokenReadDB(DB).First(&token, "id = ?", id).Error
 	if shouldUpdateRedis(true, err) {
 		gopool.Go(func() {
 			if err := cacheSetToken(token); err != nil {
@@ -366,7 +424,7 @@ func GetTokenByKey(key string, fromDB bool) (token *Token, err error) {
 		// Don't return error - fall through to DB
 	}
 	fromDB = true
-	err = DB.Where(commonKeyCol+" = ?", key).First(&token).Error
+	err = tokenReadDB(DB).Where(commonKeyCol+" = ?", key).First(&token).Error
 	return token, err
 }
 
@@ -376,8 +434,12 @@ func (token *Token) Insert() error {
 	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
 		return ErrTokenRoutingMigrationPending
 	}
+	hasModelMappingColumn := hasTokenModelMappingColumn()
+	if !hasModelMappingColumn && strings.TrimSpace(token.ModelMapping) != "" {
+		return ErrTokenModelMappingMigrationPending
+	}
 	return withUserTokenCreationLock(token.UserId, func(tx *gorm.DB) error {
-		return token.insertWithDB(tx, hasCandidatesColumn)
+		return token.insertWithDB(tx, hasCandidatesColumn, hasModelMappingColumn)
 	})
 }
 
@@ -389,6 +451,10 @@ func (token *Token) InsertWithUserTokenLimit(maxTokens int) error {
 	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
 		return ErrTokenRoutingMigrationPending
 	}
+	hasModelMappingColumn := hasTokenModelMappingColumn()
+	if !hasModelMappingColumn && strings.TrimSpace(token.ModelMapping) != "" {
+		return ErrTokenModelMappingMigrationPending
+	}
 	return withUserTokenCreationLock(token.UserId, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&Token{}).Where("user_id = ?", token.UserId).Count(&count).Error; err != nil {
@@ -397,13 +463,20 @@ func (token *Token) InsertWithUserTokenLimit(maxTokens int) error {
 		if int(count) >= maxTokens {
 			return ErrUserTokenLimitReached
 		}
-		return token.insertWithDB(tx, hasCandidatesColumn)
+		return token.insertWithDB(tx, hasCandidatesColumn, hasModelMappingColumn)
 	})
 }
 
-func (token *Token) insertWithDB(tx *gorm.DB, hasCandidatesColumn bool) error {
+func (token *Token) insertWithDB(tx *gorm.DB, hasCandidatesColumn bool, hasModelMappingColumn bool) error {
+	omitFields := make([]string, 0, 2)
 	if !hasCandidatesColumn {
-		return tx.Omit("auto_group_candidates").Create(token).Error
+		omitFields = append(omitFields, "auto_group_candidates")
+	}
+	if !hasModelMappingColumn {
+		omitFields = append(omitFields, "model_mapping")
+	}
+	if len(omitFields) > 0 {
+		return tx.Omit(omitFields...).Create(token).Error
 	}
 	return tx.Create(token).Error
 }
@@ -412,6 +485,11 @@ func (token *Token) insertWithDB(tx *gorm.DB, hasCandidatesColumn bool) error {
 // The user row lock serializes onboarding requests on MySQL and PostgreSQL;
 // SQLite retries its write-lock conflicts.
 func CreateOnboardingToken(userId int, group string, candidates PricingGroupCandidates) (bool, error) {
+	hasCandidatesColumn := DB.Migrator().HasColumn(&Token{}, "auto_group_candidates")
+	if !hasCandidatesColumn && len(candidates.Values()) > 0 {
+		return false, ErrTokenRoutingMigrationPending
+	}
+	hasModelMappingColumn := hasTokenModelMappingColumn()
 	created := false
 	err := withUserTokenCreationLock(userId, func(tx *gorm.DB) error {
 		var count int64
@@ -441,7 +519,7 @@ func CreateOnboardingToken(userId int, group string, candidates PricingGroupCand
 			Group:               group,
 			AutoGroupCandidates: candidates,
 		}
-		if err := tx.Create(&token).Error; err != nil {
+		if err := token.insertWithDB(tx, hasCandidatesColumn, hasModelMappingColumn); err != nil {
 			return err
 		}
 		created = true
@@ -477,6 +555,10 @@ func (token *Token) Update() (err error) {
 	if !hasCandidatesColumn && len(token.GetAutoGroupCandidates()) > 0 {
 		return ErrTokenRoutingMigrationPending
 	}
+	hasModelMappingColumn := hasTokenModelMappingColumn()
+	if !hasModelMappingColumn && strings.TrimSpace(token.ModelMapping) != "" {
+		return ErrTokenModelMappingMigrationPending
+	}
 	defer func() {
 		if shouldUpdateRedis(true, err) {
 			gopool.Go(func() {
@@ -490,6 +572,9 @@ func (token *Token) Update() (err error) {
 	fields := []string{
 		"name", "status", "expired_time", "remain_quota", "unlimited_quota",
 		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry",
+	}
+	if hasModelMappingColumn {
+		fields = append(fields, "model_mapping")
 	}
 	if hasCandidatesColumn {
 		fields = append(fields, "auto_group_candidates")
@@ -539,6 +624,10 @@ func (token *Token) GetModelLimits() []string {
 	return strings.Split(token.ModelLimits, ",")
 }
 
+func (token *Token) GetModelMapping() string {
+	return token.ModelMapping
+}
+
 func (token *Token) GetModelLimitsMap() map[string]bool {
 	limits := token.GetModelLimits()
 	limitsMap := make(map[string]bool)
@@ -568,7 +657,7 @@ func DeleteTokenById(id int, userId int) (err error) {
 		return errors.New("id 或 userId 为空！")
 	}
 	token := Token{Id: id, UserId: userId}
-	err = DB.Where(token).First(&token).Error
+	err = tokenReadDB(DB).Where(token).First(&token).Error
 	if err != nil {
 		return err
 	}
@@ -651,7 +740,7 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 	tx := DB.Begin()
 
 	var tokens []Token
-	if err := tx.Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
+	if err := tokenReadDB(tx).Where("user_id = ? AND id IN (?)", userId, ids).Find(&tokens).Error; err != nil {
 		tx.Rollback()
 		return 0, err
 	}

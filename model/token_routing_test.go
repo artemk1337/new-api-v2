@@ -148,15 +148,41 @@ func TestTokenCacheAcceptsPresentEmptyAutoGroupCandidates(t *testing.T) {
 	assert.True(t, exists)
 }
 
+func TestTokenCachePreservesModelMapping(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	previousClient := common.RDB
+	previousEnabled := common.RedisEnabled
+	common.RDB = redisClient
+	common.RedisEnabled = true
+	t.Cleanup(func() {
+		common.RDB = previousClient
+		common.RedisEnabled = previousEnabled
+		require.NoError(t, redisClient.Close())
+	})
+
+	const tokenKey = "mapped-token-cache"
+	require.NoError(t, cacheSetToken(Token{
+		Key:          tokenKey,
+		Group:        "auto",
+		ModelMapping: `{"client-alias":"provider-model"}`,
+	}))
+
+	cached, err := cacheGetTokenByKey(tokenKey)
+	require.NoError(t, err)
+	assert.Equal(t, `{"client-alias":"provider-model"}`, cached.GetModelMapping())
+}
+
 func TestTokenWritesBeforeAutoGroupCandidatesMigrationAreFailClosed(t *testing.T) {
 	legacyDB, err := gorm.Open(
 		sqlite.Open(filepath.Join(t.TempDir(), "legacy-token-schema.db")),
 		&gorm.Config{},
 	)
 	require.NoError(t, err)
-	require.NoError(t, legacyDB.AutoMigrate(&Token{}))
+	require.NoError(t, legacyDB.AutoMigrate(&User{}, &Token{}))
 	require.NoError(t, legacyDB.Migrator().DropColumn(&Token{}, "auto_group_candidates"))
 	require.False(t, legacyDB.Migrator().HasColumn(&Token{}, "auto_group_candidates"))
+	require.NoError(t, legacyDB.Create(&User{Id: 1, Username: "legacy-routing-user"}).Error)
 
 	previousDB := DB
 	DB = legacyDB
@@ -205,4 +231,158 @@ func TestTokenWritesBeforeAutoGroupCandidatesMigrationAreFailClosed(t *testing.T
 		Where("id = ?", allGroups.Id).
 		Scan(&storedName).Error)
 	assert.Equal(t, "all groups updated", storedName)
+}
+
+func TestTokenWritesBeforeModelMappingMigrationRemainCompatible(t *testing.T) {
+	legacyDB, err := gorm.Open(
+		sqlite.Open(filepath.Join(t.TempDir(), "legacy-token-model-mapping-schema.db")),
+		&gorm.Config{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.AutoMigrate(&User{}, &Token{}))
+	require.NoError(t, legacyDB.Migrator().DropColumn(&Token{}, "model_mapping"))
+	require.False(t, legacyDB.Migrator().HasColumn(&Token{}, "model_mapping"))
+	require.NoError(t, legacyDB.Create(&User{Id: 1, Username: "legacy-model-mapping-user"}).Error)
+
+	previousDB := DB
+	DB = legacyDB
+	t.Cleanup(func() {
+		DB = previousDB
+		sqlDB, dbErr := legacyDB.DB()
+		require.NoError(t, dbErr)
+		require.NoError(t, sqlDB.Close())
+	})
+
+	token := &Token{
+		UserId: 1,
+		Key:    "pre-migration-empty-model-mapping",
+		Name:   "empty mapping",
+		Group:  "auto",
+	}
+	require.NoError(t, token.InsertWithUserTokenLimit(2))
+	token.Name = "empty mapping updated"
+	require.NoError(t, token.Update())
+
+	fetched, err := GetTokenByKey(token.Key, true)
+	require.NoError(t, err)
+	assert.Equal(t, token.Id, fetched.Id)
+	assert.Empty(t, fetched.ModelMapping)
+
+	listed, err := GetAllUserTokens(token.UserId, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, token.Id, listed[0].Id)
+
+	mapped := &Token{
+		UserId:       1,
+		Key:          "pre-migration-mapped-token",
+		Name:         "mapped token",
+		Group:        "auto",
+		ModelMapping: `{"client-alias":"provider-model"}`,
+	}
+	err = mapped.InsertWithUserTokenLimit(2)
+	require.ErrorIs(t, err, ErrTokenModelMappingMigrationPending)
+	assert.Contains(t, err.Error(), "Model mapping is temporarily unavailable")
+
+	var mappedCount int64
+	require.NoError(t, legacyDB.Model(&Token{}).
+		Where(commonKeyCol+" = ?", mapped.Key).
+		Count(&mappedCount).Error)
+	assert.Zero(t, mappedCount)
+
+	token.Name = "must not be persisted"
+	token.ModelMapping = `{"client-alias":"provider-model"}`
+	err = token.Update()
+	require.ErrorIs(t, err, ErrTokenModelMappingMigrationPending)
+
+	var storedName string
+	require.NoError(t, legacyDB.Model(&Token{}).
+		Select("name").
+		Where("id = ?", token.Id).
+		Scan(&storedName).Error)
+	assert.Equal(t, "empty mapping updated", storedName)
+}
+
+func TestCreateOnboardingTokenBeforeRoutingMigrationsRemainsCompatible(t *testing.T) {
+	legacyDB, err := gorm.Open(
+		sqlite.Open(filepath.Join(t.TempDir(), "legacy-onboarding-token-schema.db")),
+		&gorm.Config{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.AutoMigrate(&User{}, &Token{}))
+	require.NoError(t, legacyDB.Migrator().DropColumn(&Token{}, "model_mapping"))
+	require.NoError(t, legacyDB.Migrator().DropColumn(&Token{}, "auto_group_candidates"))
+	require.NoError(t, legacyDB.Create(&User{Id: 1, Username: "legacy-onboarding-user", AffCode: "legacy-onboarding-1"}).Error)
+	require.NoError(t, legacyDB.Create(&User{Id: 2, Username: "legacy-onboarding-subset-user", AffCode: "legacy-onboarding-2"}).Error)
+
+	previousDB := DB
+	DB = legacyDB
+	t.Cleanup(func() {
+		DB = previousDB
+		refreshTokenModelMappingColumnCache()
+		sqlDB, dbErr := legacyDB.DB()
+		require.NoError(t, dbErr)
+		require.NoError(t, sqlDB.Close())
+	})
+
+	created, err := CreateOnboardingToken(1, "auto", "")
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	var stored struct {
+		Group string
+	}
+	require.NoError(t, legacyDB.Model(&Token{}).Select("group").Where("user_id = ?", 1).First(&stored).Error)
+	assert.Equal(t, "auto", stored.Group)
+
+	created, err = CreateOnboardingToken(2, "auto", NewPricingGroupCandidates([]string{"default"}))
+	require.ErrorIs(t, err, ErrTokenRoutingMigrationPending)
+	assert.False(t, created)
+	var count int64
+	require.NoError(t, legacyDB.Model(&Token{}).Where("user_id = ?", 2).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestLegacyTokenModelMappingSchemaSupportsRefundAndNormalization(t *testing.T) {
+	legacyDB, err := gorm.Open(
+		sqlite.Open(filepath.Join(t.TempDir(), "legacy-token-model-mapping-refund.db")),
+		&gorm.Config{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.AutoMigrate(&Token{}, &Task{}, &BillingOutbox{}))
+	require.NoError(t, legacyDB.Migrator().DropColumn(&Token{}, "model_mapping"))
+
+	previousDB := DB
+	DB = legacyDB
+	t.Cleanup(func() {
+		DB = previousDB
+		refreshTokenModelMappingColumnCache()
+		sqlDB, dbErr := legacyDB.DB()
+		require.NoError(t, dbErr)
+		require.NoError(t, sqlDB.Close())
+	})
+
+	token := Token{Key: "legacy-refund-token", Group: "auto", RemainQuota: 10, UsedQuota: 10}
+	require.NoError(t, legacyDB.Omit("model_mapping").Create(&token).Error)
+	task := Task{Quota: 3, PrivateData: TaskPrivateData{TokenId: token.Id}}
+	require.NoError(t, legacyDB.Create(&task).Error)
+	event := BillingOutbox{
+		EventID:     "legacy-refund-event",
+		Kind:        BillingOutboxKindTaskRefund,
+		ReferenceID: fmt.Sprint(task.ID),
+		Stage:       billingOutboxStageFundingDone,
+	}
+	require.NoError(t, legacyDB.Create(&event).Error)
+
+	require.NoError(t, refundTaskToken(&event))
+	require.NoError(t, normalizeTokenPricingGroupsTx(legacyDB))
+
+	var stored Token
+	require.NoError(t, tokenReadDB(legacyDB).First(&stored, token.Id).Error)
+	assert.Equal(t, 13, stored.RemainQuota)
+	assert.Equal(t, 7, stored.UsedQuota)
+
+	require.NoError(t, legacyDB.AutoMigrate(&Token{}))
+	refreshTokenModelMappingColumnCache()
+	assert.True(t, hasTokenModelMappingColumn())
 }

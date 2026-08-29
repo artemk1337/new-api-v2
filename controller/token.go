@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -26,6 +27,7 @@ type tokenRequest struct {
 	UnlimitedQuota      bool      `json:"unlimited_quota"`
 	ModelLimitsEnabled  bool      `json:"model_limits_enabled"`
 	ModelLimits         string    `json:"model_limits"`
+	ModelMapping        string    `json:"model_mapping"`
 	AllowIps            *string   `json:"allow_ips"`
 	Group               *string   `json:"group"`
 	AutoGroupCandidates *[]string `json:"auto_group_candidates"`
@@ -78,6 +80,51 @@ func writeInvalidTokenRouting(c *gin.Context, err error) {
 		"success": false,
 		"message": err.Error(),
 	})
+}
+
+func validateTokenModelMapping(userGroup, group string, candidates []string, rawMapping string) error {
+	if strings.TrimSpace(rawMapping) == "" {
+		return nil
+	}
+
+	modelMapping := map[string]string{}
+	if err := common.UnmarshalJsonStr(rawMapping, &modelMapping); err != nil {
+		return fmt.Errorf("model mapping must be a valid JSON object")
+	}
+	if modelMapping == nil {
+		return fmt.Errorf("model mapping must be a valid JSON object")
+	}
+	if len(modelMapping) == 0 {
+		return nil
+	}
+
+	availableModels := map[string]bool{}
+	groups := []string{group}
+	if group == "auto" {
+		groups = candidates
+		if len(groups) == 0 {
+			groups = service.GetUserAutoGroup(userGroup)
+		}
+	}
+	for _, pricingGroup := range groups {
+		for _, modelName := range model.GetGroupEnabledModels(pricingGroup) {
+			availableModels[modelName] = true
+		}
+	}
+
+	for sourceModel, targetModel := range modelMapping {
+		if strings.TrimSpace(sourceModel) == "" || strings.TrimSpace(targetModel) == "" {
+			return fmt.Errorf("model mapping keys and values must not be empty")
+		}
+		resolvedTarget, _, err := helper.ResolveModelMapping(rawMapping, sourceModel)
+		if err != nil {
+			return err
+		}
+		if !availableModels[resolvedTarget] {
+			return fmt.Errorf("mapped model %q is unavailable for this API key", resolvedTarget)
+		}
+	}
+	return nil
 }
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
@@ -281,6 +328,10 @@ func AddToken(c *gin.Context) {
 		writeInvalidTokenRouting(c, err)
 		return
 	}
+	if err := validateTokenModelMapping(user.Group, group, autoGroupCandidates.Values(), token.ModelMapping); err != nil {
+		writeInvalidTokenRouting(c, err)
+		return
+	}
 	cleanToken := model.Token{
 		UserId:              c.GetInt("id"),
 		Name:                token.Name,
@@ -292,6 +343,7 @@ func AddToken(c *gin.Context) {
 		UnlimitedQuota:      token.UnlimitedQuota,
 		ModelLimitsEnabled:  token.ModelLimitsEnabled,
 		ModelLimits:         token.ModelLimits,
+		ModelMapping:        token.ModelMapping,
 		AllowIps:            token.AllowIps,
 		Group:               group,
 		AutoGroupCandidates: autoGroupCandidates,
@@ -403,6 +455,7 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
+		cleanToken.ModelMapping = token.ModelMapping
 		cleanToken.AllowIps = token.AllowIps
 		group := cleanToken.Group
 		if token.Group != nil {
@@ -419,6 +472,10 @@ func UpdateToken(c *gin.Context) {
 		}
 		cleanToken.Group, cleanToken.AutoGroupCandidates, err = normalizeTokenRoutingForUser(user.Group, group, candidates)
 		if err != nil {
+			writeInvalidTokenRouting(c, err)
+			return
+		}
+		if err := validateTokenModelMapping(user.Group, cleanToken.Group, cleanToken.AutoGroupCandidates.Values(), cleanToken.ModelMapping); err != nil {
 			writeInvalidTokenRouting(c, err)
 			return
 		}

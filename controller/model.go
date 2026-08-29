@@ -296,6 +296,38 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
+	availableModels := make(map[string]struct{})
+	for _, ownerGroup := range ownerGroups {
+		for _, modelName := range model.GetGroupEnabledModels(ownerGroup) {
+			availableModels[modelName] = struct{}{}
+		}
+	}
+	keyMapping := common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping)
+	if keyMapping != "" {
+		modelMapping := map[string]string{}
+		if err := common.UnmarshalJsonStr(keyMapping, &modelMapping); err == nil {
+			var tokenModelLimit map[string]bool
+			if modelLimitEnable {
+				tokenModelLimit, _ = common.GetContextKeyType[map[string]bool](c, constant.ContextKeyTokenModelLimit)
+			}
+			for sourceModel := range modelMapping {
+				if modelLimitEnable && !tokenModelLimit[sourceModel] {
+					continue
+				}
+				targetModel, mapped, err := helper.ResolveModelMapping(keyMapping, sourceModel)
+				if err != nil || !mapped {
+					continue
+				}
+				if _, available := availableModels[targetModel]; !available || !helper.HasModelBillingConfig(targetModel) {
+					continue
+				}
+				if !common.StringsContains(userModelNames, sourceModel) {
+					userModelNames = append(userModelNames, sourceModel)
+				}
+			}
+		}
+	}
+
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)

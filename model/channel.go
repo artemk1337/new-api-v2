@@ -461,7 +461,7 @@ func normalizeTokenPricingGroupsTx(tx *gorm.DB) error {
 
 func normalizeTokenPricingGroupsTxWith(tx *gorm.DB, normalizeKey func(string) string, normalizeCSV func(string) string) error {
 	var tokens []*Token
-	if err := tx.Session(&gorm.Session{SkipHooks: true}).Find(&tokens).Error; err != nil {
+	if err := tokenReadDB(tx.Session(&gorm.Session{SkipHooks: true})).Find(&tokens).Error; err != nil {
 		return err
 	}
 	for _, token := range tokens {

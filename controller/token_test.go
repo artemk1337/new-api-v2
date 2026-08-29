@@ -45,6 +45,7 @@ type tokenResponseItem struct {
 	Status              int      `json:"status"`
 	Group               string   `json:"group"`
 	AutoGroupCandidates []string `json:"auto_group_candidates"`
+	ModelMapping        string   `json:"model_mapping"`
 }
 
 type tokenKeyResponse struct {
@@ -494,6 +495,10 @@ func TestGetTokenMasksKeyInResponse(t *testing.T) {
 func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	db := setupTokenControllerTestDB(t)
 	token := seedToken(t, db, 1, "editable-token", "yzab1234cdef5678")
+	require.NoError(t, db.AutoMigrate(&model.Ability{}))
+	require.NoError(t, db.Create(&model.Ability{
+		Group: "default", Model: "mapped-target", ChannelId: 1, Enabled: true,
+	}).Error)
 
 	body := map[string]any{
 		"id":                   token.Id,
@@ -503,6 +508,7 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 		"unlimited_quota":      true,
 		"model_limits_enabled": false,
 		"model_limits":         "",
+		"model_mapping":        `{"client-alias":"mapped-target"}`,
 		"group":                "default",
 		"cross_group_retry":    false,
 	}
@@ -522,9 +528,69 @@ func TestUpdateTokenMasksKeyInResponse(t *testing.T) {
 	if detail.Key != token.GetMaskedKey() {
 		t.Fatalf("expected masked update key %q, got %q", token.GetMaskedKey(), detail.Key)
 	}
+	require.Equal(t, `{"client-alias":"mapped-target"}`, detail.ModelMapping)
+	var reloaded model.Token
+	require.NoError(t, db.First(&reloaded, token.Id).Error)
+	require.Equal(t, `{"client-alias":"mapped-target"}`, reloaded.ModelMapping)
 	if strings.Contains(recorder.Body.String(), token.Key) {
 		t.Fatalf("update response leaked raw token key: %s", recorder.Body.String())
 	}
+}
+
+func TestTokenModelMappingRejectsJSONNull(t *testing.T) {
+	useTokenPricingGroups(t)
+	db := setupTokenControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       76,
+		Username: "null-model-mapping-user",
+		Password: "not-used-in-test",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	token := seedToken(t, db, 76, "null-model-mapping-token", "nullmapping123456")
+
+	t.Run("create", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", map[string]any{
+			"name":            "invalid-null-model-mapping",
+			"expired_time":    -1,
+			"unlimited_quota": true,
+			"model_mapping":   "null",
+		}, 76)
+		AddToken(ctx)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		response := decodeAPIResponse(t, recorder)
+		assert.False(t, response.Success)
+		assert.Equal(t, "model mapping must be a valid JSON object", response.Message)
+
+		var count int64
+		require.NoError(t, db.Model(&model.Token{}).Where("name = ?", "invalid-null-model-mapping").Count(&count).Error)
+		assert.Zero(t, count)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/token/", map[string]any{
+			"id":                   token.Id,
+			"name":                 "must-not-be-saved",
+			"expired_time":         -1,
+			"unlimited_quota":      true,
+			"model_limits_enabled": false,
+			"model_limits":         "",
+			"model_mapping":        "null",
+			"group":                "default",
+		}, 76)
+		UpdateToken(ctx)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		response := decodeAPIResponse(t, recorder)
+		assert.False(t, response.Success)
+		assert.Equal(t, "model mapping must be a valid JSON object", response.Message)
+
+		var reloaded model.Token
+		require.NoError(t, db.First(&reloaded, token.Id).Error)
+		assert.Equal(t, "null-model-mapping-token", reloaded.Name)
+		assert.Empty(t, reloaded.ModelMapping)
+	})
 }
 
 func useTokenPricingGroups(t *testing.T) {

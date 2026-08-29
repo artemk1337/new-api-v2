@@ -1,9 +1,13 @@
 package common
 
 import (
+	"net/http/httptest"
 	"testing"
 
+	basecommon "github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,4 +41,18 @@ func TestRelayInfoGetFinalRequestRelayFormatFallsBackToRelayFormat(t *testing.T)
 func TestRelayInfoGetFinalRequestRelayFormatNilReceiver(t *testing.T) {
 	var info *RelayInfo
 	require.Equal(t, types.RelayFormat(""), info.GetFinalRequestRelayFormat())
+}
+
+func TestGenBaseRelayInfoPreservesKeyMappingRequestedModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+	basecommon.SetContextKey(ctx, constant.ContextKeyOriginalModel, "claude-opus-5")
+	basecommon.SetContextKey(ctx, constant.ContextKeyRequestedModel, "claude-opus-4-8")
+
+	info := genBaseRelayInfo(ctx, nil)
+
+	require.Equal(t, "claude-opus-5", info.OriginModelName)
+	require.Equal(t, "claude-opus-4-8", info.RequestedModelName)
+	require.Equal(t, "claude-opus-5", info.SentUpstreamModelName)
 }

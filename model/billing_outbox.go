@@ -545,7 +545,7 @@ func refundTaskToken(event *BillingOutbox) error {
 		}
 		if task.PrivateData.TokenId > 0 {
 			var token Token
-			err := tx.Where("id = ?", task.PrivateData.TokenId).First(&token).Error
+			err := tokenReadDB(tx).Where("id = ?", task.PrivateData.TokenId).First(&token).Error
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}

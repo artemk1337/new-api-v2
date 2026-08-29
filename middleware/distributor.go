@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -38,6 +39,45 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		// Model limits are defined in terms of the model the client requested,
+		// before a key-level alias changes routing and billing.
+		modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
+		if modelLimitEnable {
+			s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
+			if !ok {
+				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
+				return
+			}
+			tokenModelLimit, ok := s.(map[string]bool)
+			if !ok {
+				tokenModelLimit = map[string]bool{}
+			}
+			matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model) // match gpts & thinking-*
+			if _, ok := tokenModelLimit[matchName]; !ok {
+				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+				return
+			}
+		}
+
+		if shouldSelectChannel && modelRequest.Model != "" {
+			relayMode := c.GetInt("relay_mode")
+			if relayMode == relayconstant.RelayModeUnknown {
+				relayMode = relayconstant.Path2RelayMode(c.Request.URL.Path)
+			}
+			targetModel, mapped, mappingErr := helper.ResolveRelayModelMapping(
+				common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+				modelRequest.Model,
+				relayMode,
+			)
+			if mappingErr != nil {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, mappingErr.Error(), types.ErrorCodeChannelModelMappedError)
+				return
+			}
+			if mapped {
+				common.SetContextKey(c, constant.ContextKeyRequestedModel, modelRequest.Model)
+				modelRequest.Model = targetModel
+			}
+		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -54,28 +94,7 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 		} else {
-			// Select a channel for the user
-			// check token model mapping
-			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
-			if modelLimitEnable {
-				s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
-				if !ok {
-					// token model limit is empty, all models are not allowed
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
-					return
-				}
-				var tokenModelLimit map[string]bool
-				tokenModelLimit, ok = s.(map[string]bool)
-				if !ok {
-					tokenModelLimit = map[string]bool{}
-				}
-				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model) // match gpts & thinking-*
-				if _, ok := tokenModelLimit[matchName]; !ok {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
-					return
-				}
-			}
-
+			// Select a channel for the user.
 			if shouldSelectChannel {
 				if modelRequest.Model == "" {
 					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
@@ -548,6 +567,9 @@ func SetupContextForLockedChannel(c *gin.Context, channel *model.Channel, modelN
 
 func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName string, selectKey bool) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
+	if common.GetContextKeyString(c, constant.ContextKeyRequestedModel) == "" {
+		common.SetContextKey(c, constant.ContextKeyRequestedModel, modelName)
+	}
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}

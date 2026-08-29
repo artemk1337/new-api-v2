@@ -318,6 +318,7 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	refreshTokenModelMappingColumnCache()
 	if err := migrateLegacyTokenGroupsToAuto(); err != nil {
 		return err
 	}
@@ -400,6 +401,7 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	refreshTokenModelMappingColumnCache()
 	if err := migrateLegacyTokenGroupsToAuto(); err != nil {
 		return err
 	}

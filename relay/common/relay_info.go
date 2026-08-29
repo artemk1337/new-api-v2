@@ -530,7 +530,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		UserEmail:  common.GetContextKeyString(c, constant.ContextKeyUserEmail),
 
 		OriginModelName:       common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
-		RequestedModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
+		RequestedModelName:    common.GetContextKeyString(c, constant.ContextKeyRequestedModel),
 		SentUpstreamModelName: common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 
 		TokenId:        common.GetContextKeyInt(c, constant.ContextKeyTokenId),

@@ -76,6 +76,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getUserModels, getUserGroups } from '@/lib/api'
+import { ModelMappingEditor } from '@/features/channels/components/model-mapping-editor'
+import { validateModelMappingJson } from '@/features/channels/lib/model-mapping-validation'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
@@ -280,6 +282,14 @@ export function ApiKeysMutateDrawer({
   }, [autoGroupMode, form, selectedCandidates.length, selectedGroup])
 
   const onSubmit = async (data: ApiKeyFormValues) => {
+    const modelMappingValidation = validateModelMappingJson(data.model_mapping)
+    if (!modelMappingValidation.valid) {
+      form.setError('model_mapping', {
+        message: t(modelMappingValidation.error || 'Invalid model mapping'),
+      })
+      return
+    }
+
     if (!availableGroupValues.has(data.group)) {
       form.setError('group', {
         message: t('This group is no longer available. Select another group.'),
@@ -877,6 +887,31 @@ export function ApiKeysMutateDrawer({
                           </FormControl>
                           <FormDescription>
                             {t('Limit which models can be used with this key')}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name='model_mapping'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Model Mapping')}</FormLabel>
+                          <FormControl>
+                            <ModelMappingEditor
+                              value={field.value}
+                              onChange={field.onChange}
+                              disabled={isSubmitting}
+                              sourceModelOptions={models}
+                              targetModelOptions={models}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Map this key\'s requested model names to available models before channel routing.'
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
