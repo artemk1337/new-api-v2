@@ -24,6 +24,7 @@ import { StaticDataTable } from '@/components/data-table/static/static-data-tabl
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
 import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
   Popover,
@@ -38,7 +39,16 @@ import {
   type PaymentMethodData,
   type TopupGroupOption,
 } from './payment-method-dialog'
+import {
+  BUILT_IN_PAYMENT_ICONS,
+  serializeAvailablePaymentIcons,
+} from './payment-method-icons'
 import { getPaymentMethodMinimumForDisplay } from './payment-method-minimum'
+import {
+  CRYPTO_PAYMENT_TYPE,
+  getPaymentTypeOptions,
+  normalizePaymentMethodType,
+} from './payment-method-options'
 
 type PaymentMethodsVisualEditorProps = {
   value: string
@@ -46,13 +56,34 @@ type PaymentMethodsVisualEditorProps = {
   topupGroups: TopupGroupOption[]
   waffoCurrency?: string
   defaultPendingTtlMinutes?: number
+  availableIcons?: string[]
+  onAvailableIconsChange?: (value: string) => void
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
+  crypto_direct: 'LuWalletCards',
+  nowpayments: 'LuBitcoin',
   stripe: 'SiStripe',
+  waffo: 'LuCreditCard',
   waffo_pancake: 'LuCreditCard',
   wxpay: 'SiWechat',
+}
+
+function getPaymentMethodDisplayName(method: PaymentMethodData) {
+  return normalizePaymentMethodType(method.type) === CRYPTO_PAYMENT_TYPE
+    ? 'Crypto'
+    : method.name
+}
+
+function getPaymentTypeDisplayName(
+  method: PaymentMethodData,
+  t: (key: string) => string
+) {
+  const builtIn = getPaymentTypeOptions(t).find(
+    (option) => option.value === normalizePaymentMethodType(method.type)
+  )
+  return builtIn?.name ?? getPaymentMethodDisplayName(method)
 }
 
 function getDefaultIconName(type: string) {
@@ -60,7 +91,20 @@ function getDefaultIconName(type: string) {
 }
 
 function getEffectiveIconName(method: PaymentMethodData) {
-  return method.icon || getDefaultIconName(method.type)
+  return (
+    method.icon || getDefaultIconName(normalizePaymentMethodType(method.type))
+  )
+}
+
+function normalizePaymentMethodData(
+  method: PaymentMethodData
+): PaymentMethodData {
+  const type = normalizePaymentMethodType(method.type)
+  return {
+    ...method,
+    type,
+    name: type === CRYPTO_PAYMENT_TYPE ? 'Crypto' : method.name,
+  }
 }
 
 export function getPaymentMethodPendingTtl(
@@ -86,7 +130,17 @@ export function isPaymentMethodData(item: unknown): item is PaymentMethodData {
       typeof item.pending_ttl_minutes === 'string') &&
     (!('color' in item) || typeof item.color === 'string') &&
     (!('topup_group' in item) || typeof item.topup_group === 'string') &&
-    (!('currency' in item) || typeof item.currency === 'string')
+    (!('currency' in item) || typeof item.currency === 'string') &&
+    (!('admin_only' in item) ||
+      item.admin_only === undefined ||
+      typeof item.admin_only === 'boolean' ||
+      item.admin_only === 'true' ||
+      item.admin_only === 'false') &&
+    (!('AdminOnly' in item) ||
+      item.AdminOnly === undefined ||
+      typeof item.AdminOnly === 'boolean' ||
+      item.AdminOnly === 'true' ||
+      item.AdminOnly === 'false')
   )
 }
 
@@ -96,6 +150,8 @@ export function PaymentMethodsVisualEditor({
   topupGroups,
   waffoCurrency,
   defaultPendingTtlMinutes = 1440,
+  availableIcons = [...BUILT_IN_PAYMENT_ICONS],
+  onAvailableIconsChange,
 }: PaymentMethodsVisualEditorProps) {
   const { t } = useTranslation()
   const paymentTemplates = [
@@ -141,12 +197,27 @@ export function PaymentMethodsVisualEditor({
       },
     },
     {
-      name: t('Custom Epay method'),
+      name: t('Waffo'),
       template: {
         icon: 'LuCreditCard',
-        min_topup: '50',
-        name: '自定义1',
-        type: 'custom1',
+        name: t('Waffo'),
+        type: 'waffo',
+      },
+    },
+    {
+      name: 'NOWPayments',
+      template: {
+        icon: 'LuBitcoin',
+        name: 'NOWPayments',
+        type: 'nowpayments',
+      },
+    },
+    {
+      name: t('Crypto'),
+      template: {
+        icon: 'LuWalletCards',
+        name: 'Crypto',
+        type: CRYPTO_PAYMENT_TYPE,
       },
     },
   ]
@@ -162,7 +233,23 @@ export function PaymentMethodsVisualEditor({
       context: 'payment methods',
     })
 
-    return parsed.filter(isPaymentMethodData)
+    const seenTypes = new Set<string>()
+    return parsed
+      .filter(isPaymentMethodData)
+      .map((method) => ({
+        ...method,
+        type: normalizePaymentMethodType(method.type),
+        name:
+          normalizePaymentMethodType(method.type) === CRYPTO_PAYMENT_TYPE
+            ? 'Crypto'
+            : method.name,
+      }))
+      .filter((method) => {
+        if (method.type !== CRYPTO_PAYMENT_TYPE) return true
+        if (seenTypes.has(method.type)) return false
+        seenTypes.add(method.type)
+        return true
+      })
   }, [value])
 
   const filteredMethods = useMemo(() => {
@@ -189,29 +276,45 @@ export function PaymentMethodsVisualEditor({
         item as PaymentMethodData & {
           currency?: string
         }
-      return metadata
+      return normalizePaymentMethodData(metadata)
+    })
+
+    // Legacy configurations may contain one entry per network. Keep one
+    // canonical Crypto entry when saving any change from the editor.
+    const dedupedArray = updatedArray.filter((item, index, array) => {
+      if (!isPaymentMethodData(item)) return true
+      return (
+        item.type !== CRYPTO_PAYMENT_TYPE ||
+        array.findIndex(
+          (candidate) =>
+            isPaymentMethodData(candidate) &&
+            candidate.type === CRYPTO_PAYMENT_TYPE
+        ) === index
+      )
     })
 
     if (editData) {
-      const index = updatedArray.findIndex(
+      const normalizedEditType = normalizePaymentMethodType(editData.type)
+      const index = dedupedArray.findIndex(
         (item): item is PaymentMethodData =>
           typeof item === 'object' &&
           item !== null &&
           'name' in item &&
           'type' in item &&
-          item.name === editData.name &&
-          item.type === editData.type
+          (item.name === editData.name ||
+            normalizedEditType === CRYPTO_PAYMENT_TYPE) &&
+          normalizePaymentMethodType(String(item.type)) === normalizedEditType
       )
       if (index !== -1) {
-        updatedArray[index] = data
+        dedupedArray[index] = normalizePaymentMethodData(data)
       } else {
-        updatedArray.push(data)
+        dedupedArray.push(normalizePaymentMethodData(data))
       }
     } else {
-      updatedArray.push(data)
+      dedupedArray.push(normalizePaymentMethodData(data))
     }
 
-    onChange(JSON.stringify(updatedArray, null, 2))
+    onChange(JSON.stringify(dedupedArray, null, 2))
   }
 
   const handleDelete = (method: PaymentMethodData) => {
@@ -228,8 +331,10 @@ export function PaymentMethodsVisualEditor({
           item !== null &&
           'name' in item &&
           'type' in item &&
-          item.name === method.name &&
-          item.type === method.type
+          (item.name === method.name ||
+            normalizePaymentMethodType(method.type) === CRYPTO_PAYMENT_TYPE) &&
+          normalizePaymentMethodType(String(item.type)) ===
+            normalizePaymentMethodType(method.type)
         )
     )
 
@@ -247,6 +352,13 @@ export function PaymentMethodsVisualEditor({
   }
 
   const handleInsertTemplate = (template: PaymentMethodData) => {
+    const configuredGroups = topupGroups.filter((group) => group.name.trim())
+    const defaultGroup =
+      configuredGroups.find(
+        (group) => group.name.trim().toLowerCase() === 'default'
+      ) ?? configuredGroups[0]
+    if (!defaultGroup) return
+
     const parsed = safeJsonParseWithValidation<unknown[]>(value, {
       fallback: [],
       validator: isArray,
@@ -254,18 +366,22 @@ export function PaymentMethodsVisualEditor({
     })
 
     // Check if template already exists
+    const normalizedTemplate = normalizePaymentMethodData({
+      ...template,
+      topup_group: defaultGroup.name.trim(),
+    })
     const exists = parsed.some(
       (item) =>
         typeof item === 'object' &&
         item !== null &&
         'type' in item &&
         'name' in item &&
-        item.type === template.type &&
-        item.name === template.name
+        normalizePaymentMethodType(String(item.type)) ===
+          normalizedTemplate.type
     )
 
     if (!exists) {
-      parsed.push(template)
+      parsed.push(normalizedTemplate)
       onChange(JSON.stringify(parsed, null, 2))
     }
   }
@@ -333,6 +449,55 @@ export function PaymentMethodsVisualEditor({
         </div>
       </div>
 
+      {onAvailableIconsChange && (
+        <div className='rounded-md border p-3'>
+          <Popover>
+            <PopoverTrigger
+              render={<Button type='button' variant='outline' size='sm' />}
+            >
+              {t('Icon library')}
+            </PopoverTrigger>
+            <PopoverContent className='w-80'>
+              <div className='space-y-3'>
+                <div>
+                  <p className='font-medium'>{t('Icon library')}</p>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Choose which icons are available when editing payment methods.'
+                    )}
+                  </p>
+                </div>
+                <div className='grid grid-cols-2 gap-2'>
+                  {BUILT_IN_PAYMENT_ICONS.map((iconName) => {
+                    const checked = availableIcons.includes(iconName)
+                    return (
+                      <label
+                        key={iconName}
+                        className='hover:bg-muted flex cursor-pointer items-center gap-2 rounded p-1.5 text-xs'
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(next) => {
+                            const selected = new Set(availableIcons)
+                            if (next) selected.add(iconName)
+                            else selected.delete(iconName)
+                            onAvailableIconsChange(
+                              serializeAvailablePaymentIcons([...selected])
+                            )
+                          }}
+                        />
+                        <ReactIconByName name={iconName} className='size-4' />
+                        <span className='truncate'>{iconName}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
+
       {filteredMethods.length === 0 ? (
         <div className='text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm'>
           {searchText
@@ -353,16 +518,12 @@ export function PaymentMethodsVisualEditor({
                 id: 'name',
                 header: t('Name'),
                 cellClassName: 'font-medium',
-                cell: (method) => method.name,
+                cell: (method) => getPaymentMethodDisplayName(method),
               },
               {
                 id: 'type',
                 header: t('Payment type'),
-                cell: (method) => (
-                  <code className='bg-muted rounded px-1.5 py-0.5 text-sm'>
-                    {method.type}
-                  </code>
-                ),
+                cell: (method) => getPaymentTypeDisplayName(method, t),
               },
               {
                 id: 'icon',
@@ -375,11 +536,9 @@ export function PaymentMethodsVisualEditor({
                       <ReactIconByName
                         name={iconName}
                         className='text-muted-foreground size-5 shrink-0'
-                        title={iconName}
+                        title={getPaymentTypeDisplayName(method, t)}
+                        aria-label={getPaymentTypeDisplayName(method, t)}
                       />
-                      <span className='text-muted-foreground truncate font-mono text-sm'>
-                        {iconName}
-                      </span>
                     </div>
                   ) : (
                     <span className='text-muted-foreground text-sm'>—</span>
@@ -456,10 +615,12 @@ export function PaymentMethodsVisualEditor({
                 <div key={methodKey} className='p-4'>
                   <div className='mb-3 flex items-start justify-between'>
                     <div className='flex-1'>
-                      <div className='mb-1 font-medium'>{method.name}</div>
-                      <code className='bg-muted rounded px-1.5 py-0.5 text-xs'>
-                        {method.type}
-                      </code>
+                      <div className='mb-1 font-medium'>
+                        {getPaymentMethodDisplayName(method)}
+                      </div>
+                      <span className='text-muted-foreground text-xs'>
+                        {getPaymentTypeDisplayName(method, t)}
+                      </span>
                     </div>
                     <div className='flex gap-1'>
                       <Button
@@ -558,6 +719,7 @@ export function PaymentMethodsVisualEditor({
         topupGroups={topupGroups}
         waffoCurrency={waffoCurrency}
         defaultPendingTtlMinutes={defaultPendingTtlMinutes}
+        availableIcons={availableIcons}
       />
     </div>
   )

@@ -49,10 +49,7 @@ import {
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
-import {
-  safeDecimalFieldProps,
-  safeNumberFieldProps,
-} from '../utils/numeric-field'
+import { safeNumberFieldProps } from '../utils/numeric-field'
 import {
   isValidAmountCashbackConfig,
   normalizeAmountCashbackConfig,
@@ -66,7 +63,14 @@ import {
   shouldUpdateCreemSecret,
 } from './creem-config-api'
 import { CreemProductsVisualEditor } from './creem-products-visual-editor'
+import {
+  cryptoAmountTailVariants,
+  decimalUsdtToMicroUnits,
+  CRYPTO_PAYMENT_CURRENCY,
+  shouldUpdateCryptoPaymentCredential,
+} from './crypto-payment-settings'
 import { PaymentCurrencyField } from './payment-currency-field'
+import { parseAvailablePaymentIcons } from './payment-method-icons'
 import type { TopupGroupOption } from './payment-method-dialog'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
@@ -101,107 +105,117 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
-const paymentSchema = z.object({
-  PayAddress: z.string().refine((value) => {
-    const trimmed = value.trim()
-    if (!trimmed) return true
-    return /^https?:\/\//.test(trimmed)
-  }, 'Provide a valid callback URL starting with http:// or https://'),
-  EpayId: z.string(),
-  EpayKey: z.string(),
-  MinTopUp: z.coerce.number().min(0),
-  PaymentPendingTTLMinutes: z.coerce.number().int().min(1),
-  PaymentCreationRateLimit: z.coerce.number().int().min(1),
-  PaymentCreationRateLimitDurationMinutes: z.coerce.number().int().min(1),
-  CustomCallbackAddress: z
-    .string()
-    .refine(
-      isHttpOriginUrl,
-      'Enter only a top-level callback domain, for example https://api.example.com, without any path.'
+const paymentSchema = z
+  .object({
+    PayAddress: z.string().refine((value) => {
+      const trimmed = value.trim()
+      if (!trimmed) return true
+      return /^https?:\/\//.test(trimmed)
+    }, 'Provide a valid callback URL starting with http:// or https://'),
+    EpayId: z.string(),
+    EpayKey: z.string(),
+    MinTopUp: z.coerce.number().min(0),
+    PaymentPendingTTLMinutes: z.coerce.number().int().min(1),
+    CustomCallbackAddress: z
+      .string()
+      .refine(
+        isHttpOriginUrl,
+        'Enter only a top-level callback domain, for example https://api.example.com, without any path.'
+      ),
+    PayMethods: z.string().superRefine((value, ctx) => {
+      const error = getJsonError(value)
+      if (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error,
+        })
+      }
+    }),
+    PaymentMethodAvailableIcons: z.string(),
+    AmountOptions: z.string().superRefine((value, ctx) => {
+      const error = getJsonError(value, (parsed) => Array.isArray(parsed))
+      if (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error,
+        })
+      }
+    }),
+    AmountCashback: z.string().superRefine((value, ctx) => {
+      const error = getJsonError(value, isValidAmountCashbackConfig)
+      if (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error,
+        })
+      }
+    }),
+    StripeApiSecret: z.string(),
+    StripeWebhookSecret: z.string(),
+    StripePriceId: z.string(),
+    StripeUnitPrice: z.coerce.number().min(0),
+    StripeMinTopUp: z.coerce.number().min(0),
+    StripePromotionCodesEnabled: z.boolean(),
+    CreemApiKey: z.string(),
+    CreemWebhookSecret: z.string(),
+    CreemTestMode: z.boolean(),
+    CreemProducts: z.string().superRefine((value, ctx) => {
+      const error = getJsonError(value, (parsed) => Array.isArray(parsed))
+      if (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error,
+        })
+      }
+    }),
+    WaffoEnabled: z.boolean(),
+    WaffoApiKey: z.string(),
+    WaffoPrivateKey: z.string(),
+    WaffoPublicCert: z.string(),
+    WaffoSandboxPublicCert: z.string(),
+    WaffoSandboxApiKey: z.string(),
+    WaffoSandboxPrivateKey: z.string(),
+    WaffoSandbox: z.boolean(),
+    WaffoMerchantId: z.string(),
+    WaffoCurrency: z.string(),
+    WaffoUnitPrice: z.coerce.number().min(0),
+    WaffoMinTopUp: z.coerce.number().min(0.01),
+    WaffoNotifyUrl: z.string(),
+    WaffoReturnUrl: z.string(),
+    WaffoPancakeMerchantID: z.string(),
+    WaffoPancakePrivateKey: z.string(),
+    WaffoPancakeReturnURL: z.string(),
+    WaffoPancakeMinTopUp: z.coerce.number().min(0.01),
+    YooKassaEnabled: z.boolean(),
+    YooKassaShopID: z.string(),
+    YooKassaSecretKey: z.string(),
+    YooKassaReturnURL: z.string().refine((value) => {
+      const trimmed = value.trim()
+      if (!trimmed) return true
+      return /^https?:\/\//.test(trimmed)
+    }, 'Provide a valid URL starting with http:// or https://'),
+    YooKassaPaymentMethods: z.string().refine((value) => {
+      return value.trim().toLowerCase() === 'sbp'
+    }, 'Only SBP is supported for YooKassa payments'),
+    NOWPaymentsEnabled: z.boolean(),
+    NOWPaymentsAPIKey: z.string(),
+    NOWPaymentsIPNSecret: z.string(),
+    NOWPaymentsIPNCallbackURL: z.string().refine((value) => {
+      const trimmed = value.trim()
+      if (!trimmed) return true
+      return /^https?:\/\//.test(trimmed)
+    }, 'Provide a valid URL starting with http:// or https://'),
+    USDTTRC20Enabled: z.boolean(),
+    USDTTRC20ReceivingAddress: z.string(),
+    USDTTRC20APIKey: z.string(),
+    USDTTONReceivingAddress: z.string(),
+    USDTSolanaReceivingAddress: z.string(),
+    USDTSolanaReceivingTokenAccount: z.string(),
+    USDTTRC20AmountTailLimitUnits: z.string().refine(
+      (value) => decimalUsdtToMicroUnits(value) !== null,
+      'Enter a value from 0.000002 to 0.01 USDT with up to 6 decimals'
     ),
-  PayMethods: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value)
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  AmountOptions: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value, (parsed) => Array.isArray(parsed))
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  AmountCashback: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value, isValidAmountCashbackConfig)
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  StripeApiSecret: z.string(),
-  StripeWebhookSecret: z.string(),
-  StripePriceId: z.string(),
-  StripeUnitPrice: z.coerce.number().min(0),
-  StripeMinTopUp: z.coerce.number().min(0),
-  StripePromotionCodesEnabled: z.boolean(),
-  CreemApiKey: z.string(),
-  CreemWebhookSecret: z.string(),
-  CreemTestMode: z.boolean(),
-  CreemProducts: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(value, (parsed) => Array.isArray(parsed))
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
-  WaffoEnabled: z.boolean(),
-  WaffoApiKey: z.string(),
-  WaffoPrivateKey: z.string(),
-  WaffoPublicCert: z.string(),
-  WaffoSandboxPublicCert: z.string(),
-  WaffoSandboxApiKey: z.string(),
-  WaffoSandboxPrivateKey: z.string(),
-  WaffoSandbox: z.boolean(),
-  WaffoMerchantId: z.string(),
-  WaffoCurrency: z.string(),
-  WaffoUnitPrice: z.coerce.number().min(0),
-  WaffoMinTopUp: z.coerce.number().min(0.01),
-  WaffoNotifyUrl: z.string(),
-  WaffoReturnUrl: z.string(),
-  WaffoPancakeMerchantID: z.string(),
-  WaffoPancakePrivateKey: z.string(),
-  WaffoPancakeReturnURL: z.string(),
-  WaffoPancakeMinTopUp: z.coerce.number().min(0.01),
-  YooKassaEnabled: z.boolean(),
-  YooKassaShopID: z.string(),
-  YooKassaSecretKey: z.string(),
-  YooKassaReturnURL: z.string().refine((value) => {
-    const trimmed = value.trim()
-    if (!trimmed) return true
-    return /^https?:\/\//.test(trimmed)
-  }, 'Provide a valid URL starting with http:// or https://'),
-  YooKassaPaymentMethods: z.string().refine((value) => {
-    return value.trim().toLowerCase() === 'sbp'
-  }, 'Only SBP is supported for YooKassa payments'),
-  NOWPaymentsEnabled: z.boolean(),
-  NOWPaymentsAPIKey: z.string(),
-  NOWPaymentsIPNSecret: z.string(),
-  NOWPaymentsIPNCallbackURL: z.string().refine((value) => {
-    const trimmed = value.trim()
-    if (!trimmed) return true
-    return /^https?:\/\//.test(trimmed)
-  }, 'Provide a valid URL starting with http:// or https://'),
-})
+  })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
 type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
@@ -324,6 +338,9 @@ export function PaymentSettingsSection({
   })
 
   const waffoCurrency = form.watch('WaffoCurrency')
+  const availablePaymentIcons = parseAvailablePaymentIcons(
+    form.watch('PaymentMethodAvailableIcons')
+  )
   const [creemSecretClearRequested, setCreemSecretClearRequested] =
     React.useState({ apiKey: false, webhookSecret: false })
 
@@ -392,11 +409,9 @@ export function PaymentSettingsSection({
       EpayKey: values.EpayKey.trim(),
       MinTopUp: values.MinTopUp,
       PaymentPendingTTLMinutes: values.PaymentPendingTTLMinutes,
-      PaymentCreationRateLimit: values.PaymentCreationRateLimit,
-      PaymentCreationRateLimitDurationMinutes:
-        values.PaymentCreationRateLimitDurationMinutes,
       CustomCallbackAddress: removeTrailingSlash(values.CustomCallbackAddress),
       PayMethods: values.PayMethods.trim(),
+      PaymentMethodAvailableIcons: values.PaymentMethodAvailableIcons,
       AmountOptions: values.AmountOptions.trim(),
       AmountCashback: normalizeAmountCashbackConfig(values.AmountCashback),
       StripeApiSecret: values.StripeApiSecret.trim(),
@@ -443,6 +458,16 @@ export function PaymentSettingsSection({
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         values.NOWPaymentsIPNCallbackURL.trim()
       ),
+      USDTTRC20Enabled: values.USDTTRC20Enabled,
+      USDTTRC20ReceivingAddress: values.USDTTRC20ReceivingAddress.trim(),
+      USDTTRC20APIKey: values.USDTTRC20APIKey.trim(),
+      USDTTONReceivingAddress: values.USDTTONReceivingAddress.trim(),
+      USDTSolanaReceivingAddress: values.USDTSolanaReceivingAddress.trim(),
+      USDTSolanaReceivingTokenAccount:
+        values.USDTSolanaReceivingTokenAccount.trim(),
+      USDTTRC20AmountTailLimitUnits: decimalUsdtToMicroUnits(
+        values.USDTTRC20AmountTailLimitUnits
+      ) as number,
     }
 
     const initial = {
@@ -451,13 +476,11 @@ export function PaymentSettingsSection({
       EpayKey: initialRef.current.EpayKey.trim(),
       MinTopUp: initialRef.current.MinTopUp,
       PaymentPendingTTLMinutes: initialRef.current.PaymentPendingTTLMinutes,
-      PaymentCreationRateLimit: initialRef.current.PaymentCreationRateLimit,
-      PaymentCreationRateLimitDurationMinutes:
-        initialRef.current.PaymentCreationRateLimitDurationMinutes,
       CustomCallbackAddress: removeTrailingSlash(
         initialRef.current.CustomCallbackAddress
       ),
       PayMethods: initialRef.current.PayMethods.trim(),
+      PaymentMethodAvailableIcons: initialRef.current.PaymentMethodAvailableIcons,
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountCashback: normalizeAmountCashbackConfig(
         initialRef.current.AmountCashback
@@ -509,6 +532,18 @@ export function PaymentSettingsSection({
       NOWPaymentsIPNCallbackURL: removeTrailingSlash(
         initialRef.current.NOWPaymentsIPNCallbackURL.trim()
       ),
+      USDTTRC20Enabled: initialRef.current.USDTTRC20Enabled,
+      USDTTRC20ReceivingAddress:
+        initialRef.current.USDTTRC20ReceivingAddress.trim(),
+      USDTTRC20APIKey: initialRef.current.USDTTRC20APIKey.trim(),
+      USDTTONReceivingAddress:
+        initialRef.current.USDTTONReceivingAddress.trim(),
+      USDTSolanaReceivingAddress:
+        initialRef.current.USDTSolanaReceivingAddress.trim(),
+      USDTSolanaReceivingTokenAccount:
+        initialRef.current.USDTSolanaReceivingTokenAccount.trim(),
+      USDTTRC20AmountTailLimitUnits: initialRef.current
+        .USDTTRC20AmountTailLimitUnits,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -538,25 +573,6 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (
-      sanitized.PaymentCreationRateLimit !== initial.PaymentCreationRateLimit
-    ) {
-      updates.push({
-        key: 'PaymentCreationRateLimit',
-        value: sanitized.PaymentCreationRateLimit,
-      })
-    }
-
-    if (
-      sanitized.PaymentCreationRateLimitDurationMinutes !==
-      initial.PaymentCreationRateLimitDurationMinutes
-    ) {
-      updates.push({
-        key: 'PaymentCreationRateLimitDurationMinutes',
-        value: sanitized.PaymentCreationRateLimitDurationMinutes,
-      })
-    }
-
     if (sanitized.CustomCallbackAddress !== initial.CustomCallbackAddress) {
       updates.push({
         key: 'CustomCallbackAddress',
@@ -569,6 +585,15 @@ export function PaymentSettingsSection({
       normalizeJsonForComparison(initial.PayMethods)
     ) {
       updates.push({ key: 'PayMethods', value: sanitized.PayMethods })
+    }
+    if (
+      sanitized.PaymentMethodAvailableIcons !==
+      initial.PaymentMethodAvailableIcons
+    ) {
+      updates.push({
+        key: 'PaymentMethodAvailableIcons',
+        value: sanitized.PaymentMethodAvailableIcons,
+      })
     }
 
     if (
@@ -744,6 +769,55 @@ export function PaymentSettingsSection({
       })
     }
 
+    if (
+      sanitized.USDTTRC20ReceivingAddress !== initial.USDTTRC20ReceivingAddress
+    ) {
+      updates.push({
+        key: 'USDTTRC20ReceivingAddress',
+        value: sanitized.USDTTRC20ReceivingAddress,
+      })
+    }
+    if (
+      shouldUpdateCryptoPaymentCredential(
+        sanitized.USDTTRC20APIKey,
+        initial.USDTTRC20APIKey
+      )
+    ) {
+      updates.push({ key: 'USDTTRC20APIKey', value: sanitized.USDTTRC20APIKey })
+    }
+    if (sanitized.USDTTONReceivingAddress !== initial.USDTTONReceivingAddress) {
+      updates.push({
+        key: 'USDTTONReceivingAddress',
+        value: sanitized.USDTTONReceivingAddress,
+      })
+    }
+    if (
+      sanitized.USDTSolanaReceivingAddress !==
+      initial.USDTSolanaReceivingAddress
+    ) {
+      updates.push({
+        key: 'USDTSolanaReceivingAddress',
+        value: sanitized.USDTSolanaReceivingAddress,
+      })
+    }
+    if (
+      sanitized.USDTSolanaReceivingTokenAccount !==
+      initial.USDTSolanaReceivingTokenAccount
+    ) {
+      updates.push({
+        key: 'USDTSolanaReceivingTokenAccount',
+        value: sanitized.USDTSolanaReceivingTokenAccount,
+      })
+    }
+    if (
+      sanitized.USDTTRC20AmountTailLimitUnits !==
+      decimalUsdtToMicroUnits(initial.USDTTRC20AmountTailLimitUnits)
+    ) {
+      updates.push({
+        key: 'USDTTRC20AmountTailLimitUnits',
+        value: sanitized.USDTTRC20AmountTailLimitUnits,
+      })
+    }
     if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
       updates.push({ key: 'WaffoEnabled', value: sanitized.WaffoEnabled })
     }
@@ -961,11 +1035,12 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[60rem] grid-cols-8'>
+              <TabsList className='grid min-w-[68rem] grid-cols-9'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='yookassa'>YooKassa</TabsTrigger>
                 <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
+                <TabsTrigger value='crypto'>{t('Crypto')}</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
@@ -982,106 +1057,6 @@ export function PaymentSettingsSection({
                   <p className='text-muted-foreground text-sm'>
                     {t('Shared configuration for all payment gateways')}
                   </p>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='MinTopUp'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='text'
-                            inputMode='decimal'
-                            min={0}
-                            step='0.01'
-                            {...safeDecimalFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Smallest USD amount users can recharge (Epay)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name='PaymentPendingTTLMinutes'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Default payment waiting TTL (minutes)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min='1'
-                            step='1'
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Fallback lifetime for unpaid payments when a method has no individual TTL. YooKassa SBP uses a 15-minute default.'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name='PaymentCreationRateLimit'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Payment creation limit (requests/minute)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min='1'
-                            step='1'
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Maximum number of payment requests one user can create in the selected window. Default: 5 requests per minute.'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name='PaymentCreationRateLimitDurationMinutes'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Payment creation limit window (minutes)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min='1'
-                            step='1'
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Time window used for the per-user payment creation limit. Default: 1 minute.'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
 
                 <FormField
@@ -1122,6 +1097,13 @@ export function PaymentSettingsSection({
                             waffoCurrency={waffoCurrency}
                             defaultPendingTtlMinutes={
                               currentFormValues.PaymentPendingTTLMinutes
+                            }
+                            availableIcons={availablePaymentIcons}
+                            onAvailableIconsChange={(value) =>
+                              setPaymentValue(
+                                'PaymentMethodAvailableIcons',
+                                value
+                              )
                             }
                           />
                         ) : (
@@ -1631,6 +1613,146 @@ export function PaymentSettingsSection({
                       <FormDescription>
                         {t(
                           'Crypto payments are enabled when API key, IPN secret, and this URL are set.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value='crypto' className={paymentTabContentClassName}>
+              <div className='space-y-4'>
+                <div>
+                  <h3 className='text-lg font-medium'>{t('Crypto')}</h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t('Direct USDT payments on supported networks')}
+                  </p>
+                </div>
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <PaymentCurrencyField
+                    value={CRYPTO_PAYMENT_CURRENCY}
+                    fixedCurrency={CRYPTO_PAYMENT_CURRENCY}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='USDTTRC20AmountTailLimitUnits'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Amount precision')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='text'
+                            inputMode='decimal'
+                            placeholder='0.001'
+                            maxLength={8}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Enter the precision for the random payment tail in USDT.'
+                          )}{' '}
+                          {t('USDT minimum selectable step: 0.000002.')}{' '}
+                          {t('Available variants: {{count}}', {
+                            count: cryptoAmountTailVariants(field.value) ?? '—',
+                          })}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name='USDTTRC20ReceivingAddress'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('USDT TRON receiving address')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Supported for checkout. The address is validated before saving.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='USDTTRC20APIKey'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('TronGrid API key')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='password'
+                          autoComplete='new-password'
+                          placeholder={t('Leave blank unless updating')}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Required to monitor USDT TRC-20 transfers. This is not a wallet private key.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='USDTTONReceivingAddress'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('USDT TON receiving address')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Used for USDT TON checkout. The address is validated before saving.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='USDTSolanaReceivingAddress'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('USDT Solana receiving address')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Wallet owner address for Solana USDT. The token account below is the exact payment destination.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='USDTSolanaReceivingTokenAccount'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('USDT Solana receiving token account')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Exact SPL token account where users must send USDT. The address is validated before saving.'
                         )}
                       </FormDescription>
                       <FormMessage />

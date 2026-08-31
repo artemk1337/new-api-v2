@@ -201,6 +201,9 @@ func applyCreemPaymentSnapshot(topUp *model.TopUp, product *CreemProduct, rate f
 }
 
 func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodCreem) {
+		return
+	}
 	config := setting.GetCreemConfig()
 	if !isCreemTopUpEnabledForConfig(config) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Creem payments are not enabled"})

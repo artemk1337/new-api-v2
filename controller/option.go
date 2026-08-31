@@ -139,6 +139,23 @@ func isNOWPaymentsTopUpEnabledAfterOptionUpdate(key, value string, complianceCon
 		strings.TrimSpace(optionUpdateValue("NOWPaymentsIPNCallbackURL", key, value, setting.NOWPaymentsIPNCallbackURL)) != ""
 }
 
+func validateDirectUSDTOptionUpdate(key, value string) error {
+	enabled := setting.USDTTRC20Enabled
+	address := setting.USDTTRC20ReceivingAddress
+	apiKey := setting.USDTTRC20APIKey
+	switch key {
+	case "USDTTRC20Enabled":
+		enabled = value == "true"
+	case "USDTTRC20ReceivingAddress":
+		address = value
+	case "USDTTRC20APIKey":
+		apiKey = value
+	default:
+		return nil
+	}
+	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey)
+}
+
 func validateCreemProductCurrencies(productsJSON string) error {
 	return validateCreemProductCurrenciesFromDB(model.DB, productsJSON)
 }
@@ -418,8 +435,8 @@ func preparePaymentOptionUpdate(option OptionUpdateRequest) (string, string, err
 	case "NOWPaymentsPriceCurrency", "NOWPaymentsPayCurrency":
 		value = "usdt"
 	case "PayMethods":
-		var methods []map[string]string
-		if err := common.UnmarshalJsonStr(value, &methods); err != nil {
+		methods, err := operation_setting.ParsePayMethodsJSON(value)
+		if err != nil {
 			return "", "", errors.New("PayMethods must be valid JSON")
 		}
 		if err := operation_setting.ValidatePayMethods(methods); err != nil {
@@ -452,7 +469,7 @@ func preparePaymentOptionUpdate(option OptionUpdateRequest) (string, string, err
 			return "", "", errors.New("PayMethods must be valid JSON")
 		}
 		value = string(encoded)
-	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken":
+	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken", "USDTTRC20APIKey", "USDTTONAPIKey", "USDTSolanaAPIKey":
 		if value == maskedOptionValue {
 			return "", "", nil
 		}
@@ -775,7 +792,7 @@ func GetOptions(c *gin.Context) {
 			strings.HasSuffix(k, "secret") ||
 			strings.HasSuffix(k, "api_key")
 		if isSensitiveKey {
-			if k == "YooKassaSecretKey" || k == "NOWPaymentsAPIKey" || k == "NOWPaymentsIPNSecret" || k == "TelegramBotToken" {
+			if k == "YooKassaSecretKey" || k == "NOWPaymentsAPIKey" || k == "NOWPaymentsIPNSecret" || k == "TelegramBotToken" || k == "USDTTRC20APIKey" || k == "USDTTONAPIKey" || k == "USDTSolanaAPIKey" {
 				if value != "" {
 					value = maskedOptionValue
 				}
@@ -858,8 +875,8 @@ func UpdateOption(c *gin.Context) {
 		}
 		option.Value = normalized
 	case "PayMethods":
-		var methods []map[string]string
-		if err := common.UnmarshalJsonStr(option.Value.(string), &methods); err != nil {
+		methods, err := operation_setting.ParsePayMethodsJSON(option.Value.(string))
+		if err != nil {
 			common.ApiErrorMsg(c, "PayMethods must be valid JSON")
 			return
 		}
@@ -905,7 +922,7 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 		option.Value = string(normalized)
-	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken":
+	case "YooKassaSecretKey", "NOWPaymentsAPIKey", "NOWPaymentsIPNSecret", "TelegramBotToken", "USDTTRC20APIKey", "USDTTONAPIKey", "USDTSolanaAPIKey":
 		if option.Value == maskedOptionValue {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
@@ -1063,6 +1080,12 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": err.Error(),
 			})
+			return
+		}
+	}
+	if strings.HasPrefix(option.Key, "USDTTRC20") {
+		if err := validateDirectUSDTOptionUpdate(option.Key, option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
 			return
 		}
 	}

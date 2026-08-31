@@ -16,9 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback } from 'react'
 import i18next from 'i18next'
+import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
+
 import {
   calculateAmount,
   calculateStripeAmount,
@@ -29,6 +30,7 @@ import {
   requestStripePayment,
   requestYooKassaPayment,
   requestNOWPaymentsPayment,
+  requestDirectCryptoPayment,
   isApiSuccess,
 } from '../api'
 import {
@@ -36,11 +38,15 @@ import {
   isWaffoPancakePayment,
   isYooKassaPayment,
   isNOWPaymentsPayment,
+  isDirectUSDTPayment,
+  getDirectUSDTNetwork,
+  isSafeInternalDirectUSDTUrl,
   getPaymentErrorMessage,
   isSafeHttpRedirectUrl,
   redirectToPaymentPage,
   submitPaymentForm,
 } from '../lib'
+import type { DirectUSDTNetwork } from '../types'
 
 function getStringField(data: unknown, field: string): string | null {
   if (!data || typeof data !== 'object') {
@@ -51,7 +57,12 @@ function getStringField(data: unknown, field: string): string | null {
 }
 
 export function isIncompleteSuccessfulPaymentResponse(
-  response: { success?: boolean; message?: string; data?: unknown; url?: unknown },
+  response: {
+    success?: boolean
+    message?: string
+    data?: unknown
+    url?: unknown
+  },
   paymentType: string
 ): boolean {
   if (!isApiSuccess(response)) {
@@ -67,7 +78,12 @@ export function isIncompleteSuccessfulPaymentResponse(
   if (isNOWPaymentsPayment(paymentType)) {
     return getStringField(response.data, 'payment_url') === null
   }
-  return !response.data || typeof response.url !== 'string' || !response.url.trim()
+  if (isDirectUSDTPayment(paymentType)) {
+    return getStringField(response.data, 'payment_url') === null
+  }
+  return (
+    !response.data || typeof response.url !== 'string' || !response.url.trim()
+  )
 }
 
 // ============================================================================
@@ -126,13 +142,18 @@ export function usePayment() {
 
   // Process payment
   const processPayment = useCallback(
-    async (topupAmount: number, paymentType: string) => {
+    async (
+      topupAmount: number,
+      paymentType: string,
+      cryptoNetwork?: DirectUSDTNetwork
+    ) => {
       try {
         setProcessing(true)
 
         const isStripe = isStripePayment(paymentType)
         const isYooKassa = isYooKassaPayment(paymentType)
         const isNOWPayments = isNOWPaymentsPayment(paymentType)
+        const isDirectUSDT = isDirectUSDTPayment(paymentType)
         let response
         if (isStripe) {
           response = await requestStripePayment({
@@ -149,6 +170,14 @@ export function usePayment() {
             amount: topupAmount,
             payment_method: 'nowpayments',
           })
+        } else if (isDirectUSDT) {
+          const network = cryptoNetwork ?? getDirectUSDTNetwork(paymentType)
+          if (!network) return false
+          const request = {
+            amount: topupAmount,
+            payment_method: 'crypto_direct',
+          }
+          response = await requestDirectCryptoPayment(network, request)
         } else {
           response = await requestPayment({
             amount: topupAmount,
@@ -158,7 +187,10 @@ export function usePayment() {
 
         if (!isApiSuccess(response)) {
           toast.error(
-            getPaymentErrorMessage(response, i18next.t('Payment request failed'))
+            getPaymentErrorMessage(
+              response,
+              i18next.t('Payment request failed')
+            )
           )
           return false
         }
@@ -196,6 +228,16 @@ export function usePayment() {
           }
           window.location.href = paymentUrl
           toast.success(i18next.t('Redirecting to payment page...'))
+          return true
+        }
+
+        if (isDirectUSDT) {
+          const internalUrl = getStringField(response.data, 'payment_url')
+          if (!internalUrl || !isSafeInternalDirectUSDTUrl(internalUrl)) {
+            toast.error(i18next.t('Invalid payment redirect URL'))
+            return false
+          }
+          window.location.href = internalUrl
           return true
         }
 

@@ -20,6 +20,10 @@ import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PlatformCurrenciesSection } from '../general/platform-currencies-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { ReferralSettingsSection } from '../general/referral-settings-section'
+import {
+  CRYPTO_AMOUNT_TAIL_DEFAULT_UNITS,
+  microUnitsToDecimalUsdt,
+} from '../integrations/crypto-payment-settings'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
@@ -131,11 +135,9 @@ const BILLING_SECTIONS = [
           EpayKey: settings.EpayKey,
           MinTopUp: settings.MinTopUp,
           PaymentPendingTTLMinutes: settings.PaymentPendingTTLMinutes,
-          PaymentCreationRateLimit: settings.PaymentCreationRateLimit,
-          PaymentCreationRateLimitDurationMinutes:
-            settings.PaymentCreationRateLimitDurationMinutes,
           CustomCallbackAddress: settings.CustomCallbackAddress,
           PayMethods: settings.PayMethods,
+          PaymentMethodAvailableIcons: settings.PaymentMethodAvailableIcons ?? '',
           AmountOptions: settings['payment_setting.amount_options'],
           AmountCashback: settings['payment_setting.amount_cashback'],
           StripeApiSecret: settings.StripeApiSecret,
@@ -157,6 +159,17 @@ const BILLING_SECTIONS = [
           NOWPaymentsAPIKey: settings.NOWPaymentsAPIKey ?? '',
           NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
           NOWPaymentsIPNCallbackURL: settings.NOWPaymentsIPNCallbackURL ?? '',
+          USDTTRC20Enabled: settings.USDTTRC20Enabled ?? false,
+          USDTTRC20ReceivingAddress: settings.USDTTRC20ReceivingAddress ?? '',
+          USDTTRC20APIKey: settings.USDTTRC20APIKey ?? '',
+          USDTTONReceivingAddress: settings.USDTTONReceivingAddress ?? '',
+          USDTSolanaReceivingAddress: settings.USDTSolanaReceivingAddress ?? '',
+          USDTSolanaReceivingTokenAccount:
+            settings.USDTSolanaReceivingTokenAccount ?? '',
+          USDTTRC20AmountTailLimitUnits: microUnitsToDecimalUsdt(
+            settings.USDTTRC20AmountTailLimitUnits ??
+              CRYPTO_AMOUNT_TAIL_DEFAULT_UNITS
+          ),
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

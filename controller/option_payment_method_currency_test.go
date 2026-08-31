@@ -73,23 +73,24 @@ func TestUpdateOptionPayMethodsPersistsAndNormalizesProviderCurrency(t *testing.
 		return response.Success
 	}
 
-	require.True(t, update("PayMethods", `[{"name":"Alipay","type":"alipay","currency":"USD","topup_group":"premium"}]`))
+	require.False(t, update("PayMethods", `[{"name":"Alipay","type":"alipay","currency":"USD"}]`), "a new method requires a configured topup_group")
+	require.True(t, update("PayMethods", `[{"name":"Alipay","type":"alipay","currency":"USD","topup_group":"default"}]`))
 	var stored model.Option
 	require.NoError(t, db.First(&stored, "key = ?", "PayMethods").Error)
-	assert.JSONEq(t, `[{"name":"Alipay","type":"alipay","topup_group":"premium"}]`, stored.Value)
+	assert.JSONEq(t, `[{"name":"Alipay","type":"alipay","topup_group":"default"}]`, stored.Value)
 	require.Len(t, operation_setting.PayMethods, 1)
 	_, hasCurrency := operation_setting.PayMethods[0]["currency"]
 	assert.False(t, hasCurrency)
 
 	setting.WaffoCurrency = "USD"
-	require.True(t, update("PayMethods", `[{"name":"Waffo","type":" WAFFO ","currency":"RUB"}]`))
+	require.True(t, update("PayMethods", `[{"name":"Waffo","type":" WAFFO ","currency":"RUB","topup_group":"default"}]`))
 	_, hasCurrency = operation_setting.PayMethods[0]["currency"]
 	assert.False(t, hasCurrency)
 
-	require.True(t, update("PayMethods", `[{"name":"Alipay","type":"alipay","currency":"RUB"}]`))
+	require.True(t, update("PayMethods", `[{"name":"Alipay","type":"alipay","currency":"RUB","topup_group":"default"}]`))
 	stored = model.Option{}
 	require.NoError(t, db.First(&stored, "key = ?", "PayMethods").Error)
-	assert.JSONEq(t, `[{"name":"Alipay","type":"alipay"}]`, stored.Value)
+	assert.JSONEq(t, `[{"name":"Alipay","type":"alipay","topup_group":"default"}]`, stored.Value)
 	_, hasCurrency = operation_setting.PayMethods[0]["currency"]
 	assert.False(t, hasCurrency)
 

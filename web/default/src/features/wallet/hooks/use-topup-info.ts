@@ -32,7 +32,42 @@ import type {
   PaymentMethod,
   WaffoPayMethod,
   CashbackThreshold,
+  DirectUSDTNetwork,
 } from '../types'
+
+const CRYPTO_NETWORKS = ['TRON', 'TON', 'SOLANA'] as const
+
+export function parseCryptoNetworks(data: unknown): DirectUSDTNetwork[] {
+  if (!Array.isArray(data)) return []
+  const seen = new Set<DirectUSDTNetwork>()
+  return data.reduce<DirectUSDTNetwork[]>((result, item) => {
+    let raw = ''
+    if (typeof item === 'string') {
+      raw = item
+    } else if (item && typeof item === 'object' && 'network' in item) {
+      raw = String((item as { network?: unknown }).network)
+    }
+    const network = raw.trim().toUpperCase() as DirectUSDTNetwork
+    if (
+      (CRYPTO_NETWORKS as readonly string[]).includes(network) &&
+      !seen.has(network)
+    ) {
+      seen.add(network)
+      result.push(network)
+    }
+    return result
+  }, [])
+}
+
+function dedupeCryptoPaymentMethods(methods: PaymentMethod[]): PaymentMethod[] {
+  let cryptoSeen = false
+  return methods.filter((method) => {
+    if (method.type !== 'crypto_direct') return true
+    if (cryptoSeen) return false
+    cryptoSeen = true
+    return true
+  })
+}
 
 // ============================================================================
 // Topup Info Hook
@@ -57,7 +92,8 @@ function parseJsonArray(data: unknown): unknown[] {
 
 function parsePaymentMethods(
   data: unknown,
-  stripeMinTopup: number
+  stripeMinTopup: number,
+  cryptoNetworks: DirectUSDTNetwork[]
 ): PaymentMethod[] {
   return parseJsonArray(data)
     .filter(
@@ -67,18 +103,34 @@ function parsePaymentMethods(
     .map((item) => {
       const rawMinTopup = Number(item.min_topup)
       const normalizedMinTopup = Number.isFinite(rawMinTopup) ? rawMinTopup : 0
-      const type = typeof item.type === 'string' ? item.type : ''
+      const rawType =
+        typeof item.type === 'string' ? item.type.trim().toLowerCase() : ''
+      const type = rawType.startsWith('usdt_') ? 'crypto_direct' : rawType
       const rawTopupRatio = Number(item.topup_ratio)
       const rawPaymentAmount = Number(item.payment_amount)
       const rawRateToUSD = Number(item.rate_to_usd)
       const rawBaseAmountMultiplier = Number(item.base_amount_multiplier)
       const rawRoundingDecimals = Number(item.rounding_decimals)
+      const rawAdminOnly = item.admin_only
+      let name = ''
+      if (type === 'crypto_direct') {
+        name = 'Crypto'
+      } else if (typeof item.name === 'string') {
+        name = item.name
+      }
+      let adminOnly: boolean | undefined
+      if (rawAdminOnly === true || rawAdminOnly === 'true') {
+        adminOnly = true
+      } else if (rawAdminOnly === false || rawAdminOnly === 'false') {
+        adminOnly = false
+      }
 
       return {
-        name: typeof item.name === 'string' ? item.name : '',
+        name,
         type,
         color: typeof item.color === 'string' ? item.color : undefined,
         icon: typeof item.icon === 'string' ? item.icon : undefined,
+        admin_only: adminOnly,
         min_topup:
           type === 'stripe' && normalizedMinTopup <= 0
             ? stripeMinTopup
@@ -105,6 +157,7 @@ function parsePaymentMethods(
           typeof item.currency_symbol === 'string'
             ? item.currency_symbol
             : undefined,
+        crypto_networks: type === 'crypto_direct' ? cryptoNetworks : undefined,
       }
     })
     .filter((item) => item.name && item.type)
@@ -191,6 +244,7 @@ export function filterAvailablePaymentMethods(
     | 'enable_waffo_pancake_topup'
     | 'enable_yookassa_topup'
     | 'enable_nowpayments_topup'
+    | 'crypto_networks'
   >,
   hasVisibleWaffoMethod: boolean
 ): PaymentMethod[] {
@@ -206,6 +260,16 @@ export function filterAvailablePaymentMethods(
         return Boolean(topupInfo.enable_yookassa_topup)
       case 'nowpayments':
         return Boolean(topupInfo.enable_nowpayments_topup)
+      case 'crypto_direct':
+      case 'usdt_trc20_direct':
+      case 'usdt_ton_direct':
+      case 'usdt_solana_direct':
+        // Direct USDT has its own immutable configuration/readiness check on
+        // the server and must not depend on the legacy EPay flag.
+        return (
+          Array.isArray(topupInfo.crypto_networks) &&
+          topupInfo.crypto_networks.length > 0
+        )
       default:
         return Boolean(topupInfo.enable_online_topup)
     }
@@ -279,12 +343,17 @@ export function useTopupInfo() {
           (value) => value?.trim().toLowerCase() === 'custom1'
         )
       })
+      const cryptoNetworks = parseCryptoNetworks(response.data.crypto_networks)
       const processedData: TopupInfo = {
         ...response.data,
+        crypto_networks: cryptoNetworks,
         pay_methods: filterAvailablePaymentMethods(
-          parsePaymentMethods(
-            response.data.pay_methods,
-            response.data.stripe_min_topup
+          dedupeCryptoPaymentMethods(
+            parsePaymentMethods(
+              response.data.pay_methods,
+              response.data.stripe_min_topup,
+              cryptoNetworks
+            )
           ),
           response.data,
           hasVisibleWaffoMethod

@@ -287,6 +287,7 @@ func migrateDB() error {
 		&Midjourney{},
 		&TopUp{},
 		&PaymentMetadata{},
+		&DirectCryptoPayment{},
 		&QuotaData{},
 		&Task{},
 		&Model{},
@@ -319,6 +320,9 @@ func migrateDB() error {
 		return err
 	}
 	refreshTokenModelMappingColumnCache()
+	if err := MigrateDirectCryptoPaymentIndexes(DB); err != nil {
+		return err
+	}
 	if err := migrateLegacyTokenGroupsToAuto(); err != nil {
 		return err
 	}
@@ -353,6 +357,7 @@ func migrateDBFast() error {
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&PaymentMetadata{}, "PaymentMetadata"},
+		{&DirectCryptoPayment{}, "DirectCryptoPayment"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},
@@ -402,6 +407,9 @@ func migrateDBFast() error {
 		}
 	}
 	refreshTokenModelMappingColumnCache()
+	if err := MigrateDirectCryptoPaymentIndexes(DB); err != nil {
+		return err
+	}
 	if err := migrateLegacyTokenGroupsToAuto(); err != nil {
 		return err
 	}

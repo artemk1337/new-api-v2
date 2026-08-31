@@ -46,6 +46,10 @@ const SECURITY_SECTIONS = [
           ModelRequestRateLimitDurationMinutes:
             settings.ModelRequestRateLimitDurationMinutes,
           ModelRequestRateLimitGroup: settings.ModelRequestRateLimitGroup,
+          PaymentCreationRateLimit: settings.PaymentCreationRateLimit,
+          PaymentCreationRateLimitDurationMinutes:
+            settings.PaymentCreationRateLimitDurationMinutes,
+          USDTTRC20MaxCreationsPerHour: settings.USDTTRC20MaxCreationsPerHour,
         }}
       />
     ),

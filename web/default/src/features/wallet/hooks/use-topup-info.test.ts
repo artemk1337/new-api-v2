@@ -9,7 +9,10 @@ License, or (at your option) any later version.
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { filterAvailablePaymentMethods } from './use-topup-info'
+import {
+  filterAvailablePaymentMethods,
+  parseCryptoNetworks,
+} from './use-topup-info'
 
 const allMethods = [
   { name: 'EPay', type: 'alipay' },
@@ -18,9 +21,18 @@ const allMethods = [
   { name: 'Pancake', type: 'waffo_pancake' },
   { name: 'SBP', type: 'yookassa_sbp' },
   { name: 'Crypto', type: 'nowpayments' },
+  { name: 'Crypto', type: 'crypto_direct', min_topup: 10 },
 ]
 
 describe('top-up payment method availability', () => {
+  test('uses only server-advertised crypto networks and preserves their order', () => {
+    assert.deepEqual(
+      parseCryptoNetworks(['TON', 'SOLANA', 'TON', 'unsupported']),
+      ['TON', 'SOLANA']
+    )
+    assert.deepEqual(parseCryptoNetworks([]), [])
+  })
+
   test('keeps only enabled gateways and makes the base Waffo method auto-selectable', () => {
     const methods = filterAvailablePaymentMethods(
       allMethods,
@@ -31,12 +43,18 @@ describe('top-up payment method availability', () => {
         enable_waffo_pancake_topup: false,
         enable_yookassa_topup: true,
         enable_nowpayments_topup: false,
+        crypto_networks: ['TRON', 'TON', 'SOLANA'],
       },
       false
     )
     assert.deepEqual(
       methods.map((method) => method.type),
-      ['alipay', 'waffo', 'yookassa_sbp']
+      [
+        'alipay',
+        'waffo',
+        'yookassa_sbp',
+        'crypto_direct',
+      ]
     )
   })
 
@@ -50,9 +68,33 @@ describe('top-up payment method availability', () => {
         enable_waffo_pancake_topup: false,
         enable_yookassa_topup: false,
         enable_nowpayments_topup: false,
+        crypto_networks: ['TRON'],
       },
       true
     )
-    assert.deepEqual(methods, [])
+    assert.deepEqual(
+      methods.map((method) => method.type),
+      ['crypto_direct']
+    )
+  })
+
+  test('keeps direct USDT visible when legacy online top-up is disabled', () => {
+    const methods = filterAvailablePaymentMethods(
+      [{ name: 'Crypto', type: 'crypto_direct' }],
+      {
+        enable_online_topup: false,
+        enable_stripe_topup: false,
+        enable_waffo_topup: false,
+        enable_waffo_pancake_topup: false,
+        enable_yookassa_topup: false,
+        enable_nowpayments_topup: false,
+        crypto_networks: ['TRON'],
+      },
+      false
+    )
+    assert.deepEqual(
+      methods.map((method) => method.type),
+      ['crypto_direct']
+    )
   })
 })

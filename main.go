@@ -119,6 +119,14 @@ func main() {
 	// Currency exchange rate history (USDT/RUB by default).
 	service.StartCurrencyExchangeRateTask()
 
+	// Direct USDT TRC20 reconciliation is disabled until an operator configures
+	// the integration. The worker itself is cancellable so a server restart or
+	// test shutdown never leaves a polling goroutine behind.
+	stopDirectUSDTWatcher := service.StartDirectUSDTTRC20Watcher()
+	defer stopDirectUSDTWatcher()
+	stopDirectUSDTMultiWatcher := service.StartDirectUSDTMultiChainWatcher()
+	defer stopDirectUSDTMultiWatcher()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -243,6 +244,39 @@ func TestNormalizePayMethodsRemovesLegacyGatewayCurrencies(t *testing.T) {
 	require.Equal(t, "yookassa_sbp", methods[2]["type"])
 }
 
+func TestCanonicalizePayMethodsDeduplicatesAndFixesDirectUSDTMetadata(t *testing.T) {
+	methods := []map[string]string{
+		{"type": "alipay"},
+		{"type": " USDT_TRC20_DIRECT ", "name": "bad", "currency": "BTC"},
+		{"type": DirectUSDTTRC20PaymentMethod, "name": "duplicate"},
+	}
+
+	canonical := CanonicalizePayMethods(methods)
+	require.Len(t, canonical, 2)
+	require.Equal(t, DirectCryptoPaymentMethod, canonical[1]["type"])
+	require.Equal(t, "Crypto", canonical[1]["name"])
+	_, hasCurrency := canonical[1]["currency"]
+	require.False(t, hasCurrency)
+	// Canonicalization must not mutate the caller's persisted snapshot until it
+	// is explicitly written back by the option migration path.
+	require.Equal(t, " USDT_TRC20_DIRECT ", methods[1]["type"])
+}
+
+func TestCanonicalizePayMethodsPrefersExplicitCryptoParentMetadata(t *testing.T) {
+	methods := []map[string]string{
+		{"type": DirectUSDTTONPaymentMethod, "min_topup": "11", "pending_ttl_minutes": "10"},
+		{"type": DirectCryptoPaymentMethod, "min_topup": "21", "pending_ttl_minutes": "20", "admin_only": "true"},
+		{"type": DirectUSDTSolanaPaymentMethod, "min_topup": "31"},
+	}
+
+	canonical := CanonicalizePayMethods(methods)
+	require.Len(t, canonical, 1)
+	require.Equal(t, DirectCryptoPaymentMethod, canonical[0]["type"])
+	require.Equal(t, "21", canonical[0]["min_topup"])
+	require.Equal(t, "20", canonical[0]["pending_ttl_minutes"])
+	require.Equal(t, "true", canonical[0]["admin_only"])
+}
+
 func TestNormalizePayMethodsNormalizesLegacyYooKassaLabels(t *testing.T) {
 	methods := []map[string]string{
 		{"type": YooKassaSBPPaymentMethod, "name": "СБП / YooKassa"},
@@ -253,7 +287,7 @@ func TestNormalizePayMethodsNormalizesLegacyYooKassaLabels(t *testing.T) {
 	require.Equal(t, "Custom SBP", methods[1]["name"])
 }
 
-func TestNormalizePayMethodsRemovesProviderOwnedMinimums(t *testing.T) {
+func TestNormalizePayMethodsPreservesPerMethodMinimums(t *testing.T) {
 	methods := []map[string]string{
 		{"type": "stripe", "min_topup": "100"},
 		{"type": "waffo", "min_topup": "100"},
@@ -266,8 +300,7 @@ func TestNormalizePayMethodsRemovesProviderOwnedMinimums(t *testing.T) {
 	NormalizePayMethods(methods)
 
 	for _, method := range methods[:5] {
-		_, exists := method["min_topup"]
-		require.False(t, exists, "provider-owned minimum should be removed for %q", method["type"])
+		require.Equal(t, "100", method["min_topup"], "per-method minimum should survive normalization for %q", method["type"])
 	}
 	require.Equal(t, "10", methods[5]["min_topup"])
 }
@@ -281,4 +314,63 @@ func TestValidatePayMethodsPendingTTL(t *testing.T) {
 	for _, ttl := range []string{"0", "-1", "525601", "one hour"} {
 		require.Error(t, ValidatePayMethods([]map[string]string{{"type": "alipay", "pending_ttl_minutes": ttl}}), ttl)
 	}
+	for _, minimum := range []string{"0", "-1", "NaN", "Infinity", "not-a-number"} {
+		require.Error(t, ValidatePayMethods([]map[string]string{{"type": "alipay", "min_topup": minimum}}), minimum)
+	}
+}
+
+func TestValidatePayMethodsRequiresConfiguredTopupGroupWhenExplicit(t *testing.T) {
+	previous := common.TopupGroupRatio2JSONString()
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1,"crypto":1.05}`))
+	t.Cleanup(func() { require.NoError(t, common.UpdateTopupGroupRatioByJSONString(previous)) })
+
+	require.NoError(t, ValidatePayMethods([]map[string]string{{"type": "crypto_direct", "topup_group": "crypto"}}))
+	require.Error(t, ValidatePayMethods([]map[string]string{{"type": "crypto_direct", "topup_group": "typo"}}))
+	// Saved legacy catalogs may omit the field and continue to use the user's
+	// group, which is the pre-per-method behavior.
+	require.NoError(t, ValidatePayMethods([]map[string]string{{"type": "alipay"}}))
+}
+
+func TestValidatePayMethodsForSavePreservesOnlyExistingLegacyOmission(t *testing.T) {
+	previous := common.TopupGroupRatio2JSONString()
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1,"premium":1.2}`))
+	t.Cleanup(func() { require.NoError(t, common.UpdateTopupGroupRatioByJSONString(previous)) })
+
+	legacy := []map[string]string{{"type": "alipay"}}
+	require.NoError(t, ValidatePayMethodsForSave([]map[string]string{{"type": "alipay"}}, legacy))
+	require.Error(t, ValidatePayMethodsForSave([]map[string]string{{"type": "alipay"}, {"type": "stripe"}}, legacy), "new method without group")
+	require.Error(t, ValidatePayMethodsForSave([]map[string]string{{"type": "alipay"}}, []map[string]string{{"type": "alipay", "topup_group": "default"}}), "configured group cannot be removed")
+	require.Error(t, ValidatePayMethodsForSave([]map[string]string{{"type": "alipay", "topup_group": "missing"}}, legacy), "unknown group")
+	require.Error(t, ValidatePayMethodsForSave([]map[string]string{{"type": "alipay", "topup_group": "default"}, {"type": "alipay", "topup_group": "default"}}, legacy), "duplicate type is ambiguous")
+}
+
+func TestParsePayMethodsJSONAcceptsTypedAdminOnly(t *testing.T) {
+	methods, err := ParsePayMethodsJSON(`[{"name":"Crypto","type":"usdt_trc20_direct","admin_only":true,"min_topup":"10"}]`)
+	require.NoError(t, err)
+	require.Len(t, methods, 1)
+	require.Equal(t, "true", methods[0]["admin_only"])
+	require.True(t, IsPayMethodAdminOnly(methods[0]))
+	require.NoError(t, ValidatePayMethods(methods))
+	public := FilterPayMethodsForRole(methods, false)
+	require.Empty(t, public)
+	require.Len(t, FilterPayMethodsForRole(methods, true), 1)
+}
+
+func TestPendingTopUpTTLDirectUSDTDefaultsToThirtyMinutesAndAllowsOverride(t *testing.T) {
+	originalMethods := PayMethods
+	common.OptionMapRWMutex.Lock()
+	originalOptions := common.OptionMap
+	common.OptionMap = map[string]string{PaymentPendingTTLMinutes: "1440"}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		PayMethods = originalMethods
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = originalOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	PayMethods = nil
+	require.Equal(t, DefaultDirectUSDTTRC20PendingTTL, PendingTopUpTTL(DirectUSDTTRC20PaymentMethod))
+	PayMethods = []map[string]string{{"type": DirectUSDTTRC20PaymentMethod, "pending_ttl_minutes": "45"}}
+	require.Equal(t, 45*time.Minute, PendingTopUpTTL(DirectUSDTTRC20PaymentMethod))
 }

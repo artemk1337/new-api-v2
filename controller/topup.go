@@ -25,6 +25,15 @@ import (
 	"gorm.io/gorm"
 )
 
+func isDirectUSDTPaymentMethod(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return true
+	default:
+		return false
+	}
+}
+
 func topUpPayMethods() ([]map[string]string, error) {
 	fallback := operation_setting.PayMethodsSnapshot()
 	methods, err := model.GetPayMethodsFromDB(model.DB)
@@ -34,7 +43,48 @@ func topUpPayMethods() ([]map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load PayMethods: %w", err)
 	}
-	return methods, nil
+	return operation_setting.CanonicalizePayMethods(methods), nil
+}
+
+// directCryptoMethodForUser is stricter than the generic historical gateway
+// guard: Crypto has no legacy public fallback. New invoice creation, quote and
+// status all require the single parent method to be present and visible.
+func directCryptoMethodForUser(c *gin.Context) (map[string]string, bool) {
+	methods, err := topUpPayMethods()
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, false
+	}
+	for _, method := range methods {
+		if method == nil || !strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+			continue
+		}
+		if operation_setting.IsPayMethodAdminOnly(method) && c.GetInt("role") < common.RoleAdminUser {
+			common.ApiErrorMsg(c, "Payment method is not available")
+			return nil, false
+		}
+		return method, true
+	}
+	common.ApiErrorMsg(c, "USDT payments are not available")
+	return nil, false
+}
+
+func paymentMethodAllowedForUser(c *gin.Context, paymentMethod string) bool {
+	methods, err := topUpPayMethods()
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	for _, method := range methods {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), strings.TrimSpace(paymentMethod)) {
+			if operation_setting.IsPayMethodAdminOnly(method) && c.GetInt("role") < common.RoleAdminUser {
+				common.ApiErrorMsg(c, "Payment method is not available")
+				return false
+			}
+			return true
+		}
+	}
+	return true
 }
 
 func GetTopUpInfo(c *gin.Context) {
@@ -56,6 +106,26 @@ func GetTopUpInfo(c *gin.Context) {
 	if !complianceConfirmed {
 		payMethods = []map[string]string{}
 	}
+	directNetworks := []string(nil)
+	var directConfig map[string]string
+	for _, method := range payMethods {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+			directConfig = method
+			break
+		}
+	}
+	if complianceConfirmed && directConfig != nil {
+		directNetworks = model.DirectUSDTReadyNetworks()
+	}
+	// Remove the parent before adding one canonical method below. This keeps
+	// malformed/duplicate catalog data from publishing multiple Crypto cards.
+	filteredPayMethods := make([]map[string]string, 0, len(payMethods))
+	for _, method := range payMethods {
+		if method == nil || !strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+			filteredPayMethods = append(filteredPayMethods, method)
+		}
+	}
+	payMethods = filteredPayMethods
 	hasYooKassaSBP := false
 	for _, method := range payMethods {
 		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodYooKassaSBP) {
@@ -155,10 +225,63 @@ func GetTopUpInfo(c *gin.Context) {
 			payMethods = append(payMethods, map[string]string{"name": "Crypto / NOWPayments", "type": model.PaymentMethodNOWPayments, "currency": "USDT", "color": "#F7931A", "min_topup": strconv.FormatFloat(getMinTopup(), 'f', -1, 64)})
 		}
 	}
+
+	// Crypto is one parent method. Networks are a server-derived list, never
+	// independent PayMethods entries, so their policy cannot diverge.
+	if len(directNetworks) > 0 && directConfig != nil {
+		directMethod := map[string]string{
+			"name":      "Crypto",
+			"type":      model.DirectCryptoProvider,
+			"currency":  "USDT",
+			"color":     "#26A17B",
+			"min_topup": "10",
+		}
+		for key, value := range directConfig {
+			directMethod[key] = value
+		}
+		directMethod["name"] = "Crypto"
+		directMethod["type"] = model.DirectCryptoProvider
+		directMethod["currency"] = "USDT"
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(directMethod["min_topup"]), 64); err != nil || parsed < 10 {
+			directMethod["min_topup"] = "10"
+		}
+		payMethods = append(payMethods, directMethod)
+	}
+	// Synthetic provider entries inherit the persisted visibility flag. This
+	// prevents an admin-only Stripe/NOWPayments method from being re-added as a
+	// public synthetic card when its integration is enabled.
+	for i, method := range payMethods {
+		if method == nil || operation_setting.IsPayMethodAdminOnly(method) {
+			continue
+		}
+		for _, configured := range operation_setting.PayMethodsSnapshot() {
+			if configured != nil && strings.EqualFold(strings.TrimSpace(configured["type"]), strings.TrimSpace(method["type"])) && operation_setting.IsPayMethodAdminOnly(configured) {
+				copyMethod := make(map[string]string, len(method)+1)
+				for key, value := range method {
+					copyMethod[key] = value
+				}
+				copyMethod["admin_only"] = "true"
+				payMethods[i] = copyMethod
+				break
+			}
+		}
+	}
+	payMethods = operation_setting.FilterPayMethodsForRole(payMethods, c.GetInt("role") >= common.RoleAdminUser)
+	directVisible := false
+	for _, method := range payMethods {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+			directVisible = true
+			break
+		}
+	}
+	if !directVisible {
+		directNetworks = nil
+	}
 	userGroup, err := model.GetUserGroup(c.GetInt("id"), true)
 	if err != nil {
 		userGroup = "default"
 	}
+	minimumTopUp := 0.0
 	for i, method := range payMethods {
 		copyMethod := make(map[string]string, len(method)+1)
 		for key, value := range method {
@@ -170,7 +293,8 @@ func GetTopUpInfo(c *gin.Context) {
 		// Preload the amount-independent quote inputs with the wallet page. The
 		// browser can render provider amounts immediately from these values; the
 		// payment endpoints still rebuild a fresh server quote on submit.
-		if displayConfig, configErr := service.GetPaymentQuoteDisplayConfigWithPayMethods(copyMethod["type"], userGroup, payMethods); configErr == nil {
+		displayConfig, configErr := service.GetPaymentQuoteDisplayConfigWithPayMethods(copyMethod["type"], userGroup, payMethods)
+		if configErr == nil {
 			copyMethod["currency"] = displayConfig.Currency
 			copyMethod["rate_to_usd"] = strconv.FormatFloat(displayConfig.RateToUSD, 'f', -1, 64)
 			copyMethod["base_amount_multiplier"] = strconv.FormatFloat(displayConfig.BaseAmountMultiplier, 'f', -1, 64)
@@ -181,6 +305,19 @@ func GetTopUpInfo(c *gin.Context) {
 			// the UI can show a placeholder and payment creation will return the
 			// authoritative rate/configuration error.
 			copyMethod["rate_to_usd"] = "0"
+		}
+		if minimum, configured := service.PaymentMethodMinimumWithMethods(copyMethod["type"], payMethods); configured {
+			copyMethod["min_topup"] = strconv.FormatFloat(minimum, 'f', -1, 64)
+			// Convert the provider-denominated minimum into the amount the
+			// wallet sends to the quote endpoint. This keeps the shared form
+			// minimum meaningful when visible methods use different currencies.
+			denominator := displayConfig.BaseAmountMultiplier * displayConfig.Coefficient * displayConfig.RateToUSD
+			if configErr == nil && denominator > 0 && !math.IsNaN(denominator) && !math.IsInf(denominator, 0) {
+				inputMinimum := minimum / denominator
+				if inputMinimum > 0 && (minimumTopUp == 0 || inputMinimum < minimumTopUp) {
+					minimumTopUp = inputMinimum
+				}
+			}
 		}
 		payMethods[i] = copyMethod
 	}
@@ -226,9 +363,12 @@ func GetTopUpInfo(c *gin.Context) {
 			}
 			return nil
 		}(),
-		"creem_products":          creemProducts,
-		"pay_methods":             payMethods,
-		"min_topup":               operation_setting.MinTopUp,
+		"creem_products":  creemProducts,
+		"pay_methods":     payMethods,
+		"crypto_networks": directNetworks,
+		// This is the minimum of the methods visible to the requesting user.
+		// Returning zero when none are eligible keeps the wallet fail-closed.
+		"min_topup":               minimumTopUp,
 		"stripe_min_topup":        setting.StripeMinTopUp,
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup": setting.WaffoPancakeMinTopUp,
@@ -279,6 +419,30 @@ func GetTopUpQuote(c *gin.Context) {
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
 		common.ApiErrorMsg(c, "invalid parameters")
 		return
+	}
+	// Network-specific IDs are accepted only for backwards-compatible quote
+	// requests. They must use the single Crypto catalog entry before the common
+	// visibility check, otherwise a legacy ID could bypass crypto_direct's
+	// admin_only policy.
+	if isDirectUSDTPaymentMethod(req.PaymentMethod) {
+		req.PaymentMethod = model.DirectCryptoProvider
+	}
+	if !paymentMethodAllowedForUser(c, req.PaymentMethod) {
+		return
+	}
+	if isDirectUSDTPaymentMethod(req.PaymentMethod) {
+		if !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorMsg(c, "Payment compliance is not confirmed")
+			return
+		}
+		if !model.IsDirectUSDTNetworkMethodConfigured(model.DirectCryptoProvider) {
+			common.ApiErrorMsg(c, "Payment method does not exist")
+			return
+		}
+		if len(model.DirectUSDTReadyNetworks()) == 0 {
+			common.ApiErrorMsg(c, "Payment method is not configured")
+			return
+		}
 	}
 	var payMethods []map[string]string
 	if strings.EqualFold(strings.TrimSpace(req.PaymentMethod), model.PaymentMethodYooKassaSBP) {
@@ -385,11 +549,9 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
 		return
 	}
-	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %g", getMinTopup())})
+	if !paymentMethodAllowedForUser(c, req.PaymentMethod) {
 		return
 	}
-
 	id := c.GetInt("id")
 	if user, userErr := model.GetUserById(id, false); userErr != nil || user == nil {
 		logger.LogWarn(c.Request.Context(), fmt.Sprintf("Epay user does not exist user_id=%d error=%v", id, userErr))
@@ -700,10 +862,6 @@ func RequestAmount(c *gin.Context) {
 		return
 	}
 
-	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %g", getMinTopup())})
-		return
-	}
 	id := c.GetInt("id")
 	group, err := model.GetUserGroup(id, true)
 	if err != nil {

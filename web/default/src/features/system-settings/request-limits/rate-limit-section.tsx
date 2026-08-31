@@ -97,6 +97,9 @@ const createRateLimitSchema = (t: (key: string) => string) =>
       }),
     ModelRequestRateLimitCount: z.number().min(0).max(100000000),
     ModelRequestRateLimitSuccessCount: z.number().min(1).max(100000000),
+    PaymentCreationRateLimit: z.number().int().min(1).max(1000),
+    PaymentCreationRateLimitDurationMinutes: z.number().int().min(1).max(60),
+    USDTTRC20MaxCreationsPerHour: z.number().int().min(0).max(1000),
     ModelRequestRateLimitGroup: z
       .string()
       .optional()
@@ -114,6 +117,9 @@ type RateLimitSectionProps = {
     ModelRequestRateLimitDurationActivated: boolean
     ModelRequestRateLimitDurationStaged: boolean
     ModelRequestRateLimitDurationMinutes: number
+    PaymentCreationRateLimit: number
+    PaymentCreationRateLimitDurationMinutes: number
+    USDTTRC20MaxCreationsPerHour: number
   }
 }
 
@@ -401,6 +407,106 @@ export function RateLimitSection({ defaultValues }: RateLimitSectionProps) {
                 </FormItem>
               )}
             />
+          </div>
+
+          <div className='space-y-4 rounded-lg border p-4'>
+            <div>
+              <h3 className='text-base font-medium'>
+                {t('Payment creation limits')}
+              </h3>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Controls how many payment orders one user can create. This is separate from API request throttling.'
+                )}
+              </p>
+            </div>
+            <div className='grid gap-4 md:grid-cols-3'>
+              <FormField
+                control={form.control}
+                name='PaymentCreationRateLimit'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Payment creation limit (requests/window)')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        max={1000}
+                        step={1}
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(Number.parseInt(e.target.value) || 1)
+                        }
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Maximum payment orders one user can create in the window. Default: 5.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='PaymentCreationRateLimitDurationMinutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Payment creation window (minutes)')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        max={60}
+                        step={1}
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(Number.parseInt(e.target.value) || 1)
+                        }
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Window used for the payment creation limit. Default: 1 minute.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name='USDTTRC20MaxCreationsPerHour'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Crypto payments per hour')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={0}
+                        max={1000}
+                        step={1}
+                        {...field}
+                        onChange={(e) =>
+                          field.onChange(Number.parseInt(e.target.value) || 0)
+                        }
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Limit for direct Crypto orders per user. Set 0 to disable this protection.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           </div>
 
           <div className='bg-muted/40 space-y-3 rounded-lg border p-4'>

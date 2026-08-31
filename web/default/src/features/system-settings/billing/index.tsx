@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { SettingsPage } from '../components/settings-page'
+import { resolveCryptoTailLimitSettings } from '../integrations/crypto-payment-settings'
 import type { BillingSettings } from '../types'
 import {
   BILLING_DEFAULT_SECTION,
@@ -67,10 +68,9 @@ const defaultBillingSettings: BillingSettings = {
   Price: 7.3,
   MinTopUp: 1,
   PaymentPendingTTLMinutes: 1440,
-  PaymentCreationRateLimit: 5,
-  PaymentCreationRateLimitDurationMinutes: 1,
   CustomCallbackAddress: '',
   PayMethods: '',
+  PaymentMethodAvailableIcons: '',
   'payment_setting.amount_options': '',
   'payment_setting.amount_cashback': '',
   'payment_setting.compliance_confirmed': false,
@@ -118,6 +118,14 @@ const defaultBillingSettings: BillingSettings = {
   NOWPaymentsPriceCurrency: 'usd',
   NOWPaymentsPayCurrency: '',
   NOWPaymentsIPNCallbackURL: '',
+  USDTTRC20Enabled: false,
+  USDTTRC20ReceivingAddress: '',
+  USDTTONReceivingAddress: '',
+  USDTSolanaReceivingAddress: '',
+  USDTSolanaReceivingTokenAccount: '',
+  USDTTRC20AmountTailLimitUnits: 10000,
+  USDTTRC20AmountPrecision: 6,
+  USDTTRC20APIKey: '',
   WaffoPancakeStoreID: '',
   WaffoPancakeProductID: '',
   'checkin_setting.enabled': false,
@@ -133,6 +141,7 @@ export function BillingSettings() {
       defaultSection={BILLING_DEFAULT_SECTION}
       getSectionContent={getBillingSectionContent}
       getSectionMeta={getBillingSectionMeta}
+      resolveSettings={resolveCryptoTailLimitSettings}
     />
   )
 }

@@ -39,3 +39,14 @@ func GetTopupGroupRatio(name string) float64 {
 	}
 	return ratio
 }
+
+// HasTopupGroupRatio reports whether a payment-method coefficient group is
+// configured. It is intentionally separate from GetTopupGroupRatio: the
+// latter preserves the historical fallback to 1 for old methods without a
+// group, while new explicit group references must be rejected when invalid.
+func HasTopupGroupRatio(name string) bool {
+	topupGroupRatioMutex.RLock()
+	defer topupGroupRatioMutex.RUnlock()
+	_, ok := topupGroupRatio[name]
+	return ok
+}

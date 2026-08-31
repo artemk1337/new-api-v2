@@ -82,6 +82,34 @@ export type NOWPaymentsPaymentResponse = ApiResponse<{
   trade_no?: string
 }>
 
+export type DirectUSDTNetwork = 'TRON' | 'TON' | 'SOLANA'
+
+export type DirectUSDTPaymentResponse = ApiResponse<{
+  payment_url: string
+  trade_no: string
+}>
+
+/** @deprecated use DirectUSDTPaymentResponse */
+export type USDTTrc20PaymentResponse = DirectUSDTPaymentResponse
+
+export type DirectUSDTPaymentStatus = {
+  trade_no: string
+  status: string
+  address: string
+  /** Receiving address may be returned under this explicit field by the multichain API. */
+  receiving_address?: string
+  destination_token_account?: string
+  network: DirectUSDTNetwork
+  token: 'USDT'
+  token_contract: string
+  contract?: string
+  amount: string
+  expires_at: number | string
+}
+
+/** @deprecated use DirectUSDTPaymentStatus */
+export type USDTTrc20PaymentStatus = DirectUSDTPaymentStatus
+
 export interface CashbackThreshold {
   min_amount: number
   cashback_percent: number
@@ -127,6 +155,8 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional react-icons component name or safe icon URL */
   icon?: string
+  /** Server-filtered visibility flag for administrator-only methods. */
+  admin_only?: boolean
   /** Top-up price multiplier configured for this payment method */
   topup_ratio?: number
   /** Public display config preloaded by the server with top-up info. */
@@ -139,6 +169,10 @@ export interface PaymentMethod {
   payment_amount?: number
   /** Optional symbol supplied by the server for the provider currency. */
   currency_symbol?: string
+  /** Networks available for the unified Crypto method, supplied by server. */
+  crypto_networks?: DirectUSDTNetwork[]
+  /** Network selected by the user for the current checkout only. */
+  crypto_network?: DirectUSDTNetwork
 }
 
 /**
@@ -208,6 +242,8 @@ export interface TopupInfo {
   payment_compliance_confirmed?: boolean
   /** Current compliance terms version */
   payment_compliance_terms_version?: string
+  /** Server-filtered, ready networks for the single Crypto method. */
+  crypto_networks?: DirectUSDTNetwork[]
 }
 
 /**

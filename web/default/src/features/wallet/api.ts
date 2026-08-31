@@ -45,6 +45,9 @@ import type {
   NOWPaymentsPaymentRequest,
   NOWPaymentsPaymentResponse,
   TopupQuoteResponse,
+  DirectUSDTPaymentResponse,
+  DirectUSDTPaymentStatus,
+  DirectUSDTNetwork,
 } from './types'
 
 // ============================================================================
@@ -258,6 +261,60 @@ export async function requestNOWPaymentsPayment(
   const res = await api.post('/api/user/nowpayments/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
+  return res.data
+}
+
+export async function requestUSDTTrc20Payment(
+  request: PaymentRequest
+): Promise<DirectUSDTPaymentResponse> {
+  const res = await api.post<DirectUSDTPaymentResponse>(
+    '/api/user/usdt-trc20/pay',
+    request,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+const directCryptoNetworkPath: Record<DirectUSDTNetwork, string> = {
+  TRON: 'tron',
+  TON: 'ton',
+  SOLANA: 'solana',
+}
+
+export function getDirectCryptoPaymentEndpoint(network: DirectUSDTNetwork) {
+  return `/api/user/crypto/${directCryptoNetworkPath[network]}/pay`
+}
+
+export async function requestDirectCryptoPayment(
+  network: DirectUSDTNetwork,
+  request: PaymentRequest
+): Promise<DirectUSDTPaymentResponse> {
+  const res = await api.post<DirectUSDTPaymentResponse>(
+    getDirectCryptoPaymentEndpoint(network),
+    { ...request, payment_method: 'crypto_direct' },
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+export async function getDirectCryptoPaymentStatus(
+  network: DirectUSDTNetwork,
+  tradeNo: string
+): Promise<ApiResponse<DirectUSDTPaymentStatus>> {
+  const res = await api.get<ApiResponse<DirectUSDTPaymentStatus>>(
+    `/api/user/crypto/${directCryptoNetworkPath[network]}/${encodeURIComponent(tradeNo)}`,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
+export async function getUSDTTrc20PaymentStatus(
+  tradeNo: string
+): Promise<ApiResponse<DirectUSDTPaymentStatus>> {
+  const res = await api.get<ApiResponse<DirectUSDTPaymentStatus>>(
+    `/api/user/usdt-trc20/${encodeURIComponent(tradeNo)}`,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
   return res.data
 }
 

@@ -38,6 +38,10 @@ export const PAYMENT_TYPES = {
   WAFFO_PANCAKE: 'waffo_pancake',
   YOOKASSA_SBP: 'yookassa_sbp',
   NOWPAYMENTS: 'nowpayments',
+  CRYPTO_DIRECT: 'crypto_direct',
+  USDT_TRON: 'usdt_trc20_direct',
+  USDT_TON: 'usdt_ton_direct',
+  USDT_SOLANA: 'usdt_solana_direct',
 } as const
 
 /**
@@ -57,6 +61,10 @@ export const PAYMENT_ICON_COLORS = {
   [PAYMENT_TYPES.WAFFO_PANCAKE]: '#F97316',
   [PAYMENT_TYPES.YOOKASSA_SBP]: '#8B3FFD',
   [PAYMENT_TYPES.NOWPAYMENTS]: '#F7931A',
+  [PAYMENT_TYPES.CRYPTO_DIRECT]: '#26A17B',
+  usdt_trc20_direct: '#26A17B',
+  usdt_ton_direct: '#0098EA',
+  usdt_solana_direct: '#9945FF',
 } as const
 
 /**

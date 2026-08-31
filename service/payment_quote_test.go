@@ -33,6 +33,15 @@ func TestBuildPaymentQuoteCommissionRule(t *testing.T) {
 	assert.InDelta(t, quote.BaseAmountUSD*1.03, quote.ChargedAmountUSD, 0.000001)
 }
 
+func TestBuildPaymentQuoteDirectUSDTRequiresPersistedMethod(t *testing.T) {
+	_, err := BuildPaymentQuoteWithPayMethods(10, model.DirectUSDTTRC20Provider, "default", []map[string]string{{"type": "alipay"}})
+	require.Error(t, err)
+
+	quote, err := BuildPaymentQuoteWithPayMethods(10, model.DirectUSDTTRC20Provider, "default", []map[string]string{{"type": model.DirectUSDTTRC20Provider}})
+	require.NoError(t, err)
+	require.Equal(t, "USDT", quote.Currency)
+}
+
 func TestBuildPaymentQuoteUsesPersistedPayMethodGroup(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -364,6 +373,26 @@ func TestBuildPaymentQuoteAppliesLegacyMethodMinimumInSettlementCurrency(t *test
 	quote, err := BuildPaymentQuote(10.5, "alipay", "default")
 	require.NoError(t, err)
 	assert.Equal(t, 10.5, quote.ChargedAmount)
+}
+
+func TestBuildPaymentQuoteUsesPerMethodMinimumForBuiltInGateway(t *testing.T) {
+	previousMethods := operation_setting.PayMethods
+	previousMin := setting.StripeMinTopUp
+	previousUnitPrice := setting.StripeUnitPrice
+	operation_setting.PayMethods = []map[string]string{{"type": model.PaymentMethodStripe, "min_topup": "25"}}
+	setting.StripeMinTopUp = 1
+	setting.StripeUnitPrice = 1
+	t.Cleanup(func() {
+		operation_setting.PayMethods = previousMethods
+		setting.StripeMinTopUp = previousMin
+		setting.StripeUnitPrice = previousUnitPrice
+	})
+
+	_, err := BuildPaymentQuote(24, model.PaymentMethodStripe, "default")
+	assert.Error(t, err)
+	quote, err := BuildPaymentQuote(25, model.PaymentMethodStripe, "default")
+	require.NoError(t, err)
+	assert.Equal(t, 25.0, quote.ChargedAmount)
 }
 
 func TestBuildPaymentQuoteReturnsAuthoritativeCashbackAndCreditedAmount(t *testing.T) {

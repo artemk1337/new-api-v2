@@ -25,6 +25,7 @@ import * as z from 'zod'
 import { Dialog } from '@/components/dialog'
 import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
@@ -36,31 +37,77 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
+import {
+  isConfiguredTopupGroup,
+  type TopupGroupOption,
+} from './payment-method-group'
+import { BUILT_IN_PAYMENT_ICONS } from './payment-method-icons'
 import {
   getPaymentMethodMinimumCurrency,
   hasEditablePaymentMethodMinimum,
 } from './payment-method-minimum'
-import { getPaymentTypeOptions } from './payment-method-options'
+import {
+  getPaymentTypeOptions,
+  isCryptoPaymentType,
+  normalizePaymentMethodType,
+} from './payment-method-options'
 
-const createPaymentMethodDialogSchema = (t: (key: string) => string) =>
-  z.object({
-    name: z.string().min(1, t('Payment method name is required')),
-    type: z.string().min(1, t('Payment type is required')),
-    icon: z.string().optional(),
-    min_topup: z.string().optional(),
-    pending_ttl_minutes: z
-      .string()
-      .refine(
-        (value) =>
-          value.trim() === '' ||
-          (/^\d+$/.test(value.trim()) && Number(value) > 0),
-        t(
-          'Enter a positive whole number of minutes or leave blank for the default'
-        )
-      ),
-    topup_group: z.string().optional(),
-  })
+export type { TopupGroupOption } from './payment-method-group'
+
+const createPaymentMethodDialogSchema = (
+  t: (key: string) => string,
+  topupGroups: TopupGroupOption[]
+) =>
+  z
+    .object({
+      name: z.string().min(1, t('Payment method name is required')),
+      type: z.string().min(1, t('Payment type is required')),
+      icon: z.string().optional(),
+      admin_only: z.boolean(),
+      min_topup: z
+        .string()
+        .refine(
+          (value) =>
+            value.trim() === '' ||
+            (/^\d+(?:\.\d+)?$/.test(value.trim()) && Number(value) > 0),
+          t('Enter a positive minimum amount or leave blank for the default')
+        ),
+      pending_ttl_minutes: z
+        .string()
+        .refine(
+          (value) =>
+            value.trim() === '' ||
+            (/^\d+$/.test(value.trim()) && Number(value) > 0),
+          t(
+            'Enter a positive whole number of minutes or leave blank for the default'
+          )
+        ),
+      topup_group: z
+        .string()
+        .refine(
+          (value) => isConfiguredTopupGroup(value, topupGroups),
+          t('Select a configured top-up coefficient group')
+        ),
+    })
+    .superRefine((values, context) => {
+      if (
+        isDirectCryptoPaymentType(values.type) &&
+        values.min_topup.trim() !== '' &&
+        Number(values.min_topup) < 10
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['min_topup'],
+          message: t('Crypto minimum top-up must be at least 10 USDT'),
+        })
+      }
+    })
 
 type PaymentMethodDialogFormValues = z.infer<
   ReturnType<typeof createPaymentMethodDialogSchema>
@@ -68,19 +115,21 @@ type PaymentMethodDialogFormValues = z.infer<
 
 const PAYMENT_METHOD_FORM_ID = 'payment-method-form'
 
+function isDirectCryptoPaymentType(type: string): boolean {
+  return isCryptoPaymentType(type)
+}
+
 export type PaymentMethodData = {
   name: string
   type: string
   icon?: string
+  /** Persisted PayMethods historically stores scalar flags as strings. */
+  admin_only?: boolean | 'true' | 'false'
+  AdminOnly?: boolean | 'true' | 'false'
   min_topup?: string
   pending_ttl_minutes?: string
   color?: string
   topup_group?: string
-}
-
-export type TopupGroupOption = {
-  name: string
-  ratio: number
 }
 
 type PaymentMethodDialogProps = {
@@ -92,16 +141,24 @@ type PaymentMethodDialogProps = {
   /** Settlement currency used by the legacy Waffo gateway. */
   waffoCurrency?: string
   defaultPendingTtlMinutes?: number
+  availableIcons?: string[]
 }
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
+  crypto_direct: 'LuWalletCards',
+  nowpayments: 'LuBitcoin',
   stripe: 'SiStripe',
+  waffo: 'LuCreditCard',
   waffo_pancake: 'LuCreditCard',
   wxpay: 'SiWechat',
 }
 
 const getDefaultIconName = (type: string) => PAYMENT_TYPE_ICON_NAMES[type] ?? ''
+
+function isAdminOnly(value: PaymentMethodData['admin_only']): boolean {
+  return value === true || value === 'true'
+}
 
 export function PaymentMethodDialog({
   open,
@@ -111,10 +168,14 @@ export function PaymentMethodDialog({
   topupGroups,
   waffoCurrency,
   defaultPendingTtlMinutes = 1440,
+  availableIcons = [...BUILT_IN_PAYMENT_ICONS],
 }: PaymentMethodDialogProps) {
   const { t } = useTranslation()
   const isEditMode = !!editData
-  const paymentMethodDialogSchema = createPaymentMethodDialogSchema(t)
+  const paymentMethodDialogSchema = createPaymentMethodDialogSchema(
+    t,
+    topupGroups
+  )
   const paymentTypeOptions = getPaymentTypeOptions(t)
   const getPaymentTypeOption = (value: string) =>
     paymentTypeOptions.find((option) => option.value === value)
@@ -125,6 +186,7 @@ export function PaymentMethodDialog({
       name: '',
       type: '',
       icon: '',
+      admin_only: false,
       min_topup: '',
       pending_ttl_minutes: '',
       topup_group: '',
@@ -133,19 +195,23 @@ export function PaymentMethodDialog({
 
   const iconValue = form.watch('icon')
   const paymentType = form.watch('type')
+  const isDirectCrypto = isDirectCryptoPaymentType(paymentType)
   const minimumCurrency = getPaymentMethodMinimumCurrency(
     paymentType,
     waffoCurrency
   )
   const hasEditableMinimum = hasEditablePaymentMethodMinimum(paymentType)
+  const minimumInputFloor = isDirectCrypto ? '10' : '0.01'
   const effectiveDefaultPendingTtlMinutes =
     paymentType === 'yookassa_sbp' ? 15 : defaultPendingTtlMinutes
   useEffect(() => {
     if (editData) {
+      const normalizedType = normalizePaymentMethodType(editData.type)
       form.reset({
-        name: editData.name,
-        type: editData.type,
-        icon: editData.icon ?? getDefaultIconName(editData.type),
+        name: isCryptoPaymentType(normalizedType) ? 'Crypto' : editData.name,
+        type: normalizedType,
+        icon: editData.icon ?? getDefaultIconName(normalizedType),
+        admin_only: isAdminOnly(editData.admin_only ?? editData.AdminOnly),
         min_topup: editData.min_topup ?? '',
         pending_ttl_minutes: editData.pending_ttl_minutes ?? '',
         topup_group: editData.topup_group ?? '',
@@ -155,6 +221,7 @@ export function PaymentMethodDialog({
         name: '',
         type: '',
         icon: '',
+        admin_only: false,
         min_topup: '',
         pending_ttl_minutes: '',
         topup_group: '',
@@ -164,14 +231,15 @@ export function PaymentMethodDialog({
 
   const handleSubmit = (values: PaymentMethodDialogFormValues) => {
     const data: PaymentMethodData = {
-      name: values.name,
-      type: values.type,
+      name: isDirectCryptoPaymentType(values.type) ? 'Crypto' : values.name,
+      type: normalizePaymentMethodType(values.type),
+      admin_only: values.admin_only,
     }
     if (values.icon && values.icon.trim() !== '') {
       data.icon = values.icon.trim()
     }
     if (
-      hasEditableMinimum &&
+      (hasEditableMinimum || isDirectCrypto) &&
       values.min_topup &&
       values.min_topup.trim() !== ''
     ) {
@@ -180,9 +248,7 @@ export function PaymentMethodDialog({
     if (values.pending_ttl_minutes.trim() !== '') {
       data.pending_ttl_minutes = values.pending_ttl_minutes.trim()
     }
-    if (values.topup_group && values.topup_group.trim() !== '') {
-      data.topup_group = values.topup_group.trim()
-    }
+    data.topup_group = values.topup_group.trim()
     onSave(data)
     form.reset()
     onOpenChange(false)
@@ -225,7 +291,11 @@ export function PaymentMethodDialog({
               <FormItem>
                 <FormLabel>{t('Name')}</FormLabel>
                 <FormControl>
-                  <Input placeholder={t('e.g., Alipay, WeChat')} {...field} />
+                  <Input
+                    placeholder={t('e.g., Alipay, WeChat')}
+                    disabled={isDirectCrypto}
+                    {...field}
+                  />
                 </FormControl>
                 <FormDescription>
                   {t('Display name for this payment method.')}
@@ -273,7 +343,6 @@ export function PaymentMethodDialog({
                     }}
                     placeholder={t('Select or enter payment type')}
                     searchPlaceholder={t('Search payment types...')}
-                    allowCustomValue
                   />
                 </FormControl>
                 <FormDescription className='leading-relaxed'>
@@ -294,31 +363,62 @@ export function PaymentMethodDialog({
                 <FormLabel>{t('Icon')}</FormLabel>
                 <FormControl>
                   <div className='flex items-center gap-2'>
-                    <Input
-                      placeholder={t('e.g., SiAlipay')}
-                      {...field}
-                      className='flex-1'
-                    />
-                    {iconValue && (
-                      <ReactIconByName
-                        name={iconValue}
-                        className='text-muted-foreground size-5 shrink-0'
-                        title={iconValue}
-                      />
-                    )}
+                    <Popover>
+                      <PopoverTrigger
+                        render={
+                          <Button
+                            type='button'
+                            variant='outline'
+                            className='w-full justify-start gap-2'
+                          />
+                        }
+                      >
+                        {iconValue ? (
+                          <ReactIconByName
+                            name={iconValue}
+                            className='size-5'
+                          />
+                        ) : (
+                          <span className='text-muted-foreground'>
+                            {t('Choose an icon')}
+                          </span>
+                        )}
+                        {iconValue && <span>{iconValue}</span>}
+                      </PopoverTrigger>
+                      <PopoverContent className='w-72'>
+                        <div className='grid grid-cols-5 gap-2'>
+                          {availableIcons.map((iconName) => (
+                            <Button
+                              key={iconName}
+                              type='button'
+                              variant={
+                                iconValue === iconName ? 'default' : 'outline'
+                              }
+                              size='icon'
+                              title={iconName}
+                              aria-label={iconName}
+                              onClick={() => field.onChange(iconName)}
+                            >
+                              <ReactIconByName
+                                name={iconName}
+                                className='size-5'
+                              />
+                            </Button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </FormControl>
                 <FormDescription>
-                  {t(
-                    'Enter a react-icons component name. Invalid names show no icon.'
-                  )}
+                  {t('Choose an icon from the curated library.')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {hasEditableMinimum && (
+          {(hasEditableMinimum || isDirectCrypto) && (
             <FormField
               control={form.control}
               name='min_topup'
@@ -330,8 +430,9 @@ export function PaymentMethodDialog({
                   <FormControl>
                     <Input
                       type='number'
+                      min={minimumInputFloor}
                       step='0.01'
-                      placeholder={t('e.g., 50')}
+                      placeholder={isDirectCrypto ? '10' : t('e.g., 50')}
                       {...field}
                     />
                   </FormControl>
@@ -349,21 +450,23 @@ export function PaymentMethodDialog({
             name='topup_group'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Top-up coefficient group')}</FormLabel>
+                <FormLabel>{t('Top-up coefficient group')} *</FormLabel>
                 <FormControl>
                   <Combobox
-                    options={topupGroups.map((group) => ({
-                      label: `${group.name} (${group.ratio})`,
-                      value: group.name,
-                    }))}
+                    options={topupGroups
+                      .filter((group) => group.name.trim())
+                      .map((group) => ({
+                        label: `${group.name} (${group.ratio})`,
+                        value: group.name,
+                      }))}
                     value={field.value}
                     onValueChange={(value) => field.onChange(value ?? '')}
                     placeholder={t('Use user group coefficient')}
                     searchPlaceholder={t('Search top-up groups...')}
-                    allowCustomValue
                   />
                 </FormControl>
                 <FormDescription>
+                  {t('Select a configured top-up coefficient group')}.{' '}
                   {t(
                     'Commission coefficient: values up to 1 have no commission; values above 1 are shown as a percentage commission.'
                   )}
@@ -396,6 +499,26 @@ export function PaymentMethodDialog({
                   )}
                 </FormDescription>
                 <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='admin_only'
+            render={({ field }) => (
+              <FormItem className='flex items-start gap-3 space-y-0 rounded-md border p-3'>
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <div className='space-y-1'>
+                  <FormLabel>{t('Only for admins')}</FormLabel>
+                  <FormDescription>
+                    {t('Regular users will not see this payment method.')}
+                  </FormDescription>
+                </div>
               </FormItem>
             )}
           />

@@ -28,9 +28,11 @@ import { formatCurrency } from '../lib/format'
 import {
   getCashbackTierSummary,
   getPaymentMethodDisplayQuote,
+  getMinimumAvailablePaymentMethodAmount,
+  isPaymentMethodAmountEligible,
 } from '../lib/payment'
 import { getBackendTopupAmount } from '../lib/topup-input'
-import type { CashbackThreshold } from '../types'
+import type { CashbackThreshold, TopupInfo } from '../types'
 import {
   getAvailableWaffoMethods,
   getCashbackTierPosition,
@@ -47,6 +49,9 @@ import {
   getPaymentQuoteDisplay,
   getRechargeValidationTarget,
   getRechargeStep,
+  getTopupAmountErrorMessage,
+  isTopupAmountValidationActive,
+  shouldShowPaymentMethodQuote,
   canSelectPaymentMethod,
   formatWalletInputAmount,
   isLegacyCustomMethod,
@@ -55,6 +60,40 @@ import {
 } from './recharge-form-card'
 
 describe('custom top-up amount', () => {
+  test('computes the minimum across all available methods', () => {
+    const methods = [
+      {
+        name: 'Cheap',
+        type: 'custom',
+        min_topup: 5,
+        currency: 'USD',
+        rate_to_usd: 1,
+        base_amount_multiplier: 1,
+        topup_ratio: 1,
+      },
+      {
+        name: 'Expensive',
+        type: 'custom',
+        min_topup: 20,
+        currency: 'USD',
+        rate_to_usd: 1,
+        base_amount_multiplier: 1,
+        topup_ratio: 1,
+      },
+    ]
+    const info = { pay_methods: methods } as TopupInfo
+    assert.equal(getMinimumAvailablePaymentMethodAmount(info), 5)
+    assert.equal(isPaymentMethodAmountEligible(4, methods[0]), false)
+    assert.equal(isPaymentMethodAmountEligible(5, methods[0]), true)
+    assert.equal(isPaymentMethodAmountEligible(5, methods[1]), false)
+    assert.equal(isPaymentMethodAmountEligible(20, methods[1]), true)
+  })
+  test('does not apply a USD minimum to converted wallet units', () => {
+    // In TOKENS mode the value sent to the backend is quota units, not USD.
+    // Provider-specific minimums (including direct USDT $10) belong to the
+    // authoritative server quote.
+    assert.equal(canSelectPaymentMethod(1), true)
+  })
   test('accepts fractional values with either decimal separator', () => {
     assert.equal(parseTopupAmount('0.1'), 0.1)
     assert.equal(parseTopupAmount('0,1'), 0.1)
@@ -137,6 +176,134 @@ describe('recharge validation guidance', () => {
   test('guides to payment method only after the amount is valid', () => {
     assert.equal(getRechargeValidationTarget(1, 1, false), 'payment-method')
     assert.equal(getRechargeValidationTarget(1, 1, true), null)
+  })
+
+  test('shows the formatted minimum amount when entered amount is too low', () => {
+    const translate = (key: string, options?: Record<string, unknown>) =>
+      key === 'Minimum topup amount: {{amount}}'
+        ? `Минимальная сумма пополнения: ${String(options?.amount)}`
+        : key
+
+    assert.equal(
+      getTopupAmountErrorMessage(4, 5, 'USD', translate),
+      'Минимальная сумма пополнения: 5 USD'
+    )
+    assert.equal(getTopupAmountErrorMessage(0, 5, 'USD', translate), null)
+  })
+
+  test('uses the global minimum for realtime validation', () => {
+    const methods = [
+      {
+        name: 'High minimum',
+        type: 'custom',
+        currency: 'USD',
+        min_topup: 1,
+        rate_to_usd: 1,
+        base_amount_multiplier: 1,
+        topup_ratio: 1,
+      },
+      {
+        name: 'Low minimum',
+        type: 'custom',
+        currency: 'USD',
+        min_topup: 0.09735123,
+        rate_to_usd: 1,
+        base_amount_multiplier: 1,
+        topup_ratio: 1,
+      },
+    ]
+    const globalMinimum = getMinimumAvailablePaymentMethodAmount({
+      pay_methods: methods,
+    } as TopupInfo)
+    const translate = (key: string, options?: Record<string, unknown>) =>
+      key === 'Minimum topup amount: {{amount}}'
+        ? `Minimum topup amount: ${String(options?.amount)}`
+        : key
+
+    assert.equal(globalMinimum, 0.09735123)
+    assert.equal(
+      getTopupAmountErrorMessage(0.001, globalMinimum, 'USD', translate),
+      'Minimum topup amount: 0.09735123 USD'
+    )
+    assert.equal(
+      getTopupAmountErrorMessage(0.1, globalMinimum, 'USD', translate),
+      null
+    )
+    assert.equal(
+      isTopupAmountValidationActive(0.001, globalMinimum, null),
+      true
+    )
+    assert.equal(isTopupAmountValidationActive(0.1, globalMinimum, null), false)
+    assert.equal(isPaymentMethodAmountEligible(0.1, methods[0]), false)
+    assert.equal(isPaymentMethodAmountEligible(0.1, methods[1]), true)
+  })
+
+  test('does not override global validation with a higher method minimum', () => {
+    const sbp = {
+      name: 'SBP',
+      type: 'yookassa_sbp',
+      currency: 'RUB',
+      min_topup: 1000,
+      rate_to_usd: 90,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+    }
+    const epay = {
+      name: 'EPay',
+      type: 'epay',
+      currency: 'USD',
+      min_topup: 1,
+      rate_to_usd: 1,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+    }
+    const stripe = {
+      name: 'Stripe',
+      type: 'stripe',
+      currency: 'USD',
+      min_topup: 5,
+      rate_to_usd: 1,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+    }
+    const methods = [sbp, epay, stripe]
+    const globalMinimum = getMinimumAvailablePaymentMethodAmount({
+      pay_methods: methods,
+    } as TopupInfo)
+
+    assert.equal(globalMinimum, 1)
+    assert.equal(isPaymentMethodAmountEligible(2, epay), true)
+    assert.equal(isPaymentMethodAmountEligible(2, stripe), false)
+    assert.equal(isPaymentMethodAmountEligible(2, sbp), false)
+    assert.equal(
+      getRechargeValidationTarget(2, globalMinimum, false),
+      'payment-method'
+    )
+
+    const translate = (key: string, options?: Record<string, unknown>) =>
+      key === 'Minimum topup amount: {{amount}}'
+        ? `Minimum topup amount: ${String(options?.amount)}`
+        : key
+    assert.equal(
+      getTopupAmountErrorMessage(2, globalMinimum, 'USD', translate),
+      null
+    )
+  })
+})
+
+describe('payment method preview visibility', () => {
+  test('hides the charged amount preview for unavailable methods', () => {
+    const quote = {
+      charged_amount: 5,
+      charged_amount_usd: 5,
+      currency: 'USD',
+      rate_to_usd: 1,
+      rounding_decimals: 2,
+    }
+
+    assert.equal(shouldShowPaymentMethodQuote(true, quote), false)
+    assert.equal(shouldShowPaymentMethodQuote(false, quote), true)
+    assert.equal(shouldShowPaymentMethodQuote(false, null), false)
   })
 })
 

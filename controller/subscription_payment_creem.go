@@ -25,6 +25,9 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodCreem) {
+		return
+	}
 
 	var req SubscriptionCreemPayRequest
 

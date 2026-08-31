@@ -33,13 +33,12 @@ func nowPaymentsInvoicePriceCurrency(_ *model.TopUp) string {
 }
 
 func RequestNOWPaymentsAmount(c *gin.Context) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodNOWPayments) {
+		return
+	}
 	var req AmountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiErrorMsg(c, "Invalid parameters")
-		return
-	}
-	if req.Amount < getMinTopup() {
-		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup()))
 		return
 	}
 	group, err := model.GetUserGroup(c.GetInt("id"), true)
@@ -65,6 +64,9 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 }
 
 func RequestNOWPaymentsPay(c *gin.Context) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodNOWPayments) {
+		return
+	}
 	if !isNOWPaymentsTopUpEnabled() {
 		common.ApiErrorMsg(c, "NOWPayments are not enabled")
 		return
@@ -72,10 +74,6 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 	var req NOWPaymentsPayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PaymentMethod != model.PaymentMethodNOWPayments {
 		common.ApiErrorMsg(c, "Invalid parameters")
-		return
-	}
-	if req.Amount < getMinTopup() {
-		common.ApiErrorMsg(c, fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup()))
 		return
 	}
 	userID := c.GetInt("id")

@@ -13,7 +13,13 @@ export function getSupportedPaymentCurrencies(
   let supportedCodes = ['USD']
   if (type === 'yookassa_sbp') {
     supportedCodes = ['RUB']
-  } else if (type === 'nowpayments') {
+  } else if (
+    type === 'nowpayments' ||
+    type === 'crypto_direct' ||
+    type === 'usdt_trc20_direct' ||
+    type === 'usdt_ton_direct' ||
+    type === 'usdt_solana_direct'
+  ) {
     supportedCodes = ['USDT']
   } else if (type === 'waffo') {
     supportedCodes = [advertised || 'USD']
@@ -30,7 +36,14 @@ export function getPreferredPaymentCurrency(
 ): string {
   const type = paymentType.trim().toLowerCase()
   if (type === 'yookassa_sbp') return 'RUB'
-  if (type === 'nowpayments') return 'USDT'
+  if (
+    type === 'nowpayments' ||
+    type === 'crypto_direct' ||
+    type === 'usdt_trc20_direct' ||
+    type === 'usdt_ton_direct' ||
+    type === 'usdt_solana_direct'
+  )
+    return 'USDT'
   if (type === 'waffo') return waffoCurrency || 'USD'
   return 'USD'
 }
@@ -39,6 +52,9 @@ export function usesFixedPaymentCurrency(paymentType: string): boolean {
   const type = paymentType.trim().toLowerCase()
   switch (type) {
     case 'nowpayments':
+    case 'usdt_trc20_direct':
+    case 'usdt_ton_direct':
+    case 'usdt_solana_direct':
     case 'stripe':
     case 'waffo':
     case 'waffo_pancake':

@@ -21,6 +21,15 @@ import (
 // legacy backfill intentionally remain unwrapped so webhook handlers retry.
 var ErrPaymentSnapshotValidation = errors.New("payment snapshot validation failed")
 
+func isDirectUSDTMethod(method string) bool {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsPermanentPaymentSnapshotError(err error) bool {
 	return errors.Is(err, ErrPaymentSnapshotValidation)
 }
@@ -71,6 +80,9 @@ type PaymentQuoteDisplayConfig struct {
 // are provider constraints, so keep the currency list next to quote/display
 // logic and reuse it when creating the provider snapshot.
 func PaymentAmountRoundingDecimals(paymentMethod, currency string) int {
+	if isDirectUSDTMethod(paymentMethod) {
+		return 6
+	}
 	if strings.EqualFold(strings.TrimSpace(paymentMethod), model.PaymentMethodWaffo) {
 		currency = strings.ToUpper(strings.TrimSpace(currency))
 		if currency == "IDR" || currency == "JPY" || currency == "KRW" || currency == "VND" {
@@ -174,6 +186,8 @@ func PaymentMethodCurrency(paymentMethod string) (string, error) {
 		return currency, nil
 	case model.PaymentMethodNOWPayments:
 		return "USDT", nil
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return "USDT", nil
 	}
 	methods, err := currentPayMethods()
 	if err != nil {
@@ -211,6 +225,8 @@ func paymentMethodCurrencyWithMethods(paymentMethod string, methods []map[string
 		return currency, nil
 	case model.PaymentMethodNOWPayments:
 		return "USDT", nil
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return "USDT", nil
 	}
 	for _, method := range methods {
 		if strings.ToLower(strings.TrimSpace(method["type"])) == paymentMethod {
@@ -240,6 +256,10 @@ func ValidatePaymentMethodCurrency(paymentMethod, currency string) error {
 	case model.PaymentMethodNOWPayments:
 		if currency != "USDT" {
 			return fmt.Errorf("NOWPayments payment method currency is fixed to USDT")
+		}
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		if currency != "USDT" {
+			return fmt.Errorf("direct USDT TRC20 payment method currency is fixed to USDT")
 		}
 	case model.PaymentMethodWaffo:
 		configured := strings.ToUpper(strings.TrimSpace(setting.WaffoCurrency))
@@ -291,6 +311,24 @@ func paymentMethodMinimum(paymentMethod string) (float64, bool) {
 
 func paymentMethodMinimumWithMethods(paymentMethod string, methods []map[string]string) (float64, bool) {
 	paymentMethod = strings.ToLower(strings.TrimSpace(paymentMethod))
+	// An explicit minimum on the selected PayMethods entry is authoritative,
+	// including for built-in gateways. This lets operators configure each
+	// checkout independently while the provider setting remains a legacy
+	// fallback for old entries without min_topup.
+	for _, method := range methods {
+		if method == nil || strings.ToLower(strings.TrimSpace(method["type"])) != paymentMethod {
+			continue
+		}
+		minimum, err := decimal.NewFromString(strings.TrimSpace(method["min_topup"]))
+		if err == nil && minimum.IsPositive() {
+			value := minimum.InexactFloat64()
+			if isDirectUSDTMethod(paymentMethod) && value < 10 {
+				return 10, true
+			}
+			return value, true
+		}
+		break
+	}
 	switch paymentMethod {
 	case model.PaymentMethodStripe:
 		if setting.StripeMinTopUp > 0 {
@@ -304,22 +342,21 @@ func paymentMethodMinimumWithMethods(paymentMethod string, methods []map[string]
 		if setting.WaffoPancakeMinTopUp > 0 {
 			return setting.WaffoPancakeMinTopUp, true
 		}
+	case model.DirectCryptoProvider, model.DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return 10, true
 	}
-	// Epay and legacy provider entries keep their optional per-method minimum
-	// in PayMethods.  Missing or malformed values intentionally mean that no
-	// method-specific minimum is configured; the shared minimum remains the
-	// compatibility fallback enforced by each gateway endpoint.
-	for _, method := range methods {
-		if method == nil || strings.ToLower(strings.TrimSpace(method["type"])) != paymentMethod {
-			continue
-		}
-		minimum, err := decimal.NewFromString(strings.TrimSpace(method["min_topup"]))
-		if err != nil || !minimum.IsPositive() {
-			return 0, false
-		}
-		return minimum.InexactFloat64(), true
+	// Legacy EPay methods historically used the shared minimum. Keep that
+	// behaviour when a persisted method predates per-method min_topup.
+	if operation_setting.MinTopUp > 0 && paymentMethod != "" {
+		return operation_setting.MinTopUp, true
 	}
 	return 0, false
+}
+
+// PaymentMethodMinimumWithMethods exposes the effective settlement minimum to
+// controllers and order snapshotting without duplicating provider fallbacks.
+func PaymentMethodMinimumWithMethods(paymentMethod string, methods []map[string]string) (float64, bool) {
+	return paymentMethodMinimumWithMethods(paymentMethod, methods)
 }
 
 // GetPaymentQuoteDisplayConfig resolves all amount-independent inputs used by
@@ -356,6 +393,21 @@ func GetPaymentQuoteDisplayConfigWithPayMethods(paymentMethod, userGroup string,
 	}
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
 		baseAmountMultiplier /= common.GetQuotaPerUnit()
+	}
+	if isDirectUSDTMethod(paymentMethod) {
+		if !model.HasDirectUSDTMethod(methods) {
+			return PaymentQuoteDisplayConfig{}, fmt.Errorf("direct USDT TRC20 payment method is not enabled")
+		}
+		// Direct settlement is always one USDT per USD and has no provider or
+		// group surcharge. The requested amount itself is made unique by the
+		// micro-USDT suffix only after the order is created.
+		return PaymentQuoteDisplayConfig{
+			Currency:             currency,
+			RateToUSD:            1,
+			Coefficient:          1,
+			BaseAmountMultiplier: baseAmountMultiplier,
+			RoundingDecimals:     6,
+		}, nil
 	}
 	coefficient := common.GetTopupGroupRatio(paymentMethodGroupWithMethods(paymentMethod, userGroup, methods))
 	if coefficient <= 1 {

@@ -109,6 +109,9 @@ func isYooKassaPaymentMethodEnabledForConfig(config setting.YooKassaConfig, paym
 }
 
 func RequestYooKassaAmount(c *gin.Context) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodYooKassaSBP) {
+		return
+	}
 	payMethods, payMethodsErr := topUpPayMethods()
 	if payMethodsErr != nil {
 		common.ApiError(c, payMethodsErr)
@@ -123,11 +126,6 @@ func RequestYooKassaAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Invalid parameters"})
 		return
 	}
-	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup())})
-		return
-	}
-
 	id := c.GetInt("id")
 	if user, userErr := model.GetUserById(id, false); userErr != nil || user == nil {
 		logger.LogWarn(c.Request.Context(), fmt.Sprintf("YooKassa user does not exist user_id=%d error=%v", id, userErr))
@@ -158,6 +156,9 @@ func RequestYooKassaAmount(c *gin.Context) {
 }
 
 func RequestYooKassaPay(c *gin.Context) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodYooKassaSBP) {
+		return
+	}
 	yooKassaConfig := setting.GetYooKassaConfig()
 	if !isYooKassaTopUpEnabledForConfig(yooKassaConfig) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "YooKassa payments are not enabled"})
@@ -167,10 +168,6 @@ func RequestYooKassaPay(c *gin.Context) {
 	var req YooKassaPayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Invalid parameters"})
-		return
-	}
-	if req.Amount < getMinTopup() {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("Top-up amount cannot be less than %g", getMinTopup())})
 		return
 	}
 	payMethods, payMethodsErr := topUpPayMethods()

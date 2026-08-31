@@ -20,13 +20,13 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import {
-  DEFAULT_CURRENCY_CONFIG,
-  useSystemConfigStore,
-} from '@/stores/system-config-store'
-import {
   backendAmountToWalletDisplay,
   walletDisplayAmountToBackend,
 } from '@/lib/currency'
+import {
+  DEFAULT_CURRENCY_CONFIG,
+  useSystemConfigStore,
+} from '@/stores/system-config-store'
 
 import type { TopupInfo } from '../types'
 import {
@@ -40,17 +40,39 @@ import {
   getCashbackPercentForAmount,
   getCashbackTierSummary,
   getMinTopupAmount,
+  getPaymentMethodMinimumAmount,
+  getMinimumAvailablePaymentMethodAmount,
+  isPaymentMethodAmountEligible,
   getPaymentMethodDisplayQuote,
   getPaymentCheckoutKind,
   getPaymentErrorMessage,
+  getUSDTTrc20DisplayStatus,
   isWaffoPayment,
-  redirectToPaymentPage,
   isSafeHttpRedirectUrl,
+  redirectToPaymentPage,
+  isSafeInternalUSDTTrc20Url,
+  isSafeInternalDirectUSDTUrl,
+  isUSDTTrc20TerminalStatus,
+  isDirectUSDTPayment,
+  getDirectUSDTNetwork,
   normalizeCashbackTiers,
   submitPaymentForm,
 } from './payment'
 
 describe('payment redirect URL validation', () => {
+  test('allows only internal USDT TRC20 payment routes', () => {
+    assert.equal(isSafeInternalUSDTTrc20Url('/usdt-trc20/NOWabc123'), true)
+    assert.equal(
+      isSafeInternalUSDTTrc20Url('https://evil.test/usdt-trc20/x'),
+      false
+    )
+    assert.equal(isSafeInternalUSDTTrc20Url('//evil.test/usdt-trc20/x'), false)
+    assert.equal(
+      isSafeInternalUSDTTrc20Url('/usdt-trc20/x?redirect=https://evil.test'),
+      false
+    )
+    assert.equal(isSafeInternalUSDTTrc20Url('/usdt-trc20/x%2Fy'), false)
+  })
   test('allows absolute HTTPS provider redirects', () => {
     assert.equal(
       isSafeHttpRedirectUrl(' https://checkout.example.test/pay?id=123 '),
@@ -60,7 +82,10 @@ describe('payment redirect URL validation', () => {
 
   test('rejects executable and data URLs', () => {
     assert.equal(isSafeHttpRedirectUrl('javascript:alert(1)'), false)
-    assert.equal(isSafeHttpRedirectUrl('data:text/html,<script>alert(1)</script>'), false)
+    assert.equal(
+      isSafeHttpRedirectUrl('data:text/html,<script>alert(1)</script>'),
+      false
+    )
   })
 
   test('navigates safe provider redirects in the current tab only', () => {
@@ -70,7 +95,10 @@ describe('payment redirect URL validation', () => {
     }
 
     assert.equal(
-      redirectToPaymentPage(' https://checkout.example.test/pay?id=123 ', navigate),
+      redirectToPaymentPage(
+        ' https://checkout.example.test/pay?id=123 ',
+        navigate
+      ),
       true
     )
     assert.equal(navigatedTo, 'https://checkout.example.test/pay?id=123')
@@ -116,6 +144,30 @@ describe('payment redirect URL validation', () => {
         value: previousDocument,
       })
     }
+  })
+})
+
+describe('direct USDT payment statuses', () => {
+  test('maps direct crypto method ids to allowlisted networks', () => {
+    assert.equal(isDirectUSDTPayment('crypto_direct'), true)
+    assert.equal(isDirectUSDTPayment('usdt_trc20_direct'), true)
+    assert.equal(isDirectUSDTPayment('usdt_ton_direct'), true)
+    assert.equal(getDirectUSDTNetwork('usdt_solana_direct'), 'SOLANA')
+    assert.equal(isDirectUSDTPayment('usdt_bep20_direct'), false)
+  })
+  test('allows only allowlisted multichain checkout routes', () => {
+    assert.equal(isSafeInternalDirectUSDTUrl('/crypto/tron/trade-1'), true)
+    assert.equal(isSafeInternalDirectUSDTUrl('/crypto/ton/trade-1'), true)
+    assert.equal(isSafeInternalDirectUSDTUrl('/crypto/solana/trade-1'), true)
+    assert.equal(isSafeInternalDirectUSDTUrl('/crypto/bitcoin/trade-1'), false)
+    assert.equal(isSafeInternalDirectUSDTUrl('/crypto/ton/trade-1?x=1'), false)
+    assert.equal(isSafeInternalDirectUSDTUrl('/usdt-trc20/trade-1'), true)
+  })
+  test('treats paid as terminal and displays it as confirmed', () => {
+    assert.equal(isUSDTTrc20TerminalStatus('paid'), true)
+    assert.equal(isUSDTTrc20TerminalStatus('pending'), false)
+    assert.equal(getUSDTTrc20DisplayStatus('paid', false), 'success')
+    assert.equal(getUSDTTrc20DisplayStatus('pending', true), 'expired')
   })
 })
 
@@ -343,19 +395,16 @@ describe('payment method display quote', () => {
       topup_ratio: 0.8,
       rounding_decimals: 2,
     }
-    assert.deepEqual(
-      getPaymentMethodDisplayQuote(10, method),
-      {
-        currency: 'USD',
-        baseAmountUSD: 10,
-        commissionUSD: 0,
-        creditedAmountUSD: 10,
-        cashbackPercent: 0,
-        cashbackAmountUSD: 0,
-        chargedAmountUSD: 10,
-        chargedAmount: 10,
-      }
-    )
+    assert.deepEqual(getPaymentMethodDisplayQuote(10, method), {
+      currency: 'USD',
+      baseAmountUSD: 10,
+      commissionUSD: 0,
+      creditedAmountUSD: 10,
+      cashbackPercent: 0,
+      cashbackAmountUSD: 0,
+      chargedAmountUSD: 10,
+      chargedAmount: 10,
+    })
   })
 })
 
@@ -397,6 +446,44 @@ describe('payment currency display', () => {
 })
 
 describe('wallet minimum top-up', () => {
+  test('converts settlement minimums to wallet USD units for mixed methods', () => {
+    const rubMethod = {
+      type: 'yookassa_sbp',
+      name: 'SBP',
+      currency: 'RUB',
+      min_topup: 90,
+      rate_to_usd: 90,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+    }
+    const usdMethod = {
+      type: 'stripe',
+      name: 'Stripe',
+      currency: 'USD',
+      min_topup: 5,
+      rate_to_usd: 1,
+      base_amount_multiplier: 1,
+      topup_ratio: 1,
+    }
+    const info = {
+      min_topup: 1,
+      pay_methods: [rubMethod, usdMethod],
+    } as TopupInfo
+
+    assert.equal(getPaymentMethodMinimumAmount(rubMethod), 1)
+    assert.equal(getPaymentMethodMinimumAmount(usdMethod), 5)
+    assert.equal(getMinimumAvailablePaymentMethodAmount(info), 1)
+    assert.equal(isPaymentMethodAmountEligible(1, rubMethod), true)
+    assert.equal(isPaymentMethodAmountEligible(1, usdMethod), false)
+    assert.equal(isPaymentMethodAmountEligible(5, usdMethod), true)
+  })
+
+  test('fails closed when a configured minimum lacks quote conversion', () => {
+    const method = { type: 'stripe', name: 'Stripe', min_topup: 5 }
+    assert.equal(getPaymentMethodMinimumAmount(method), null)
+    assert.equal(isPaymentMethodAmountEligible(100, method), false)
+  })
+
   test('keeps fractional online minimum amount', () => {
     const minimum = getMinTopupAmount({
       enable_online_topup: true,
@@ -410,5 +497,118 @@ describe('wallet minimum top-up', () => {
         .map(({ value }) => value),
       [0.1, 0.5]
     )
+  })
+
+  test('enforces the direct USDT minimum in USD', () => {
+    const originalCurrency = useSystemConfigStore.getState().config.currency
+    try {
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'USD',
+        },
+      })
+      const method = {
+        type: 'usdt_trc20_direct',
+        name: 'USDT TRC20',
+        min_topup: 10,
+      }
+      const topupInfo = {
+        enable_online_topup: true,
+        min_topup: 1,
+        pay_methods: [method],
+      } as TopupInfo
+
+      assert.equal(getPaymentMethodMinimumAmount(method), 10)
+      assert.equal(getMinTopupAmount(topupInfo, method), 10)
+      assert.equal(getMinTopupAmount(topupInfo), 10)
+    } finally {
+      useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+    }
+  })
+
+  test('keeps the generic USD minimum for non-direct provider methods', () => {
+    const originalCurrency = useSystemConfigStore.getState().config.currency
+    try {
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'USD',
+        },
+      })
+      const method = {
+        type: 'yookassa_sbp',
+        name: 'SBP',
+        currency: 'RUB',
+        min_topup: 100,
+      }
+      const topupInfo = {
+        enable_online_topup: true,
+        min_topup: 1,
+        pay_methods: [method],
+      } as TopupInfo
+
+      assert.equal(getPaymentMethodMinimumAmount(method), null)
+      assert.equal(getMinTopupAmount(topupInfo, method), 1)
+    } finally {
+      useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+    }
+  })
+
+  test('converts direct USDT minimum into token display units', () => {
+    const originalCurrency = useSystemConfigStore.getState().config.currency
+    try {
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'TOKENS',
+          quotaPerUnit: 500000,
+        },
+      })
+      const method = {
+        type: 'usdt_trc20_direct',
+        name: 'USDT TRC20',
+        min_topup: 10,
+      }
+      assert.equal(getPaymentMethodMinimumAmount(method), 5_000_000)
+      assert.equal(
+        getMinTopupAmount({ pay_methods: [method] } as TopupInfo),
+        5_000_000
+      )
+    } finally {
+      useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+    }
+  })
+
+  test('renders direct USDT quote in USD and token input units', () => {
+    const originalCurrency = useSystemConfigStore.getState().config.currency
+    const method = {
+      type: 'usdt_trc20_direct',
+      name: 'USDT TRC20',
+      min_topup: 10,
+    }
+    try {
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'USD',
+        },
+      })
+      assert.equal(getPaymentMethodDisplayQuote(12, method)?.chargedAmount, 12)
+
+      useSystemConfigStore.getState().setConfig({
+        currency: {
+          ...DEFAULT_CURRENCY_CONFIG,
+          quotaDisplayType: 'TOKENS',
+          quotaPerUnit: 500000,
+        },
+      })
+      assert.equal(
+        getPaymentMethodDisplayQuote(6_000_000, method)?.chargedAmount,
+        12
+      )
+    } finally {
+      useSystemConfigStore.getState().setConfig({ currency: originalCurrency })
+    }
   })
 })

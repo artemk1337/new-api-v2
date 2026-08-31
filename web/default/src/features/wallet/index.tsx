@@ -50,6 +50,7 @@ import {
 } from './hooks'
 import {
   getMinTopupAmount,
+  isPaymentMethodAmountEligible,
   getPaymentCheckoutKind,
   getPaymentMethodDisplayQuote,
 } from './lib'
@@ -153,6 +154,7 @@ export function Wallet(props: WalletProps) {
 
   // Handle payment method selection
   const handlePaymentMethodSelect = (method: PaymentMethod) => {
+    setValidationTarget(null)
     setSelectedPaymentMethod(method)
     setSelectedWaffoMethodIndex(undefined)
   }
@@ -168,7 +170,11 @@ export function Wallet(props: WalletProps) {
     } else if (checkoutKind === 'waffo-pancake') {
       success = await processWaffoPancakePayment(topupAmount)
     } else {
-      success = await processPayment(topupAmount, selectedPaymentMethod.type)
+      success = await processPayment(
+        topupAmount,
+        selectedPaymentMethod.type,
+        selectedPaymentMethod.crypto_network
+      )
     }
 
     if (success) {
@@ -218,6 +224,7 @@ export function Wallet(props: WalletProps) {
     method: Parameters<typeof getWaffoPaymentMethod>[0],
     index: number
   ) => {
+    setValidationTarget(null)
     setSelectedWaffoMethodIndex(index)
     setSelectedPaymentMethod(getWaffoPaymentMethod(method))
   }
@@ -244,6 +251,13 @@ export function Wallet(props: WalletProps) {
     }
   }, [selectedPaymentMethod, topupAmount, topupInfo, validationTarget])
 
+  useEffect(() => {
+    if (!selectedPaymentMethod) return
+    if (!isPaymentMethodAmountEligible(topupAmount, selectedPaymentMethod)) {
+      setSelectedPaymentMethod(undefined)
+    }
+  }, [selectedPaymentMethod, topupAmount, topupInfo])
+
   const handleSubscriptionAvailabilityChange = useCallback(
     (available: boolean) => {
       setShowSubscriptionPanel(available)
@@ -251,10 +265,15 @@ export function Wallet(props: WalletProps) {
     []
   )
 
-  const selectedPaymentQuote = selectedPaymentMethod
+  const selectedPaymentSummaryMethod =
+    selectedPaymentMethod?.type === 'crypto_direct' &&
+    !selectedPaymentMethod.crypto_network
+      ? undefined
+      : selectedPaymentMethod
+  const selectedPaymentQuote = selectedPaymentSummaryMethod
     ? getPaymentMethodDisplayQuote(
         topupAmount,
-        selectedPaymentMethod,
+        selectedPaymentSummaryMethod,
         topupInfo?.cashback ?? []
       )
     : null
@@ -310,14 +329,17 @@ export function Wallet(props: WalletProps) {
                 <WalletStatsCard user={user} loading={!user} />
                 <WalletSummaryCard
                   topupAmount={topupAmount}
-                  selectedPaymentMethod={selectedPaymentMethod}
+                  selectedPaymentMethod={selectedPaymentSummaryMethod}
                   cashback={topupInfo?.cashback ?? []}
                   onPay={handlePaymentSubmit}
                   onPayUnavailable={handleValidationRequest}
                   payDisabled={
                     topupAmount <= 0 ||
-                    topupAmount < getMinTopupAmount(topupInfo) ||
+                    topupAmount <
+                      getMinTopupAmount(topupInfo, selectedPaymentMethod) ||
                     !selectedPaymentMethod ||
+                    (selectedPaymentMethod.type === 'crypto_direct' &&
+                      !selectedPaymentMethod.crypto_network) ||
                     !selectedPaymentQuote ||
                     processing ||
                     pancakeProcessing ||

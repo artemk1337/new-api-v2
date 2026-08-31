@@ -55,6 +55,41 @@ func TestPendingTopUpTTLDefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, time.Duration(operation_setting.MaxPaymentPendingTTLMinutes)*time.Minute, operation_setting.PendingTopUpTTL(PaymentMethodStripe))
 }
 
+func TestCapturePaymentPolicySnapshotsPerMethodValues(t *testing.T) {
+	originalMethods := operation_setting.PayMethods
+	originalMin := operation_setting.MinTopUp
+	common.OptionMapRWMutex.Lock()
+	originalOptions := common.OptionMap
+	common.OptionMap = map[string]string{operation_setting.PaymentPendingTTLMinutes: "1440"}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		operation_setting.PayMethods = originalMethods
+		operation_setting.MinTopUp = originalMin
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = originalOptions
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	operation_setting.PayMethods = []map[string]string{{
+		"type": "stripe", "min_topup": "12.5", "pending_ttl_minutes": "7",
+	}}
+	topUp := &TopUp{PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe}
+	topUp.CapturePaymentPolicy()
+	require.Equal(t, 12.5, topUp.PaymentMinimumAmount)
+	require.Equal(t, int64(7*60), topUp.PaymentPendingTTLSeconds)
+
+	operation_setting.PayMethods = []map[string]string{{"type": PaymentMethodStripe, "min_topup": "99", "pending_ttl_minutes": "30"}}
+	operation_setting.MinTopUp = 99
+	expired, err := pendingTopUpExpired(nil, &TopUp{PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, CreateTime: 100, PaymentPendingTTLSeconds: 7 * 60}, 100+7*60)
+	require.NoError(t, err)
+	require.True(t, expired, "expiry must use the immutable order snapshot")
+
+	direct := &TopUp{PaymentMethod: DirectUSDTTRC20Provider, PaymentProvider: DirectUSDTTRC20Provider}
+	operation_setting.PayMethods = []map[string]string{{"type": operation_setting.DirectUSDTTRC20PaymentMethod, "min_topup": "1"}}
+	direct.CapturePaymentPolicy()
+	require.Equal(t, 10.0, direct.PaymentMinimumAmount, "direct crypto retains its hard $10 floor")
+}
+
 func TestPaymentCreationRateLimitOptionsAreServerValidated(t *testing.T) {
 	for _, key := range []string{
 		operation_setting.PaymentCreationRateLimit,

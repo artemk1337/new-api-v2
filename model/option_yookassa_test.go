@@ -34,6 +34,81 @@ func TestGetPayMethodsFromDBPreservesUnavailableDatabaseError(t *testing.T) {
 	require.Nil(t, methods)
 }
 
+func TestLegacyDirectUSDTConfigMigratesToCanonicalPayMethod(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	previousDB := DB
+	previousMethods := operation_setting.PayMethods
+	previousEnabled := setting.USDTTRC20Enabled
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	paymentSetting := operation_setting.GetPaymentSetting()
+	previousCompliance := paymentSetting.ComplianceConfirmed
+	previousTermsVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		setting.USDTTRC20Enabled = previousEnabled
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		paymentSetting.ComplianceConfirmed = previousCompliance
+		paymentSetting.ComplianceTermsVersion = previousTermsVersion
+	})
+
+	DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "custom1"}}
+	setting.USDTTRC20Enabled = true
+	setting.USDTTRC20ReceivingAddress = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
+	setting.USDTTRC20APIKey = "read-only-key"
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	require.NoError(t, ensureYooKassaPayMethodPersisted())
+	var option Option
+	require.NoError(t, db.First(&option, "key = ?", "PayMethods").Error)
+	var methods []map[string]string
+	require.NoError(t, common.Unmarshal([]byte(option.Value), &methods))
+	require.True(t, HasDirectUSDTMethod(methods))
+	var marker Option
+	require.NoError(t, db.First(&marker, "key = ?", operation_setting.DirectUSDTTRC20PayMethodsMigratedOption).Error)
+}
+
+func TestLegacyDirectUSDTConfigDoesNotMigrateWhenInvalid(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	previousDB := DB
+	previousMethods := operation_setting.PayMethods
+	previousEnabled := setting.USDTTRC20Enabled
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	paymentSetting := operation_setting.GetPaymentSetting()
+	previousCompliance := paymentSetting.ComplianceConfirmed
+	previousTermsVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		setting.USDTTRC20Enabled = previousEnabled
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		paymentSetting.ComplianceConfirmed = previousCompliance
+		paymentSetting.ComplianceTermsVersion = previousTermsVersion
+	})
+
+	DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "custom1"}}
+	setting.USDTTRC20Enabled = true
+	setting.USDTTRC20ReceivingAddress = "invalid"
+	setting.USDTTRC20APIKey = "read-only-key"
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	require.NoError(t, ensureYooKassaPayMethodPersisted())
+	var option Option
+	require.ErrorIs(t, db.First(&option, "key = ?", "PayMethods").Error, gorm.ErrRecordNotFound)
+}
+
 func TestEnsureYooKassaPayMethodPersistsMigration(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

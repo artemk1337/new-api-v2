@@ -12,6 +12,7 @@ describe('payment method minimum currency', () => {
     assert.equal(getPaymentMethodMinimumCurrency('stripe'), 'USD')
     assert.equal(getPaymentMethodMinimumCurrency('yookassa_sbp'), 'RUB')
     assert.equal(getPaymentMethodMinimumCurrency('nowpayments'), 'USDT')
+    assert.equal(getPaymentMethodMinimumCurrency('usdt_trc20_direct'), 'USDT')
     assert.equal(getPaymentMethodMinimumCurrency('waffo_pancake'), 'USD')
   })
 
@@ -25,15 +26,17 @@ describe('payment method minimum currency', () => {
     assert.equal(getPaymentMethodMinimumCurrency('custom1'), 'USD')
   })
 
-  test('hides minimums owned by provider integration settings', () => {
-    assert.equal(hasEditablePaymentMethodMinimum('stripe'), false)
-    assert.equal(hasEditablePaymentMethodMinimum('waffo_pancake'), false)
-    assert.equal(hasEditablePaymentMethodMinimum('yookassa_sbp'), false)
-    assert.equal(hasEditablePaymentMethodMinimum('nowpayments'), false)
+  test('allows a method-specific minimum for every payment type', () => {
+    assert.equal(hasEditablePaymentMethodMinimum('stripe'), true)
+    assert.equal(hasEditablePaymentMethodMinimum('waffo_pancake'), true)
+    assert.equal(hasEditablePaymentMethodMinimum('yookassa_sbp'), true)
+    assert.equal(hasEditablePaymentMethodMinimum('nowpayments'), true)
+    assert.equal(hasEditablePaymentMethodMinimum('usdt_trc20_direct'), true)
     assert.equal(hasEditablePaymentMethodMinimum('alipay'), true)
+    assert.equal(getPaymentMethodMinimumForDisplay('stripe', '100'), '100')
     assert.equal(
-      getPaymentMethodMinimumForDisplay('stripe', '100'),
-      undefined
+      getPaymentMethodMinimumForDisplay('usdt_trc20_direct', '10'),
+      '10'
     )
     assert.equal(getPaymentMethodMinimumForDisplay('alipay', '10'), '10')
   })

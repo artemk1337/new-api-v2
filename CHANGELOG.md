@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.159
+
+- Added direct USDT top-ups to administrator-controlled wallets on TRON, TON, and Solana, with immutable invoices, exact-amount matching, confirmation-aware watchers, reconciliation, and idempotent settlement.
+- Added per-method payment configuration for minimum amount, expiration, administrator-only visibility, coefficient group, and Crypto network receiving addresses; direct Crypto is always settled in USDT.
+- Updated the wallet payment flow with per-method minimum validation, a Crypto network picker, exact-payment instructions, and configurable rate limits for creating direct crypto invoices.
+
 ## v1.1.158
 
 - Limit verification-email resends to one per email address every 120 seconds in both the UI and backend.

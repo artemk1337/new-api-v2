@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/shopspring/decimal"
@@ -44,10 +45,15 @@ type TopUp struct {
 	PaymentBaseAmount    float64 `json:"payment_base_amount" gorm:"not null;default:0"`
 	PaymentCommission    float64 `json:"payment_commission" gorm:"not null;default:0"`
 	PaymentChargedAmount float64 `json:"payment_charged_amount" gorm:"not null;default:0"`
-	QuotaToAdd           int     `json:"quota_to_add"`
-	CreateTime           int64   `json:"create_time"`
-	CompleteTime         int64   `json:"complete_time"`
-	Status               string  `json:"status"`
+	// PaymentMinimumAmount and PaymentPendingTTLSeconds are immutable policy
+	// snapshots captured when the invoice is opened. Settlement/expiry must not
+	// change when an administrator edits the current payment-method catalog.
+	PaymentMinimumAmount     float64 `json:"payment_minimum_amount" gorm:"not null;default:0"`
+	PaymentPendingTTLSeconds int64   `json:"payment_pending_ttl_seconds" gorm:"not null;default:0"`
+	QuotaToAdd               int     `json:"quota_to_add"`
+	CreateTime               int64   `json:"create_time"`
+	CompleteTime             int64   `json:"complete_time"`
+	Status                   string  `json:"status"`
 	// AccountingAmountUSD is a presentation-only snapshot populated for
 	// history responses. It is deliberately not persisted: payment settlement
 	// keeps using the immutable payment fields above, while the wallet can
@@ -167,9 +173,58 @@ func (topUp *TopUp) Insert() error {
 	if topUp != nil && topUp.UserId != 0 {
 		_ = ExpireStalePendingTopUps(topUp.UserId)
 	}
+	if topUp != nil {
+		topUp.CapturePaymentPolicy()
+	}
 	var err error
 	err = DB.Create(topUp).Error
 	return err
+}
+
+// CapturePaymentPolicy stores the effective method policy on the order before
+// it is persisted. Existing rows with zero values continue to use the legacy
+// dynamic policy when read, while every newly created invoice is immutable.
+func (topUp *TopUp) CapturePaymentPolicy() {
+	if topUp == nil {
+		return
+	}
+	method := strings.ToLower(strings.TrimSpace(topUp.PaymentMethod))
+	if topUp.PaymentPendingTTLSeconds <= 0 {
+		topUp.PaymentPendingTTLSeconds = int64(operation_setting.PendingTopUpTTL(topUp.PaymentMethod) / time.Second)
+	}
+	if topUp.PaymentMinimumAmount > 0 {
+		if isDirectUSDTNetworkProvider(method) && topUp.PaymentMinimumAmount < 10 {
+			topUp.PaymentMinimumAmount = 10
+		}
+		return
+	}
+	for _, configured := range operation_setting.PayMethodsSnapshot() {
+		if configured == nil || strings.ToLower(strings.TrimSpace(configured["type"])) != method {
+			continue
+		}
+		if value, err := decimal.NewFromString(strings.TrimSpace(configured["min_topup"])); err == nil && value.IsPositive() {
+			topUp.PaymentMinimumAmount = value.InexactFloat64()
+		}
+		break
+	}
+	if topUp.PaymentMinimumAmount > 0 {
+		if isDirectUSDTNetworkProvider(method) && topUp.PaymentMinimumAmount < 10 {
+			topUp.PaymentMinimumAmount = 10
+		}
+		return
+	}
+	switch method {
+	case PaymentMethodStripe:
+		topUp.PaymentMinimumAmount = setting.StripeMinTopUp
+	case PaymentMethodWaffo:
+		topUp.PaymentMinimumAmount = setting.WaffoMinTopUp
+	case PaymentMethodWaffoPancake:
+		topUp.PaymentMinimumAmount = setting.WaffoPancakeMinTopUp
+	case DirectCryptoProvider, DirectUSDTTRC20Provider, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		topUp.PaymentMinimumAmount = 10
+	default:
+		topUp.PaymentMinimumAmount = operation_setting.MinTopUp
+	}
 }
 
 // ExpireStalePendingTopUps closes stale local orders before they are shown or
@@ -177,6 +232,9 @@ func (topUp *TopUp) Insert() error {
 // holding the order lock, so a late provider callback cannot credit an expired
 // order.
 func ExpireStalePendingTopUps(userID int) error {
+	if DB == nil {
+		return gorm.ErrInvalidDB
+	}
 	query := DB.Where("status = ? AND create_time > 0", common.TopUpStatusPending)
 	if userID != 0 {
 		query = query.Where("user_id = ?", userID)
@@ -188,14 +246,47 @@ func ExpireStalePendingTopUps(userID int) error {
 	now := common.GetTimestamp()
 	for i := range pending {
 		topUp := &pending[i]
-		if now-topUp.CreateTime < int64(operation_setting.PendingTopUpTTL(topUp.PaymentMethod)/time.Second) {
-			continue
-		}
-		result := DB.Model(&TopUp{}).
-			Where("id = ? AND status = ?", topUp.Id, common.TopUpStatusPending).
-			Updates(map[string]interface{}{"status": common.TopUpStatusExpired, "complete_time": now})
-		if result.Error != nil {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var current TopUp
+			query := tx.Where("id = ? AND status = ?", topUp.Id, common.TopUpStatusPending)
+			if tx.Dialector.Name() != "sqlite" {
+				query = query.Set("gorm:query_option", "FOR UPDATE")
+			}
+			if err := query.First(&current).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			expired, err := pendingTopUpExpired(tx, &current, now)
+			if err != nil {
+				return err
+			}
+			if !expired {
+				return nil
+			}
+			result := tx.Model(&TopUp{}).
+				Where("id = ? AND status = ?", current.Id, common.TopUpStatusPending).
+				Updates(map[string]interface{}{"status": common.TopUpStatusExpired, "complete_time": now})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return nil
+			}
+			if !isDirectUSDTNetworkProvider(current.PaymentProvider) {
+				return nil
+			}
+			// Direct orders and their TopUp row share one immutable deadline. Keep
+			// both terminal transitions in this transaction so a history sweep
+			// cannot leave a direct payment pending after its TopUp expired.
+			result = tx.Model(&DirectCryptoPayment{}).
+				Where("trade_no = ? AND status = ?", current.TradeNo, DirectCryptoPending).
+				Updates(map[string]interface{}{"status": DirectCryptoExpired, "updated_at": now})
 			return result.Error
+		})
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -214,6 +305,10 @@ func PaymentMethodDisplayName(paymentMethod string) string {
 	method := strings.TrimSpace(paymentMethod)
 	if method == "" {
 		return ""
+	}
+	if strings.EqualFold(method, DirectCryptoProvider) || strings.EqualFold(method, DirectUSDTTRC20Provider) ||
+		strings.EqualFold(method, operation_setting.DirectUSDTTONPaymentMethod) || strings.EqualFold(method, operation_setting.DirectUSDTSolanaPaymentMethod) {
+		return "Crypto"
 	}
 	for _, configured := range operation_setting.PayMethodsSnapshot() {
 		if !strings.EqualFold(strings.TrimSpace(configured["type"]), method) {
@@ -287,7 +382,9 @@ func annotateTopupSources(topups []*TopUp) {
 			// Stable, non-sensitive categories are safe to expose.
 		default:
 			topUp.Source = ""
-			if strings.EqualFold(strings.TrimSpace(topUp.PaymentMethod), PaymentMethodYooKassaSBP) && strings.EqualFold(strings.TrimSpace(topUp.PaymentMethodName), "yookassa") {
+			if isDirectUSDTNetworkProvider(topUp.PaymentMethod) {
+				topUp.PaymentMethodName = "Crypto"
+			} else if strings.EqualFold(strings.TrimSpace(topUp.PaymentMethod), PaymentMethodYooKassaSBP) && strings.EqualFold(strings.TrimSpace(topUp.PaymentMethodName), "yookassa") {
 				topUp.PaymentMethodName = "СБП"
 			} else if !validStoredPaymentMethodName(topUp.PaymentMethod, topUp.PaymentMethodName) {
 				topUp.PaymentMethodName = PaymentMethodDisplayName(topUp.PaymentMethod)
@@ -438,11 +535,20 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 		if topUp.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
 		}
-		if topUp.CreateTime > 0 && common.GetTimestamp()-topUp.CreateTime >= int64(operation_setting.PendingTopUpTTL(topUp.PaymentMethod)/time.Second) {
+		expiredByPolicy, expiryErr := pendingTopUpExpired(tx, topUp, common.GetTimestamp())
+		if expiryErr != nil {
+			return expiryErr
+		}
+		if expiredByPolicy {
 			topUp.Status = common.TopUpStatusExpired
 			topUp.CompleteTime = common.GetTimestamp()
 			if err := tx.Save(topUp).Error; err != nil {
 				return err
+			}
+			if isDirectUSDTNetworkProvider(topUp.PaymentProvider) {
+				if err := expireDirectPaymentTx(tx, topUp.TradeNo, topUp.CompleteTime); err != nil {
+					return err
+				}
 			}
 			// The callback is terminal from the provider's perspective; return
 			// after committing the expired state below.
@@ -502,10 +608,21 @@ type topUpCompletionPrepare func(*gorm.DB, *TopUp) (map[string]interface{}, erro
 type topUpCompletionApply func(*gorm.DB, *TopUp) error
 
 func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionPrepare, apply topUpCompletionApply) (*TopUp, bool, error) {
+	return completeTopUpCASWithOptions(tradeNo, expectedProvider, false, prepare, apply)
+}
+
+// completeTopUpCASWithOptions is the shared compare-and-set settlement path.
+// A direct TRC20 event is allowed to settle an already-expired local snapshot
+// only when its prepare callback proves that the immutable chain timestamp was
+// inside the order window. Other providers retain the normal current-time TTL
+// behavior.
+func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredDirectSettlement bool, prepare topUpCompletionPrepare, apply topUpCompletionApply) (*TopUp, bool, error) {
+	allowExpiredDirectSettlement = allowExpiredDirectSettlement && isDirectUSDTNetworkProvider(expectedProvider)
 	var topUp TopUp
 	casLost := false
 	alreadyCompleted := false
 	expired := false
+	var expiryErr error
 	completeTime := common.GetTimestamp()
 	var err error
 	for attempt := 0; attempt < 4; attempt++ {
@@ -527,21 +644,50 @@ func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionP
 				alreadyCompleted = true
 				return nil
 			}
-			if topUp.Status != common.TopUpStatusPending {
+			allowExpiredTopUp := allowExpiredDirectSettlement && topUp.Status == common.TopUpStatusExpired
+			if topUp.Status != common.TopUpStatusPending && !allowExpiredTopUp {
 				return ErrTopUpStatusInvalid
 			}
-			if topUp.CreateTime > 0 && common.GetTimestamp()-topUp.CreateTime >= int64(operation_setting.PendingTopUpTTL(topUp.PaymentMethod)/time.Second) {
-				topUp.Status = common.TopUpStatusExpired
-				topUp.CompleteTime = completeTime
-				if err := tx.Save(&topUp).Error; err != nil {
-					return err
+			if !allowExpiredDirectSettlement {
+				expiredByPolicy, expiryCheckErr := pendingTopUpExpired(tx, &topUp, common.GetTimestamp())
+				if expiryCheckErr != nil {
+					return expiryCheckErr
 				}
-				expired = true
-				return nil
+				if expiredByPolicy {
+					topUp.Status = common.TopUpStatusExpired
+					topUp.CompleteTime = completeTime
+					if err := tx.Save(&topUp).Error; err != nil {
+						return err
+					}
+					if isDirectUSDTNetworkProvider(topUp.PaymentProvider) {
+						if err := expireDirectPaymentTx(tx, topUp.TradeNo, completeTime); err != nil {
+							return err
+						}
+					}
+					expired = true
+					return nil
+				}
 			}
 
 			updates, err := prepare(tx, &topUp)
 			if err != nil {
+				if allowExpiredDirectSettlement && errors.Is(err, ErrDirectPaymentExpired) {
+					// A direct event observed after the local deadline is terminal,
+					// but both immutable snapshots must converge in this transaction.
+					topUp.Status = common.TopUpStatusExpired
+					topUp.CompleteTime = completeTime
+					if saveErr := tx.Model(&TopUp{}).
+						Where("id = ? AND status IN ?", topUp.Id, []string{common.TopUpStatusPending, common.TopUpStatusExpired}).
+						Updates(map[string]interface{}{"status": common.TopUpStatusExpired, "complete_time": completeTime}).Error; saveErr != nil {
+						return saveErr
+					}
+					if expireErr := expireDirectPaymentTx(tx, topUp.TradeNo, completeTime); expireErr != nil {
+						return expireErr
+					}
+					expired = true
+					expiryErr = ErrDirectPaymentExpired
+					return nil
+				}
 				return err
 			}
 			if updates == nil {
@@ -549,8 +695,11 @@ func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionP
 			}
 			updates["complete_time"] = completeTime
 			updates["status"] = common.TopUpStatusSuccess
-			result := tx.Model(&TopUp{}).
-				Where("id = ? AND payment_provider = ? AND status = ?", topUp.Id, topUp.PaymentProvider, common.TopUpStatusPending).
+			where := tx.Model(&TopUp{}).Where("id = ? AND payment_provider = ? AND status = ?", topUp.Id, topUp.PaymentProvider, common.TopUpStatusPending)
+			if allowExpiredDirectSettlement {
+				where = tx.Model(&TopUp{}).Where("id = ? AND payment_provider = ? AND status IN ?", topUp.Id, topUp.PaymentProvider, []string{common.TopUpStatusPending, common.TopUpStatusExpired})
+			}
+			result := where.
 				Updates(updates)
 			if result.Error != nil {
 				return result.Error
@@ -588,6 +737,9 @@ func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionP
 		return nil, false, err
 	}
 	if expired {
+		if expiryErr != nil {
+			return nil, false, expiryErr
+		}
 		return nil, false, ErrTopUpExpired
 	}
 	if casLost {
@@ -922,6 +1074,19 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	if tradeNo == "" {
 		return errors.New("未提供订单号")
+	}
+	// Direct TRC20 orders are settled only from a verified chain event. An
+	// administrator must not be able to credit one by guessing its trade number
+	// or by bypassing the immutable amount/address/timestamp checks.
+	manualTopUp, lookupErr := GetTopUpByTradeNoWithError(tradeNo)
+	if lookupErr != nil {
+		return lookupErr
+	}
+	if isDirectUSDTNetworkProvider(manualTopUp.PaymentProvider) {
+		if manualTopUp.Status == common.TopUpStatusSuccess {
+			return nil
+		}
+		return ErrDirectPaymentInvalid
 	}
 
 	var quotaToAdd int

@@ -127,6 +127,9 @@ export function getPaymentIcon(
     case PAYMENT_TYPES.WAFFO:
     case PAYMENT_TYPES.YOOKASSA_SBP:
     case PAYMENT_TYPES.NOWPAYMENTS:
+    case PAYMENT_TYPES.USDT_TRON:
+    case PAYMENT_TYPES.USDT_TON:
+    case PAYMENT_TYPES.USDT_SOLANA:
       return (
         <CreditCard
           className={className}

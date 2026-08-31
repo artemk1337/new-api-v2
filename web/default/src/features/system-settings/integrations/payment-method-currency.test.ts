@@ -8,6 +8,8 @@ import {
   normalizePaymentMethodCurrency,
   usesFixedPaymentCurrency,
 } from './payment-method-currency'
+import type { TopupGroupOption } from './payment-method-dialog'
+import { isConfiguredTopupGroup } from './payment-method-group'
 import { getPaymentTypeOptions } from './payment-method-options'
 import {
   getPaymentMethodPendingTtl,
@@ -65,11 +67,34 @@ describe('payment method currency capabilities', () => {
 
     assert.deepEqual(yooKassa, {
       iconName: 'LuCreditCard',
-      label: 'СБП / YooKassa (yookassa_sbp)',
+      label: 'СБП / YooKassa',
       name: 'СБП / YooKassa',
       value: 'yookassa_sbp',
     })
     assert.equal(getPreferredPaymentCurrency('yookassa_sbp'), 'RUB')
+  })
+
+  test('offers every built-in gateway including the Crypto catalog method', () => {
+    const types = getPaymentTypeOptions((key) => key).map(
+      (option) => option.value
+    )
+    assert.deepEqual(types, [
+      'yookassa_sbp',
+      'alipay',
+      'wxpay',
+      'stripe',
+      'waffo_pancake',
+      'waffo',
+      'nowpayments',
+      'crypto_direct',
+    ])
+    const crypto = getPaymentTypeOptions((key) => key).find(
+      (option) => option.value === 'crypto_direct'
+    )
+    assert.equal(crypto?.label, 'Crypto')
+    assert.equal(crypto?.name, 'Crypto')
+    assert.equal(getPreferredPaymentCurrency('crypto_direct'), 'USDT')
+    assert.equal(usesFixedPaymentCurrency('crypto_direct'), true)
   })
 
   test('keeps an auto-created YooKassa SBP method editable', () => {
@@ -83,6 +108,46 @@ describe('payment method currency capabilities', () => {
     assert.equal(isPaymentMethodData(method), true)
     assert.equal(method.currency, 'RUB')
     assert.equal(method.topup_group, 'sbp-commission')
+  })
+
+  test('accepts the administrator-only visibility flag', () => {
+    assert.equal(
+      isPaymentMethodData({
+        name: 'Internal',
+        type: 'custom',
+        admin_only: true,
+      }),
+      true
+    )
+    assert.equal(
+      isPaymentMethodData({
+        name: 'Persisted internal',
+        type: 'custom',
+        admin_only: 'true',
+      }),
+      true
+    )
+    assert.equal(
+      isPaymentMethodData({
+        name: 'Invalid internal',
+        type: 'custom',
+        admin_only: 'yes',
+      }),
+      false
+    )
+  })
+
+  test('requires a configured top-up coefficient group', () => {
+    const groups: TopupGroupOption[] = [
+      { name: 'default', ratio: 1 },
+      { name: 'premium', ratio: 1.2 },
+    ]
+
+    assert.equal(isConfiguredTopupGroup('default', groups), true)
+    assert.equal(isConfiguredTopupGroup(' premium ', groups), true)
+    assert.equal(isConfiguredTopupGroup('unknown', groups), false)
+    assert.equal(isConfiguredTopupGroup('', groups), false)
+    assert.equal(isConfiguredTopupGroup('default', []), false)
   })
 
   test('resolves individual and provider payment TTL defaults', () => {

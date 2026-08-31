@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChevronDown, ExternalLink, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Loader2 } from 'lucide-react'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -38,12 +38,14 @@ import {
   formatCurrency,
   getPaymentIcon,
   getMinTopupAmount,
+  getPaymentMethodMinimumAmount,
+  isPaymentMethodAmountEligible,
   getPaymentMethodDisplayQuote,
   getCashbackTierSummary,
   normalizeCashbackTiers,
 } from '../lib'
 import { getPaymentCurrencyLabel } from '../lib/format'
-import type { CashbackTierSummary } from '../lib/payment'
+import { getDirectUSDTNetwork, type CashbackTierSummary } from '../lib/payment'
 import { getBackendTopupAmount } from '../lib/topup-input'
 import type {
   CashbackThreshold,
@@ -145,6 +147,18 @@ export function getRechargeStep(
   return hasPaymentMethod ? 3 : 2
 }
 
+function getPaymentMethodDisplayLabel(method: PaymentMethod): string {
+  if (method.type === 'crypto_direct') {
+    const network = method.crypto_network
+    return network
+      ? `Crypto · ${network === 'SOLANA' ? 'Solana' : network}`
+      : 'Crypto'
+  }
+  const network = getDirectUSDTNetwork(method.type)
+  if (network) return `Crypto · ${network === 'SOLANA' ? 'Solana' : network}`
+  return method.name
+}
+
 /**
  * Provider minimums are expressed in each gateway's settlement currency.
  * They must be validated by the server quote, not compared with the wallet's
@@ -169,6 +183,43 @@ export function getRechargeValidationTarget(
   return hasPaymentMethod ? null : 'payment-method'
 }
 
+export function getTopupAmountErrorMessage(
+  topupAmount: number,
+  minimum: number,
+  currencyLabel: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string | null {
+  if (
+    Number.isFinite(topupAmount) &&
+    topupAmount > 0 &&
+    Number.isFinite(minimum) &&
+    minimum > 0 &&
+    topupAmount < minimum
+  ) {
+    return t('Minimum topup amount: {{amount}}', {
+      amount: `${minimum < 1 ? formatWalletInputAmount(minimum) : formatCurrency(minimum)} ${currencyLabel}`,
+    })
+  }
+  return null
+}
+
+export function isTopupAmountValidationActive(
+  topupAmount: number,
+  globalMinimum: number,
+  validationTarget: RechargeValidationTarget | null | undefined
+): boolean {
+  const amountBelowGlobalMinimum =
+    Number.isFinite(topupAmount) &&
+    topupAmount > 0 &&
+    Number.isFinite(globalMinimum) &&
+    globalMinimum > 0 &&
+    topupAmount < globalMinimum
+  return (
+    amountBelowGlobalMinimum ||
+    (validationTarget === 'amount' && topupAmount <= 0)
+  )
+}
+
 type PaymentQuoteDisplay = {
   charged_amount: number
   charged_amount_usd: number
@@ -191,6 +242,13 @@ export function getPaymentQuoteDisplay(
     rate_to_usd: Number(method.rate_to_usd),
     rounding_decimals: Number(method.rounding_decimals),
   }
+}
+
+export function shouldShowPaymentMethodQuote(
+  unavailable: boolean,
+  quote: PaymentQuoteDisplay | null
+): quote is PaymentQuoteDisplay {
+  return !unavailable && quote !== null
 }
 
 export function hasPaymentMethodDisplayConfig(method: PaymentMethod): boolean {
@@ -270,6 +328,7 @@ export function RechargeFormCard({
   const [localAmount, setLocalAmount] = useState(() =>
     formatWalletInputAmount(topupAmount)
   )
+  const [cryptoExpanded, setCryptoExpanded] = useState(false)
   const standardPaymentMethods = useMemo(
     () =>
       topupInfo?.pay_methods?.filter(
@@ -277,6 +336,8 @@ export function RechargeFormCard({
       ) ?? [],
     [topupInfo?.pay_methods]
   )
+  const isCryptoExpanded =
+    cryptoExpanded && selectedPaymentMethod?.type === 'crypto_direct'
 
   useEffect(() => {
     if (lastInputBackendAmountRef.current === topupAmount) {
@@ -291,6 +352,12 @@ export function RechargeFormCard({
       amountInputRef.current?.focus()
     }
   }, [validationTarget])
+
+  useEffect(() => {
+    if (selectedPaymentMethod?.type !== 'crypto_direct') {
+      setCryptoExpanded(false)
+    }
+  }, [selectedPaymentMethod?.type])
 
   const handleAmountChange = (value: string) => {
     const sanitizedAmount = sanitizeTopupAmount(value)
@@ -308,12 +375,26 @@ export function RechargeFormCard({
     topupInfo?.enable_yookassa_topup ||
     topupInfo?.enable_nowpayments_topup ||
     enableWaffoTopup ||
-    enableWaffoPancakeTopup
+    enableWaffoPancakeTopup ||
+    standardPaymentMethods.some((method) =>
+      [
+        'crypto_direct',
+        'usdt_trc20_direct',
+        'usdt_ton_direct',
+        'usdt_solana_direct',
+      ].includes(method.type)
+    )
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
   const hasStandardPaymentMethods = standardPaymentMethods.length > 0
   const availableWaffoMethods = getAvailableWaffoMethods(waffoPayMethods)
   const hasWaffoPaymentMethods = availableWaffoMethods.length > 0
-  const minTopup = getMinTopupAmount(topupInfo)
+  const minTopup = getMinTopupAmount(topupInfo, selectedPaymentMethod)
+  const globalMinTopup = getMinTopupAmount(topupInfo)
+  const amountValidationActive = isTopupAmountValidationActive(
+    topupAmount,
+    globalMinTopup,
+    validationTarget
+  )
   const redemptionEnabled = topupInfo?.enable_redemption !== false
   const cashbackTiers = getRenderableCashbackTiers(topupInfo?.cashback)
   const hasCashback = hasPositiveCashbackTier(cashbackTiers)
@@ -411,17 +492,17 @@ export function RechargeFormCard({
                       min={minTopup}
                       step='any'
                       aria-describedby={
-                        validationTarget === 'amount'
+                        amountValidationActive
                           ? 'topup-amount-error'
                           : undefined
                       }
-                      aria-invalid={validationTarget === 'amount'}
+                      aria-invalid={amountValidationActive}
                       placeholder={t('Wallet minimum: {{amount}}', {
                         amount: formatWalletInputAmount(minTopup),
                       })}
                       className={cn(
                         'h-11 text-base font-semibold sm:text-lg',
-                        validationTarget === 'amount' &&
+                        amountValidationActive &&
                           'border-destructive focus-visible:ring-destructive/30'
                       )}
                     />
@@ -441,14 +522,19 @@ export function RechargeFormCard({
                       </span>
                     </div>
                   </div>
-                  {validationTarget === 'amount' && (
+                  {amountValidationActive && (
                     <p
                       id='topup-amount-error'
                       role='status'
                       aria-live='polite'
                       className='text-destructive text-xs'
                     >
-                      {t('Enter an amount')}
+                      {getTopupAmountErrorMessage(
+                        topupAmount,
+                        globalMinTopup,
+                        currencyLabel,
+                        t
+                      ) ?? t('Enter an amount')}
                     </p>
                   )}
                 </div>
@@ -500,70 +586,168 @@ export function RechargeFormCard({
                         // the exact provider minimum.
                         const hasDisplayConfig =
                           hasPaymentMethodDisplayConfig(method)
+                        const methodMinimum =
+                          getPaymentMethodMinimumAmount(method)
                         const unavailable =
-                          !canSelectPaymentMethod(topupAmount) ||
-                          !hasDisplayConfig
+                          !hasDisplayConfig ||
+                          !isPaymentMethodAmountEligible(topupAmount, method)
                         const quote = getPaymentQuoteDisplay(
                           method,
                           topupAmount,
                           cashbackTiers
                         )
+                        const cryptoDisclosureIcon = isCryptoExpanded ? (
+                          <ChevronUp className='size-4 shrink-0' />
+                        ) : (
+                          <ChevronDown className='size-4 shrink-0' />
+                        )
                         return (
-                          <Button
-                            key={method.type}
-                            variant='outline'
-                            onClick={() => {
-                              if (unavailable) {
-                                if (!hasDisplayConfig) return
-                                onValidationRequest?.()
-                                return
+                          <>
+                            <Button
+                              key={method.type}
+                              variant='outline'
+                              onClick={() => {
+                                if (unavailable) {
+                                  if (!hasDisplayConfig) return
+                                  if (topupAmount < globalMinTopup) {
+                                    onValidationRequest?.()
+                                  }
+                                  return
+                                }
+                                if (method.type === 'crypto_direct') {
+                                  const selected =
+                                    selectedPaymentMethod?.type ===
+                                    'crypto_direct'
+                                  if (!selected) onPaymentMethodSelect(method)
+                                  setCryptoExpanded(
+                                    !selected || !isCryptoExpanded
+                                  )
+                                  return
+                                }
+                                onPaymentMethodSelect(method)
+                              }}
+                              aria-disabled={unavailable}
+                              aria-expanded={
+                                method.type === 'crypto_direct'
+                                  ? isCryptoExpanded
+                                  : undefined
                               }
-                              onPaymentMethodSelect(method)
-                            }}
-                            aria-disabled={unavailable}
-                            className={cn(
-                              'border-input min-h-[68px] w-full min-w-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-left',
-                              unavailable && 'cursor-not-allowed opacity-50',
-                              validationTarget === 'payment-method' &&
-                                'border-destructive ring-1 ring-destructive/50'
-                            )}
-                          >
-                            <span
+                              aria-controls={
+                                method.type === 'crypto_direct'
+                                  ? `crypto-networks-${method.type}`
+                                  : undefined
+                              }
                               className={cn(
-                                'size-4 shrink-0 rounded-full border',
-                                selectedPaymentMethod?.type === method.type &&
-                                  'border-primary border-[5px]'
+                                'border-input min-h-[68px] w-full min-w-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-left',
+                                unavailable && 'cursor-not-allowed opacity-50',
+                                validationTarget === 'payment-method' &&
+                                  'border-destructive ring-1 ring-destructive/50'
                               )}
-                            />
-                            {getPaymentIcon(
-                              method.type,
-                              'h-4 w-4',
-                              method.icon,
-                              method.name
-                            )}
-                            <span className='flex min-w-0 flex-1 items-center gap-3'>
-                              <span className='min-w-0 flex-1'>
-                                <span className='block truncate font-medium'>
-                                  {method.name}
+                            >
+                              {method.type === 'crypto_direct' ? (
+                                cryptoDisclosureIcon
+                              ) : (
+                                <span
+                                  className={cn(
+                                    'size-4 shrink-0 rounded-full border',
+                                    selectedPaymentMethod?.type ===
+                                      method.type &&
+                                      'border-primary border-[5px]'
+                                  )}
+                                />
+                              )}
+                              {getPaymentIcon(
+                                method.type,
+                                'h-4 w-4',
+                                method.icon,
+                                method.name
+                              )}
+                              <span className='flex min-w-0 flex-1 items-center gap-3'>
+                                <span className='min-w-0 flex-1'>
+                                  <span className='block truncate font-medium'>
+                                    {getPaymentMethodDisplayLabel(method)}
+                                  </span>
+                                </span>
+                                <span className='flex shrink-0 flex-col items-end text-right'>
+                                  {shouldShowPaymentMethodQuote(
+                                    unavailable,
+                                    quote
+                                  ) && (
+                                    <span className='text-foreground text-base font-semibold tracking-tight tabular-nums sm:text-lg'>
+                                      {formatPaymentQuoteAmount(quote)}
+                                    </span>
+                                  )}
+                                  <span className='text-muted-foreground text-xs leading-4'>
+                                    {hasDisplayConfig
+                                      ? getMethodCommissionLabel(
+                                          method.topup_ratio,
+                                          t
+                                        )
+                                      : t('Payment method is unavailable')}
+                                  </span>
+                                  {methodMinimum !== null &&
+                                    topupAmount < methodMinimum && (
+                                      <span className='text-muted-foreground text-xs leading-4'>
+                                        {t('Wallet minimum: {{amount}}', {
+                                          amount:
+                                            formatWalletInputAmount(
+                                              methodMinimum
+                                            ),
+                                        })}
+                                      </span>
+                                    )}
                                 </span>
                               </span>
-                              <span className='flex shrink-0 flex-col items-end text-right'>
-                                <span className='text-foreground text-base font-semibold tracking-tight tabular-nums sm:text-lg'>
-                                  {quote
-                                    ? formatPaymentQuoteAmount(quote)
-                                    : '—'}
-                                </span>
-                                <span className='text-muted-foreground text-xs leading-4'>
-                                  {hasDisplayConfig
-                                    ? getMethodCommissionLabel(
-                                        method.topup_ratio,
-                                        t
-                                      )
-                                    : t('Payment method is unavailable')}
-                                </span>
-                              </span>
-                            </span>
-                          </Button>
+                            </Button>
+                            {method.type === 'crypto_direct' &&
+                              selectedPaymentMethod?.type === 'crypto_direct' &&
+                              isCryptoExpanded && (
+                                <div
+                                  id={`crypto-networks-${method.type}`}
+                                  role='radiogroup'
+                                  className='ml-8 grid gap-2'
+                                >
+                                  {(method.crypto_networks ?? []).map(
+                                    (network) => (
+                                      <Button
+                                        key={network}
+                                        type='button'
+                                        variant={
+                                          selectedPaymentMethod.crypto_network ===
+                                          network
+                                            ? 'default'
+                                            : 'secondary'
+                                        }
+                                        role='radio'
+                                        aria-checked={
+                                          selectedPaymentMethod.crypto_network ===
+                                          network
+                                        }
+                                        className='justify-start'
+                                        onClick={() =>
+                                          onPaymentMethodSelect({
+                                            ...method,
+                                            crypto_network: network,
+                                          })
+                                        }
+                                      >
+                                        <span
+                                          className={cn(
+                                            'size-4 rounded-full border',
+                                            selectedPaymentMethod.crypto_network ===
+                                              network &&
+                                              'border-primary-foreground border-[5px]'
+                                          )}
+                                        />
+                                        {network === 'SOLANA'
+                                          ? 'Solana'
+                                          : network}
+                                      </Button>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                          </>
                         )
                       })}
                     </div>
@@ -650,14 +834,17 @@ export function RechargeFormCard({
                                   </span>
                                 </span>
                                 <span className='flex shrink-0 flex-col items-end text-right'>
-                                  <span className='text-foreground text-base font-semibold tracking-tight tabular-nums sm:text-lg'>
-                                    {quote
-                                      ? formatPaymentQuoteAmount(
-                                          quote,
-                                          method.currency_symbol
-                                        )
-                                      : '—'}
-                                  </span>
+                                  {shouldShowPaymentMethodQuote(
+                                    unavailable,
+                                    quote
+                                  ) && (
+                                    <span className='text-foreground text-base font-semibold tracking-tight tabular-nums sm:text-lg'>
+                                      {formatPaymentQuoteAmount(
+                                        quote,
+                                        method.currency_symbol
+                                      )}
+                                    </span>
+                                  )}
                                   <span className='text-muted-foreground text-xs leading-4'>
                                     {hasDisplayConfig
                                       ? getMethodCommissionLabel(

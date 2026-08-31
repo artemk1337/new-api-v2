@@ -347,10 +347,9 @@ export type BillingSettings = {
   Price: number
   MinTopUp: number
   PaymentPendingTTLMinutes: number
-  PaymentCreationRateLimit: number
-  PaymentCreationRateLimitDurationMinutes: number
   CustomCallbackAddress: string
   PayMethods: string
+  PaymentMethodAvailableIcons: string
   'payment_setting.amount_options': string
   'payment_setting.amount_cashback': string
   'payment_setting.compliance_confirmed': boolean
@@ -398,6 +397,14 @@ export type BillingSettings = {
   NOWPaymentsPriceCurrency: string
   NOWPaymentsPayCurrency: string
   NOWPaymentsIPNCallbackURL: string
+  USDTTRC20Enabled: boolean
+  USDTTRC20ReceivingAddress: string
+  USDTTONReceivingAddress: string
+  USDTSolanaReceivingAddress: string
+  USDTSolanaReceivingTokenAccount: string
+  USDTTRC20AmountTailLimitUnits: number
+  USDTTRC20AmountPrecision: number
+  USDTTRC20APIKey: string
   // Bound by the operator through the catalog flow in the admin Pancake
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string
@@ -421,6 +428,9 @@ export type OperationsSettings = {
   SMTPStartTLSEnabled: boolean
   SMTPInsecureSkipVerify: boolean
   SMTPForceAuthLogin: boolean
+  USDTTRC20APIKey: string
+  USDTTONAPIKey: string
+  USDTSolanaAPIKey: string
   WorkerUrl: string
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
@@ -450,6 +460,9 @@ export type SecuritySettings = {
   ModelRequestRateLimitDurationStaged: boolean
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  PaymentCreationRateLimit: number
+  PaymentCreationRateLimitDurationMinutes: number
+  USDTTRC20MaxCreationsPerHour: number
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string

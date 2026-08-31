@@ -1,21 +1,17 @@
 const FIXED_PAYMENT_CURRENCIES: Record<string, string> = {
+  crypto_direct: 'USDT',
+  usdt_trc20_direct: 'USDT',
+  usdt_ton_direct: 'USDT',
+  usdt_solana_direct: 'USDT',
   stripe: 'USD',
   waffo_pancake: 'USD',
   yookassa_sbp: 'RUB',
   nowpayments: 'USDT',
 }
 
-const PROVIDER_OWNED_MINIMUMS = new Set([
-  'stripe',
-  'waffo',
-  'waffo_pancake',
-  'yookassa_sbp',
-  'nowpayments',
-])
-
-/** Whether the minimum is configured in the provider integration tab. */
+/** Every payment method may override its effective minimum in the method dialog. */
 export function hasEditablePaymentMethodMinimum(paymentType: string): boolean {
-  return !PROVIDER_OWNED_MINIMUMS.has(paymentType.trim().toLowerCase())
+  return paymentType.trim().length > 0
 }
 
 export function getPaymentMethodMinimumForDisplay(

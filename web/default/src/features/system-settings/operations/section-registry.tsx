@@ -25,6 +25,7 @@ import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { CryptoProviderCredentialsSection } from './crypto-provider-credentials-section'
 
 const OPERATIONS_SECTIONS = [
   {
@@ -88,6 +89,19 @@ const OPERATIONS_SECTIONS = [
           WorkerValidKey: settings.WorkerValidKey,
           WorkerAllowHttpImageRequestEnabled:
             settings.WorkerAllowHttpImageRequestEnabled,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'crypto',
+    titleKey: 'Crypto provider credentials',
+    build: (settings: OperationsSettings) => (
+      <CryptoProviderCredentialsSection
+        defaultValues={{
+          USDTTRC20APIKey: settings.USDTTRC20APIKey,
+          USDTTONAPIKey: settings.USDTTONAPIKey ?? '',
+          USDTSolanaAPIKey: settings.USDTSolanaAPIKey ?? '',
         }}
       />
     ),

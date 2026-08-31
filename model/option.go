@@ -42,11 +42,52 @@ func GetPayMethodsFromDB(db *gorm.DB) ([]map[string]string, error) {
 		}
 		return nil, err
 	}
-	var methods []map[string]string
-	if err := common.Unmarshal([]byte(option.Value), &methods); err != nil {
+	methods, err := operation_setting.ParsePayMethodsJSON(option.Value)
+	if err != nil {
 		return nil, err
 	}
-	return methods, nil
+	return operation_setting.CanonicalizePayMethods(methods), nil
+}
+
+// HasDirectUSDTMethod reports whether the catalog explicitly enables the
+// direct USDT integration. Presence in persisted PayMethods, rather than the
+// legacy integration flag, is the runtime activation switch.
+func HasDirectUSDTMethod(methods []map[string]string) bool {
+	for _, method := range methods {
+		if method != nil && isDirectUSDTNetworkProvider(method["type"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDirectUSDTNetworkProvider(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case operation_setting.DirectCryptoPaymentMethod, operation_setting.DirectUSDTTRC20PaymentMethod, operation_setting.DirectUSDTTONPaymentMethod, operation_setting.DirectUSDTSolanaPaymentMethod:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsDirectUSDTMethodConfigured reads the persisted catalog. Databases created
+// before the options table existed keep the old test/bootstrap behaviour and
+// fall back to the legacy flag; once the table exists, a missing row or method
+// is an explicit disabled state.
+func IsDirectUSDTMethodConfigured() bool {
+	methods, err := GetPayMethodsFromDB(DB)
+	if err == nil {
+		return HasDirectUSDTMethod(methods)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) || DB == nil {
+		return false
+	}
+	var option Option
+	lookupErr := DB.Where("key = ?", "PayMethods").First(&option).Error
+	if isMissingOptionsTableError(lookupErr) {
+		return setting.USDTTRC20Enabled
+	}
+	return false
 }
 
 func isMissingOptionsTableError(err error) bool {
@@ -214,6 +255,24 @@ func InitOptionMap() {
 	common.OptionMap["NOWPaymentsPriceCurrency"] = setting.NOWPaymentsPriceCurrency
 	common.OptionMap["NOWPaymentsPayCurrency"] = setting.NOWPaymentsPayCurrency
 	common.OptionMap["NOWPaymentsIPNCallbackURL"] = setting.NOWPaymentsIPNCallbackURL
+	common.OptionMap["USDTTRC20Enabled"] = strconv.FormatBool(setting.USDTTRC20Enabled)
+	common.OptionMap["USDTTRC20ReceivingAddress"] = setting.USDTTRC20ReceivingAddress
+	common.OptionMap["USDTTONReceivingAddress"] = setting.USDTTONReceivingAddress
+	common.OptionMap["USDTSolanaReceivingAddress"] = setting.USDTSolanaReceivingAddress
+	common.OptionMap["USDTTRC20AmountPrecision"] = strconv.Itoa(setting.USDTTRC20AmountPrecision)
+	common.OptionMap["USDTTRC20AmountTailLimitUnits"] = strconv.Itoa(setting.USDTTRC20AmountTailLimitUnits)
+	// Legacy suffix bounds remain visible to old clients during migration, but
+	// are no longer read by the direct payment runtime.
+	common.OptionMap["USDTTRC20AmountSuffixMinUnits"] = strconv.Itoa(setting.USDTTRC20AmountSuffixMinUnits)
+	common.OptionMap["USDTTRC20AmountSuffixMaxUnits"] = strconv.Itoa(setting.USDTTRC20AmountSuffixMaxUnits)
+	common.OptionMap["USDTTRC20APIKey"] = setting.USDTTRC20APIKey
+	common.OptionMap["USDTTONAPIKey"] = setting.USDTTONAPIKey
+	common.OptionMap["USDTTONAPIBaseURL"] = setting.USDTTONAPIBaseURL
+	common.OptionMap["USDTSolanaRPCURL"] = setting.USDTSolanaRPCURL
+	common.OptionMap["USDTSolanaAPIKey"] = setting.USDTSolanaAPIKey
+	common.OptionMap["USDTSolanaReceivingTokenAccount"] = setting.USDTSolanaReceivingTokenAccount
+	common.OptionMap["USDTTRC20MaxCreationsPerHour"] = strconv.Itoa(setting.USDTTRC20MaxCreationsPerHour)
+	common.OptionMap["USDTTRC20PaymentURLBase"] = setting.USDTTRC20PaymentURLBase
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["PricingGroups"] = "[]"
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -316,8 +375,14 @@ func loadOptionsFromDatabaseLocked() {
 	modelRequestRateLimitDuration := ""
 	modelRequestRateLimitDurationMinutes := ""
 	legacyUsableGroups := make(map[string]string)
+	hasTailLimit := false
+	legacyPrecision := 0
 	for _, option := range options {
 		switch option.Key {
+		case "USDTTRC20AmountTailLimitUnits":
+			hasTailLimit = true
+		case "USDTTRC20AmountPrecision":
+			legacyPrecision, _ = strconv.Atoi(strings.TrimSpace(option.Value))
 		case "PricingGroups":
 			hasPricingGroups = true
 		case "GroupRatio":
@@ -339,6 +404,22 @@ func loadOptionsFromDatabaseLocked() {
 			modelRequestRateLimitDurationActivationAt, _ = strconv.ParseInt(option.Value, 10, 64)
 		}
 	}
+	if !hasTailLimit {
+		limit := setting.DefaultUSDTTRC20AmountTailLimitUnits
+		if migrated, err := setting.USDTTRC20AmountTailLimitForPrecision(legacyPrecision); err == nil {
+			limit = migrated
+		}
+		persistedLimit, err := ensureDirectUSDTAmountTailLimitPersisted(limit)
+		if err != nil {
+			common.SysLog("failed to migrate USDT TRC20 amount tail limit: " + err.Error())
+		} else {
+			limit = persistedLimit
+			setting.USDTTRC20AmountTailLimitUnits = persistedLimit
+			common.OptionMapRWMutex.Lock()
+			common.OptionMap["USDTTRC20AmountTailLimitUnits"] = strconv.Itoa(limit)
+			common.OptionMapRWMutex.Unlock()
+		}
+	}
 	if !hasLegacyUsableGroups {
 		legacyUsableGroups = map[string]string{
 			"default": "默认分组",
@@ -349,7 +430,7 @@ func loadOptionsFromDatabaseLocked() {
 		return optionLoadPriority(options[i].Key) < optionLoadPriority(options[j].Key)
 	})
 	for _, option := range options {
-		if option.Key == removedChatsOptionKey {
+		if option.Key == removedChatsOptionKey || option.Key == operation_setting.DirectUSDTTRC20PayMethodsMigratedOption {
 			continue
 		}
 		if option.Key == "GroupRatio" {
@@ -645,6 +726,11 @@ func updateOptionLockedWithTxGuard(key string, value string, paymentCurrencyGuar
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
+	if strings.HasPrefix(key, "USDTTRC20") {
+		if err := validateDirectUSDTOptionValues(map[string]string{key: value}); err != nil {
+			return err
+		}
+	}
 	normalizedValue, err := normalizeOptionValueForSave(key, value)
 	if err != nil {
 		return err
@@ -737,6 +823,12 @@ func normalizePricingGroupOptionReferencesBeforeRename() error {
 
 func validateOptionValue(key string, value string) error {
 	switch key {
+	case "PayMethods":
+		methods, err := operation_setting.ParsePayMethodsJSON(value)
+		if err != nil {
+			return errors.New("PayMethods must be valid JSON")
+		}
+		return operation_setting.ValidatePayMethods(methods)
 	case "payment_setting.amount_cashback":
 		var cashbacks operation_setting.AmountCashbackConfig
 		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
@@ -772,6 +864,64 @@ func validateOptionValue(key string, value string) error {
 		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxPaymentCreationRateLimitWindowMinutes {
 			return fmt.Errorf("payment creation rate limit window must be between 1 and %d minutes", operation_setting.MaxPaymentCreationRateLimitWindowMinutes)
 		}
+		return nil
+	case "USDTTRC20Enabled":
+		if value != "true" && value != "false" {
+			return errors.New("USDT TRC20 enabled must be true or false")
+		}
+		return nil
+	case "USDTTRC20ReceivingAddress":
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		return setting.ValidateTRONAddress(value)
+	case "USDTTONReceivingAddress":
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		return setting.ValidateTONAddress(value)
+	case "USDTSolanaReceivingAddress":
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		return setting.ValidateSolanaAddress(value)
+	case "USDTTONAPIKey", "USDTSolanaAPIKey":
+		return nil
+	case "USDTSolanaReceivingTokenAccount":
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		return setting.ValidateSolanaAddress(value)
+	case "USDTTONAPIBaseURL", "USDTSolanaRPCURL":
+		if strings.TrimSpace(value) == "" {
+			return errors.New("RPC/API endpoint is required")
+		}
+		network := "TON"
+		if key == "USDTSolanaRPCURL" {
+			network = "SOLANA"
+		}
+		return setting.ValidateUSDTProviderEndpoint(network, value)
+	case "USDTTRC20MaxCreationsPerHour":
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt < 0 || valueInt > setting.USDTTRC20MaxCreations {
+			return fmt.Errorf("USDT TRC20 hourly creation limit must be between 0 and %d", setting.USDTTRC20MaxCreations)
+		}
+		return nil
+	case "USDTTRC20AmountPrecision":
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return errors.New("USDT TRC20 amount precision must be an integer")
+		}
+		return setting.ValidateUSDTTRC20AmountPrecision(valueInt)
+	case "USDTTRC20AmountTailLimitUnits":
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return errors.New("USDT TRC20 amount tail limit must be an integer")
+		}
+		return setting.ValidateUSDTTRC20AmountTailLimit(valueInt)
+	case "USDTTRC20AmountSuffixMinUnits", "USDTTRC20AmountSuffixMaxUnits":
+		// Deprecated compatibility options. Do not validate their historical
+		// values: they are intentionally ignored by the runtime.
 		return nil
 	case setting.ModelRequestRateLimitDurationStagedOption,
 		setting.ModelRequestRateLimitDurationActiveOption,
@@ -810,6 +960,199 @@ func validateOptionValue(key string, value string) error {
 	}
 }
 
+func validateDirectUSDTOptionValues(values map[string]string) error {
+	enabled := setting.USDTTRC20Enabled
+	address := setting.USDTTRC20ReceivingAddress
+	apiKey := setting.USDTTRC20APIKey
+	if value, ok := values["USDTTRC20Enabled"]; ok {
+		enabled = value == "true"
+	}
+	if value, ok := values["USDTTRC20ReceivingAddress"]; ok {
+		address = value
+	}
+	if value, ok := values["USDTTRC20APIKey"]; ok {
+		apiKey = value
+	}
+	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey)
+}
+
+func ensureDirectUSDTAmountTailLimitPersisted(limit int) (int, error) {
+	if err := setting.ValidateUSDTTRC20AmountTailLimit(limit); err != nil {
+		return 0, err
+	}
+	option := Option{Key: "USDTTRC20AmountTailLimitUnits", Value: strconv.Itoa(limit)}
+	if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+		return 0, err
+	}
+	if err := DB.First(&option, "key = ?", option.Key).Error; err != nil {
+		return 0, err
+	}
+	persistedLimit, err := strconv.Atoi(strings.TrimSpace(option.Value))
+	if err != nil {
+		return 0, err
+	}
+	if err := setting.ValidateUSDTTRC20AmountTailLimit(persistedLimit); err != nil {
+		return 0, err
+	}
+	return persistedLimit, nil
+}
+
+func ensureDirectUSDTAmountTailLimitOptionTx(tx *gorm.DB) error {
+	option := Option{Key: "USDTTRC20AmountTailLimitUnits", Value: strconv.Itoa(setting.DefaultUSDTTRC20AmountTailLimitUnits)}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+		return err
+	}
+	query := tx
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return query.First(&option, "key = ?", option.Key).Error
+}
+
+func validateDirectUSDTAmountTailLimitOptionValuesFromDB(tx *gorm.DB, values map[string]string) error {
+	if tx == nil {
+		return gorm.ErrInvalidDB
+	}
+	limit := setting.DefaultUSDTTRC20AmountTailLimitUnits
+	query := tx.Where("key = ?", "USDTTRC20AmountTailLimitUnits")
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var option Option
+	if err := query.First(&option).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if option.Key != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil {
+			return fmt.Errorf("invalid persisted %s: %w", option.Key, err)
+		}
+		limit = parsed
+	}
+	if value, ok := values["USDTTRC20AmountTailLimitUnits"]; ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return err
+		}
+		limit = parsed
+	}
+	return setting.ValidateUSDTTRC20AmountTailLimit(limit)
+}
+
+// ensureDirectUSDTAmountPrecisionOptionTx materializes the legacy precision
+// row for old admin clients. New runtime configuration is tail-limit based.
+func ensureDirectUSDTAmountPrecisionOptionTx(tx *gorm.DB) error {
+	option := Option{Key: "USDTTRC20AmountPrecision", Value: strconv.Itoa(setting.DefaultUSDTTRC20AmountPrecision)}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+		return err
+	}
+	query := tx
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	return query.First(&option, "key = ?", option.Key).Error
+}
+
+// validateDirectUSDTAmountPrecisionOptionValuesFromDB validates a prospective
+// precision update against the latest persisted value while holding a row lock
+// on databases that support it.
+func validateDirectUSDTAmountPrecisionOptionValuesFromDB(tx *gorm.DB, values map[string]string) error {
+	if tx == nil {
+		return gorm.ErrInvalidDB
+	}
+	precision := setting.DefaultUSDTTRC20AmountPrecision
+	query := tx.Where("key = ?", "USDTTRC20AmountPrecision")
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var option Option
+	if err := query.First(&option).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if option.Key != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil {
+			return fmt.Errorf("invalid persisted %s: %w", option.Key, err)
+		}
+		precision = parsed
+	}
+	if value, ok := values["USDTTRC20AmountPrecision"]; ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return err
+		}
+		precision = parsed
+	}
+	return setting.ValidateUSDTTRC20AmountPrecision(precision)
+}
+
+// Deprecated suffix-bound helpers are retained solely for old admin clients
+// that still submit these keys. They never participate in payment runtime
+// selection; the precision option above is authoritative.
+func ensureDirectUSDTAmountSuffixOptionsTx(tx *gorm.DB) error {
+	defaults := []struct{ key, value string }{
+		{"USDTTRC20AmountSuffixMinUnits", strconv.Itoa(setting.DefaultUSDTTRC20AmountSuffixMinUnits)},
+		{"USDTTRC20AmountSuffixMaxUnits", strconv.Itoa(setting.DefaultUSDTTRC20AmountSuffixMaxUnits)},
+	}
+	for _, item := range defaults {
+		option := Option{Key: item.key, Value: item.value}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
+			return err
+		}
+		query := tx
+		if tx.Dialector.Name() != "sqlite" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.First(&option, "key = ?", item.key).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDirectUSDTAmountSuffixOptionValuesFromDB(tx *gorm.DB, values map[string]string) error {
+	if tx == nil {
+		return gorm.ErrInvalidDB
+	}
+	minUnits := setting.DefaultUSDTTRC20AmountSuffixMinUnits
+	maxUnits := setting.DefaultUSDTTRC20AmountSuffixMaxUnits
+	query := tx.Where("key IN ?", []string{"USDTTRC20AmountSuffixMinUnits", "USDTTRC20AmountSuffixMaxUnits"})
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var options []Option
+	if err := query.Find(&options).Error; err != nil {
+		return err
+	}
+	for _, option := range options {
+		parsed, err := strconv.Atoi(strings.TrimSpace(option.Value))
+		if err != nil {
+			return fmt.Errorf("invalid persisted %s: %w", option.Key, err)
+		}
+		switch option.Key {
+		case "USDTTRC20AmountSuffixMinUnits":
+			minUnits = parsed
+		case "USDTTRC20AmountSuffixMaxUnits":
+			maxUnits = parsed
+		}
+	}
+	if value, ok := values["USDTTRC20AmountSuffixMinUnits"]; ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return err
+		}
+		minUnits = parsed
+	}
+	if value, ok := values["USDTTRC20AmountSuffixMaxUnits"]; ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return err
+		}
+		maxUnits = parsed
+	}
+	return setting.ValidateUSDTTRC20AmountSuffixRange(minUnits, maxUnits)
+}
+
 func normalizeOptionValueForSave(key string, value string) (string, error) {
 	var (
 		normalized string
@@ -817,6 +1160,14 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		err        error
 	)
 	switch key {
+	case "USDTTRC20AmountPrecision", "USDTTRC20AmountTailLimitUnits":
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return value, parseErr
+		}
+		return strconv.Itoa(parsed), nil
+	case "USDTTRC20ReceivingAddress", "USDTTONReceivingAddress", "USDTSolanaReceivingAddress":
+		return strings.TrimSpace(value), nil
 	case "payment_setting.amount_cashback":
 		var cashbacks operation_setting.AmountCashbackConfig
 		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
@@ -1180,6 +1531,9 @@ func updateOptionsBulkLockedWithPrepareTx(values map[string]string, prepare func
 			return err
 		}
 	}
+	if err := validateDirectUSDTOptionValues(normalizedValues); err != nil {
+		return err
+	}
 	if err := validateModelRequestRateLimitDurationActivation(normalizedValues); err != nil {
 		return err
 	}
@@ -1255,8 +1609,41 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 		return err
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if payMethods, included := values["PayMethods"]; included {
+			if err := validatePayMethodsForSaveTx(tx, payMethods); err != nil {
+				return err
+			}
+		}
 		if prepare != nil {
 			if err := prepare(tx, values); err != nil {
+				return err
+			}
+		}
+		_, precisionUpdate := values["USDTTRC20AmountPrecision"]
+		if precisionUpdate {
+			if err := ensureDirectUSDTAmountPrecisionOptionTx(tx); err != nil {
+				return err
+			}
+			if err := validateDirectUSDTAmountPrecisionOptionValuesFromDB(tx, values); err != nil {
+				return err
+			}
+		}
+		_, tailLimitUpdate := values["USDTTRC20AmountTailLimitUnits"]
+		if tailLimitUpdate {
+			if err := ensureDirectUSDTAmountTailLimitOptionTx(tx); err != nil {
+				return err
+			}
+			if err := validateDirectUSDTAmountTailLimitOptionValuesFromDB(tx, values); err != nil {
+				return err
+			}
+		}
+		_, legacyMinUpdate := values["USDTTRC20AmountSuffixMinUnits"]
+		_, legacyMaxUpdate := values["USDTTRC20AmountSuffixMaxUnits"]
+		if legacyMinUpdate || legacyMaxUpdate {
+			if err := ensureDirectUSDTAmountSuffixOptionsTx(tx); err != nil {
+				return err
+			}
+			if err := validateDirectUSDTAmountSuffixOptionValuesFromDB(tx, values); err != nil {
 				return err
 			}
 		}
@@ -1332,12 +1719,41 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	return nil
 }
 
+// validatePayMethodsForSaveTx compares a candidate catalog with the last
+// committed row while holding its transaction lock. This keeps the legacy
+// topup_group exception scoped to methods that were actually persisted before
+// the field existed; a controller-only check could race or be bypassed.
+func validatePayMethodsForSaveTx(tx *gorm.DB, candidateJSON string) error {
+	candidate, err := operation_setting.ParsePayMethodsJSON(candidateJSON)
+	if err != nil {
+		return errors.New("PayMethods must be valid JSON")
+	}
+	query := tx.Where("key = ?", "PayMethods")
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var previous Option
+	err = query.First(&previous).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return operation_setting.ValidatePayMethodsForSave(candidate, nil)
+	}
+	if err != nil {
+		return err
+	}
+	persisted, err := operation_setting.ParsePayMethodsJSON(previous.Value)
+	if err != nil {
+		return fmt.Errorf("invalid persisted PayMethods: %w", err)
+	}
+	return operation_setting.ValidatePayMethodsForSave(candidate, persisted)
+}
+
 // ensurePaymentMethodsPersistedTx performs provider migrations while the
 // option update transaction is still open. It always starts from the latest
 // PayMethods row (locked for update), so a stale process snapshot cannot
 // overwrite edits made by another instance.
 func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) error {
 	_, explicit := values["PayMethods"]
+	directLegacyReady := directUSDTLegacyReadyForMigration(values)
 	yooKassaConfig := setting.GetYooKassaConfig()
 	yooEnabled := optionBoolValue(values, "YooKassaEnabled", yooKassaConfig.Enabled)
 	yooShopID := optionStringValue(values, "YooKassaShopID", yooKassaConfig.ShopID)
@@ -1358,7 +1774,7 @@ func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) erro
 			break
 		}
 	}
-	if !explicit && !yooReady && !localHasNOW {
+	if !explicit && !yooReady && !localHasNOW && !directLegacyReady {
 		return nil
 	}
 	option := Option{Key: "PayMethods", Value: operation_setting.PayMethods2JsonString()}
@@ -1384,9 +1800,25 @@ func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) erro
 			}
 		}
 	}
-	methods := make([]map[string]string, 0)
-	if err := common.Unmarshal([]byte(option.Value), &methods); err != nil {
+	methods, err := operation_setting.ParsePayMethodsJSON(option.Value)
+	if err != nil {
 		return err
+	}
+	canonicalMethods := operation_setting.CanonicalizePayMethods(methods)
+	if encodedBefore, err := common.Marshal(methods); err != nil {
+		return err
+	} else if encodedAfter, err := common.Marshal(canonicalMethods); err != nil {
+		return err
+	} else if string(encodedBefore) != string(encodedAfter) {
+		methods = canonicalMethods
+		encoded, err := common.Marshal(methods)
+		if err != nil {
+			return err
+		}
+		option.Value = string(encoded)
+		dirty = true
+	} else {
+		methods = canonicalMethods
 	}
 
 	if yooReady && !explicit {
@@ -1399,6 +1831,30 @@ func ensurePaymentMethodsPersistedTx(tx *gorm.DB, values map[string]string) erro
 			}
 			option.Value = string(encoded)
 			dirty = true
+		}
+	}
+
+	var directMigrationMarker Option
+	markerErr := tx.Select("key").First(&directMigrationMarker, "key = ?", operation_setting.DirectUSDTTRC20PayMethodsMigratedOption).Error
+	directMigrationDone := markerErr == nil
+	if markerErr != nil && !errors.Is(markerErr, gorm.ErrRecordNotFound) {
+		return markerErr
+	}
+	if directLegacyReady && !explicit && !directMigrationDone {
+		if !HasDirectUSDTMethod(methods) {
+			methods = append(methods, map[string]string{
+				"name": "Crypto", "type": DirectUSDTTRC20Provider,
+			})
+			encoded, err := common.Marshal(methods)
+			if err != nil {
+				return err
+			}
+			option.Value = string(encoded)
+			dirty = true
+		}
+		marker := Option{Key: operation_setting.DirectUSDTTRC20PayMethodsMigratedOption, Value: "true"}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&marker).Error; err != nil {
+			return err
 		}
 	}
 
@@ -1432,6 +1888,16 @@ func optionBoolValue(values map[string]string, key string, fallback bool) bool {
 	value := optionStringValue(values, key, strconv.FormatBool(fallback))
 	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
 	return err == nil && parsed
+}
+
+func directUSDTLegacyReadyForMigration(values map[string]string) bool {
+	if !operation_setting.IsPaymentComplianceConfirmed() {
+		return false
+	}
+	enabled := optionBoolValue(values, "USDTTRC20Enabled", setting.USDTTRC20Enabled)
+	address := optionStringValue(values, "USDTTRC20ReceivingAddress", setting.USDTTRC20ReceivingAddress)
+	apiKey := optionStringValue(values, "USDTTRC20APIKey", setting.USDTTRC20APIKey)
+	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey) == nil && enabled
 }
 
 type pricingGroupNormalizer struct {
@@ -1668,6 +2134,8 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "USDTTRC20Enabled":
+			setting.USDTTRC20Enabled = boolValue
 		}
 	}
 	switch key {
@@ -1802,6 +2270,50 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		common.OptionMap[key] = "usdt"
 	case "NOWPaymentsIPNCallbackURL":
 		setting.NOWPaymentsIPNCallbackURL = value
+	case "USDTTRC20ReceivingAddress":
+		setting.USDTTRC20ReceivingAddress = strings.TrimSpace(value)
+	case "USDTTONReceivingAddress":
+		setting.USDTTONReceivingAddress = strings.TrimSpace(value)
+	case "USDTSolanaReceivingAddress":
+		setting.USDTSolanaReceivingAddress = strings.TrimSpace(value)
+	case "USDTSolanaReceivingTokenAccount":
+		setting.USDTSolanaReceivingTokenAccount = strings.TrimSpace(value)
+	case "USDTTRC20AmountPrecision":
+		precision, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return parseErr
+		}
+		if err = setting.ValidateUSDTTRC20AmountPrecision(precision); err != nil {
+			return err
+		}
+		setting.USDTTRC20AmountPrecision = precision
+	case "USDTTRC20AmountTailLimitUnits":
+		limit, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return parseErr
+		}
+		if err = setting.ValidateUSDTTRC20AmountTailLimit(limit); err != nil {
+			return err
+		}
+		setting.USDTTRC20AmountTailLimitUnits = limit
+	case "USDTTRC20AmountSuffixMinUnits":
+		// Deprecated compatibility option; ignored by the payment runtime.
+	case "USDTTRC20AmountSuffixMaxUnits":
+		// Deprecated compatibility option; ignored by the payment runtime.
+	case "USDTTRC20APIKey":
+		setting.USDTTRC20APIKey = strings.TrimSpace(value)
+	case "USDTTONAPIKey":
+		setting.USDTTONAPIKey = strings.TrimSpace(value)
+	case "USDTTONAPIBaseURL":
+		setting.USDTTONAPIBaseURL = strings.TrimSpace(value)
+	case "USDTSolanaRPCURL":
+		setting.USDTSolanaRPCURL = strings.TrimSpace(value)
+	case "USDTSolanaAPIKey":
+		setting.USDTSolanaAPIKey = strings.TrimSpace(value)
+	case "USDTTRC20MaxCreationsPerHour":
+		setting.USDTTRC20MaxCreationsPerHour, _ = strconv.Atoi(value)
+	case "USDTTRC20PaymentURLBase":
+		setting.USDTTRC20PaymentURLBase = strings.TrimRight(strings.TrimSpace(value), "/")
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":

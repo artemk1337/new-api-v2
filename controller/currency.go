@@ -228,8 +228,8 @@ func paymentMethodListContains(methods, wanted string) bool {
 }
 
 func paymentMethodsJSONContainsType(value, wanted string) bool {
-	var methods []map[string]string
-	if err := common.Unmarshal([]byte(value), &methods); err != nil {
+	methods, err := operation_setting.ParsePayMethodsJSON(value)
+	if err != nil {
 		return false
 	}
 	return paymentMethodsContainType(methods, wanted)

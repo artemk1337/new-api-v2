@@ -59,6 +59,9 @@ type StripeAdaptor struct {
 }
 
 func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodStripe) {
+		return
+	}
 	id := c.GetInt("id")
 	group, err := model.GetUserGroup(id, true)
 	if err != nil {
@@ -83,6 +86,9 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 }
 
 func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
+	if !paymentMethodAllowedForUser(c, model.PaymentMethodStripe) {
+		return
+	}
 	if !isStripeTopUpEnabled() {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Stripe payments are not enabled"})
 		return
