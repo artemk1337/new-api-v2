@@ -379,9 +379,19 @@ func GetTopUpInfo(c *gin.Context) {
 	}
 	manualTopup := operation_setting.GetPaymentSetting()
 	if manualTopup.ManualTopupEnabled && strings.TrimSpace(manualTopup.ManualTopupContactURL) != "" && manualTopup.ManualTopupMinAmount > 0 {
-		data["manual_topup_enabled"] = true
-		data["manual_topup_min_amount"] = manualTopup.ManualTopupMinAmount
-		data["manual_topup_contact_url"] = manualTopup.ManualTopupContactURL
+		rubRate, rateErr := service.GetPlatformCurrencyRate("RUB")
+		if rateErr == nil && rubRate > 0 && !math.IsNaN(rubRate) && !math.IsInf(rubRate, 0) {
+			minimumBackendAmount := manualTopup.ManualTopupMinAmount / rubRate
+			if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+				minimumBackendAmount *= common.GetQuotaPerUnit()
+			}
+			if minimumBackendAmount > 0 && !math.IsNaN(minimumBackendAmount) && !math.IsInf(minimumBackendAmount, 0) {
+				data["manual_topup_enabled"] = true
+				data["manual_topup_min_amount"] = manualTopup.ManualTopupMinAmount
+				data["manual_topup_min_amount_backend"] = minimumBackendAmount
+				data["manual_topup_contact_url"] = manualTopup.ManualTopupContactURL
+			}
+		}
 	}
 	if currencies, currencyErr := model.ListPlatformCurrencies(true); currencyErr == nil {
 		data["currencies"] = currencies

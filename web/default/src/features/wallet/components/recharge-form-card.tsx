@@ -183,16 +183,44 @@ export function getRechargeValidationTarget(
   return hasPaymentMethod ? null : 'payment-method'
 }
 
-export function getManualTopupContact(topupInfo: TopupInfo | null): { minAmount: number; url: string } | null {
+export function getManualTopupContact(
+  topupInfo: TopupInfo | null
+): { minAmount: number; minBackendAmount: number; url: string } | null {
   const minAmount = topupInfo?.manual_topup_min_amount
+  const minBackendAmount = topupInfo?.manual_topup_min_amount_backend
   const url = topupInfo?.manual_topup_contact_url?.trim()
-  if (!topupInfo?.manual_topup_enabled || !minAmount || minAmount <= 0 || !url) return null
+  if (
+    !topupInfo?.manual_topup_enabled ||
+    !minAmount ||
+    minAmount <= 0 ||
+    !minBackendAmount ||
+    minBackendAmount <= 0 ||
+    !url
+  ) {
+    return null
+  }
   try {
-    const protocol = new URL(url).protocol
-    return protocol === 'https:' || protocol === 'http:' ? { minAmount, url } : null
+    const parsedURL = new URL(url)
+    return parsedURL.protocol === 'https:' &&
+      parsedURL.hostname.toLowerCase() === 't.me' &&
+      !parsedURL.port &&
+      parsedURL.pathname !== '/'
+      ? { minAmount, minBackendAmount, url }
+      : null
   } catch {
     return null
   }
+}
+
+export function isManualTopupAmountEligible(
+  topupAmount: number,
+  manualTopup: ReturnType<typeof getManualTopupContact>
+): boolean {
+  return Boolean(
+    manualTopup &&
+      Number.isFinite(topupAmount) &&
+      topupAmount >= manualTopup.minBackendAmount
+  )
 }
 
 export function getTopupAmountErrorMessage(
@@ -382,6 +410,10 @@ export function RechargeFormCard({
   }
 
   const manualTopup = getManualTopupContact(topupInfo)
+  const manualTopupEligible = isManualTopupAmountEligible(
+    topupAmount,
+    manualTopup
+  )
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
@@ -877,7 +909,18 @@ export function RechargeFormCard({
               </>
             )}
             {manualTopup && (
-              <a href={manualTopup.url} target='_blank' rel='noreferrer' className='border-primary/30 bg-primary/5 hover:bg-primary/10 flex min-h-[88px] w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors'>
+              <a
+                href={manualTopupEligible ? manualTopup.url : undefined}
+                target={manualTopupEligible ? '_blank' : undefined}
+                rel={manualTopupEligible ? 'noreferrer' : undefined}
+                aria-disabled={!manualTopupEligible}
+                className={cn(
+                  'border-primary/30 bg-primary/5 flex min-h-[88px] w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                  manualTopupEligible
+                    ? 'hover:bg-primary/10'
+                    : 'cursor-not-allowed opacity-60'
+                )}
+              >
                 <ExternalLink className='text-primary size-4 shrink-0' aria-hidden='true' />
                 <span className='min-w-0 flex-1'>
                   <span className='block font-medium'>{t('Large payment without commission')}</span>

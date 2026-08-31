@@ -598,8 +598,8 @@ func validateManualTopupSettingsFromDB(db *gorm.DB, values map[string]string) er
 		),
 	))
 	parsedURL, err := url.ParseRequestURI(contactURL)
-	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") {
-		return errors.New("manual large payment contact URL must be an HTTP or HTTPS URL")
+	if err != nil || parsedURL.Scheme != "https" || !strings.EqualFold(parsedURL.Host, "t.me") || parsedURL.Path == "" || parsedURL.Path == "/" {
+		return errors.New("manual large payment contact URL must be a Telegram link starting with https://t.me/")
 	}
 
 	minimumText := prospectiveOptionValue(

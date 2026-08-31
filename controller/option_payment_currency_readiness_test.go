@@ -194,6 +194,16 @@ func TestManualTopupSettingsRequireContactAndMinimum(t *testing.T) {
 		"payment_setting.manual_topup_contact_url": "https://t.me/vibecode_support",
 		"payment_setting.manual_topup_min_amount":  "0",
 	}))
+	require.Error(t, validateManualTopupSettingsFromDB(db, map[string]string{
+		"payment_setting.manual_topup_enabled":     "true",
+		"payment_setting.manual_topup_contact_url": "https://example.com/contact",
+		"payment_setting.manual_topup_min_amount":  "5000",
+	}))
+	require.Error(t, validateManualTopupSettingsFromDB(db, map[string]string{
+		"payment_setting.manual_topup_enabled":     "true",
+		"payment_setting.manual_topup_contact_url": "http://t.me/vibecode_support",
+		"payment_setting.manual_topup_min_amount":  "5000",
+	}))
 	require.NoError(t, validateManualTopupSettingsFromDB(db, map[string]string{
 		"payment_setting.manual_topup_enabled":     "true",
 		"payment_setting.manual_topup_contact_url": "https://t.me/vibecode_support",

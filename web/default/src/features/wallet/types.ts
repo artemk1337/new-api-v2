@@ -240,6 +240,8 @@ export interface TopupInfo {
   manual_topup_enabled?: boolean
   /** Minimum manual payment amount in RUB */
   manual_topup_min_amount?: number
+  /** Manual payment minimum in the wallet backend amount unit */
+  manual_topup_min_amount_backend?: number
   /** Manager contact URL for manual large payments */
   manual_topup_contact_url?: string
   /** Whether redemption code usage is enabled */

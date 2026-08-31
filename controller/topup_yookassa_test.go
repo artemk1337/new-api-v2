@@ -257,6 +257,14 @@ func TestTopUpInfoDoesNotReaddExplicitlyRemovedYooKassaSBP(t *testing.T) {
 
 func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.PlatformCurrency{}))
+	require.NoError(t, model.DB.Create(&model.PlatformCurrency{
+		Code:            "RUB",
+		Name:            "Russian Ruble",
+		Symbol:          "₽",
+		Enabled:         true,
+		ManualRateToUSD: 100,
+	}).Error)
 	original := *operation_setting.GetPaymentSetting()
 	t.Cleanup(func() { *operation_setting.GetPaymentSetting() = original })
 
@@ -276,15 +284,88 @@ func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
 
 	var response struct {
 		Data struct {
-			Enabled bool    `json:"manual_topup_enabled"`
-			Minimum float64 `json:"manual_topup_min_amount"`
-			Contact string  `json:"manual_topup_contact_url"`
+			Enabled        bool    `json:"manual_topup_enabled"`
+			Minimum        float64 `json:"manual_topup_min_amount"`
+			BackendMinimum float64 `json:"manual_topup_min_amount_backend"`
+			Contact        string  `json:"manual_topup_contact_url"`
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.True(t, response.Data.Enabled)
 	assert.Equal(t, 5000.0, response.Data.Minimum)
+	assert.Equal(t, 50.0, response.Data.BackendMinimum)
 	assert.Equal(t, "https://t.me/vibecode_support", response.Data.Contact)
+}
+
+func TestTopUpInfoHidesManualLargePaymentWithoutRUBRate(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	original := *operation_setting.GetPaymentSetting()
+	t.Cleanup(func() { *operation_setting.GetPaymentSetting() = original })
+
+	settings := operation_setting.GetPaymentSetting()
+	settings.ManualTopupEnabled = true
+	settings.ManualTopupMinAmount = 5000
+	settings.ManualTopupContactURL = "https://t.me/vibecode_support"
+
+	router := gin.New()
+	router.GET("/topup/info", func(c *gin.Context) {
+		c.Set("id", 1)
+		GetTopUpInfo(c)
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/topup/info", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Data struct {
+			Enabled bool `json:"manual_topup_enabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.False(t, response.Data.Enabled)
+}
+
+func TestTopUpInfoConvertsManualLargePaymentMinimumToTokens(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.PlatformCurrency{}))
+	require.NoError(t, model.DB.Create(&model.PlatformCurrency{
+		Code:            "RUB",
+		Name:            "Russian Ruble",
+		Symbol:          "₽",
+		Enabled:         true,
+		ManualRateToUSD: 100,
+	}).Error)
+	originalDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	originalQuotaPerUnit := common.GetQuotaPerUnit()
+	originalSettings := *operation_setting.GetPaymentSetting()
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+		common.SetQuotaPerUnit(originalQuotaPerUnit)
+		*operation_setting.GetPaymentSetting() = originalSettings
+	})
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
+	common.SetQuotaPerUnit(1_000_000)
+	settings := operation_setting.GetPaymentSetting()
+	settings.ManualTopupEnabled = true
+	settings.ManualTopupMinAmount = 5000
+	settings.ManualTopupContactURL = "https://t.me/vibecode_support"
+
+	router := gin.New()
+	router.GET("/topup/info", func(c *gin.Context) {
+		c.Set("id", 1)
+		GetTopUpInfo(c)
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/topup/info", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	var response struct {
+		Data struct {
+			BackendMinimum float64 `json:"manual_topup_min_amount_backend"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.Equal(t, 50_000_000.0, response.Data.BackendMinimum)
 }
 
 func TestYooKassaDirectRoutesRejectDisabledPersistedSBP(t *testing.T) {

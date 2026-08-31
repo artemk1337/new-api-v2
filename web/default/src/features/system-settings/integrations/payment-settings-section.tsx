@@ -105,18 +105,23 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
-function isHttpUrl(value: string) {
+function isTelegramUrl(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return true
   try {
     const url = new URL(trimmed)
-    return url.protocol === 'http:' || url.protocol === 'https:'
+    return (
+      url.protocol === 'https:' &&
+      url.hostname.toLowerCase() === 't.me' &&
+      url.port === '' &&
+      url.pathname !== '/'
+    )
   } catch {
     return false
   }
 }
 
-const paymentSchema = z
+const createPaymentSchema = (t: (key: string) => string) => z
   .object({
     PayAddress: z.string().refine((value) => {
       const trimmed = value.trim()
@@ -165,7 +170,7 @@ const paymentSchema = z
     ManualTopupMinAmount: z.coerce.number().min(1),
     ManualTopupContactURL: z
       .string()
-      .refine(isHttpUrl, 'Provide a valid contact URL starting with http:// or https://'),
+      .refine(isTelegramUrl, t('Provide a Telegram link starting with https://t.me/')),
     StripeApiSecret: z.string(),
     StripeWebhookSecret: z.string(),
     StripePriceId: z.string(),
@@ -237,12 +242,12 @@ const paymentSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ManualTopupContactURL'],
-        message: 'Provide a valid contact URL starting with http:// or https://',
+        message: t('Provide a Telegram link starting with https://t.me/'),
       })
     }
   })
 
-type PaymentFormValues = z.infer<typeof paymentSchema>
+type PaymentFormValues = z.infer<ReturnType<typeof createPaymentSchema>>
 type WaffoFormFieldValues = Omit<WaffoSettingsValues, 'WaffoPayMethods'>
 type PaymentBaseFormValues = Omit<
   PaymentFormValues,
@@ -282,6 +287,7 @@ export function PaymentSettingsSection({
   waffoPancakeProvisionedProductID,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
+  const paymentSchema = createPaymentSchema(t)
   const tokenAmounts =
     useSystemConfigStore((state) => state.config.currency.quotaDisplayType) ===
     'TOKENS'
@@ -1076,9 +1082,10 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[68rem] grid-cols-9'>
+              <TabsList className='grid min-w-[76rem] grid-cols-10'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
+                <TabsTrigger value='manual'>{t('Manual')}</TabsTrigger>
                 <TabsTrigger value='yookassa'>YooKassa</TabsTrigger>
                 <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
                 <TabsTrigger value='crypto'>{t('Crypto')}</TabsTrigger>
@@ -1288,18 +1295,29 @@ export function PaymentSettingsSection({
                     )}
                   />
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value='manual' className={paymentTabContentClassName}>
+              <div className='space-y-4'>
+                <div>
+                  <h3 className='text-lg font-medium'>{t('Manual large payment')}</h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t('Show a manager contact card in the wallet. It does not create or credit a payment automatically.')}
+                  </p>
+                </div>
+                <FormField control={form.control} name='ManualTopupEnabled' render={({ field }) => (
+                  <FormItem className='flex items-center justify-between rounded-lg border p-3'>
+                    <FormLabel>{t('Enable manual large payments')}</FormLabel>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
                 <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField control={form.control} name='ManualTopupEnabled' render={({ field }) => (
-                    <FormItem className='flex items-center justify-between rounded-lg border p-3'>
-                      <FormLabel>{t('Enable manual large payments')}</FormLabel>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </FormItem>
-                  )} />
                   <FormField control={form.control} name='ManualTopupMinAmount' render={({ field }) => (
                     <FormItem><FormLabel>{t('Manual payment minimum (RUB)')}</FormLabel><FormControl><Input type='number' min='1' step='1' {...safeNumberFieldProps(field)} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={form.control} name='ManualTopupContactURL' render={({ field }) => (
-                    <FormItem className='md:col-span-2'><FormLabel>{t('Manager contact URL')}</FormLabel><FormControl><Input placeholder='https://t.me/username' {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>{t('Manager contact URL')}</FormLabel><FormControl><Input placeholder='https://t.me/username' {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                 </div>
               </div>

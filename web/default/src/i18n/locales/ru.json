@@ -3662,6 +3662,7 @@
     "Proprietary": "Проприетарная",
     "Protect login and registration with Cloudflare Turnstile": "Защитить вход и регистрацию с помощью Cloudflare Turnstile",
     "Provide a JSON object where each key maps to an endpoint definition.": "Предоставьте JSON-объект, в котором каждый ключ соответствует определению конечной точки.",
+    "Provide a Telegram link starting with https://t.me/": "Укажите ссылку Telegram, начинающуюся с https://t.me/",
     "Provide a valid URL starting with http:// or https://": "Укажите действительный URL, начинающийся с http:// или https://",
     "Provide Markdown, HTML, or an external URL for the privacy policy": "Укажите Markdown, HTML или внешний URL для политики конфиденциальности",
     "Provide Markdown, HTML, or an external URL for the user agreement": "Укажите Markdown, HTML или внешний URL для пользовательского соглашения",
