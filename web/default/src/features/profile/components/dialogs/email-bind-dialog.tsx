@@ -55,7 +55,7 @@ export function EmailBindDialog({
     start: startCountdown,
     reset: resetCountdown,
   } = useCountdown({
-    initialSeconds: 60,
+    initialSeconds: 120,
   })
 
   const handleSendCode = async () => {

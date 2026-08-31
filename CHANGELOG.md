@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.158
+
+- Limit verification-email resends to one per email address every 120 seconds in both the UI and backend.
+- Send the verification email subject and content in English.
+
 ## v1.1.157
 
 - Added per-API-key model mapping with JSON aliases, group access validation, model listing support, and key-level cache invalidation.

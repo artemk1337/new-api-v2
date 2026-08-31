@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,14 +14,19 @@ import (
 
 const (
 	EmailVerificationRateLimitMark = "EV"
-	EmailVerificationMaxRequests   = 2  // 30秒内最多2次
-	EmailVerificationDuration      = 30 // 30秒时间窗口
+	EmailVerificationMaxRequests   = 1   // One request per email address.
+	EmailVerificationDuration      = 120 // seconds
 )
+
+func emailVerificationRateLimitKey(c *gin.Context) string {
+	email := strings.ToLower(strings.TrimSpace(c.Query("email")))
+	return "emailVerification:" + EmailVerificationRateLimitMark + ":" + email
+}
 
 func redisEmailVerificationRateLimiter(c *gin.Context) {
 	ctx := context.Background()
 	rdb := common.RDB
-	key := "emailVerification:" + EmailVerificationRateLimitMark + ":" + c.ClientIP()
+	key := emailVerificationRateLimitKey(c)
 
 	count, err := rdb.Incr(ctx, key).Result()
 	if err != nil {
@@ -55,7 +61,7 @@ func redisEmailVerificationRateLimiter(c *gin.Context) {
 }
 
 func memoryEmailVerificationRateLimiter(c *gin.Context) {
-	key := EmailVerificationRateLimitMark + ":" + c.ClientIP()
+	key := emailVerificationRateLimitKey(c)
 
 	if !inMemoryRateLimiter.Request(key, EmailVerificationMaxRequests, EmailVerificationDuration) {
 		c.JSON(http.StatusTooManyRequests, gin.H{
