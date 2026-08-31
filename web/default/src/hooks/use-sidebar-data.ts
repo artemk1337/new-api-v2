@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import {
   Activity,
   Box,
@@ -44,9 +45,7 @@ import { ROLE } from '@/lib/roles'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  */
-export function useSidebarData(): SidebarData {
-  const { t } = useTranslation()
-
+export function getSidebarData(t: TFunction): SidebarData {
   return {
     navGroups: [
       {
@@ -66,6 +65,7 @@ export function useSidebarData(): SidebarData {
           {
             title: t('Dashboard navigation'),
             url: '/dashboard/models',
+            activeUrls: ['/dashboard/flow', '/dashboard/users'],
             icon: LayoutDashboard,
           },
           {
@@ -160,4 +160,10 @@ export function useSidebarData(): SidebarData {
       },
     ],
   }
+}
+
+export function useSidebarData(): SidebarData {
+  const { t } = useTranslation()
+
+  return getSidebarData(t)
 }

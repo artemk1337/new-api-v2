@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.162
+
+- Keep the Dashboard navigation highlighted for Flow and administrator User Analytics sections.
+
 ## v1.1.161
 
 - Added a configurable manual large-payment card in the wallet: it shows the RUB threshold, opens the manager's Telegram link directly, and never creates an automatic payment.
