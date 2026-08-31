@@ -19,11 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useCallback, useRef } from 'react'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+
 import { useIsAdmin } from '@/hooks/use-admin'
+
 import {
   getUserBillingHistory,
   getAllBillingHistory,
   completeOrder,
+  syncYooKassaPayment,
   isApiSuccess,
 } from '../api'
 import type { TopupRecord } from '../types'
@@ -57,6 +60,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [checkingPayment, setCheckingPayment] = useState(false)
   const requestSequenceRef = useRef(0)
 
   /**
@@ -150,6 +154,35 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     [isAdmin, fetchBillingHistory]
   )
 
+  const handleCheckYooKassaPayment = useCallback(
+    async (tradeNo: string) => {
+      if (!isAdmin) {
+        toast.error(i18next.t('Admin access required'))
+        return false
+      }
+
+      setCheckingPayment(true)
+      try {
+        const response = await syncYooKassaPayment({ trade_no: tradeNo })
+        if (isApiSuccess(response)) {
+          toast.success(i18next.t('Payment checked successfully'))
+          await fetchBillingHistory()
+          return true
+        }
+        toast.error(response.message || i18next.t('Failed to check payment'))
+        return false
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to check YooKassa payment:', error)
+        toast.error(i18next.t('Failed to check payment'))
+        return false
+      } finally {
+        setCheckingPayment(false)
+      }
+    },
+    [isAdmin, fetchBillingHistory]
+  )
+
   /**
    * Change page
    */
@@ -189,11 +222,13 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     keyword,
     loading,
     completing,
+    checkingPayment,
     isAdmin,
     handlePageChange,
     handlePageSizeChange,
     handleSearch,
     handleCompleteOrder,
+    handleCheckYooKassaPayment,
     refresh: fetchBillingHistory,
   }
 }

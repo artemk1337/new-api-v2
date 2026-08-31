@@ -25,9 +25,9 @@ import {
   getStatusConfig,
   getTopupStatusLabel,
   getTopupDisplayAmount,
+  getTopupAmountToDisplay,
   getTopupPaymentDisplayAmount,
 } from '../../lib/billing'
-import { getTopupAmountToDisplay } from './billing-history-dialog'
 
 describe('billing history status', () => {
   test('renders failed payments as failed instead of pending', () => {

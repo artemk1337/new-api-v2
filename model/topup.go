@@ -612,12 +612,11 @@ func completeTopUpCAS(tradeNo, expectedProvider string, prepare topUpCompletionP
 }
 
 // completeTopUpCASWithOptions is the shared compare-and-set settlement path.
-// A direct TRC20 event is allowed to settle an already-expired local snapshot
-// only when its prepare callback proves that the immutable chain timestamp was
-// inside the order window. Other providers retain the normal current-time TTL
-// behavior.
-func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredDirectSettlement bool, prepare topUpCompletionPrepare, apply topUpCompletionApply) (*TopUp, bool, error) {
-	allowExpiredDirectSettlement = allowExpiredDirectSettlement && isDirectUSDTNetworkProvider(expectedProvider)
+// Expired settlement is restricted to direct-chain verification and the
+// administrator-triggered YooKassa reconciliation path. Other providers keep
+// the normal current-time TTL behavior.
+func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredSettlement bool, prepare topUpCompletionPrepare, apply topUpCompletionApply) (*TopUp, bool, error) {
+	allowExpiredSettlement = allowExpiredSettlement && (isDirectUSDTNetworkProvider(expectedProvider) || expectedProvider == PaymentProviderYooKassa)
 	var topUp TopUp
 	casLost := false
 	alreadyCompleted := false
@@ -644,11 +643,11 @@ func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredD
 				alreadyCompleted = true
 				return nil
 			}
-			allowExpiredTopUp := allowExpiredDirectSettlement && topUp.Status == common.TopUpStatusExpired
+			allowExpiredTopUp := allowExpiredSettlement && topUp.Status == common.TopUpStatusExpired
 			if topUp.Status != common.TopUpStatusPending && !allowExpiredTopUp {
 				return ErrTopUpStatusInvalid
 			}
-			if !allowExpiredDirectSettlement {
+			if !allowExpiredSettlement {
 				expiredByPolicy, expiryCheckErr := pendingTopUpExpired(tx, &topUp, common.GetTimestamp())
 				if expiryCheckErr != nil {
 					return expiryCheckErr
@@ -671,7 +670,7 @@ func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredD
 
 			updates, err := prepare(tx, &topUp)
 			if err != nil {
-				if allowExpiredDirectSettlement && errors.Is(err, ErrDirectPaymentExpired) {
+				if allowExpiredSettlement && isDirectUSDTNetworkProvider(expectedProvider) && errors.Is(err, ErrDirectPaymentExpired) {
 					// A direct event observed after the local deadline is terminal,
 					// but both immutable snapshots must converge in this transaction.
 					topUp.Status = common.TopUpStatusExpired
@@ -696,7 +695,7 @@ func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredD
 			updates["complete_time"] = completeTime
 			updates["status"] = common.TopUpStatusSuccess
 			where := tx.Model(&TopUp{}).Where("id = ? AND payment_provider = ? AND status = ?", topUp.Id, topUp.PaymentProvider, common.TopUpStatusPending)
-			if allowExpiredDirectSettlement {
+			if allowExpiredSettlement {
 				where = tx.Model(&TopUp{}).Where("id = ? AND payment_provider = ? AND status IN ?", topUp.Id, topUp.PaymentProvider, []string{common.TopUpStatusPending, common.TopUpStatusExpired})
 			}
 			result := where.
@@ -1221,20 +1220,27 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 }
 
 func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
-	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderYooKassa, "YooKassa")
+	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderYooKassa, "YooKassa", false)
+}
+
+// ReconcileYooKassaTopUp completes a provider-verified YooKassa order during
+// an administrator-initiated reconciliation. It permits an expired local
+// order because the provider snapshot has already been checked by the caller.
+func ReconcileYooKassaTopUp(tradeNo string, callerIp string) (err error) {
+	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderYooKassa, "YooKassa reconciliation", true)
 }
 
 func RechargeNOWPayments(tradeNo string, callerIp string) (err error) {
-	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderNOWPayments, "NOWPayments")
+	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderNOWPayments, "NOWPayments", false)
 }
 
-func rechargeProviderTopUp(tradeNo string, callerIp, provider, providerName string) (err error) {
+func rechargeProviderTopUp(tradeNo string, callerIp, provider, providerName string, allowExpiredSettlement bool) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
 
 	var quotaToAdd int
-	topUp, completed, err := completeTopUpCAS(tradeNo, provider, func(tx *gorm.DB, topUp *TopUp) (map[string]interface{}, error) {
+	topUp, completed, err := completeTopUpCASWithOptions(tradeNo, provider, allowExpiredSettlement, func(tx *gorm.DB, topUp *TopUp) (map[string]interface{}, error) {
 		resolvedQuota, resolveErr := resolveTopUpQuotaWithDB(tx, topUp)
 		quotaToAdd = resolvedQuota
 		return nil, resolveErr

@@ -461,6 +461,78 @@ func TestYooKassaSyncPaymentSucceeded(t *testing.T) {
 	assert.Equal(t, 500000, user.Quota)
 }
 
+func TestYooKassaAdminSyncCompletesExpiredPayment(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Update("status", common.TopUpStatusExpired).Error)
+
+	recorder := postYooKassaSync(t, 2, common.RoleAdminUser)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Equal(t, 500000, user.Quota)
+}
+
+func TestYooKassaAdminSyncCompletesPendingPaymentAfterExpiry(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Updates(map[string]interface{}{
+		"create_time":                 time.Now().Add(-2 * time.Second).Unix(),
+		"payment_pending_ttl_seconds": 1,
+	}).Error)
+
+	recorder := postYooKassaSync(t, 2, common.RoleAdminUser)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Equal(t, 500000, user.Quota)
+}
+
+func TestYooKassaUserSyncDoesNotCompleteExpiredPayment(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Update("status", common.TopUpStatusExpired).Error)
+
+	recorder := postYooKassaSync(t, 1, common.RoleCommonUser)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusExpired, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Zero(t, user.Quota)
+}
+
+func TestYooKassaAdminSyncDoesNotCreditExpiredPaymentWithWrongAmount(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "99.99"))
+	insertYooKassaOrderForWebhookTest(t, "", 500000)
+	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Update("status", common.TopUpStatusExpired).Error)
+
+	recorder := postYooKassaSync(t, 2, common.RoleAdminUser)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.NotEqual(t, "success", response.Message)
+
+	topUp := model.GetTopUpByTradeNo("trade-1")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusExpired, topUp.Status)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, 1).Error)
+	assert.Zero(t, user.Quota)
+}
+
 func TestYooKassaSyncReturnsServerErrorOnPaymentMetadataDatabaseError(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
 	insertYooKassaOrderForWebhookTest(t, "", 500000)

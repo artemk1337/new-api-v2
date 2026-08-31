@@ -317,8 +317,13 @@ func SyncYooKassaTopUp(c *gin.Context) {
 		common.ApiErrorMsg(c, "Order does not exist")
 		return
 	}
-	if topUp.UserId != c.GetInt("id") && c.GetInt("role") < common.RoleAdminUser {
+	isAdmin := c.GetInt("role") >= common.RoleAdminUser
+	if topUp.UserId != c.GetInt("id") && !isAdmin {
 		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if topUp.Status == common.TopUpStatusExpired && !isAdmin {
+		common.ApiErrorMsg(c, "Order has expired")
 		return
 	}
 	metadata, metadataErr := model.GetPaymentMetadataByTradeNoWithError(tradeNo)
@@ -338,7 +343,7 @@ func SyncYooKassaTopUp(c *gin.Context) {
 
 	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
 	defer cancel()
-	if _, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, metadata.ExternalPaymentID, tradeNo, c.ClientIP(), false); err != nil {
+	if _, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, metadata.ExternalPaymentID, tradeNo, c.ClientIP(), false, isAdmin); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to synchronize top-up trade_no=%s payment_id=%s user_id=%d error=%q", tradeNo, metadata.ExternalPaymentID, c.GetInt("id"), err.Error()))
 		common.ApiErrorMsg(c, "Failed to synchronize payment status")
 		return
@@ -368,7 +373,7 @@ func YooKassaNotify(c *gin.Context) {
 
 	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
 	defer cancel()
-	statusCode, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, payload.Object.ID, "", c.ClientIP(), true)
+	statusCode, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, payload.Object.ID, "", c.ClientIP(), true, false)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa top-up failed payment_id=%s client_ip=%s error=%q", payload.Object.ID, c.ClientIP(), err.Error()))
 		c.AbortWithStatus(statusCode)
@@ -378,10 +383,10 @@ func YooKassaNotify(c *gin.Context) {
 }
 
 func completeYooKassaPayment(ctx context.Context, paymentID string, expectedTradeNo string, callerIP string, acknowledgePermanent bool) (int, error) {
-	return completeYooKassaPaymentForConfig(ctx, setting.GetYooKassaConfig(), paymentID, expectedTradeNo, callerIP, acknowledgePermanent)
+	return completeYooKassaPaymentForConfig(ctx, setting.GetYooKassaConfig(), paymentID, expectedTradeNo, callerIP, acknowledgePermanent, false)
 }
 
-func completeYooKassaPaymentForConfig(ctx context.Context, config setting.YooKassaConfig, paymentID string, expectedTradeNo string, callerIP string, acknowledgePermanent bool) (int, error) {
+func completeYooKassaPaymentForConfig(ctx context.Context, config setting.YooKassaConfig, paymentID string, expectedTradeNo string, callerIP string, acknowledgePermanent bool, allowExpiredReconciliation bool) (int, error) {
 	payment, err := service.NewYooKassaClientWithConfig(nil, config).GetPayment(ctx, paymentID)
 	if err != nil {
 		return http.StatusBadGateway, err
@@ -419,11 +424,15 @@ func completeYooKassaPaymentForConfig(ctx context.Context, config setting.YooKas
 		}
 		return http.StatusBadRequest, fmt.Errorf("topup not found or provider mismatch")
 	}
-	if topUp.Status != common.TopUpStatusPending {
+	allowExpiredReconciliation = allowExpiredReconciliation && (topUp.Status == common.TopUpStatusPending || topUp.Status == common.TopUpStatusExpired)
+	if topUp.Status != common.TopUpStatusPending && !allowExpiredReconciliation {
 		// A verified repeat callback for an already terminal order must not make
 		// the provider retry forever. RechargeYooKassa still performs its own
 		// atomic status check before any credit.
-		return http.StatusOK, nil
+		if acknowledgePermanent || topUp.Status == common.TopUpStatusSuccess {
+			return http.StatusOK, nil
+		}
+		return http.StatusBadRequest, fmt.Errorf("topup is not pending")
 	}
 	if err := validateYooKassaPayment(payment, topUp); err != nil {
 		if errors.Is(err, service.ErrPaymentSnapshotValidation) {
@@ -437,14 +446,20 @@ func completeYooKassaPaymentForConfig(ctx context.Context, config setting.YooKas
 
 	LockOrder(tradeNo)
 	defer UnlockOrder(tradeNo)
-	if err := model.RechargeYooKassa(tradeNo, callerIP); err != nil {
-		if errors.Is(err, model.ErrTopUpStatusInvalid) || errors.Is(err, model.ErrTopUpExpired) {
+	var rechargeErr error
+	if allowExpiredReconciliation {
+		rechargeErr = model.ReconcileYooKassaTopUp(tradeNo, callerIP)
+	} else {
+		rechargeErr = model.RechargeYooKassa(tradeNo, callerIP)
+	}
+	if rechargeErr != nil {
+		if errors.Is(rechargeErr, model.ErrTopUpStatusInvalid) || errors.Is(rechargeErr, model.ErrTopUpExpired) {
 			return http.StatusOK, nil
 		}
-		if model.IsPermanentTopUpError(err, topUp) {
-			return http.StatusBadRequest, err
+		if model.IsPermanentTopUpError(rechargeErr, topUp) {
+			return http.StatusBadRequest, rechargeErr
 		}
-		return http.StatusInternalServerError, err
+		return http.StatusInternalServerError, rechargeErr
 	}
 	return http.StatusOK, nil
 }
