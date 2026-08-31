@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.164
+
+- Renamed the public model catalog to “Models” in the navigation, page heading, and header settings.
+
 ## v1.1.163
 
 - Added an administrator-only YooKassa payment check in billing history for pending and expired orders. Verified late payments can be reconciled safely with exact provider snapshot validation and idempotent quota crediting.
