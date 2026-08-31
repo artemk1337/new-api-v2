@@ -236,6 +236,12 @@ export interface TopupInfo {
   enable_nowpayments_topup?: boolean
   /** Minimum topup amount for YooKassa */
   yookassa_min_topup?: number
+  /** Whether a manual large-payment contact card is available */
+  manual_topup_enabled?: boolean
+  /** Minimum manual payment amount in RUB */
+  manual_topup_min_amount?: number
+  /** Manager contact URL for manual large payments */
+  manual_topup_contact_url?: string
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */

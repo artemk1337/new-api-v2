@@ -3,7 +3,9 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -541,6 +543,9 @@ func validatePaymentSettingsReadiness(values map[string]string, creem setting.Cr
 }
 
 func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]string, creem setting.CreemConfig) error {
+	if err := validateManualTopupSettingsFromDB(db, values); err != nil {
+		return err
+	}
 	complianceConfirmed := latestPaymentOptionBoolFromDB(db, "payment_setting.compliance_confirmed", isPaymentComplianceConfirmed())
 	waffoEnabled := prospectiveOptionBool(values, "WaffoEnabled", latestPaymentOptionBoolFromDB(db, "WaffoEnabled", setting.WaffoEnabled))
 	if waffoEnabled && complianceConfirmed {
@@ -564,6 +569,51 @@ func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]strin
 		if err := validateCreemProductCurrenciesFromDB(db, creem.Products); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateManualTopupSettingsFromDB(db *gorm.DB, values map[string]string) error {
+	settings := operation_setting.GetPaymentSetting()
+	enabled := prospectiveOptionBool(
+		values,
+		"payment_setting.manual_topup_enabled",
+		latestPaymentOptionBoolFromDB(
+			db,
+			"payment_setting.manual_topup_enabled",
+			settings.ManualTopupEnabled,
+		),
+	)
+	if !enabled {
+		return nil
+	}
+
+	contactURL := strings.TrimSpace(prospectiveOptionValue(
+		values,
+		"payment_setting.manual_topup_contact_url",
+		latestPaymentOptionFromDB(
+			db,
+			"payment_setting.manual_topup_contact_url",
+			settings.ManualTopupContactURL,
+		),
+	))
+	parsedURL, err := url.ParseRequestURI(contactURL)
+	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") {
+		return errors.New("manual large payment contact URL must be an HTTP or HTTPS URL")
+	}
+
+	minimumText := prospectiveOptionValue(
+		values,
+		"payment_setting.manual_topup_min_amount",
+		latestPaymentOptionFromDB(
+			db,
+			"payment_setting.manual_topup_min_amount",
+			strconv.FormatFloat(settings.ManualTopupMinAmount, 'f', -1, 64),
+		),
+	)
+	minimum, err := strconv.ParseFloat(strings.TrimSpace(minimumText), 64)
+	if err != nil || math.IsNaN(minimum) || math.IsInf(minimum, 0) || minimum <= 0 {
+		return errors.New("manual large payment minimum must be greater than zero")
 	}
 	return nil
 }
@@ -686,6 +736,9 @@ func validatePaymentCurrencyReadinessFromDB(db *gorm.DB, key, value string) erro
 }
 
 func isPaymentCurrencyGuardOption(key, value string) bool {
+	if strings.HasPrefix(key, "payment_setting.manual_topup_") {
+		return true
+	}
 	if strings.HasPrefix(key, "Waffo") ||
 		strings.HasPrefix(key, "YooKassa") ||
 		strings.HasPrefix(key, "NOWPayments") {

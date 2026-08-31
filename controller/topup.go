@@ -377,6 +377,12 @@ func GetTopUpInfo(c *gin.Context) {
 		"cashback":                operation_setting.GetPaymentSetting().AmountCashback,
 		"topup_link":              common.TopUpLink,
 	}
+	manualTopup := operation_setting.GetPaymentSetting()
+	if manualTopup.ManualTopupEnabled && strings.TrimSpace(manualTopup.ManualTopupContactURL) != "" && manualTopup.ManualTopupMinAmount > 0 {
+		data["manual_topup_enabled"] = true
+		data["manual_topup_min_amount"] = manualTopup.ManualTopupMinAmount
+		data["manual_topup_contact_url"] = manualTopup.ManualTopupContactURL
+	}
 	if currencies, currencyErr := model.ListPlatformCurrencies(true); currencyErr == nil {
 		data["currencies"] = currencies
 	}

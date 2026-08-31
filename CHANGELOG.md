@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.161
+
+- Added a configurable manual large-payment card in the wallet: it shows the RUB threshold, opens the manager's Telegram link directly, and never creates an automatic payment.
+- Require a valid manager contact URL and positive RUB minimum before enabling the manual payment option.
+
 ## v1.1.160
 
 - Localized the Telegram sign-in error in the selected interface language and explain how to bind the account.

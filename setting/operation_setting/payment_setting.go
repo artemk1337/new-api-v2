@@ -107,8 +107,11 @@ func (cashbacks AmountCashbackConfig) CashbackPercentForAmount(amount float64) f
 }
 
 type PaymentSetting struct {
-	AmountOptions  []float64            `json:"amount_options"`
-	AmountCashback AmountCashbackConfig `json:"amount_cashback"`
+	AmountOptions         []float64            `json:"amount_options"`
+	AmountCashback        AmountCashbackConfig `json:"amount_cashback"`
+	ManualTopupEnabled    bool                 `json:"manual_topup_enabled"`
+	ManualTopupMinAmount  float64              `json:"manual_topup_min_amount"`
+	ManualTopupContactURL string               `json:"manual_topup_contact_url"`
 
 	ComplianceConfirmed    bool   `json:"compliance_confirmed"`
 	ComplianceTermsVersion string `json:"compliance_terms_version"`
@@ -121,7 +124,8 @@ const CurrentComplianceTermsVersion = "v1"
 
 // 默认配置
 var paymentSetting = PaymentSetting{
-	AmountOptions: []float64{10, 20, 50, 100, 200, 500},
+	AmountOptions:        []float64{10, 20, 50, 100, 200, 500},
+	ManualTopupMinAmount: 5000,
 }
 
 func init() {

@@ -181,6 +181,26 @@ func TestYooKassaReadinessUsesProspectivePayMethods(t *testing.T) {
 	}, setting.CreemConfig{}))
 }
 
+func TestManualTopupSettingsRequireContactAndMinimum(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+
+	require.Error(t, validateManualTopupSettingsFromDB(db, map[string]string{
+		"payment_setting.manual_topup_enabled": "true",
+	}))
+	require.Error(t, validateManualTopupSettingsFromDB(db, map[string]string{
+		"payment_setting.manual_topup_enabled":     "true",
+		"payment_setting.manual_topup_contact_url": "https://t.me/vibecode_support",
+		"payment_setting.manual_topup_min_amount":  "0",
+	}))
+	require.NoError(t, validateManualTopupSettingsFromDB(db, map[string]string{
+		"payment_setting.manual_topup_enabled":     "true",
+		"payment_setting.manual_topup_contact_url": "https://t.me/vibecode_support",
+		"payment_setting.manual_topup_min_amount":  "5000",
+	}))
+}
+
 func TestUpdateOptionRejectsCreemConfigKeys(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	original := setting.GetCreemConfig()

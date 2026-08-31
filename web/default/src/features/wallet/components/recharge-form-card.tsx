@@ -183,6 +183,18 @@ export function getRechargeValidationTarget(
   return hasPaymentMethod ? null : 'payment-method'
 }
 
+export function getManualTopupContact(topupInfo: TopupInfo | null): { minAmount: number; url: string } | null {
+  const minAmount = topupInfo?.manual_topup_min_amount
+  const url = topupInfo?.manual_topup_contact_url?.trim()
+  if (!topupInfo?.manual_topup_enabled || !minAmount || minAmount <= 0 || !url) return null
+  try {
+    const protocol = new URL(url).protocol
+    return protocol === 'https:' || protocol === 'http:' ? { minAmount, url } : null
+  } catch {
+    return null
+  }
+}
+
 export function getTopupAmountErrorMessage(
   topupAmount: number,
   minimum: number,
@@ -369,6 +381,7 @@ export function RechargeFormCard({
     onTopupAmountChange(backendAmount)
   }
 
+  const manualTopup = getManualTopupContact(topupInfo)
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
@@ -384,7 +397,7 @@ export function RechargeFormCard({
         'usdt_solana_direct',
       ].includes(method.type)
     )
-  const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
+  const hasAnyTopup = hasConfigurableTopup || enableCreemTopup || manualTopup
   const hasStandardPaymentMethods = standardPaymentMethods.length > 0
   const availableWaffoMethods = getAvailableWaffoMethods(waffoPayMethods)
   const hasWaffoPaymentMethods = availableWaffoMethods.length > 0
@@ -862,6 +875,19 @@ export function RechargeFormCard({
                     </div>
                   )}
               </>
+            )}
+            {manualTopup && (
+              <a href={manualTopup.url} target='_blank' rel='noreferrer' className='border-primary/30 bg-primary/5 hover:bg-primary/10 flex min-h-[88px] w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors'>
+                <ExternalLink className='text-primary size-4 shrink-0' aria-hidden='true' />
+                <span className='min-w-0 flex-1'>
+                  <span className='block font-medium'>{t('Large payment without commission')}</span>
+                  <span className='text-muted-foreground block text-sm'>
+                    {t('From {{amount}} ₽ — contact the manager to arrange an SBP transfer.', { amount: new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(manualTopup.minAmount) })}
+                  </span>
+                  <span className='text-muted-foreground mt-0.5 block text-xs'>{t('Balance is credited manually after payment confirmation.')}</span>
+                </span>
+                <ExternalLink className='text-muted-foreground size-4 shrink-0' aria-hidden='true' />
+              </a>
             )}
           </div>
         ) : (

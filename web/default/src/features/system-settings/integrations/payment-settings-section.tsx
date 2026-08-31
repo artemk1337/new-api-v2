@@ -105,6 +105,17 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
+function isHttpUrl(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  try {
+    const url = new URL(trimmed)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 const paymentSchema = z
   .object({
     PayAddress: z.string().refine((value) => {
@@ -150,6 +161,11 @@ const paymentSchema = z
         })
       }
     }),
+    ManualTopupEnabled: z.boolean(),
+    ManualTopupMinAmount: z.coerce.number().min(1),
+    ManualTopupContactURL: z
+      .string()
+      .refine(isHttpUrl, 'Provide a valid contact URL starting with http:// or https://'),
     StripeApiSecret: z.string(),
     StripeWebhookSecret: z.string(),
     StripePriceId: z.string(),
@@ -215,6 +231,15 @@ const paymentSchema = z
       (value) => decimalUsdtToMicroUnits(value) !== null,
       'Enter a value from 0.000002 to 0.01 USDT with up to 6 decimals'
     ),
+  })
+  .superRefine((values, ctx) => {
+    if (values.ManualTopupEnabled && !values.ManualTopupContactURL.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ManualTopupContactURL'],
+        message: 'Provide a valid contact URL starting with http:// or https://',
+      })
+    }
   })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -414,6 +439,9 @@ export function PaymentSettingsSection({
       PaymentMethodAvailableIcons: values.PaymentMethodAvailableIcons,
       AmountOptions: values.AmountOptions.trim(),
       AmountCashback: normalizeAmountCashbackConfig(values.AmountCashback),
+      ManualTopupEnabled: values.ManualTopupEnabled,
+      ManualTopupMinAmount: values.ManualTopupMinAmount,
+      ManualTopupContactURL: values.ManualTopupContactURL.trim(),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -485,6 +513,9 @@ export function PaymentSettingsSection({
       AmountCashback: normalizeAmountCashbackConfig(
         initialRef.current.AmountCashback
       ),
+      ManualTopupEnabled: initialRef.current.ManualTopupEnabled,
+      ManualTopupMinAmount: initialRef.current.ManualTopupMinAmount,
+      ManualTopupContactURL: initialRef.current.ManualTopupContactURL.trim(),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -614,6 +645,16 @@ export function PaymentSettingsSection({
         key: 'payment_setting.amount_cashback',
         value: sanitized.AmountCashback,
       })
+    }
+
+    if (sanitized.ManualTopupEnabled !== initial.ManualTopupEnabled) {
+      updates.push({ key: 'payment_setting.manual_topup_enabled', value: sanitized.ManualTopupEnabled })
+    }
+    if (sanitized.ManualTopupMinAmount !== initial.ManualTopupMinAmount) {
+      updates.push({ key: 'payment_setting.manual_topup_min_amount', value: sanitized.ManualTopupMinAmount })
+    }
+    if (sanitized.ManualTopupContactURL !== initial.ManualTopupContactURL) {
+      updates.push({ key: 'payment_setting.manual_topup_contact_url', value: sanitized.ManualTopupContactURL })
     }
 
     if (
@@ -1246,6 +1287,20 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
+                </div>
+                <div className='grid gap-6 md:grid-cols-2'>
+                  <FormField control={form.control} name='ManualTopupEnabled' render={({ field }) => (
+                    <FormItem className='flex items-center justify-between rounded-lg border p-3'>
+                      <FormLabel>{t('Enable manual large payments')}</FormLabel>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name='ManualTopupMinAmount' render={({ field }) => (
+                    <FormItem><FormLabel>{t('Manual payment minimum (RUB)')}</FormLabel><FormControl><Input type='number' min='1' step='1' {...safeNumberFieldProps(field)} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormField control={form.control} name='ManualTopupContactURL' render={({ field }) => (
+                    <FormItem className='md:col-span-2'><FormLabel>{t('Manager contact URL')}</FormLabel><FormControl><Input placeholder='https://t.me/username' {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
                 </div>
               </div>
             </TabsContent>
