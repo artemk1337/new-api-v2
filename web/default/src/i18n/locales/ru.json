@@ -4713,6 +4713,7 @@
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "Запись создана экземпляром до обновления и не содержит сведений аудита. Обновите экземпляр, чтобы фиксировать IP сервера, IP callback, способ оплаты и версию ОС.",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "Это удалит {{count}} неуспешных моделей из этого канала. Действие необратимо.",
     "This site currently has {{count}} models enabled": "Доступно моделей: {{count}}",
+    "This Telegram account is not bound. Sign in another way and bind it in Profile settings.": "Этот аккаунт Telegram не привязан. Войдите другим способом и привяжите его в настройках профиля.",
     "This tier catches any request that did not match earlier tiers.": "Этот уровень обрабатывает все запросы, которые не совпали с предыдущими уровнями.",
     "this token group": "эта группа токенов",
     "this user group": "эта группа пользователей",

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.160
+
+- Localized the Telegram sign-in error in the selected interface language and explain how to bind the account.
+- Release built-in and custom OAuth bindings when an account is deleted, including a safe startup cleanup for previously deleted users.
+
 ## v1.1.159
 
 - Added direct USDT top-ups to administrator-controlled wallets on TRON, TON, and Solana, with immutable invoices, exact-amount matching, confirmation-aware watchers, reconciliation, and idempotent settlement.

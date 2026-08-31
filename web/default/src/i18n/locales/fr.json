@@ -4713,6 +4713,7 @@
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "Cet enregistrement provient d’une instance avant la mise à niveau et n’inclut pas d’audits. Mettez à jour l’instance pour enregistrer l’IP du serveur, l’IP de callback, le moyen de paiement et la version du système.",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "Cela supprime {{count}} modèles en échec de ce canal. Cette action est irréversible.",
     "This site currently has {{count}} models enabled": "Ce site compte actuellement {{count}} modèles activés",
+    "This Telegram account is not bound. Sign in another way and bind it in Profile settings.": "Ce compte Telegram n'est pas associé. Connectez-vous autrement, puis associez-le dans les paramètres du profil.",
     "This tier catches any request that did not match earlier tiers.": "Ce palier récupère toute requête qui ne correspond à aucun palier précédent.",
     "this token group": "ce groupe de jetons",
     "this user group": "ce groupe d'utilisateurs",

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -100,4 +101,47 @@ func TestTelegramBindRequiresSession(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
+func TestTelegramLoginReturnsNotBoundErrorCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	db, err := gorm.Open(sqlite.Open("file:telegram-login-not-bound?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+
+	originalDB := model.DB
+	originalEnabled := common.TelegramOAuthEnabled
+	originalToken := common.TelegramBotToken
+	model.DB = db
+	common.TelegramOAuthEnabled = true
+	common.TelegramBotToken = "telegram-token"
+	t.Cleanup(func() {
+		model.DB = originalDB
+		common.TelegramOAuthEnabled = originalEnabled
+		common.TelegramBotToken = originalToken
+		sqlDB, err := db.DB()
+		if err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	router := gin.New()
+	router.GET("/api/oauth/telegram/login", TelegramLogin)
+	params := signedTelegramAuthorization(t, common.TelegramBotToken, time.Now())
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/oauth/telegram/login?"+params.Encode(), nil)
+	request.Header.Set("Accept-Language", "en")
+	router.ServeHTTP(recorder, request)
+
+	var response struct {
+		Success   bool   `json:"success"`
+		Message   string `json:"message"`
+		ErrorCode string `json:"error_code"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.False(t, response.Success)
+	require.Equal(t, "This Telegram account is not bound", response.Message)
+	require.Equal(t, "telegram_not_bound", response.ErrorCode)
 }

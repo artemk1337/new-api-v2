@@ -199,7 +199,13 @@ export function useOAuthLogin(status: SystemStatus | null) {
         skipErrorHandler: true,
       })
       if (!res.data?.success) {
-        toast.error(res.data?.message || t('Failed to sign in with Telegram'))
+        const message =
+          res.data?.error_code === 'telegram_not_bound'
+            ? t(
+                'This Telegram account is not bound. Sign in another way and bind it in Profile settings.'
+              )
+            : res.data?.message || t('Failed to sign in with Telegram')
+        toast.error(message)
         return
       }
       await handleLoginSuccess(res.data.data)

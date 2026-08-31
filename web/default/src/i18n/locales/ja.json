@@ -4713,6 +4713,7 @@
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "古いバージョンのインスタンスがこの記録を書き込み、監査情報がありません。最新に更新し、サーバーIP・コールバックIP・支払方法・OSバージョンの記録を有効にしてください。",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "この操作はこのチャンネルから失敗した {{count}} 個のモデルを削除します。元に戻せません。",
     "This site currently has {{count}} models enabled": "このサイトでは現在 {{count}} 個のモデルが有効です",
+    "This Telegram account is not bound. Sign in another way and bind it in Profile settings.": "このTelegramアカウントは連携されていません。別の方法でサインインし、プロフィール設定で連携してください。",
     "This tier catches any request that did not match earlier tiers.": "この段階は、前の段階に一致しなかったすべてのリクエストを受け取ります。",
     "this token group": "このトークングループ",
     "this user group": "このユーザーグループ",

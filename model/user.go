@@ -585,12 +585,44 @@ func (user *User) Delete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
 	}
-	if err := DB.Delete(user).Error; err != nil {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteUserOAuthBindingsByUserId(tx, user.Id); err != nil {
+			return err
+		}
+		if err := tx.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]any{
+			"github_id":   "",
+			"discord_id":  "",
+			"oidc_id":     "",
+			"wechat_id":   "",
+			"telegram_id": "",
+			"linux_do_id": "",
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(user).Error
+	}); err != nil {
 		return err
 	}
 
 	// 清除缓存
 	return invalidateUserCache(user.Id)
+}
+
+func releaseDeletedUserOAuthBindings(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		deletedUserIDs := tx.Unscoped().Model(&User{}).Select("id").Where("deleted_at IS NOT NULL")
+		if err := tx.Where("user_id IN (?)", deletedUserIDs).Delete(&UserOAuthBinding{}).Error; err != nil {
+			return err
+		}
+		return tx.Unscoped().Model(&User{}).Where("deleted_at IS NOT NULL").Updates(map[string]any{
+			"github_id":   "",
+			"discord_id":  "",
+			"oidc_id":     "",
+			"wechat_id":   "",
+			"telegram_id": "",
+			"linux_do_id": "",
+		}).Error
+	})
 }
 
 func (user *User) HardDelete() error {
@@ -692,7 +724,7 @@ func (user *User) FillUserByTelegramId() error {
 	}
 	err := DB.Where(User{TelegramId: user.TelegramId}).First(user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New("该 Telegram 账户未绑定")
+		return ErrTelegramNotBound
 	}
 	return nil
 }

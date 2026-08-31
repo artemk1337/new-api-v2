@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-contrib/sessions"
@@ -100,10 +102,15 @@ func TelegramLogin(c *gin.Context) {
 	telegramId := params.Get("id")
 	user := model.User{TelegramId: telegramId}
 	if err := user.FillUserByTelegramId(); err != nil {
-		c.JSON(200, gin.H{
-			"message": err.Error(),
-			"success": false,
-		})
+		if errors.Is(err, model.ErrTelegramNotBound) {
+			c.JSON(http.StatusOK, gin.H{
+				"success":    false,
+				"message":    i18n.T(c, i18n.MsgUserTelegramNotBound),
+				"error_code": "telegram_not_bound",
+			})
+			return
+		}
+		common.ApiError(c, err)
 		return
 	}
 	setupLogin(&user, c)

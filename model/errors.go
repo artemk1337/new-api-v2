@@ -11,6 +11,7 @@ var (
 var (
 	ErrInvalidCredentials   = errors.New("invalid credentials")
 	ErrUserEmptyCredentials = errors.New("empty credentials")
+	ErrTelegramNotBound     = errors.New("telegram account not bound")
 )
 
 // Token auth errors
