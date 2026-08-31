@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.165
+
+- Added a dedicated Manual payment settings tab with a Telegram contact URL and RUB minimum.
+- Enable the wallet's manual-payment Telegram redirect only after the configured minimum is entered, including token display mode; hide the card if the RUB rate is unavailable.
+- Restrict manual payment contacts to `https://t.me/...` and localize the validation message.
+
 ## v1.1.164
 
 - Renamed the public model catalog to “Models” in the navigation, page heading, and header settings.
