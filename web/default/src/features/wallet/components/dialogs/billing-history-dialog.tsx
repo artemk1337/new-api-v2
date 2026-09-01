@@ -247,12 +247,28 @@ export function BillingHistoryDialog({
                             {formatTimestamp(record.create_time)}
                           </div>
                         </div>
-                        <StatusBadge
-                          label={getTopupStatusLabel(record.status, t)}
-                          variant={statusConfig.variant}
-                          showDot
-                          copyable={false}
-                        />
+                        <div className='flex shrink-0 items-center gap-2'>
+                          {canCheckYooKassaPayment && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() =>
+                                handleCheckYooKassaPayment(record.trade_no)
+                              }
+                              disabled={checkingPayment}
+                            >
+                              {checkingPayment
+                                ? t('Processing...')
+                                : t('Check payment')}
+                            </Button>
+                          )}
+                          <StatusBadge
+                            label={getTopupStatusLabel(record.status, t)}
+                            variant={statusConfig.variant}
+                            showDot
+                            copyable={false}
+                          />
+                        </div>
                       </div>
 
                       {/* Details Grid */}
@@ -295,22 +311,6 @@ export function BillingHistoryDialog({
                       </div>
 
                       {/* Admin Actions */}
-                      {canCheckYooKassaPayment && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() =>
-                              handleCheckYooKassaPayment(record.trade_no)
-                            }
-                            disabled={checkingPayment}
-                          >
-                            {checkingPayment
-                              ? t('Processing...')
-                              : t('Check payment')}
-                          </Button>
-                        </div>
-                      )}
                       {isAdmin &&
                         record.status === 'pending' &&
                         !canCheckYooKassaPayment && (

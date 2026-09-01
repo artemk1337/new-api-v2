@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.166
+
+- Show the administrator YooKassa payment check beside the status of each pending or expired payment in billing history.
+
 ## v1.1.165
 
 - Added a dedicated Manual payment settings tab with a Telegram contact URL and RUB minimum.
