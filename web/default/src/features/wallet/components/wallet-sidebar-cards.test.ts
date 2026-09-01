@@ -18,6 +18,7 @@ import { getTopupAmountToDisplay, getTopupSourceLabel } from '../lib/billing'
 import { getTopupHistoryTitleKey } from '../lib/topup-history-title'
 import {
   formatPaymentSummaryAmount,
+  canCheckYooKassaPayment,
   getPaymentSummaryValues,
   getSelectedPaymentMethodName,
   getSelectedPaymentMethodSubtitle,
@@ -82,6 +83,39 @@ describe('top-up history pagination', () => {
     assert.equal(getTopupHistoryTotalPages(Number.NaN), 1)
     assert.equal(getTopupHistoryTotalPages(-10), 1)
     assert.equal(getTopupHistoryTotalPages(10, 10), 1)
+  })
+})
+
+describe('YooKassa payment verification', () => {
+  test('is available for pending or expired YooKassa payments', () => {
+    assert.equal(
+      canCheckYooKassaPayment({
+        payment_provider: 'yookassa',
+        status: 'pending',
+      }),
+      true
+    )
+    assert.equal(
+      canCheckYooKassaPayment({
+        payment_provider: 'yookassa',
+        status: 'expired',
+      }),
+      true
+    )
+    assert.equal(
+      canCheckYooKassaPayment({
+        payment_provider: 'stripe',
+        status: 'pending',
+      }),
+      false
+    )
+    assert.equal(
+      canCheckYooKassaPayment({
+        payment_provider: 'yookassa',
+        status: 'success',
+      }),
+      false
+    )
   })
 })
 

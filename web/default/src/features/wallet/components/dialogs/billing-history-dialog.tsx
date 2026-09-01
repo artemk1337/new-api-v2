@@ -79,6 +79,7 @@ export function BillingHistoryDialog({
     loading,
     completing,
     checkingPayment,
+    checkingPaymentTradeNo,
     isAdmin,
     handlePageChange,
     handlePageSizeChange,
@@ -207,7 +208,6 @@ export function BillingHistoryDialog({
                     source: record.source,
                   })
                   const canCheckYooKassaPayment =
-                    isAdmin &&
                     record.payment_provider === 'yookassa' &&
                     (record.status === 'pending' || record.status === 'expired')
                   return (
@@ -257,7 +257,7 @@ export function BillingHistoryDialog({
                               }
                               disabled={checkingPayment}
                             >
-                              {checkingPayment
+                              {checkingPaymentTradeNo === record.trade_no
                                 ? t('Processing...')
                                 : t('Check payment')}
                             </Button>

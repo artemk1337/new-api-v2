@@ -322,10 +322,6 @@ func SyncYooKassaTopUp(c *gin.Context) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
-	if topUp.Status == common.TopUpStatusExpired && !isAdmin {
-		common.ApiErrorMsg(c, "Order has expired")
-		return
-	}
 	metadata, metadataErr := model.GetPaymentMetadataByTradeNoWithError(tradeNo)
 	if metadataErr != nil {
 		if errors.Is(metadataErr, gorm.ErrRecordNotFound) {
@@ -343,7 +339,7 @@ func SyncYooKassaTopUp(c *gin.Context) {
 
 	ctx, cancel := service.YooKassaRequestTimeoutContext(c.Request.Context())
 	defer cancel()
-	if _, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, metadata.ExternalPaymentID, tradeNo, c.ClientIP(), false, isAdmin); err != nil {
+	if _, err := completeYooKassaPaymentForConfig(ctx, yooKassaConfig, metadata.ExternalPaymentID, tradeNo, c.ClientIP(), false, true); err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("YooKassa failed to synchronize top-up trade_no=%s payment_id=%s user_id=%d error=%q", tradeNo, metadata.ExternalPaymentID, c.GetInt("id"), err.Error()))
 		common.ApiErrorMsg(c, "Failed to synchronize payment status")
 		return

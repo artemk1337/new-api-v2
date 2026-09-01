@@ -577,7 +577,7 @@ func TestYooKassaAdminSyncCompletesPendingPaymentAfterExpiry(t *testing.T) {
 	assert.Equal(t, 500000, user.Quota)
 }
 
-func TestYooKassaUserSyncDoesNotCompleteExpiredPayment(t *testing.T) {
+func TestYooKassaUserSyncCompletesOwnExpiredPayment(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("succeeded", true, "100.00"))
 	insertYooKassaOrderForWebhookTest(t, "", 500000)
 	require.NoError(t, model.DB.Model(&model.TopUp{}).Where("trade_no = ?", "trade-1").Update("status", common.TopUpStatusExpired).Error)
@@ -587,10 +587,10 @@ func TestYooKassaUserSyncDoesNotCompleteExpiredPayment(t *testing.T) {
 
 	topUp := model.GetTopUpByTradeNo("trade-1")
 	require.NotNil(t, topUp)
-	assert.Equal(t, common.TopUpStatusExpired, topUp.Status)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
 	var user model.User
 	require.NoError(t, model.DB.First(&user, 1).Error)
-	assert.Zero(t, user.Quota)
+	assert.Equal(t, 500000, user.Quota)
 }
 
 func TestYooKassaAdminSyncDoesNotCreditExpiredPaymentWithWrongAmount(t *testing.T) {

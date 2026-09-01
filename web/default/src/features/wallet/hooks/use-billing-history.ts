@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useCallback, useRef } from 'react'
 import i18next from 'i18next'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { useIsAdmin } from '@/hooks/use-admin'
@@ -60,7 +60,9 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [completing, setCompleting] = useState(false)
-  const [checkingPayment, setCheckingPayment] = useState(false)
+  const [checkingPaymentTradeNo, setCheckingPaymentTradeNo] = useState<
+    string | null
+  >(null)
   const requestSequenceRef = useRef(0)
 
   /**
@@ -156,12 +158,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
 
   const handleCheckYooKassaPayment = useCallback(
     async (tradeNo: string) => {
-      if (!isAdmin) {
-        toast.error(i18next.t('Admin access required'))
-        return false
-      }
-
-      setCheckingPayment(true)
+      setCheckingPaymentTradeNo(tradeNo)
       try {
         const response = await syncYooKassaPayment({ trade_no: tradeNo })
         if (isApiSuccess(response)) {
@@ -177,10 +174,10 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
         toast.error(i18next.t('Failed to check payment'))
         return false
       } finally {
-        setCheckingPayment(false)
+        setCheckingPaymentTradeNo(null)
       }
     },
-    [isAdmin, fetchBillingHistory]
+    [fetchBillingHistory]
   )
 
   /**
@@ -222,7 +219,8 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     keyword,
     loading,
     completing,
-    checkingPayment,
+    checkingPayment: checkingPaymentTradeNo !== null,
+    checkingPaymentTradeNo,
     isAdmin,
     handlePageChange,
     handlePageSizeChange,

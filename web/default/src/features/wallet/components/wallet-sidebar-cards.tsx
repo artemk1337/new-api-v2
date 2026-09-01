@@ -257,9 +257,16 @@ interface RecentOperationsCardProps {
 
 export function RecentOperationsCard(props: RecentOperationsCardProps) {
   const { t } = useTranslation()
-  const { records, total, page, loading, handlePageChange } = useBillingHistory(
-    { initialPageSize: 5 }
-  )
+  const {
+    records,
+    total,
+    page,
+    loading,
+    checkingPayment,
+    checkingPaymentTradeNo,
+    handlePageChange,
+    handleCheckYooKassaPayment,
+  } = useBillingHistory({ initialPageSize: 5 })
   const totalPages = getTopupHistoryTotalPages(total)
 
   useEffect(() => {
@@ -299,6 +306,9 @@ export function RecentOperationsCard(props: RecentOperationsCardProps) {
             key={record.id}
             record={record}
             first={index === 0}
+            checkingPayment={checkingPayment}
+            checkingPaymentTradeNo={checkingPaymentTradeNo}
+            onCheckPayment={handleCheckYooKassaPayment}
           />
         ))}
       </div>
@@ -358,7 +368,22 @@ export function getTopupHistoryTotalPages(total: number, pageSize = 5): number {
   return Math.max(1, Math.ceil(normalizedTotal / normalizedPageSize))
 }
 
-function RecentOperationRow(props: { record: TopupRecord; first?: boolean }) {
+export function canCheckYooKassaPayment(
+  record: Pick<TopupRecord, 'payment_provider' | 'status'>
+): boolean {
+  return (
+    record.payment_provider === 'yookassa' &&
+    (record.status === 'pending' || record.status === 'expired')
+  )
+}
+
+function RecentOperationRow(props: {
+  record: TopupRecord
+  first?: boolean
+  checkingPayment: boolean
+  checkingPaymentTradeNo: string | null
+  onCheckPayment: (tradeNo: string) => Promise<boolean>
+}) {
   const { t } = useTranslation()
   const status = getStatusConfig(props.record.status)
   const amount = getTopupDisplayAmount({
@@ -392,6 +417,19 @@ function RecentOperationRow(props: { record: TopupRecord; first?: boolean }) {
             variant={status.variant}
             size='sm'
           />
+          {canCheckYooKassaPayment(props.record) && (
+            <Button
+              size='sm'
+              variant='outline'
+              className='h-7 px-2 text-xs'
+              onClick={() => props.onCheckPayment(props.record.trade_no)}
+              disabled={props.checkingPayment}
+            >
+              {props.checkingPaymentTradeNo === props.record.trade_no
+                ? t('Processing...')
+                : t('Check payment')}
+            </Button>
+          )}
         </div>
         <div className='text-muted-foreground mt-0.5 text-xs'>
           {formatTimestamp(props.record.create_time)}

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.167
+
+- Added a YooKassa payment check next to pending and expired payments in the wallet history for both administrators and payment owners.
+- Reconcile late YooKassa payments only after server-side provider verification of the final status, amount, currency, and order metadata; quota crediting remains idempotent.
+
 ## v1.1.166
 
 - Show the administrator YooKassa payment check beside the status of each pending or expired payment in billing history.

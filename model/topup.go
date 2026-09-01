@@ -1224,8 +1224,8 @@ func RechargeYooKassa(tradeNo string, callerIp string) (err error) {
 }
 
 // ReconcileYooKassaTopUp completes a provider-verified YooKassa order during
-// an administrator-initiated reconciliation. It permits an expired local
-// order because the provider snapshot has already been checked by the caller.
+// a user-initiated reconciliation. It permits an expired local order because
+// the provider snapshot has already been checked by the caller.
 func ReconcileYooKassaTopUp(tradeNo string, callerIp string) (err error) {
 	return rechargeProviderTopUp(tradeNo, callerIp, PaymentProviderYooKassa, "YooKassa reconciliation", true)
 }
