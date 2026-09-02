@@ -258,6 +258,7 @@ func TestTopUpInfoDoesNotReaddExplicitlyRemovedYooKassaSBP(t *testing.T) {
 
 func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	createAuthenticatedTopUpInfoUser(t, model.DB)
 	require.NoError(t, model.DB.AutoMigrate(&model.PlatformCurrency{}))
 	require.NoError(t, model.DB.Create(&model.PlatformCurrency{
 		Code:            "RUB",
@@ -300,6 +301,7 @@ func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
 
 func TestTopUpInfoHidesManualLargePaymentWithoutRUBRate(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	createAuthenticatedTopUpInfoUser(t, model.DB)
 	original := *operation_setting.GetPaymentSetting()
 	t.Cleanup(func() { *operation_setting.GetPaymentSetting() = original })
 
@@ -328,6 +330,7 @@ func TestTopUpInfoHidesManualLargePaymentWithoutRUBRate(t *testing.T) {
 
 func TestTopUpInfoConvertsManualLargePaymentMinimumToTokens(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	createAuthenticatedTopUpInfoUser(t, model.DB)
 	require.NoError(t, model.DB.AutoMigrate(&model.PlatformCurrency{}))
 	require.NoError(t, model.DB.Create(&model.PlatformCurrency{
 		Code:            "RUB",

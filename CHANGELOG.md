@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.168
+
+- Added a referral program with a dedicated page, referral-code registration and OAuth support, configurable qualifying top-up amount, and direct-inviter rewards only.
+- Added per-tier referral cashback with validation and regular-cashback fallback; wallet previews and balances show the referral rate separately.
+- Retired Creem checkout while preserving signed settlement of existing pending orders, and updated payment settings to avoid horizontal scrolling.
+
 ## v1.1.167
 
 - Added a YooKassa payment check next to pending and expired payments in the wallet history for both administrators and payment owners.
