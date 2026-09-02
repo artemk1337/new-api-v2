@@ -299,6 +299,10 @@ func InitResources() error {
 
 	// Initialize options, should after model.InitDB()
 	model.InitOptionMap()
+	if err = backfillReferralCashbackEligibilityOnMaster(); err != nil {
+		common.FatalLog("failed to backfill referral cashback eligibility: " + err.Error())
+		return err
+	}
 	if err = model.SeedDefaultPlatformCurrencies(); err != nil {
 		return fmt.Errorf("seed platform currencies: %w", err)
 	}
@@ -348,4 +352,11 @@ func InitResources() error {
 	}
 
 	return nil
+}
+
+func backfillReferralCashbackEligibilityOnMaster() error {
+	if !common.IsMasterNode {
+		return nil
+	}
+	return model.BackfillReferralCashbackEligibility()
 }

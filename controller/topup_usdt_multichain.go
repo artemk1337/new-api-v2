@@ -75,7 +75,11 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 		return
 	}
 	baseAmount := decimal.NewFromUint64(baseUnits).Shift(-6).InexactFloat64()
-	quotaToAdd := service.CalculateTopUpQuota(baseAmount, 0)
+	quotaToAdd, err := service.CalculateTopUpQuotaForUser(baseAmount, 0, userID)
+	if err != nil {
+		common.ApiErrorMsg(c, "Failed to calculate top-up cashback")
+		return
+	}
 	if quotaToAdd <= 0 {
 		common.ApiErrorMsg(c, "Top-up amount is too low")
 		return
@@ -84,6 +88,9 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 	tradeNo := fmt.Sprintf("%s%d%s", strings.ToUpper(network), userID, common.GetRandomString(20))
 	topUp := &model.TopUp{UserId: userID, TradeNo: tradeNo, Amount: int64(baseAmount), RequestedAmount: baseAmount, PaymentMethod: model.DirectCryptoProvider, PaymentMethodName: "Crypto", PaymentProvider: model.DirectCryptoProvider, QuotaToAdd: quotaToAdd, CreateTime: now, Status: common.TopUpStatusPending}
 	service.ApplyPaymentSnapshot(topUp, "USD", 1, baseAmount, 1, baseAmount)
+	// ApplyPaymentSnapshot captures the immutable paid principal. Keep the
+	// user-specific effective cashback calculated above as the total credit.
+	topUp.QuotaToAdd = quotaToAdd
 	contract := setting.USDTTRC20Contract
 	if network == "TON" {
 		contract = setting.USDTTONJettonMaster

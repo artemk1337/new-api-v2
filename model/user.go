@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
-
 	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const UserNameMaxLength = 20
@@ -22,38 +23,40 @@ const UserNameMaxLength = 20
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int                        `json:"id"`
-	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int                        `json:"role" gorm:"type:int;default:1;index"`   // admin, common
-	Status           int                        `json:"status" gorm:"type:int;default:1;index"` // enabled, disabled
-	Email            string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default';index"`
-	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota         int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota  int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId        int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	DeletedAt        gorm.DeletedAt             `gorm:"index"`
-	LinuxDOId        string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting          string                     `json:"setting" gorm:"type:text;column:setting"`
-	Remark           string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	Id                       int                        `json:"id"`
+	Username                 string                     `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password                 string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword         string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName              string                     `json:"display_name" gorm:"index" validate:"max=20"`
+	Role                     int                        `json:"role" gorm:"type:int;default:1;index"`   // admin, common
+	Status                   int                        `json:"status" gorm:"type:int;default:1;index"` // enabled, disabled
+	Email                    string                     `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId                 string                     `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId                string                     `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId                   string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId                 string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId               string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode         string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken              *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota                    int                        `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota                int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount             int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Group                    string                     `json:"group" gorm:"type:varchar(64);default:'default';index"`
+	AffCode                  string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount                 int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota                 int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota          int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId                int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	ReferralCashbackEligible bool                       `json:"referral_cashback_eligible" gorm:"column:referral_cashback_eligible;index"`
+	ReferralProgramQualified bool                       `json:"referral_program_qualified" gorm:"column:referral_program_qualified;index"`
+	DeletedAt                gorm.DeletedAt             `gorm:"index"`
+	LinuxDOId                string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting                  string                     `json:"setting" gorm:"type:text;column:setting"`
+	Remark                   string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer           string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt                int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt              int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	AdminPermissions         map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -292,6 +295,145 @@ func GetUserIdByAffCode(affCode string) (int, error) {
 	return user.Id, err
 }
 
+const referralEligibilityBackfillOption = "_migration.referral_cashback_eligibility_v1"
+
+var (
+	ErrReferralCodeInvalid         = errors.New("referral code is invalid")
+	ErrReferralInviterNotQualified = errors.New("referral inviter has not reached the required top-up amount")
+)
+
+// ResolveQualifiedInviter validates a code for a new registration. Existing
+// accounts never call this function, so an inviter cannot be attached later.
+func ResolveQualifiedInviter(affCode string) (int, error) {
+	return ResolveQualifiedInviterWithDB(DB, affCode)
+}
+
+func ResolveQualifiedInviterWithDB(db *gorm.DB, affCode string) (int, error) {
+	affCode = strings.TrimSpace(affCode)
+	if affCode == "" {
+		return 0, nil
+	}
+	var inviter User
+	if err := db.Select("id", "status", "referral_program_qualified").First(&inviter, "aff_code = ?", affCode).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrReferralCodeInvalid
+		}
+		return 0, err
+	}
+	if inviter.Status != common.UserStatusEnabled {
+		return 0, ErrReferralCodeInvalid
+	}
+	qualified, err := syncReferralProgramQualification(db, inviter.Id)
+	if err != nil {
+		return 0, err
+	}
+	if !qualified {
+		return 0, ErrReferralInviterNotQualified
+	}
+	return inviter.Id, nil
+}
+
+func IsReferralCashbackUser(userId int) (bool, error) {
+	if userId <= 0 {
+		return false, nil
+	}
+	var user User
+	if err := DB.Select("inviter_id", "referral_cashback_eligible").First(&user, userId).Error; err != nil {
+		return false, err
+	}
+	return user.InviterId != 0 && user.ReferralCashbackEligible, nil
+}
+
+// PaidTopUpUSD returns the lifetime authoritative USD base amount of completed
+// wallet deposits. Bonuses, promo codes, referral income and subscriptions do
+// not satisfy the anti-abuse threshold.
+func PaidTopUpUSD(db *gorm.DB, userId int) (float64, error) {
+	if db == nil {
+		return 0, gorm.ErrInvalidDB
+	}
+	var topUps []*TopUp
+	err := db.Select("payment_base_amount", "requested_amount", "money", "payment_currency", "payment_provider", "payment_method", "source", "quota_to_add").
+		Where("user_id = ? AND status = ? AND quota_to_add > 0", userId, common.TopUpStatusSuccess).
+		Where("source = ? OR source IS NULL", "").Find(&topUps).Error
+	if err != nil {
+		return 0, err
+	}
+	total := decimal.Zero
+	for _, topUp := range topUps {
+		if topUp == nil || topUp.PaymentProvider == PaymentProviderBalance || topUp.PaymentProvider == "redemption" || topUp.PaymentProvider == "affiliate" {
+			continue
+		}
+		amount := topUpAccountingAmountUSD(topUp)
+		if amount > 0 && !math.IsNaN(amount) && !math.IsInf(amount, 0) {
+			total = total.Add(decimal.NewFromFloat(amount))
+		}
+	}
+	return total.InexactFloat64(), nil
+}
+
+func PromoteReferralCashbackEligibility(db *gorm.DB, userId int) error {
+	var user User
+	if err := db.Select("id", "referral_program_qualified").First(&user, userId).Error; err != nil {
+		return err
+	}
+	total, err := PaidTopUpUSD(db, userId)
+	if err != nil {
+		return err
+	}
+	qualified := total >= common.GetReferralRequiredTopUpUSD()
+	if user.ReferralProgramQualified == qualified {
+		return nil
+	}
+	return db.Model(&User{}).Where("id = ? AND referral_program_qualified = ?", userId, user.ReferralProgramQualified).
+		Update("referral_program_qualified", qualified).Error
+}
+
+func syncReferralProgramQualification(db *gorm.DB, userId int) (bool, error) {
+	if err := PromoteReferralCashbackEligibility(db, userId); err != nil {
+		return false, err
+	}
+	var user User
+	if err := db.Select("referral_program_qualified").First(&user, userId).Error; err != nil {
+		return false, err
+	}
+	return user.ReferralProgramQualified, nil
+}
+
+func BackfillReferralCashbackEligibility() error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var marker Option
+		if err := tx.First(&marker, "key = ?", referralEligibilityBackfillOption).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var userIds []int
+		if err := tx.Model(&TopUp{}).
+			Distinct("user_id").
+			Where("status = ? AND quota_to_add > 0", common.TopUpStatusSuccess).
+			Pluck("user_id", &userIds).Error; err != nil {
+			return err
+		}
+		for _, userId := range userIds {
+			if err := PromoteReferralCashbackEligibility(tx, userId); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+		var qualifiedInviterIds []int
+		if err := tx.Model(&User{}).Where("referral_program_qualified = ?", true).Pluck("id", &qualifiedInviterIds).Error; err != nil {
+			return err
+		}
+		if len(qualifiedInviterIds) > 0 {
+			if err := tx.Model(&User{}).Where("inviter_id IN ?", qualifiedInviterIds).
+				Update("referral_cashback_eligible", true).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&Option{Key: referralEligibilityBackfillOption, Value: "complete"}).Error
+	})
+}
+
 func DeleteUserById(id int) (err error) {
 	if id == 0 {
 		return errors.New("id 为空！")
@@ -312,15 +454,11 @@ func HardDeleteUserById(id int) error {
 	})
 }
 
-func inviteUser(inviterId int) (err error) {
-	user, err := GetUserById(inviterId, true)
-	if err != nil {
+func recordReferralRegistration(inviterId int) error {
+	if err := DB.Model(&User{}).Where("id = ?", inviterId).UpdateColumn("aff_count", gorm.Expr("aff_count + ?", 1)).Error; err != nil {
 		return err
 	}
-	user.AffCount++
-	user.AffQuota += common.QuotaForInviter
-	user.AffHistoryQuota += common.QuotaForInviter
-	return DB.Save(user).Error
+	return invalidateUserCache(inviterId)
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
@@ -378,6 +516,7 @@ func (user *User) Insert(inviterId int) error {
 	}
 	user.Quota = common.QuotaForNewUser
 	user.InviterId = inviterId
+	user.ReferralCashbackEligible = inviterId != 0
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -416,15 +555,9 @@ func (user *User) finishInsert(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+	if inviterId != 0 {
+		if err := recordReferralRegistration(inviterId); err != nil {
+			common.SysLog("failed to record referral registration: " + err.Error())
 		}
 	}
 }
@@ -446,6 +579,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	}
 	user.Quota = common.QuotaForNewUser
 	user.InviterId = inviterId
+	user.ReferralCashbackEligible = inviterId != 0
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置
@@ -481,14 +615,9 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
+	if inviterId != 0 {
+		if err := recordReferralRegistration(inviterId); err != nil {
+			common.SysLog("failed to record referral registration: " + err.Error())
 		}
 	}
 }

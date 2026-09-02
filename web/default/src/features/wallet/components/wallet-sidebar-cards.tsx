@@ -35,6 +35,8 @@ interface WalletSummaryCardProps {
   topupAmount: number
   selectedPaymentMethod?: PaymentMethod
   cashback: CashbackThreshold[]
+  regularCashback?: CashbackThreshold[]
+  isReferralCashback?: boolean
   onPay: () => void
   onPayUnavailable: () => void
   payDisabled: boolean
@@ -55,6 +57,14 @@ export function WalletSummaryCard(props: WalletSummaryCardProps) {
     : null
   const hasPaymentQuote = hasPaymentSelection && displayQuote !== null
   const summaryValues = getPaymentSummaryValues(displayQuote)
+  const regularQuote = props.selectedPaymentMethod
+    ? getPaymentMethodDisplayQuote(
+        props.topupAmount,
+        props.selectedPaymentMethod,
+        props.regularCashback ?? props.cashback
+      )
+    : null
+  const regularSummaryValues = getPaymentSummaryValues(regularQuote)
   const value = (amount: number) => formatPaymentSummaryAmount(amount)
   let cashbackValue = '—'
   if (hasPaymentQuote) {
@@ -95,8 +105,23 @@ export function WalletSummaryCard(props: WalletSummaryCardProps) {
             muted={!hasPaymentQuote}
           />
           <SummaryRow
-            label={t('Cashback')}
-            value={cashbackValue}
+            label={
+              props.isReferralCashback
+                ? t('Referral program cashback')
+                : t('Cashback')
+            }
+            value={
+              props.isReferralCashback && hasPaymentQuote ? (
+                <span className='inline-flex items-center gap-1.5'>
+                  <span className='text-muted-foreground line-through'>
+                    {formatNumber(regularSummaryValues.cashbackPercent)}%
+                  </span>
+                  <span>{formatNumber(summaryValues.cashbackPercent)}%</span>
+                </span>
+              ) : (
+                cashbackValue
+              )
+            }
             positive={hasPaymentQuote && summaryValues.cashbackAmount > 0}
             muted={!hasPaymentQuote || summaryValues.cashbackAmount <= 0}
           />
@@ -224,7 +249,7 @@ export function getSelectedPaymentMethodSubtitle(
 
 function SummaryRow(props: {
   label: string
-  value: string
+  value: ReactNode
   muted?: boolean
   strong?: boolean
   positive?: boolean

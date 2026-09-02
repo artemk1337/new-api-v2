@@ -81,14 +81,9 @@ const BILLING_SECTIONS = [
     build: (settings: BillingSettings) => (
       <ReferralSettingsSection
         defaultValues={{
-          QuotaForInviter: settings.QuotaForInviter,
-          QuotaForInvitee: settings.QuotaForInvitee,
           ReferralDepositPercent: settings.ReferralDepositPercent,
+          ReferralRequiredTopUpUSD: settings.ReferralRequiredTopUpUSD,
         }}
-        complianceConfirmed={
-          (settings['payment_setting.compliance_confirmed'] ?? false) &&
-          settings['payment_setting.compliance_terms_version'] === 'v1'
-        }
       />
     ),
   },
@@ -137,7 +132,8 @@ const BILLING_SECTIONS = [
           PaymentPendingTTLMinutes: settings.PaymentPendingTTLMinutes,
           CustomCallbackAddress: settings.CustomCallbackAddress,
           PayMethods: settings.PayMethods,
-          PaymentMethodAvailableIcons: settings.PaymentMethodAvailableIcons ?? '',
+          PaymentMethodAvailableIcons:
+            settings.PaymentMethodAvailableIcons ?? '',
           AmountOptions: settings['payment_setting.amount_options'],
           AmountCashback: settings['payment_setting.amount_cashback'],
           ManualTopupEnabled: settings['payment_setting.manual_topup_enabled'],
@@ -149,10 +145,6 @@ const BILLING_SECTIONS = [
           StripeUnitPrice: settings.StripeUnitPrice,
           StripeMinTopUp: settings.StripeMinTopUp,
           StripePromotionCodesEnabled: settings.StripePromotionCodesEnabled,
-          CreemApiKey: settings.CreemApiKey,
-          CreemWebhookSecret: settings.CreemWebhookSecret,
-          CreemTestMode: settings.CreemTestMode,
-          CreemProducts: settings.CreemProducts,
           YooKassaEnabled: settings.YooKassaEnabled ?? false,
           YooKassaShopID: settings.YooKassaShopID ?? '',
           YooKassaSecretKey: settings.YooKassaSecretKey ?? '',

@@ -170,6 +170,7 @@ func TestYooKassaWebhookIsIdempotent(t *testing.T) {
 
 func TestTopUpInfoFiltersYooKassaSBPWhenSBPIsDisabled(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	createAuthenticatedTopUpInfoUser(t, model.DB)
 	originalPayMethods := operation_setting.PayMethods2JsonString()
 	t.Cleanup(func() {
 		require.NoError(t, operation_setting.UpdatePayMethodsByJsonString(originalPayMethods))
@@ -421,6 +422,7 @@ func TestYooKassaCurrentPayMethodsAllowsEnabledSBP(t *testing.T) {
 
 func TestTopUpInfoUsesPersistedPayMethodsOverStaleSnapshot(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	createAuthenticatedTopUpInfoUser(t, model.DB)
 	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
 	previousPayMethods := operation_setting.PayMethods2JsonString()
 	t.Cleanup(func() {

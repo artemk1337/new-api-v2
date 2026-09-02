@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatQuota } from '@/lib/format'
 
-import type { UserWalletData } from '../types'
+import type { AffiliateStatus, UserWalletData } from '../types'
 
 interface AffiliateRewardsCardProps {
   user: UserWalletData | null
@@ -35,6 +35,7 @@ interface AffiliateRewardsCardProps {
   complianceConfirmed?: boolean
   loading?: boolean
   embedded?: boolean
+  status?: AffiliateStatus | null
 }
 
 export function AffiliateRewardsCard({
@@ -44,6 +45,7 @@ export function AffiliateRewardsCard({
   complianceConfirmed = true,
   loading,
   embedded = false,
+  status,
 }: AffiliateRewardsCardProps) {
   const { t } = useTranslation()
   if (loading) {
@@ -75,6 +77,8 @@ export function AffiliateRewardsCard({
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
+  const canShare = status?.can_share !== false
+  const statusMessageGridSpan = embedded ? 'lg:col-span-2' : 'lg:col-span-3'
 
   return (
     <Card
@@ -134,16 +138,21 @@ export function AffiliateRewardsCard({
           <Input
             value={affiliateLink}
             readOnly
+            placeholder={
+              canShare ? undefined : t('Referral link is not active yet')
+            }
             className='border-muted bg-background/70 h-9 min-w-0 flex-1 text-xs'
           />
-          <CopyButton
-            value={affiliateLink}
-            variant='outline'
-            className='bg-background size-9 shrink-0'
-            iconClassName='size-4'
-            tooltip={t('Copy referral link')}
-            aria-label={t('Copy referral link')}
-          />
+          {canShare && (
+            <CopyButton
+              value={affiliateLink}
+              variant='outline'
+              className='bg-background size-9 shrink-0'
+              iconClassName='size-4'
+              tooltip={t('Copy referral link')}
+              aria-label={t('Copy referral link')}
+            />
+          )}
           {hasRewards && (
             <Button
               onClick={onTransfer}
@@ -155,8 +164,19 @@ export function AffiliateRewardsCard({
             </Button>
           )}
         </div>
+        {!canShare && status ? (
+          <p className={`text-muted-foreground text-xs ${statusMessageGridSpan}`}>
+            {t(
+              'Top up at least ${{required}} to activate your referral link. Progress: ${{current}}.',
+              {
+                required: status.required_topup_usd,
+                current: status.qualified_topup_usd,
+              }
+            )}
+          </p>
+        ) : null}
         {!complianceConfirmed ? (
-          <p className='text-muted-foreground text-xs lg:col-span-3'>
+          <p className={`text-muted-foreground text-xs ${statusMessageGridSpan}`}>
             {t(
               'Referral reward transfer is disabled until the administrator confirms compliance terms.'
             )}

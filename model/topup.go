@@ -51,6 +51,7 @@ type TopUp struct {
 	PaymentMinimumAmount     float64 `json:"payment_minimum_amount" gorm:"not null;default:0"`
 	PaymentPendingTTLSeconds int64   `json:"payment_pending_ttl_seconds" gorm:"not null;default:0"`
 	QuotaToAdd               int     `json:"quota_to_add"`
+	BaseQuotaToAdd           int     `json:"base_quota_to_add" gorm:"not null;default:0"`
 	CreateTime               int64   `json:"create_time"`
 	CompleteTime             int64   `json:"complete_time"`
 	Status                   string  `json:"status"`
@@ -97,11 +98,23 @@ var (
 // idempotent and no inviter chain is traversed.
 func creditReferralDepositReward(tx *gorm.DB, topUp *TopUp, quotaToAdd int) error {
 	percent := common.GetReferralDepositPercent()
-	if percent <= 0 || percent > 100 || math.IsNaN(percent) || math.IsInf(percent, 0) || quotaToAdd <= 0 {
+	if percent <= 0 || percent > 100 || math.IsNaN(percent) || math.IsInf(percent, 0) || topUp == nil {
+		return nil
+	}
+	// Only actual paid wallet deposits reward the inviter. Promo codes and
+	// referral-income history rows are balance movements, not paid principal.
+	if strings.TrimSpace(topUp.Source) != "" || topUp.PaymentProvider == "redemption" || topUp.PaymentProvider == "affiliate" || topUp.PaymentProvider == PaymentProviderBalance {
+		return nil
+	}
+	baseQuota := int64(topUp.BaseQuotaToAdd)
+	if baseQuota <= 0 {
+		baseQuota = int64(quotaToAdd)
+	}
+	if baseQuota <= 0 {
 		return nil
 	}
 
-	reward := decimal.NewFromInt(int64(quotaToAdd)).
+	reward := decimal.NewFromInt(baseQuota).
 		Mul(decimal.NewFromFloat(percent)).
 		Div(decimal.NewFromInt(100)).IntPart()
 	if reward <= 0 {
@@ -707,7 +720,10 @@ func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredS
 				casLost = true
 				return nil
 			}
-			return apply(tx, &topUp)
+			if err := apply(tx, &topUp); err != nil {
+				return err
+			}
+			return PromoteReferralCashbackEligibility(tx, topUp.UserId)
 		})
 		if err == nil || !isSQLiteBusyError(err) {
 			break

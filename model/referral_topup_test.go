@@ -23,7 +23,7 @@ func TestSuccessfulTopUpRewardsOnlyDirectInviter(t *testing.T) {
 	require.NoError(t, DB.Create(&TopUp{
 		UserId: 7103, Amount: 100, Money: 100, TradeNo: "direct-referral-topup",
 		PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending,
-		QuotaToAdd: 1000, CreateTime: time.Now().Unix(),
+		QuotaToAdd: 1000, BaseQuotaToAdd: 1000, CreateTime: time.Now().Unix(),
 	}).Error)
 
 	require.NoError(t, RechargeEpay("direct-referral-topup", "sbp", "127.0.0.1"))
@@ -40,6 +40,29 @@ func TestSuccessfulTopUpRewardsOnlyDirectInviter(t *testing.T) {
 	require.NoError(t, DB.Where("user_id = ? AND source = ?", 7102, "referral_income").First(&reward).Error)
 	assert.Equal(t, "referral", reward.PaymentMethod)
 	assert.Equal(t, common.TopUpStatusSuccess, reward.Status)
+}
+
+func TestLegacyPendingTopUpRewardsDirectInviter(t *testing.T) {
+	truncateTables(t)
+	originalPercent := common.GetReferralDepositPercent()
+	common.SetReferralDepositPercent(10)
+	t.Cleanup(func() { common.SetReferralDepositPercent(originalPercent) })
+
+	require.NoError(t, DB.Create(&User{Id: 7131, Username: "legacy-pending-inviter", AffCode: "legacy-pending-inviter", Status: common.UserStatusEnabled}).Error)
+	require.NoError(t, DB.Create(&User{Id: 7132, Username: "legacy-pending-invitee", AffCode: "legacy-pending-invitee", InviterId: 7131, Status: common.UserStatusEnabled}).Error)
+	// This row represents an order created before BaseQuotaToAdd existed.
+	require.NoError(t, DB.Create(&TopUp{
+		UserId: 7132, Amount: 100, Money: 100, TradeNo: "legacy-pending-referral-topup",
+		PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending,
+		QuotaToAdd: 1000, CreateTime: time.Now().Unix(),
+	}).Error)
+
+	require.NoError(t, RechargeEpay("legacy-pending-referral-topup", "sbp", "127.0.0.1"))
+
+	var inviter User
+	require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, 7131).Error)
+	assert.Equal(t, 100, inviter.AffQuota)
+	assert.Equal(t, 100, inviter.AffHistoryQuota)
 }
 
 func TestUserCreationPersistsDirectInviter(t *testing.T) {
@@ -205,7 +228,7 @@ func TestQuotaOnlyHistoryKeepsAccountingAmountAfterQuotaUnitChange(t *testing.T)
 	assert.InDelta(t, 2.5, record.AccountingAmountUSD, 0.000001)
 }
 
-func TestPromoCodeTopUpRewardsDirectInviterAndHasNeutralSource(t *testing.T) {
+func TestPromoCodeTopUpDoesNotRewardDirectInviter(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Redemption{}))
 	t.Cleanup(func() { DB.Exec("DELETE FROM redemptions") })
@@ -230,6 +253,6 @@ func TestPromoCodeTopUpRewardsDirectInviterAndHasNeutralSource(t *testing.T) {
 
 	var inviter User
 	require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, 7111).Error)
-	assert.Equal(t, 50, inviter.AffQuota)
-	assert.Equal(t, 50, inviter.AffHistoryQuota)
+	assert.Zero(t, inviter.AffQuota)
+	assert.Zero(t, inviter.AffHistoryQuota)
 }

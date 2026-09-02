@@ -29,12 +29,10 @@ import type {
   AmountResponse,
   PaymentResponse,
   StripePaymentResponse,
-  AffiliateCodeResponse,
+  AffiliateStatusResponse,
   AffiliateTransferResponse,
   BillingHistoryResponse,
   CompleteOrderRequest,
-  CreemPaymentRequest,
-  CreemPaymentResponse,
   WaffoPaymentRequest,
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
@@ -157,18 +155,6 @@ export async function requestStripePayment(
   request: PaymentRequest
 ): Promise<StripePaymentResponse> {
   const res = await api.post('/api/user/stripe/pay', request, {
-    skipBusinessError: true,
-  } as Record<string, unknown>)
-  return res.data
-}
-
-/**
- * Request Creem payment
- */
-export async function requestCreemPayment(
-  request: CreemPaymentRequest
-): Promise<CreemPaymentResponse> {
-  const res = await api.post('/api/user/creem/pay', request, {
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data
@@ -318,11 +304,8 @@ export async function getUSDTTrc20PaymentStatus(
   return res.data
 }
 
-/**
- * Get affiliate code
- */
-export async function getAffiliateCode(): Promise<AffiliateCodeResponse> {
-  const res = await api.get('/api/user/aff')
+export async function getAffiliateStatus(): Promise<AffiliateStatusResponse> {
+  const res = await api.get('/api/user/aff/status')
   return res.data
 }
 

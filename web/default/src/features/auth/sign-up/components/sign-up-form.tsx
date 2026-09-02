@@ -1,5 +1,3 @@
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -47,6 +47,7 @@ import { useEmailVerification } from '@/features/auth/hooks/use-email-verificati
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import {
   getAffiliateCode,
+  removeAffiliateCode,
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
@@ -89,6 +90,7 @@ export function SignUpForm({
     defaultValues: {
       username: '',
       email: '',
+      affCode: '',
       password: '',
       confirmPassword: '',
     },
@@ -130,10 +132,12 @@ export function SignUpForm({
 
   useEffect(() => {
     const aff = new URLSearchParams(window.location.search).get('aff')?.trim()
-    if (aff) {
-      saveAffiliateCode(aff)
+    const pendingCode = aff || getAffiliateCode()
+    if (pendingCode) {
+      form.setValue('affCode', pendingCode)
+      saveAffiliateCode(pendingCode)
     }
-  }, [])
+  }, [form])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
@@ -162,14 +166,20 @@ export function SignUpForm({
         password: data.password,
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
-        aff_code: getAffiliateCode(),
+        aff_code: data.affCode?.trim() || undefined,
         turnstile: turnstileToken,
       })
 
       if (res?.success) {
+        removeAffiliateCode()
         toast.success(t('Account created! Please sign in'))
         redirectToLogin()
       } else {
+        if (data.affCode?.trim()) {
+          form.setError('affCode', {
+            message: res?.message || t('Invalid referral code'),
+          })
+        }
         toast.error(res?.message || t('Failed to create account'))
       }
     } catch (_error) {
@@ -334,6 +344,30 @@ export function SignUpForm({
             </div>
           </>
         )}
+
+        <FormField
+          control={form.control}
+          name='affCode'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Referral code')}</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder={t('Enter referral code (optional)')}
+                  autoComplete='off'
+                  {...field}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    const code = event.target.value.trim()
+                    if (code) saveAffiliateCode(code)
+                    else removeAffiliateCode()
+                  }}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         {/* Turnstile */}
         {isTurnstileEnabled && (

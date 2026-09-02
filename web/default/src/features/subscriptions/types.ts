@@ -42,7 +42,6 @@ export const subscriptionPlanSchema = z.object({
   upgrade_group: z.string().optional(),
   downgrade_group: z.string().optional(),
   stripe_price_id: z.string().optional(),
-  creem_product_id: z.string().optional(),
   waffo_pancake_product_id: z.string().optional(),
 })
 
@@ -100,7 +99,7 @@ export interface SubscriptionPayResponse {
   data?: {
     // Stripe-style hosted checkout link.
     pay_link?: string
-    // Waffo Pancake / Creem hosted checkout URL.
+    // Waffo Pancake hosted checkout URL.
     checkout_url?: string
     // Pancake-only: order metadata + self-service buyer session token,
     // surfaced for future flows (refund / cancel from new-api's own UI).

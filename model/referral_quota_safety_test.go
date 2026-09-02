@@ -32,7 +32,7 @@ func TestReferralRewardWithInvalidQuotaPerUnitDoesNotPanic(t *testing.T) {
 
 	require.NoError(t, DB.Create(&User{Id: 7211, Username: "quota-safe-inviter", AffCode: "quota-safe-inviter", InviterId: 0, Status: common.UserStatusEnabled}).Error)
 	require.NoError(t, DB.Create(&User{Id: 7212, Username: "quota-safe-invitee", AffCode: "quota-safe-invitee", InviterId: 7211, Status: common.UserStatusEnabled}).Error)
-	topUp := &TopUp{UserId: 7212, TradeNo: "quota-safe-referral", Status: common.TopUpStatusSuccess}
+	topUp := &TopUp{UserId: 7212, TradeNo: "quota-safe-referral", Status: common.TopUpStatusSuccess, BaseQuotaToAdd: 1000}
 
 	require.NotPanics(t, func() {
 		require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {

@@ -41,6 +41,7 @@ import {
   getPaymentMethodMinimumAmount,
   isPaymentMethodAmountEligible,
   getPaymentMethodDisplayQuote,
+  getEffectiveCashbackTiers,
   getCashbackTierSummary,
   normalizeCashbackTiers,
 } from '../lib'
@@ -51,12 +52,11 @@ import type {
   CashbackThreshold,
   PaymentMethod,
   TopupInfo,
-  CreemProduct,
   WaffoPayMethod,
   UserWalletData,
+  AffiliateStatus,
 } from '../types'
 import { AffiliateRewardsCard } from './affiliate-rewards-card'
-import { CreemProductsSection } from './creem-products-section'
 
 export type RechargeValidationTarget = 'amount' | 'payment-method'
 
@@ -73,9 +73,6 @@ interface RechargeFormCardProps {
   redeeming: boolean
   topupLink?: string
   loading?: boolean
-  creemProducts?: CreemProduct[]
-  enableCreemTopup?: boolean
-  onCreemProductSelect?: (product: CreemProduct) => void
   enableWaffoTopup?: boolean
   waffoPayMethods?: WaffoPayMethod[]
   waffoMinTopup?: number
@@ -85,6 +82,7 @@ interface RechargeFormCardProps {
   affiliateLink: string
   onTransferAffiliate: () => void
   affiliateLoading?: boolean
+  affiliateStatus?: AffiliateStatus | null
   affiliateComplianceConfirmed?: boolean
   validationTarget?: RechargeValidationTarget | null
   onValidationRequest?: () => void
@@ -347,9 +345,6 @@ export function RechargeFormCard({
   redeeming,
   topupLink,
   loading,
-  creemProducts,
-  enableCreemTopup,
-  onCreemProductSelect,
   enableWaffoTopup,
   waffoPayMethods,
   onWaffoMethodSelect,
@@ -358,6 +353,7 @@ export function RechargeFormCard({
   affiliateLink,
   onTransferAffiliate,
   affiliateLoading,
+  affiliateStatus,
   affiliateComplianceConfirmed = true,
   validationTarget,
   onValidationRequest,
@@ -429,7 +425,7 @@ export function RechargeFormCard({
         'usdt_solana_direct',
       ].includes(method.type)
     )
-  const hasAnyTopup = hasConfigurableTopup || enableCreemTopup || manualTopup
+  const hasAnyTopup = hasConfigurableTopup || manualTopup
   const hasStandardPaymentMethods = standardPaymentMethods.length > 0
   const availableWaffoMethods = getAvailableWaffoMethods(waffoPayMethods)
   const hasWaffoPaymentMethods = availableWaffoMethods.length > 0
@@ -442,10 +438,18 @@ export function RechargeFormCard({
   )
   const redemptionEnabled = topupInfo?.enable_redemption !== false
   const cashbackTiers = getRenderableCashbackTiers(topupInfo?.cashback)
-  const hasCashback = hasPositiveCashbackTier(cashbackTiers)
+  const effectiveCashbackTiers = getEffectiveCashbackTiers(
+    cashbackTiers,
+    topupInfo?.is_referral_cashback
+  )
+  const hasCashback = hasPositiveCashbackTier(effectiveCashbackTiers)
   const cashbackSummary = getCashbackTierSummary(
-    getCashbackDisplayAmount(topupAmount, selectedPaymentMethod, cashbackTiers),
-    cashbackTiers
+    getCashbackDisplayAmount(
+      topupAmount,
+      selectedPaymentMethod,
+      effectiveCashbackTiers
+    ),
+    effectiveCashbackTiers
   )
   const currencyLabel = getCurrencyLabel()
   const currencyDisplay = getCurrencyDisplay()
@@ -589,7 +593,9 @@ export function RechargeFormCard({
                     amount={topupAmount}
                     currencyLabel={currencySymbol}
                     summary={cashbackSummary}
-                    tiers={cashbackTiers}
+                    tiers={effectiveCashbackTiers}
+                    regularTiers={cashbackTiers}
+                    isReferralCashback={topupInfo?.is_referral_cashback}
                     baseAmountMultiplier={
                       selectedPaymentMethod?.base_amount_multiplier
                     }
@@ -943,22 +949,6 @@ export function RechargeFormCard({
           </Alert>
         )}
 
-        {/* Creem Products Section */}
-        {enableCreemTopup &&
-          Array.isArray(creemProducts) &&
-          creemProducts.length > 0 &&
-          onCreemProductSelect && (
-            <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
-              <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                {t('Creem Payment')}
-              </Label>
-              <CreemProductsSection
-                products={creemProducts}
-                onProductSelect={onCreemProductSelect}
-              />
-            </div>
-          )}
-
         {/* Redemption Code Section */}
         {redemptionEnabled ? (
           <div className='space-y-2.5 border-t pt-3 sm:space-y-3 sm:pt-4'>
@@ -1020,6 +1010,7 @@ export function RechargeFormCard({
           onTransfer={onTransferAffiliate}
           complianceConfirmed={affiliateComplianceConfirmed}
           loading={affiliateLoading}
+          status={affiliateStatus}
           embedded
         />
       </CardContent>
@@ -1144,6 +1135,8 @@ function CashbackTierPanel(props: {
   currencyLabel: string
   summary: CashbackTierSummary
   tiers: CashbackThreshold[]
+  regularTiers?: CashbackThreshold[]
+  isReferralCashback?: boolean
   baseAmountMultiplier?: number
 }) {
   const { t } = useTranslation()
@@ -1153,7 +1146,11 @@ function CashbackTierPanel(props: {
     return (
       <div className='border-muted bg-muted/20 space-y-1 rounded-lg border px-3 py-3 sm:px-4'>
         <div className='text-base leading-6 font-semibold'>
-          {t('Top-up cashback')}
+          {t(
+            props.isReferralCashback
+              ? 'Referral program cashback'
+              : 'Top-up cashback'
+          )}
         </div>
         <p className='text-muted-foreground text-xs'>
           {t('Cashback is not configured yet')}
@@ -1180,7 +1177,11 @@ function CashbackTierPanel(props: {
   return (
     <div className='space-y-3'>
       <div className='text-base leading-6 font-semibold'>
-        {t('Top-up cashback')}
+        {t(
+          props.isReferralCashback
+            ? 'Referral program cashback'
+            : 'Top-up cashback'
+        )}
       </div>
       <div className='overflow-x-auto pb-1'>
         <div
@@ -1215,7 +1216,21 @@ function CashbackTierPanel(props: {
                   currencyLabel,
                   t
                 )}{' '}
-                · {tier.cashback_percent}%
+                ·{' '}
+                {props.isReferralCashback ? (
+                  <>
+                    <span className='line-through opacity-70'>
+                      {getCashbackTierSummary(
+                        tier.min_amount,
+                        props.regularTiers ?? []
+                      ).current?.cashback_percent ?? 0}
+                      %
+                    </span>{' '}
+                    <span>{tier.cashback_percent}%</span>
+                  </>
+                ) : (
+                  `${tier.cashback_percent}%`
+                )}
               </div>
             )
           })}

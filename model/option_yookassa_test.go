@@ -34,6 +34,24 @@ func TestGetPayMethodsFromDBPreservesUnavailableDatabaseError(t *testing.T) {
 	require.Nil(t, methods)
 }
 
+func TestRemoveRetiredCreemPayMethod(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	require.NoError(t, db.Create(&Option{
+		Key:   "PayMethods",
+		Value: `[{"type":"creem"},{"type":"stripe"}]`,
+	}).Error)
+	previousDB := DB
+	DB = db
+	t.Cleanup(func() { DB = previousDB })
+
+	require.NoError(t, removeRetiredCreemPayMethod())
+	methods, err := GetPayMethodsFromDB(db)
+	require.NoError(t, err)
+	require.Equal(t, []map[string]string{{"type": "stripe"}}, methods)
+}
+
 func TestLegacyDirectUSDTConfigMigratesToCanonicalPayMethod(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

@@ -68,7 +68,7 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodStripe, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodStripe, group, id)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return
@@ -119,7 +119,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "用户不存在"})
 		return
 	}
-	quote, quoteErr := service.BuildPaymentQuote(req.Amount, model.PaymentMethodStripe, user.Group)
+	quote, quoteErr := service.BuildPaymentQuote(req.Amount, model.PaymentMethodStripe, user.Group, id)
 	if quoteErr != nil {
 		common.ApiErrorMsg(c, quoteErr.Error())
 		return

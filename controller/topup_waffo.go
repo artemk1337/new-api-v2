@@ -146,7 +146,7 @@ func RequestWaffoAmount(c *gin.Context) {
 		return
 	}
 
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodWaffo, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodWaffo, group, id)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return
@@ -224,7 +224,7 @@ func RequestWaffoPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodWaffo, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodWaffo, group, id)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return

@@ -42,16 +42,18 @@ func paymentSnapshotValidationError(message string) error {
 // payment currency are derived from the platform credit amount and never from
 // client-supplied totals.
 type PaymentQuote struct {
-	Currency          string  `json:"currency"`
-	RateToUSD         float64 `json:"rate_to_usd"`
-	Coefficient       float64 `json:"coefficient"`
-	BaseAmountUSD     float64 `json:"base_amount_usd"`
-	CommissionUSD     float64 `json:"commission_usd"`
-	CashbackPercent   float64 `json:"cashback_percent"`
-	CashbackAmountUSD float64 `json:"cashback_amount_usd"`
-	CreditedAmountUSD float64 `json:"credited_amount_usd"`
-	ChargedAmountUSD  float64 `json:"charged_amount_usd"`
-	ChargedAmount     float64 `json:"charged_amount"`
+	Currency               string  `json:"currency"`
+	RateToUSD              float64 `json:"rate_to_usd"`
+	Coefficient            float64 `json:"coefficient"`
+	BaseAmountUSD          float64 `json:"base_amount_usd"`
+	CommissionUSD          float64 `json:"commission_usd"`
+	CashbackPercent        float64 `json:"cashback_percent"`
+	RegularCashbackPercent float64 `json:"regular_cashback_percent"`
+	IsReferralCashback     bool    `json:"is_referral_cashback"`
+	CashbackAmountUSD      float64 `json:"cashback_amount_usd"`
+	CreditedAmountUSD      float64 `json:"credited_amount_usd"`
+	ChargedAmountUSD       float64 `json:"charged_amount_usd"`
+	ChargedAmount          float64 `json:"charged_amount"`
 }
 
 // PaymentQuoteDisplayConfig contains the public, amount-independent inputs
@@ -106,6 +108,18 @@ type TopUpCredit struct {
 // quote. The requested/base amount is credited in full; the commission is
 // charged on top of it. Cashback is calculated from that credited/base amount.
 func CalculateTopUpCredit(baseAmountUSD, commissionUSD float64) TopUpCredit {
+	return calculateTopUpCredit(baseAmountUSD, commissionUSD, false)
+}
+
+func CalculateTopUpCreditForUser(baseAmountUSD, commissionUSD float64, userId int) (TopUpCredit, error) {
+	isReferral, err := referralCashbackActiveForUser(userId)
+	if err != nil {
+		return TopUpCredit{}, err
+	}
+	return calculateTopUpCredit(baseAmountUSD, commissionUSD, isReferral), nil
+}
+
+func calculateTopUpCredit(baseAmountUSD, commissionUSD float64, isReferral bool) TopUpCredit {
 	if !isFinitePositive(baseAmountUSD) {
 		return TopUpCredit{}
 	}
@@ -113,7 +127,11 @@ func CalculateTopUpCredit(baseAmountUSD, commissionUSD float64) TopUpCredit {
 		commissionUSD = 0
 	}
 
-	cashbackPercent := operation_setting.GetPaymentSetting().AmountCashback.CashbackPercentForAmount(baseAmountUSD)
+	cashbacks := operation_setting.GetPaymentSetting().AmountCashback
+	cashbackPercent := cashbacks.CashbackPercentForAmount(baseAmountUSD)
+	if isReferral {
+		cashbackPercent = cashbacks.ReferralCashbackPercentForAmount(baseAmountUSD)
+	}
 	if !isFiniteNonNegative(cashbackPercent) {
 		cashbackPercent = 0
 	} else if cashbackPercent > 100 {
@@ -136,12 +154,27 @@ func CalculateTopUpCredit(baseAmountUSD, commissionUSD float64) TopUpCredit {
 	}
 }
 
+func referralCashbackActiveForUser(userId int) (bool, error) {
+	if userId <= 0 {
+		return false, nil
+	}
+	return model.IsReferralCashbackUser(userId)
+}
+
 // CalculateTopUpQuota returns the balance credit represented by a payment
 // quote in the internal quota unit. Quota conversion happens after the
 // credited base amount and cashback are combined.
 func CalculateTopUpQuota(baseAmountUSD, commissionUSD float64) int {
 	totalAmountUSD := CalculateTopUpCredit(baseAmountUSD, commissionUSD).TotalAmountUSD
 	return calculateTopUpQuotaAmount(totalAmountUSD)
+}
+
+func CalculateTopUpQuotaForUser(baseAmountUSD, commissionUSD float64, userId int) (int, error) {
+	credit, err := CalculateTopUpCreditForUser(baseAmountUSD, commissionUSD, userId)
+	if err != nil {
+		return 0, err
+	}
+	return calculateTopUpQuotaAmount(credit.TotalAmountUSD), nil
 }
 
 func calculateTopUpQuotaAmount(totalAmountUSD float64) int {
@@ -442,19 +475,19 @@ func validatePaymentMethodMinimumWithMethods(paymentMethod string, quote Payment
 	return fmt.Errorf("amount must be at least %s %s", decimal.NewFromFloat(minimum).StringFixed(2), quote.Currency)
 }
 
-func BuildPaymentQuote(amount float64, paymentMethod, userGroup string) (PaymentQuote, error) {
+func BuildPaymentQuote(amount float64, paymentMethod, userGroup string, userIds ...int) (PaymentQuote, error) {
 	methods, err := currentPayMethods()
 	if err != nil {
 		return PaymentQuote{}, err
 	}
-	return BuildPaymentQuoteWithPayMethods(amount, paymentMethod, userGroup, methods)
+	return BuildPaymentQuoteWithPayMethods(amount, paymentMethod, userGroup, methods, userIds...)
 }
 
 // BuildPaymentQuoteWithPayMethods builds the authoritative quote from the
 // caller's already-loaded payment-method catalog. Payment creation handlers
 // pass the same persisted snapshot used for their readiness check, avoiding a
 // second read that could observe a different configuration version.
-func BuildPaymentQuoteWithPayMethods(amount float64, paymentMethod, userGroup string, methods []map[string]string) (PaymentQuote, error) {
+func BuildPaymentQuoteWithPayMethods(amount float64, paymentMethod, userGroup string, methods []map[string]string, userIds ...int) (PaymentQuote, error) {
 	if !isFinitePositive(amount) {
 		return PaymentQuote{}, fmt.Errorf("amount must be greater than zero")
 	}
@@ -506,10 +539,21 @@ func BuildPaymentQuoteWithPayMethods(amount float64, paymentMethod, userGroup st
 	chargedUSD := chargedAmountInUSD.InexactFloat64()
 	rate := rateDecimal.InexactFloat64()
 	coefficient := coefficientDecimal.InexactFloat64()
-	credit := CalculateTopUpCredit(baseUSD, commission)
+	regularCredit := CalculateTopUpCredit(baseUSD, commission)
+	credit := regularCredit
+	isReferralCashback := false
+	if len(userIds) > 0 {
+		var referralErr error
+		isReferralCashback, referralErr = referralCashbackActiveForUser(userIds[0])
+		if referralErr != nil {
+			return PaymentQuote{}, referralErr
+		}
+		credit = calculateTopUpCredit(baseUSD, commission, isReferralCashback)
+	}
 	quote := PaymentQuote{Currency: currency, RateToUSD: rate, Coefficient: coefficient,
 		BaseAmountUSD: baseUSD, CommissionUSD: commission, ChargedAmountUSD: chargedUSD,
 		CashbackPercent: credit.CashbackPercent, CashbackAmountUSD: credit.CashbackAmountUSD,
+		RegularCashbackPercent: regularCredit.CashbackPercent, IsReferralCashback: isReferralCashback,
 		CreditedAmountUSD: credit.CreditedAmountUSD, ChargedAmount: chargedAmount.InexactFloat64()}
 	if err := validatePaymentMethodMinimumWithMethods(paymentMethod, quote, methods); err != nil {
 		return PaymentQuote{}, err
@@ -524,8 +568,9 @@ func ApplyPaymentQuote(topUp *model.TopUp, quote PaymentQuote) {
 	topUp.PaymentBaseAmount = quote.BaseAmountUSD
 	topUp.PaymentCommission = quote.CommissionUSD
 	topUp.PaymentChargedAmount = quote.ChargedAmount
+	topUp.BaseQuotaToAdd = calculateTopUpQuotaAmount(quote.CreditedAmountUSD)
 	if topUp.RequestedAmount > 0 {
-		topUp.QuotaToAdd = CalculateTopUpQuota(quote.BaseAmountUSD, quote.CommissionUSD)
+		topUp.QuotaToAdd = calculateTopUpQuotaAmount(quote.CreditedAmountUSD + quote.CashbackAmountUSD)
 	}
 	// Money remains the historical provider amount field.
 	topUp.Money = quote.ChargedAmount
@@ -550,6 +595,7 @@ func ApplyPaymentSnapshot(topUp *model.TopUp, currency string, rate, baseAmount,
 		topUp.PaymentCommission = baseAmount * (coefficient - 1)
 	}
 	topUp.PaymentChargedAmount = chargedAmount
+	topUp.BaseQuotaToAdd = calculateTopUpQuotaAmount(baseAmount)
 	topUp.Money = chargedAmount
 	if topUp.RequestedAmount > 0 {
 		topUp.QuotaToAdd = CalculateTopUpQuota(topUp.PaymentBaseAmount, topUp.PaymentCommission)

@@ -25,7 +25,6 @@ import { ROLE } from '@/lib/roles'
 
 import { syncYooKassaPayment, isApiSuccess } from './api'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
-import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import {
   getRechargeValidationTarget,
@@ -44,7 +43,6 @@ import {
   usePayment,
   useAffiliate,
   useRedemption,
-  useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
 } from './hooks'
@@ -53,8 +51,9 @@ import {
   isPaymentMethodAmountEligible,
   getPaymentCheckoutKind,
   getPaymentMethodDisplayQuote,
+  getEffectiveCashbackTiers,
 } from './lib'
-import type { UserWalletData, PaymentMethod, CreemProduct } from './types'
+import type { UserWalletData, PaymentMethod } from './types'
 
 interface WalletProps {
   initialShowHistory?: boolean
@@ -71,9 +70,6 @@ export function Wallet(props: WalletProps) {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
-  const [creemDialogOpen, setCreemDialogOpen] = useState(false)
-  const [selectedCreemProduct, setSelectedCreemProduct] =
-    useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
   const [validationTarget, setValidationTarget] =
     useState<RechargeValidationTarget | null>(null)
@@ -82,12 +78,13 @@ export function Wallet(props: WalletProps) {
   const { processing, processPayment } = usePayment()
   const {
     affiliateLink,
+    status: affiliateStatus,
     loading: affiliateLoading,
     transferQuota,
     transferring,
+    refetch: refetchAffiliate,
   } = useAffiliate()
   const { redeeming, redeemCode } = useRedemption()
-  const { processing: creemProcessing, processCreemPayment } = useCreemPayment()
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
@@ -132,7 +129,7 @@ export function Wallet(props: WalletProps) {
           return
         }
         if (isApiSuccess(response)) {
-          await fetchUser()
+          await Promise.all([fetchUser(), refetchAffiliate()])
         }
       } finally {
         if (!cancelled) {
@@ -145,7 +142,7 @@ export function Wallet(props: WalletProps) {
     return () => {
       cancelled = true
     }
-  }, [fetchUser])
+  }, [fetchUser, refetchAffiliate])
 
   // Handle topup amount change
   const handleTopupAmountChange = (amount: number) => {
@@ -202,24 +199,6 @@ export function Wallet(props: WalletProps) {
     return success
   }
 
-  // Handle Creem product selection
-  const handleCreemProductSelect = (product: CreemProduct) => {
-    setSelectedCreemProduct(product)
-    setCreemDialogOpen(true)
-  }
-
-  // Handle Creem payment confirmation
-  const handleCreemConfirm = async () => {
-    if (!selectedCreemProduct) return
-
-    const success = await processCreemPayment(selectedCreemProduct.productId)
-    if (success) {
-      setCreemDialogOpen(false)
-      setSelectedCreemProduct(null)
-      await fetchUser()
-    }
-  }
-
   const handleWaffoMethodSelect = (
     method: Parameters<typeof getWaffoPaymentMethod>[0],
     index: number
@@ -270,11 +249,16 @@ export function Wallet(props: WalletProps) {
     !selectedPaymentMethod.crypto_network
       ? undefined
       : selectedPaymentMethod
+  const regularCashback = topupInfo?.cashback ?? []
+  const effectiveCashback = getEffectiveCashbackTiers(
+    regularCashback,
+    topupInfo?.is_referral_cashback
+  )
   const selectedPaymentQuote = selectedPaymentSummaryMethod
     ? getPaymentMethodDisplayQuote(
         topupAmount,
         selectedPaymentSummaryMethod,
-        topupInfo?.cashback ?? []
+        effectiveCashback
       )
     : null
 
@@ -303,9 +287,6 @@ export function Wallet(props: WalletProps) {
                   redeeming={redeeming}
                   topupLink={topupInfo?.topup_link}
                   loading={topupLoading}
-                  creemProducts={topupInfo?.creem_products}
-                  enableCreemTopup={topupInfo?.enable_creem_topup}
-                  onCreemProductSelect={handleCreemProductSelect}
                   enableWaffoTopup={topupInfo?.enable_waffo_topup}
                   waffoPayMethods={topupInfo?.waffo_pay_methods}
                   waffoMinTopup={topupInfo?.waffo_min_topup}
@@ -317,6 +298,7 @@ export function Wallet(props: WalletProps) {
                   affiliateLink={affiliateLink}
                   onTransferAffiliate={() => setTransferDialogOpen(true)}
                   affiliateLoading={affiliateLoading}
+                  affiliateStatus={affiliateStatus}
                   affiliateComplianceConfirmed={
                     topupInfo?.payment_compliance_confirmed !== false
                   }
@@ -330,7 +312,9 @@ export function Wallet(props: WalletProps) {
                 <WalletSummaryCard
                   topupAmount={topupAmount}
                   selectedPaymentMethod={selectedPaymentSummaryMethod}
-                  cashback={topupInfo?.cashback ?? []}
+                  cashback={effectiveCashback}
+                  regularCashback={regularCashback}
+                  isReferralCashback={topupInfo?.is_referral_cashback}
                   onPay={handlePaymentSubmit}
                   onPayUnavailable={handleValidationRequest}
                   payDisabled={
@@ -375,14 +359,6 @@ export function Wallet(props: WalletProps) {
       <BillingHistoryDialog
         open={billingDialogOpen}
         onOpenChange={setBillingDialogOpen}
-      />
-
-      <CreemConfirmDialog
-        open={creemDialogOpen}
-        onOpenChange={setCreemDialogOpen}
-        onConfirm={handleCreemConfirm}
-        product={selectedCreemProduct}
-        processing={creemProcessing}
       />
     </>
   )

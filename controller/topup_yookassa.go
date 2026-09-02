@@ -137,7 +137,7 @@ func RequestYooKassaAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to get user group"})
 		return
 	}
-	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods)
+	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods, id)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
@@ -191,7 +191,7 @@ func RequestYooKassaPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Failed to get user group"})
 		return
 	}
-	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods)
+	quote, err := service.BuildPaymentQuoteWithPayMethods(req.Amount, model.PaymentMethodYooKassaSBP, group, payMethods, id)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return

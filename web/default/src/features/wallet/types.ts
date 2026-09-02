@@ -46,15 +46,23 @@ export type TopupQuote = {
   charged_amount: number
   commission_usd: number
   cashback_percent: number
+  regular_cashback_percent?: number
+  is_referral_cashback?: boolean
   cashback_amount_usd: number
   credited_amount_usd: number
   charged_amount_usd: number
 }
 export type TopupQuoteResponse = ApiResponse<TopupQuote>
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
-export type AffiliateCodeResponse = ApiResponse<string>
+export type AffiliateStatus = {
+  code: string
+  can_share: boolean
+  qualified_topup_usd: number
+  required_topup_usd: number
+  is_referral_cashback: boolean
+}
+export type AffiliateStatusResponse = ApiResponse<AffiliateStatus>
 export type AffiliateTransferResponse = ApiResponse
-export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string
 >
@@ -113,32 +121,7 @@ export type USDTTrc20PaymentStatus = DirectUSDTPaymentStatus
 export interface CashbackThreshold {
   min_amount: number
   cashback_percent: number
-}
-
-/**
- * Creem product configuration
- */
-export interface CreemProduct {
-  /** Product display name */
-  name: string
-  /** Creem product ID */
-  productId: string
-  /** Product price */
-  price: number
-  /** Quota amount to credit */
-  quota: number
-  /** Currency (USD or EUR) */
-  currency: 'USD' | 'EUR'
-}
-
-/**
- * Creem payment request
- */
-export interface CreemPaymentRequest {
-  /** Creem product ID */
-  product_id: string
-  /** Payment method identifier */
-  payment_method: 'creem'
+  referral_cashback_percent?: number
 }
 
 /**
@@ -214,12 +197,10 @@ export interface TopupInfo {
   amount_options: number[]
   /** Cashback thresholds sorted by min_amount */
   cashback: CashbackThreshold[]
+  /** Whether the current account receives the configured referral cashback. */
+  is_referral_cashback?: boolean
   /** Optional topup link for purchasing codes */
   topup_link?: string
-  /** Whether Creem topup is enabled */
-  enable_creem_topup?: boolean
-  /** Available Creem products */
-  creem_products?: CreemProduct[]
   /** Whether Waffo topup is enabled */
   enable_waffo_topup?: boolean
   /** Available Waffo payment methods */
@@ -363,6 +344,8 @@ export interface UserWalletData {
   aff_history_quota: number
   /** Number of successful affiliate invites */
   aff_count: number
+  /** Inviter attached once, during account creation. */
+  inviter_id?: number
   /** User group */
   group: string
 }

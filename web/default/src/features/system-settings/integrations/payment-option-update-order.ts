@@ -4,9 +4,6 @@ type OptionUpdate = {
 
 function getPaymentOptionUpdatePriority(key: string): number {
   switch (key) {
-    case 'CreemProducts':
-      return 0
-    case 'CreemApiKey':
     case 'WaffoCurrency':
     case 'YooKassaShopID':
     case 'YooKassaSecretKey':
@@ -15,8 +12,6 @@ function getPaymentOptionUpdatePriority(key: string): number {
     case 'NOWPaymentsIPNSecret':
     case 'NOWPaymentsIPNCallbackURL':
       return 1
-    case 'CreemWebhookSecret':
-    case 'CreemTestMode':
     case 'WaffoEnabled':
     case 'YooKassaEnabled':
     case 'NOWPaymentsEnabled':

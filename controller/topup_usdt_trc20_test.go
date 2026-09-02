@@ -20,6 +20,18 @@ import (
 	"gorm.io/gorm"
 )
 
+func createAuthenticatedTopUpInfoUser(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&model.User{}))
+	require.NoError(t, db.Create(&model.User{
+		Id:       1,
+		Username: "topup-info-user",
+		Password: "password",
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}).Error)
+}
+
 func TestDirectUSDTAmountUnitsPreservesSixDecimalPlaces(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -71,25 +83,35 @@ func TestPaymentMethodAdminOnlyGateAcceptsTypedJSONAndRejectsRegularUser(t *test
 	require.True(t, paymentMethodAllowedForUser(admin, model.PaymentMethodStripe))
 }
 
+func TestPaymentMethodGateRejectsRetiredCreem(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	assert.False(t, paymentMethodAllowedForUser(context, model.PaymentMethodCreem))
+}
+
 func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "crypto_parent_routes.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.User{}, &model.TopUp{}, &model.DirectCryptoPayment{}, &model.PaymentMetadata{}))
 	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"crypto_direct","min_topup":"10","pending_ttl_minutes":"31"}]`}).Error)
-	require.NoError(t, db.Create(&model.User{Id: 991, Username: "crypto-parent", Password: "password123", AffCode: "crypto-parent"}).Error)
+	require.NoError(t, db.Create(&model.User{Id: 991, Username: "crypto-parent", Password: "password123", AffCode: "crypto-parent", InviterId: 990, ReferralCashbackEligible: true}).Error)
 	previousDB := model.DB
 	previousAddress := setting.USDTTRC20ReceivingAddress
 	previousAPIKey := setting.USDTTRC20APIKey
 	previousCompliance := operation_setting.GetPaymentSetting().ComplianceConfirmed
+	previousCashbacks := operation_setting.GetPaymentSetting().AmountCashback
 	model.DB = db
 	setting.USDTTRC20ReceivingAddress = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
 	setting.USDTTRC20APIKey = "test-read-only-key"
 	operation_setting.GetPaymentSetting().ComplianceConfirmed = true
+	referralPercent := 20.0
+	operation_setting.GetPaymentSetting().AmountCashback = operation_setting.AmountCashbackConfig{{MinAmount: 0, CashbackPercent: 10, ReferralCashbackPercent: &referralPercent}}
 	t.Cleanup(func() {
 		model.DB = previousDB
 		setting.USDTTRC20ReceivingAddress = previousAddress
 		setting.USDTTRC20APIKey = previousAPIKey
 		operation_setting.GetPaymentSetting().ComplianceConfirmed = previousCompliance
+		operation_setting.GetPaymentSetting().AmountCashback = previousCashbacks
 	})
 
 	generic := gin.New()
@@ -119,6 +141,7 @@ func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.
 		assert.Equal(t, model.DirectCryptoProvider, topUp.PaymentMethod)
 		assert.Equal(t, model.DirectCryptoProvider, topUp.PaymentProvider)
 		assert.Equal(t, int64(31*60), topUp.PaymentPendingTTLSeconds)
+		assert.Equal(t, topUp.BaseQuotaToAdd*120/100, topUp.QuotaToAdd)
 	}
 	var payments []model.DirectCryptoPayment
 	require.NoError(t, db.Order("id").Find(&payments).Error)
@@ -153,6 +176,7 @@ func TestGetTopUpInfoPublishesConfiguredDirectUSDTMethod(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_topup_info.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	createAuthenticatedTopUpInfoUser(t, db)
 	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":" USDT_TRC20_DIRECT ","name":"bad","currency":"BTC","min_topup":"0"},{"type":"usdt_trc20_direct","name":"duplicate"}]`}).Error)
 
 	previousDB := model.DB
@@ -317,6 +341,7 @@ func TestGetTopUpInfoHidesDirectUSDTWhenCatalogMethodIsAbsent(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_topup_info_absent.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	createAuthenticatedTopUpInfoUser(t, db)
 	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay"}]`}).Error)
 	previousDB := model.DB
 	previousEnabled := setting.USDTTRC20Enabled
@@ -357,6 +382,7 @@ func TestGetTopUpInfoHidesDirectUSDTWhenConfigIsInvalid(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_topup_info_invalid.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	createAuthenticatedTopUpInfoUser(t, db)
 	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"usdt_trc20_direct"}]`}).Error)
 	previousDB := model.DB
 	previousEnabled := setting.USDTTRC20Enabled
@@ -397,6 +423,7 @@ func TestGetTopUpInfoHidesCryptoWhenNoNetworkHasReadOnlyCredential(t *testing.T)
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_topup_info_no_credential.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	createAuthenticatedTopUpInfoUser(t, db)
 	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"crypto_direct"}]`}).Error)
 
 	previousDB := model.DB

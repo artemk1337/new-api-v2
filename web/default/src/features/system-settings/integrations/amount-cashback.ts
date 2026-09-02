@@ -31,6 +31,7 @@ export function isValidAmountCashbackConfig(value: unknown): boolean {
     const record = item as Record<string, unknown>
     const amount = record.min_amount
     const percent = record.cashback_percent
+    const referralPercent = record.referral_cashback_percent
     if (
       typeof amount !== 'number' ||
       !Number.isFinite(amount) ||
@@ -39,6 +40,11 @@ export function isValidAmountCashbackConfig(value: unknown): boolean {
       !Number.isFinite(percent) ||
       percent < 0 ||
       percent > 100 ||
+      (referralPercent !== undefined &&
+        (typeof referralPercent !== 'number' ||
+          !Number.isFinite(referralPercent) ||
+          referralPercent < percent ||
+          referralPercent > 100)) ||
       amounts.has(amount)
     ) {
       return false

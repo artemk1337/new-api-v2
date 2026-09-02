@@ -41,6 +41,49 @@ func TestValidateOptionValueCashback(t *testing.T) {
 	}
 }
 
+func TestUpdateOptionsBulkValidatesReferralCashbackInEachTier(t *testing.T) {
+	preserveAmountCashbackOptionState(t)
+
+	require.NoError(t, UpdateOptionsBulk(map[string]string{
+		amountCashbackOptionKey: `[{"min_amount":0,"cashback_percent":7,"referral_cashback_percent":8}]`,
+	}))
+	referralPercent := 8.0
+	require.Equal(t, operation_setting.AmountCashbackConfig{{MinAmount: 0, CashbackPercent: 7, ReferralCashbackPercent: &referralPercent}}, operation_setting.GetPaymentSetting().AmountCashback)
+
+	require.Error(t, UpdateOptionsBulk(map[string]string{
+		amountCashbackOptionKey: `[{"min_amount":0,"cashback_percent":8,"referral_cashback_percent":7}]`,
+	}))
+	require.Equal(t, operation_setting.AmountCashbackConfig{{MinAmount: 0, CashbackPercent: 7, ReferralCashbackPercent: &referralPercent}}, operation_setting.GetPaymentSetting().AmountCashback)
+
+	var cashback Option
+	require.NoError(t, DB.First(&cashback, "key = ?", amountCashbackOptionKey).Error)
+	require.Equal(t, `[{"min_amount":0,"cashback_percent":7,"referral_cashback_percent":8}]`, cashback.Value)
+}
+
+func TestDeprecatedReferralCashbackOptionIsRejectedAndRemoved(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+
+	require.Error(t, UpdateOption(deprecatedReferralCashbackOption, "10"))
+	var option Option
+	require.ErrorIs(t, DB.First(&option, "key = ?", deprecatedReferralCashbackOption).Error, gorm.ErrRecordNotFound)
+
+	require.NoError(t, DB.Create(&Option{Key: deprecatedReferralCashbackOption, Value: "10"}).Error)
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[deprecatedReferralCashbackOption] = "10"
+	common.OptionMapRWMutex.Unlock()
+
+	require.NoError(t, removeDeprecatedReferralCashbackOption())
+	require.ErrorIs(t, DB.First(&option, "key = ?", deprecatedReferralCashbackOption).Error, gorm.ErrRecordNotFound)
+	common.OptionMapRWMutex.RLock()
+	_, exists := common.OptionMap[deprecatedReferralCashbackOption]
+	common.OptionMapRWMutex.RUnlock()
+	require.False(t, exists)
+}
+
 func TestNormalizeAmountCashbackOptionValueForSave(t *testing.T) {
 	testCases := []struct {
 		name     string

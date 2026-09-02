@@ -135,11 +135,14 @@ func TestUpdateOptionValidatesPaymentCurrencyReadiness(t *testing.T) {
 	require.False(t, confirmCompliance(), "compliance confirmation must not activate Waffo with an unavailable currency")
 
 	setting.WaffoEnabled = false
+	require.NoError(t, db.Where("key = ?", "WaffoEnabled").Delete(&model.Option{}).Error)
 	setting.PublishCreemConfig(setting.CreemConfig{
 		APIKey: "creem_api", Products: `[{"name":"Euro","productId":"prod_eur","price":10,"currency":"EUR","quota":1}]`,
 		WebhookSecret: "creem_webhook",
 	})
-	require.False(t, confirmCompliance(), "compliance confirmation must not activate Creem with unavailable catalog currencies")
+	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
+		"PayAddress": "https://example.test/pay",
+	}), "retired Creem config must not block unrelated payment options")
 }
 
 func TestYooKassaReadinessUsesProspectivePayMethods(t *testing.T) {
@@ -161,24 +164,24 @@ func TestYooKassaReadinessUsesProspectivePayMethods(t *testing.T) {
 	// A later YooKassa option update must not require RUB when the persisted
 	// checkout list no longer exposes SBP.
 	returnURLUpdate := map[string]string{"YooKassaReturnURL": "https://example.test/return"}
-	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, returnURLUpdate, setting.CreemConfig{}))
+	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, returnURLUpdate))
 
 	// Both single-option and bulk updates must evaluate the incoming
 	// PayMethods payload, not a stale legacy YooKassaPaymentMethods value.
 	activeMethods := `[{"type":"alipay"},{"type":"yookassa_sbp"}]`
 	require.Error(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
 		"PayMethods": activeMethods,
-	}, setting.CreemConfig{}))
+	}))
 	require.Error(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
 		"PayMethods":        activeMethods,
 		"YooKassaReturnURL": "https://example.test/return",
-	}, setting.CreemConfig{}))
+	}))
 
 	removedMethods := `[{"type":"alipay"}]`
 	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{
 		"PayMethods":        removedMethods,
 		"YooKassaReturnURL": "https://example.test/return",
-	}, setting.CreemConfig{}))
+	}))
 }
 
 func TestManualTopupSettingsRequireContactAndMinimum(t *testing.T) {
@@ -232,7 +235,7 @@ func TestUpdateOptionRejectsCreemConfigKeys(t *testing.T) {
 	}
 }
 
-func TestSaveCreemConfigIsAtomic(t *testing.T) {
+func TestSaveCreemConfigIsRetired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -290,39 +293,20 @@ func TestSaveCreemConfigIsAtomic(t *testing.T) {
 
 	products := `[{"name":"Basic","productId":"basic","price":10,"currency":"USD","quota":1}]`
 	testMode := true
-	require.True(t, save(saveCreemConfigRequest{APIKey: &newAPIKey, TestMode: &testMode, Products: &products}))
-	var options []model.Option
-	require.NoError(t, db.Where("key IN ?", []string{"CreemApiKey", "CreemWebhookSecret", "CreemTestMode", "CreemProducts"}).Find(&options).Error)
-	require.Len(t, options, 4)
-	assertOptionValue := func(key, want string) {
-		for _, option := range options {
-			if option.Key == key {
-				require.Equal(t, want, option.Value)
-				return
-			}
-		}
-		t.Fatalf("option %s not found", key)
-	}
-	assertOptionValue("CreemApiKey", newAPIKey)
-	assertOptionValue("CreemWebhookSecret", "old-webhook")
-	assertOptionValue("CreemTestMode", "true")
+	require.False(t, save(saveCreemConfigRequest{APIKey: &newAPIKey, TestMode: &testMode, Products: &products}))
 	snapshot := setting.GetCreemConfig()
-	require.Equal(t, newAPIKey, snapshot.APIKey)
+	require.Equal(t, "old-api", snapshot.APIKey)
 	require.Equal(t, "old-webhook", snapshot.WebhookSecret)
-	require.True(t, snapshot.TestMode)
-	require.JSONEq(t, `[{"name":"Basic","productId":"basic","price":10,"currency":"USD","quota":1}]`, snapshot.Products)
-
-	// A later partial update must merge with the committed snapshot rather than
-	// restoring stale fields from the request handler's initial read.
+	require.False(t, snapshot.TestMode)
+	require.JSONEq(t, `[{"name":"Old","productId":"old","price":1,"currency":"USD","quota":1}]`, snapshot.Products)
 	newWebhook := "new-webhook"
-	require.True(t, save(saveCreemConfigRequest{WebhookSecret: &newWebhook}))
+	require.False(t, save(saveCreemConfigRequest{WebhookSecret: &newWebhook}))
 	snapshot = setting.GetCreemConfig()
-	require.Equal(t, newAPIKey, snapshot.APIKey)
-	require.Equal(t, newWebhook, snapshot.WebhookSecret)
-	require.JSONEq(t, products, snapshot.Products)
+	require.Equal(t, "old-api", snapshot.APIKey)
+	require.Equal(t, "old-webhook", snapshot.WebhookSecret)
 }
 
-func TestSavePaymentSettingsIsAtomicAcrossGenericAndCreem(t *testing.T) {
+func TestSavePaymentSettingsRejectsCreemConfiguration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -380,20 +364,14 @@ func TestSavePaymentSettingsIsAtomicAcrossGenericAndCreem(t *testing.T) {
 	require.Equal(t, "old-api", setting.GetCreemConfig().APIKey)
 
 	products := `[{"name":"","productId":"basic","price":10,"currency":"USD","quota":1}]`
-	require.True(t, save(savePaymentSettingsRequest{
+	require.False(t, save(savePaymentSettingsRequest{
 		Options: []OptionUpdateRequest{{Key: "MinTopUp", Value: "12.5"}},
 		Creem:   &saveCreemConfigRequest{APIKey: stringPtr("new-api"), TestMode: boolPtr(true), Products: stringPtr(products)},
 	}))
-	var option model.Option
-	require.NoError(t, db.First(&option, "key = ?", "MinTopUp").Error)
-	require.Equal(t, "12.5", option.Value)
-	option = model.Option{}
-	require.NoError(t, db.First(&option, "key = ?", "CreemApiKey").Error)
-	require.Equal(t, "new-api", option.Value)
+	require.NoError(t, db.Model(&model.Option{}).Count(&count).Error)
+	require.Zero(t, count)
 	snapshot := setting.GetCreemConfig()
-	require.Equal(t, "new-api", snapshot.APIKey)
-	require.True(t, snapshot.TestMode)
-	require.JSONEq(t, products, snapshot.Products)
+	require.Equal(t, "old-api", snapshot.APIKey)
 }
 
 func stringPtr(value string) *string { return &value }

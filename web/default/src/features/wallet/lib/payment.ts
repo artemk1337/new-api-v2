@@ -211,11 +211,10 @@ const directUSDTTypeNetwork: Record<string, DirectUSDTNetwork> = {
 }
 
 export function isDirectUSDTPayment(paymentType: string): boolean {
-  if (paymentType.trim().toLowerCase() === PAYMENT_TYPES.CRYPTO_DIRECT) return true
-  return Object.prototype.hasOwnProperty.call(
-    directUSDTTypeNetwork,
-    paymentType.trim().toLowerCase()
-  )
+  if (paymentType.trim().toLowerCase() === PAYMENT_TYPES.CRYPTO_DIRECT) {
+    return true
+  }
+  return Object.hasOwn(directUSDTTypeNetwork, paymentType.trim().toLowerCase())
 }
 
 export function getDirectUSDTNetwork(
@@ -266,7 +265,9 @@ export function isSafeInternalUSDTTrc20Url(value: string): boolean {
 /** Validate only our allowlisted multichain checkout paths. */
 export function isSafeInternalDirectUSDTUrl(value: string): boolean {
   const trimmed = value.trim()
-  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//')) return false
+  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//')) {
+    return false
+  }
   let parsed: URL
   try {
     parsed = new URL(trimmed, 'https://internal.invalid')
@@ -340,6 +341,20 @@ export function isPaymentMethodAmountEligible(
   return minimum === null || amount >= minimum
 }
 
+export function getEffectiveCashbackTiers(
+  regularTiers: CashbackThreshold[],
+  isReferralCashback: boolean | undefined
+): CashbackThreshold[] {
+  const normalized = normalizeCashbackTiers(regularTiers)
+  if (!isReferralCashback) return normalized
+
+  return normalized.map((tier) => ({
+    ...tier,
+    cashback_percent:
+      tier.referral_cashback_percent ?? tier.cashback_percent,
+  }))
+}
+
 /**
  * Get default payment type from topup info
  */
@@ -392,7 +407,8 @@ export function getMinTopupAmount(
     return selectedMinimum
   }
 
-  const availableMinimum = getMinimumAvailablePaymentMethodAmountWithoutRecursion(topupInfo)
+  const availableMinimum =
+    getMinimumAvailablePaymentMethodAmountWithoutRecursion(topupInfo)
   if (availableMinimum !== null) return availableMinimum
 
   // When direct USDT is the only visible method, its server-provided minimum
@@ -483,10 +499,19 @@ export function normalizeCashbackTiers(data: unknown): CashbackThreshold[] {
       (tier): tier is Record<string, unknown> =>
         typeof tier === 'object' && tier !== null
     )
-    .map((tier) => ({
-      min_amount: Number(tier.min_amount),
-      cashback_percent: Number(tier.cashback_percent),
-    }))
+    .map((tier) => {
+      const cashbackPercent = Number(tier.cashback_percent)
+      const referralCashbackPercent = Number(tier.referral_cashback_percent)
+      return {
+        min_amount: Number(tier.min_amount),
+        cashback_percent: cashbackPercent,
+        ...(Number.isFinite(referralCashbackPercent) &&
+        referralCashbackPercent >= cashbackPercent &&
+        referralCashbackPercent <= 100
+          ? { referral_cashback_percent: referralCashbackPercent }
+          : {}),
+      }
+    })
     .filter(
       (tier) =>
         Number.isFinite(tier.min_amount) &&

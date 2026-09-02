@@ -1,10 +1,27 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { zodResolver } from '@hookform/resolvers/zod'
-import type { ChangeEvent } from 'react'
+import { useMemo, type ChangeEvent } from 'react'
 import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Form,
   FormControl,
@@ -15,6 +32,12 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from '@/components/ui/input-group'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -27,22 +50,26 @@ import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
 
-const referralSchema = z.object({
-  QuotaForInviter: z.coerce.number().min(0),
-  QuotaForInvitee: z.coerce.number().min(0),
-  ReferralDepositPercent: z.coerce.number().min(0).max(100),
-})
-
-type ReferralFormValues = z.infer<typeof referralSchema>
+type ReferralFormValues = {
+  ReferralDepositPercent: number
+  ReferralRequiredTopUpUSD: number
+}
 
 type ReferralSettingsSectionProps = {
   defaultValues: ReferralFormValues
-  complianceConfirmed: boolean
 }
 
 export function ReferralSettingsSection(props: ReferralSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const referralSchema = useMemo(
+    () =>
+      z.object({
+        ReferralDepositPercent: z.coerce.number().min(0).max(100),
+        ReferralRequiredTopUpUSD: z.coerce.number().positive(),
+      }),
+    []
+  )
   const handleNumberChange =
     (onChange: (value: number | string) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -71,15 +98,6 @@ export function ReferralSettingsSection(props: ReferralSettingsSectionProps) {
   return (
     <SettingsSection title={t('Referral Program')}>
       <FormNavigationGuard when={isDirty} />
-      {!props.complianceConfirmed ? (
-        <Alert variant='destructive'>
-          <AlertDescription>
-            {t(
-              'Non-zero invitation rewards require compliance confirmation in Payment Gateway settings.'
-            )}
-          </AlertDescription>
-        </Alert>
-      ) : null}
       <Form {...form}>
         <SettingsForm onSubmit={handleSubmit}>
           <SettingsPageFormActions
@@ -88,52 +106,6 @@ export function ReferralSettingsSection(props: ReferralSettingsSectionProps) {
           />
           <FormDirtyIndicator isDirty={isDirty} />
           <SettingsFormGrid>
-            <FormField
-              control={form.control}
-              name='QuotaForInviter'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Inviter Reward')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='number'
-                      value={field.value ?? ''}
-                      onChange={handleNumberChange(field.onChange)}
-                      name={field.name}
-                      onBlur={field.onBlur}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('Quota given to users who invite others')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name='QuotaForInvitee'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Invitee Reward')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type='number'
-                      value={field.value ?? ''}
-                      onChange={handleNumberChange(field.onChange)}
-                      name={field.name}
-                      onBlur={field.onBlur}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('Quota given to invited users')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <FormField
               control={form.control}
               name='ReferralDepositPercent'
@@ -162,9 +134,61 @@ export function ReferralSettingsSection(props: ReferralSettingsSectionProps) {
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name='ReferralRequiredTopUpUSD'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('Minimum total top-up to activate referral links (USD)')}
+                  </FormLabel>
+                  <FormControl>
+                    <InputGroup>
+                      <InputGroupInput
+                        type='number'
+                        min={0.01}
+                        step='0.01'
+                        value={field.value ?? ''}
+                        onChange={handleNumberChange(field.onChange)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                      <InputGroupAddon align='inline-end'>
+                        <InputGroupText>USD</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Total successful wallet top-ups in USD required before referral links become active.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </SettingsFormGrid>
         </SettingsForm>
       </Form>
     </SettingsSection>
   )
 }
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/

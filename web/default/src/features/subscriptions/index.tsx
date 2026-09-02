@@ -44,7 +44,7 @@ function SubscriptionsContent() {
               <Info className='h-4 w-4' />
               <AlertDescription className='text-xs'>
                 {t(
-                  'Stripe/Creem requires creating products on the third-party platform and entering the ID'
+                  'Stripe requires creating products on the third-party platform and entering the ID'
                 )}
               </AlertDescription>
             </Alert>

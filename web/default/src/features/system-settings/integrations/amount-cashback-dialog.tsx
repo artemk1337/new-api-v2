@@ -36,7 +36,8 @@ import {
 import { Input } from '@/components/ui/input'
 
 const createAmountCashbackDialogSchema = (t: (key: string) => string) =>
-  z.object({
+  z
+    .object({
     amount: z
       .number()
       .nonnegative(t('Amount must be 0 or greater'))
@@ -45,7 +46,21 @@ const createAmountCashbackDialogSchema = (t: (key: string) => string) =>
       .number()
       .min(0, t('Cashback percentage must be 0 or greater'))
       .max(100, t('Cashback percentage must be ≤ 100')),
+    referralCashbackPercent: z
+      .number()
+      .min(0, t('Cashback percentage must be 0 or greater'))
+      .max(100, t('Cashback percentage must be ≤ 100'))
+      .optional(),
   })
+    .refine(
+      (values) =>
+        values.referralCashbackPercent === undefined ||
+        values.referralCashbackPercent >= values.cashbackPercent,
+      {
+        path: ['referralCashbackPercent'],
+        message: t('Referral cashback must be at least the regular cashback.'),
+      }
+    )
 
 type AmountCashbackDialogFormValues = z.infer<
   ReturnType<typeof createAmountCashbackDialogSchema>
@@ -56,6 +71,7 @@ const AMOUNT_CASHBACK_FORM_ID = 'amount-cashback-form'
 export type AmountCashbackData = {
   amount: number
   cashbackPercent: number
+  referralCashbackPercent?: number
 }
 
 type AmountCashbackDialogProps = {
@@ -82,6 +98,7 @@ export function AmountCashbackDialog({
     defaultValues: {
       amount: 0,
       cashbackPercent: 0,
+      referralCashbackPercent: undefined,
     },
   })
 
@@ -96,6 +113,7 @@ export function AmountCashbackDialog({
       form.reset({
         amount: 0,
         cashbackPercent: 0,
+        referralCashbackPercent: undefined,
       })
     }
   }, [editData, form, open])
@@ -104,6 +122,9 @@ export function AmountCashbackDialog({
     onSave({
       amount: values.amount,
       cashbackPercent: values.cashbackPercent,
+      ...(values.referralCashbackPercent === undefined
+        ? {}
+        : { referralCashbackPercent: values.referralCashbackPercent }),
     })
     form.reset()
     onOpenChange(false)
@@ -204,6 +225,36 @@ export function AmountCashbackDialog({
                       = {cashbackPreview}%
                     </span>
                   )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='referralCashbackPercent'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Cashback for referrals')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    step='0.01'
+                    min='0'
+                    max='100'
+                    placeholder={t('Cashback Percentage')}
+                    value={field.value ?? ''}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value
+                      field.onChange(
+                        value === '' ? undefined : Number.parseFloat(value)
+                      )
+                    }}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t('Leave empty to use the regular cashback percentage.')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

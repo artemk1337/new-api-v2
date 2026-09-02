@@ -219,21 +219,35 @@ func Register(c *gin.Context) {
 		return
 	}
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
-	inviterId, _ := model.GetUserIdByAffCode(affCode)
+	inviterId := 0
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.Username,
-		InviterId:   inviterId,
-		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		Role:        common.RoleCommonUser,
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
-		common.ApiError(c, err)
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		resolvedInviterId, resolveErr := model.ResolveQualifiedInviterWithDB(tx, affCode)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		inviterId = resolvedInviterId
+		return cleanUser.InsertWithTx(tx, inviterId)
+	})
+	if err != nil {
+		if errors.Is(err, model.ErrReferralCodeInvalid) {
+			common.ApiErrorMsg(c, "Referral code is invalid")
+		} else if errors.Is(err, model.ErrReferralInviterNotQualified) {
+			common.ApiErrorMsg(c, fmt.Sprintf("The inviter must top up at least $%s before this referral code can be used", strconv.FormatFloat(common.GetReferralRequiredTopUpUSD(), 'f', -1, 64)))
+		} else {
+			common.ApiError(c, err)
+		}
 		return
 	}
+	cleanUser.FinishInsert(inviterId)
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -435,6 +449,47 @@ func GetAffCode(c *gin.Context) {
 		"data":    user.AffCode,
 	})
 	return
+}
+
+func GetAffStatus(c *gin.Context) {
+	id := c.GetInt("id")
+	if err := model.PromoteReferralCashbackEligibility(model.DB, id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserById(id, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if user.AffCode == "" {
+		user.AffCode = common.GetRandomString(4)
+		if err := user.Update(false); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	paidUSD, err := model.PaidTopUpUSD(model.DB, id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"code":                 user.AffCode,
+		"can_share":            user.ReferralProgramQualified,
+		"qualified_topup_usd":  paidUSD,
+		"required_topup_usd":   common.GetReferralRequiredTopUpUSD(),
+		"is_referral_cashback": user.InviterId != 0 && user.ReferralCashbackEligible,
+	})
+}
+
+func GetReferralProgram(c *gin.Context) {
+	common.ApiSuccess(c, gin.H{
+		"required_topup_usd":              common.GetReferralRequiredTopUpUSD(),
+		"referral_cashback_bonus_percent": operation_setting.GetPaymentSetting().AmountCashback.MaxReferralCashbackBonusPercent(),
+		"referral_deposit_percent":        common.GetReferralDepositPercent(),
+		"enabled":                         true,
+	})
 }
 
 func GetSelf(c *gin.Context) {

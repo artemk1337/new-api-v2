@@ -46,7 +46,7 @@ func RequestNOWPaymentsAmount(c *gin.Context) {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group, c.GetInt("id"))
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
@@ -87,7 +87,7 @@ func RequestNOWPaymentsPay(c *gin.Context) {
 		common.ApiErrorMsg(c, "Failed to get user group")
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, model.PaymentMethodNOWPayments, group, userID)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return

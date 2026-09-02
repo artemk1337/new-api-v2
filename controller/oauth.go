@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -26,6 +27,8 @@ func GenerateOAuthCode(c *gin.Context) {
 	affCode := c.Query("aff")
 	if affCode != "" {
 		session.Set("aff", affCode)
+	} else {
+		session.Delete("aff")
 	}
 	session.Set("oauth_state", state)
 	err := session.Save()
@@ -106,6 +109,14 @@ func HandleOAuth(c *gin.Context) {
 	// 7. Find or create user
 	user, err := findOrCreateOAuthUser(c, provider, oauthUser, session)
 	if err != nil {
+		if errors.Is(err, model.ErrReferralCodeInvalid) {
+			common.ApiErrorMsg(c, "Referral code is invalid")
+			return
+		}
+		if errors.Is(err, model.ErrReferralInviterNotQualified) {
+			common.ApiErrorMsg(c, fmt.Sprintf("The inviter must top up at least $%s before this referral code can be used", strconv.FormatFloat(common.GetReferralRequiredTopUpUSD(), 'f', -1, 64)))
+			return
+		}
 		switch err.(type) {
 		case *OAuthUserDeletedError:
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
@@ -114,6 +125,11 @@ func HandleOAuth(c *gin.Context) {
 		default:
 			common.ApiError(c, err)
 		}
+		return
+	}
+	session.Delete("aff")
+	if err := session.Save(); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 
@@ -263,16 +279,22 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	user.Status = common.UserStatusEnabled
 
 	// Handle affiliate code
-	affCode := session.Get("aff")
-	inviterId := 0
-	if affCode != nil {
-		inviterId, _ = model.GetUserIdByAffCode(affCode.(string))
+	affCodeValue := session.Get("aff")
+	affCode := ""
+	if value, ok := affCodeValue.(string); ok {
+		affCode = value
 	}
+	inviterId := 0
 
 	// Use transaction to ensure user creation and OAuth binding are atomic
 	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
 		// Custom provider: create user and binding in a transaction
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
+			resolvedInviterId, resolveErr := model.ResolveQualifiedInviterWithDB(tx, affCode)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			inviterId = resolvedInviterId
 			// Create user
 			if err := user.InsertWithTx(tx, inviterId); err != nil {
 				return err
@@ -299,6 +321,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	} else {
 		// Built-in provider: create user and update provider ID in a transaction
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
+			resolvedInviterId, resolveErr := model.ResolveQualifiedInviterWithDB(tx, affCode)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			inviterId = resolvedInviterId
 			// Create user
 			if err := user.InsertWithTx(tx, inviterId); err != nil {
 				return err

@@ -33,6 +33,33 @@ func TestBuildPaymentQuoteCommissionRule(t *testing.T) {
 	assert.InDelta(t, quote.BaseAmountUSD*1.03, quote.ChargedAmountUSD, 0.000001)
 }
 
+func TestBuildPaymentQuoteUsesReferralCashbackAndSnapshotsBaseQuota(t *testing.T) {
+	previousCashbacks := operation_setting.GetPaymentSetting().AmountCashback
+	previousMethods := operation_setting.PayMethods
+	referralPercent := 20.0
+	operation_setting.GetPaymentSetting().AmountCashback = operation_setting.AmountCashbackConfig{{MinAmount: 0, CashbackPercent: 10, ReferralCashbackPercent: &referralPercent}}
+	operation_setting.PayMethods = []map[string]string{{"type": "test", "currency": "USD"}}
+	t.Cleanup(func() {
+		operation_setting.GetPaymentSetting().AmountCashback = previousCashbacks
+		operation_setting.PayMethods = previousMethods
+	})
+
+	user := &model.User{Id: 99101, Username: "quote-referral-user", AffCode: "quote-referral", InviterId: 99100, ReferralCashbackEligible: true, Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(user).Error)
+	t.Cleanup(func() { _ = model.DB.Delete(&model.User{}, user.Id).Error })
+
+	quote, err := BuildPaymentQuote(100, "test", "default", user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 10.0, quote.RegularCashbackPercent)
+	assert.Equal(t, 20.0, quote.CashbackPercent)
+	assert.True(t, quote.IsReferralCashback)
+
+	topUp := &model.TopUp{RequestedAmount: 100}
+	ApplyPaymentQuote(topUp, quote)
+	assert.Equal(t, calculateTopUpQuotaAmount(100), topUp.BaseQuotaToAdd)
+	assert.Equal(t, calculateTopUpQuotaAmount(120), topUp.QuotaToAdd)
+}
+
 func TestBuildPaymentQuoteDirectUSDTRequiresPersistedMethod(t *testing.T) {
 	_, err := BuildPaymentQuoteWithPayMethods(10, model.DirectUSDTTRC20Provider, "default", []map[string]string{{"type": "alipay"}})
 	require.Error(t, err)
@@ -257,12 +284,15 @@ func TestCalculateTopUpQuotaCreditsBaseAndAddsCommission(t *testing.T) {
 
 	topUp := &model.TopUp{RequestedAmount: 1}
 	ApplyPaymentQuote(topUp, PaymentQuote{
-		Currency:         "USD",
-		RateToUSD:        1,
-		BaseAmountUSD:    1,
-		CommissionUSD:    0.2,
-		ChargedAmountUSD: 1.2,
-		ChargedAmount:    1.2,
+		Currency:          "USD",
+		RateToUSD:         1,
+		BaseAmountUSD:     1,
+		CommissionUSD:     0.2,
+		CashbackPercent:   10,
+		CashbackAmountUSD: 0.1,
+		CreditedAmountUSD: 1,
+		ChargedAmountUSD:  1.2,
+		ChargedAmount:     1.2,
 	})
 
 	credit := CalculateTopUpCredit(1, 0.2)

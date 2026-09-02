@@ -10,8 +10,9 @@ import (
 )
 
 type CashbackThreshold struct {
-	MinAmount       float64 `json:"min_amount"`
-	CashbackPercent float64 `json:"cashback_percent"`
+	MinAmount               float64  `json:"min_amount"`
+	CashbackPercent         float64  `json:"cashback_percent"`
+	ReferralCashbackPercent *float64 `json:"referral_cashback_percent,omitempty"`
 }
 
 type AmountCashbackConfig []CashbackThreshold
@@ -34,8 +35,9 @@ func (cashbacks *AmountCashbackConfig) UnmarshalJSON(data []byte) error {
 	}
 
 	var payload []struct {
-		MinAmount       *float64 `json:"min_amount"`
-		CashbackPercent *float64 `json:"cashback_percent"`
+		MinAmount               *float64 `json:"min_amount"`
+		CashbackPercent         *float64 `json:"cashback_percent"`
+		ReferralCashbackPercent *float64 `json:"referral_cashback_percent"`
 	}
 	if err := common.Unmarshal(data, &payload); err != nil {
 		return err
@@ -50,8 +52,9 @@ func (cashbacks *AmountCashbackConfig) UnmarshalJSON(data []byte) error {
 			return errors.New("cashback_percent must be present and be a JSON number")
 		}
 		decoded[i] = CashbackThreshold{
-			MinAmount:       *item.MinAmount,
-			CashbackPercent: *item.CashbackPercent,
+			MinAmount:               *item.MinAmount,
+			CashbackPercent:         *item.CashbackPercent,
+			ReferralCashbackPercent: item.ReferralCashbackPercent,
 		}
 	}
 	if err := ValidateAmountCashback(decoded); err != nil {
@@ -81,11 +84,46 @@ func ValidateAmountCashback(cashbacks AmountCashbackConfig) error {
 		if cashback.CashbackPercent < 0 || cashback.CashbackPercent > 100 {
 			return errors.New("cashback_percent must be between 0 and 100")
 		}
+		if cashback.ReferralCashbackPercent == nil {
+			continue
+		}
+		referralPercent := *cashback.ReferralCashbackPercent
+		if math.IsNaN(referralPercent) || math.IsInf(referralPercent, 0) {
+			return errors.New("referral_cashback_percent must be finite")
+		}
+		if referralPercent < cashback.CashbackPercent || referralPercent > 100 {
+			return errors.New("referral_cashback_percent must be between cashback_percent and 100")
+		}
 	}
 	return nil
 }
 
 func (cashbacks AmountCashbackConfig) CashbackPercentForAmount(amount float64) float64 {
+	return cashbacks.cashbackPercentForAmount(amount, false)
+}
+
+// ReferralCashbackPercentForAmount returns the cashback for a referral user.
+// A missing referral value is deliberately equivalent to the regular tier so
+// existing amount_cashback JSON remains valid and keeps its current behavior.
+func (cashbacks AmountCashbackConfig) ReferralCashbackPercentForAmount(amount float64) float64 {
+	return cashbacks.cashbackPercentForAmount(amount, true)
+}
+
+func (cashbacks AmountCashbackConfig) MaxReferralCashbackBonusPercent() float64 {
+	bonus := 0.0
+	for _, cashback := range cashbacks {
+		if cashback.ReferralCashbackPercent == nil {
+			continue
+		}
+		candidate := *cashback.ReferralCashbackPercent - cashback.CashbackPercent
+		if candidate > bonus {
+			bonus = candidate
+		}
+	}
+	return bonus
+}
+
+func (cashbacks AmountCashbackConfig) cashbackPercentForAmount(amount float64, referral bool) float64 {
 	amountDecimal := decimal.NewFromFloat(amount)
 	bestMinAmount := decimal.Zero
 	percent := decimal.Zero
@@ -95,6 +133,9 @@ func (cashbacks AmountCashbackConfig) CashbackPercentForAmount(amount float64) f
 	for _, cashback := range cashbacks {
 		minAmount := decimal.NewFromFloat(cashback.MinAmount)
 		cashbackPercent := decimal.NewFromFloat(cashback.CashbackPercent)
+		if referral && cashback.ReferralCashbackPercent != nil {
+			cashbackPercent = decimal.NewFromFloat(*cashback.ReferralCashbackPercent)
+		}
 		if cashbackPercent.IsNegative() || cashbackPercent.GreaterThan(maxPercent) || minAmount.IsNegative() || minAmount.GreaterThan(amountDecimal) || (found && !minAmount.GreaterThan(bestMinAmount)) {
 			continue
 		}

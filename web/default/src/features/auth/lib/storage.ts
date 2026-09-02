@@ -104,3 +104,14 @@ export function saveAffiliateCode(code: string): void {
     console.error('Failed to save affiliate code:', error)
   }
 }
+
+/** Remove a referral code after the registration/login flow consumes it. */
+export function removeAffiliateCode(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.AFFILIATE)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to remove affiliate code:', error)
+  }
+}

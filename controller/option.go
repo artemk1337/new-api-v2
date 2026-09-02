@@ -324,85 +324,10 @@ func mergeCreemConfigForUpdate(db *gorm.DB, request *saveCreemConfigRequest, val
 }
 
 func SaveCreemConfig(c *gin.Context) {
-	creemConfigUpdateMutex.Lock()
-	defer creemConfigUpdateMutex.Unlock()
-
-	var request saveCreemConfigRequest
-	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
-		common.ApiErrorMsg(c, "invalid Creem configuration payload")
-		return
-	}
-	if request.APIKey == nil && request.WebhookSecret == nil && request.TestMode == nil && request.Products == nil {
-		common.ApiErrorMsg(c, "no Creem configuration changes")
-		return
-	}
-
-	config, err := currentCreemConfigForUpdate()
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	apiKey := config.APIKey
-	webhookSecret := config.WebhookSecret
-	testMode := config.TestMode
-	products := config.Products
-	if request.APIKey != nil {
-		apiKey = strings.TrimSpace(*request.APIKey)
-	}
-	if request.WebhookSecret != nil {
-		webhookSecret = strings.TrimSpace(*request.WebhookSecret)
-	}
-	if request.TestMode != nil {
-		testMode = *request.TestMode
-	}
-	if request.Products != nil {
-		normalized, err := normalizeCreemProducts(*request.Products)
-		if err != nil {
-			common.ApiErrorMsg(c, err.Error())
-			return
-		}
-		products = normalized
-	} else if strings.TrimSpace(products) != "" && strings.TrimSpace(products) != "[]" {
-		// Validate the retained catalog as well: a partial update must not
-		// activate or preserve a malformed legacy product snapshot.
-		normalized, err := normalizeCreemProducts(products)
-		if err != nil {
-			common.ApiErrorMsg(c, err.Error())
-			return
-		}
-		products = normalized
-	}
-	if isCreemTopUpEnabledWithConfig(apiKey, products, testMode, webhookSecret, isPaymentComplianceConfirmed()) {
-		if err := validateCreemProductCurrencies(products); err != nil {
-			common.ApiErrorMsg(c, err.Error())
-			return
-		}
-	}
-	values := map[string]string{
-		"CreemApiKey":        apiKey,
-		"CreemWebhookSecret": webhookSecret,
-		"CreemTestMode":      strconv.FormatBool(testMode),
-		"CreemProducts":      products,
-	}
-	prepare := func(tx *gorm.DB, txValues map[string]string) error {
-		var err error
-		config, err = mergeCreemConfigForUpdate(tx, &request, txValues)
-		if err != nil {
-			return err
-		}
-		apiKey, webhookSecret, testMode, products = config.APIKey, config.WebhookSecret, config.TestMode, config.Products
-		return nil
-	}
-	if err := model.UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, func(tx *gorm.DB) error {
-		if isCreemTopUpEnabledWithConfigAndCompliance(setting.CreemConfig{APIKey: apiKey, Products: products, TestMode: testMode, WebhookSecret: webhookSecret}, latestPaymentOptionBoolFromDB(tx, "payment_setting.compliance_confirmed", isPaymentComplianceConfirmed())) {
-			return validateCreemProductCurrenciesFromDB(tx, products)
-		}
-		return nil
-	}); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, nil)
+	// Phase 1 retirement: keep the stored credentials read-only so verified
+	// webhooks can settle existing pending orders, but never allow configuring
+	// a provider that can no longer create a checkout.
+	common.ApiErrorMsg(c, "Creem payments are retired and its configuration is read-only")
 }
 
 type savePaymentSettingsRequest struct {
@@ -445,6 +370,16 @@ func preparePaymentOptionUpdate(option OptionUpdateRequest) (string, string, err
 			return "", "", err
 		}
 		operation_setting.NormalizePayMethods(methods)
+		// Creem checkout is retired. Drop a stale catalog entry on the next
+		// payment-settings save instead of allowing it to be re-published.
+		filteredMethods := make([]map[string]string, 0, len(methods))
+		for _, method := range methods {
+			if method == nil || strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem) {
+				continue
+			}
+			filteredMethods = append(filteredMethods, method)
+		}
+		methods = filteredMethods
 		for _, method := range methods {
 			if method == nil {
 				continue
@@ -538,11 +473,11 @@ func prospectiveYooKassaSBPEnabledFromDB(db *gorm.DB, values map[string]string) 
 	return paymentMethodsJSONContainsType(payMethods, model.PaymentMethodYooKassaSBP)
 }
 
-func validatePaymentSettingsReadiness(values map[string]string, creem setting.CreemConfig) error {
-	return validatePaymentSettingsReadinessFromDB(model.DB, values, creem)
+func validatePaymentSettingsReadiness(values map[string]string) error {
+	return validatePaymentSettingsReadinessFromDB(model.DB, values)
 }
 
-func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]string, creem setting.CreemConfig) error {
+func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]string) error {
 	if err := validateManualTopupSettingsFromDB(db, values); err != nil {
 		return err
 	}
@@ -562,11 +497,6 @@ func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]strin
 	}
 	if prospectiveOptionBool(values, "NOWPaymentsEnabled", latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled)) && complianceConfirmed {
 		if err := validateEnabledPlatformCurrencyFromDB(db, "USDT", "NOWPayments"); err != nil {
-			return err
-		}
-	}
-	if isCreemTopUpEnabledWithConfigAndCompliance(creem, complianceConfirmed) {
-		if err := validateCreemProductCurrenciesFromDB(db, creem.Products); err != nil {
 			return err
 		}
 	}
@@ -656,6 +586,10 @@ func SavePaymentSettings(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid payment settings payload")
 		return
 	}
+	if request.Creem != nil {
+		common.ApiErrorMsg(c, "Creem payments are retired and its configuration is read-only")
+		return
+	}
 	if len(request.Options) == 0 && request.Creem == nil {
 		common.ApiErrorMsg(c, "no payment settings changes")
 		return
@@ -671,32 +605,16 @@ func SavePaymentSettings(c *gin.Context) {
 			values[key] = value
 		}
 	}
-	creem, creemValues, err := creemConfigForAtomicSave(request.Creem)
-	if err != nil {
-		common.ApiErrorMsg(c, err.Error())
-		return
-	}
-	for key, value := range creemValues {
-		values[key] = value
-	}
 	if len(values) == 0 {
 		common.ApiErrorMsg(c, "no payment settings changes")
 		return
 	}
-	if err := validatePaymentSettingsReadiness(values, creem); err != nil {
+	if err := validatePaymentSettingsReadiness(values); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	prepare := func(tx *gorm.DB, txValues map[string]string) error {
-		if request.Creem == nil {
-			return nil
-		}
-		var err error
-		creem, err = mergeCreemConfigForUpdate(tx, request.Creem, txValues)
-		return err
-	}
-	if err := model.UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, prepare, func(tx *gorm.DB) error {
-		return validatePaymentSettingsReadinessFromDB(tx, values, creem)
+	if err := model.UpdateOptionsBulkWithPaymentCurrencyGuardAndPrepareTx(values, nil, func(tx *gorm.DB) error {
+		return validatePaymentSettingsReadinessFromDB(tx, values)
 	}); err != nil {
 		common.ApiError(c, err)
 		return
@@ -715,24 +633,10 @@ func validatePaymentCurrencyReadiness(key, value string) error {
 
 func validatePaymentCurrencyReadinessFromDB(db *gorm.DB, key, value string) error {
 	values := map[string]string{key: value}
-	config := setting.GetCreemConfig()
-	config.APIKey = latestPaymentOptionFromDB(db, "CreemApiKey", config.APIKey)
-	config.Products = latestPaymentOptionFromDB(db, "CreemProducts", config.Products)
-	config.WebhookSecret = latestPaymentOptionFromDB(db, "CreemWebhookSecret", config.WebhookSecret)
-	config.TestMode = latestPaymentOptionBoolFromDB(db, "CreemTestMode", config.TestMode)
-	if key == "CreemApiKey" {
-		config.APIKey = value
-	} else if key == "CreemProducts" {
-		config.Products = value
-	} else if key == "CreemWebhookSecret" {
-		config.WebhookSecret = value
-	} else if key == "CreemTestMode" {
-		config.TestMode = value == "true"
-	}
 	if key == "WaffoCurrency" {
 		return validateEnabledPlatformCurrencyFromDB(db, value, "Waffo")
 	}
-	return validatePaymentSettingsReadinessFromDB(db, values, config)
+	return validatePaymentSettingsReadinessFromDB(db, values)
 }
 
 func isPaymentCurrencyGuardOption(key, value string) bool {
@@ -772,16 +676,6 @@ func validatePaymentCurrencyReadinessForComplianceConfirmationFromDB(db *gorm.DB
 	if waffoReady {
 		currency := latestPaymentOptionFromDB(db, "WaffoCurrency", setting.WaffoCurrency)
 		if err := validateEnabledPlatformCurrencyFromDB(db, currency, "Waffo"); err != nil {
-			return err
-		}
-	}
-	config := setting.GetCreemConfig()
-	config.APIKey = latestPaymentOptionFromDB(db, "CreemApiKey", config.APIKey)
-	config.Products = latestPaymentOptionFromDB(db, "CreemProducts", config.Products)
-	config.WebhookSecret = latestPaymentOptionFromDB(db, "CreemWebhookSecret", config.WebhookSecret)
-	config.TestMode = latestPaymentOptionBoolFromDB(db, "CreemTestMode", config.TestMode)
-	if isCreemTopUpEnabledWithConfigAndCompliance(config, true) {
-		if err := validateCreemProductCurrenciesFromDB(db, config.Products); err != nil {
 			return err
 		}
 	}
@@ -914,7 +808,7 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	if isCreemConfigOption(option.Key) {
-		common.ApiErrorMsg(c, "Creem configuration must be updated atomically via /api/option/creem/save")
+		common.ApiErrorMsg(c, "Creem payments are retired and its configuration is read-only")
 		return
 	}
 	switch option.Key {
@@ -942,6 +836,14 @@ func UpdateOption(c *gin.Context) {
 		// aligned with the provider contract instead of rejecting a repairable
 		// configuration.
 		operation_setting.NormalizePayMethods(methods)
+		filteredMethods := make([]map[string]string, 0, len(methods))
+		for _, method := range methods {
+			if method == nil || strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem) {
+				continue
+			}
+			filteredMethods = append(filteredMethods, method)
+		}
+		methods = filteredMethods
 		for _, method := range methods {
 			if method == nil {
 				continue
@@ -983,7 +885,7 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
-	case "QuotaForInviter", "QuotaForInvitee", "ReferralDepositPercent":
+	case "QuotaForInviter", "QuotaForInvitee", "ReferralDepositPercent", "ReferralCashbackPercent":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return

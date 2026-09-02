@@ -10,7 +10,31 @@ License, or (at your option) any later version.
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { parseSidebarModulesAdmin } from './config'
+import {
+  HEADER_NAV_DEFAULT,
+  parseHeaderNavModules,
+  parseSidebarModulesAdmin,
+  serializeHeaderNavModules,
+} from './config'
+
+describe('header navigation config', () => {
+  test('enables the referral program page by default', () => {
+    assert.equal(parseHeaderNavModules('').referralProgram, true)
+  })
+
+  test('parses and serializes the referral program visibility', () => {
+    const config = parseHeaderNavModules(
+      JSON.stringify({ referralProgram: false })
+    )
+
+    assert.equal(config.referralProgram, false)
+    assert.equal(
+      JSON.parse(serializeHeaderNavModules(config)).referralProgram,
+      false
+    )
+    assert.equal(HEADER_NAV_DEFAULT.referralProgram, true)
+  })
+})
 
 describe('sidebar modules admin config', () => {
   test('ignores legacy chat section from persisted settings', () => {

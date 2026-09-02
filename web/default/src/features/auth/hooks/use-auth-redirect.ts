@@ -18,10 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useNavigate } from '@tanstack/react-router'
 import i18n from 'i18next'
-import { useAuthStore } from '@/stores/auth-store'
-import { getSelf } from '@/lib/api'
+
 import type { User } from '@/features/users/types'
-import { saveUserId } from '../lib/storage'
+import { getSelf } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
+
+import { removeAffiliateCode, saveUserId } from '../lib/storage'
 
 function getSavedLanguage(user: User): string | undefined {
   const userData = user as Record<string, unknown>
@@ -79,6 +81,7 @@ export function useAuthRedirect() {
         if (savedLang && savedLang !== i18n.language) {
           i18n.changeLanguage(savedLang)
         }
+        removeAffiliateCode()
       }
     } catch (error) {
       // eslint-disable-next-line no-console

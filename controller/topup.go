@@ -70,6 +70,10 @@ func directCryptoMethodForUser(c *gin.Context) (map[string]string, bool) {
 }
 
 func paymentMethodAllowedForUser(c *gin.Context, paymentMethod string) bool {
+	if strings.EqualFold(strings.TrimSpace(paymentMethod), model.PaymentMethodCreem) {
+		common.ApiErrorMsg(c, "Payment method is no longer available")
+		return false
+	}
 	methods, err := topUpPayMethods()
 	if err != nil {
 		common.ApiError(c, err)
@@ -88,13 +92,12 @@ func paymentMethodAllowedForUser(c *gin.Context, paymentMethod string) bool {
 }
 
 func GetTopUpInfo(c *gin.Context) {
+	isReferralUser, err := model.IsReferralCashbackUser(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
-	// Keep all Creem fields in this response derived from one immutable
-	// configuration snapshot. GetCreemConfig is atomic, but reading it once for
-	// readiness and again for products could otherwise mix two published
-	// configurations during an admin update.
-	creemConfig := setting.GetCreemConfig()
-	enableCreem, creemProducts := creemTopUpInfoForConfig(creemConfig)
 	yooKassaConfig := setting.GetYooKassaConfig()
 
 	// 获取支付方式
@@ -121,7 +124,7 @@ func GetTopUpInfo(c *gin.Context) {
 	// malformed/duplicate catalog data from publishing multiple Crypto cards.
 	filteredPayMethods := make([]map[string]string, 0, len(payMethods))
 	for _, method := range payMethods {
-		if method == nil || !strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+		if method == nil || (!strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) && !strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem)) {
 			filteredPayMethods = append(filteredPayMethods, method)
 		}
 	}
@@ -349,7 +352,6 @@ func GetTopUpInfo(c *gin.Context) {
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
-		"enable_creem_topup":               enableCreem,
 		"enable_waffo_topup":               enableWaffo,
 		"enable_waffo_pancake_topup":       enableWaffoPancake,
 		"enable_yookassa_topup":            enableYooKassa,
@@ -363,7 +365,6 @@ func GetTopUpInfo(c *gin.Context) {
 			}
 			return nil
 		}(),
-		"creem_products":  creemProducts,
 		"pay_methods":     payMethods,
 		"crypto_networks": directNetworks,
 		// This is the minimum of the methods visible to the requesting user.
@@ -375,6 +376,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"yookassa_min_topup":      getMinTopup(),
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"cashback":                operation_setting.GetPaymentSetting().AmountCashback,
+		"is_referral_cashback":    isReferralUser,
 		"topup_link":              common.TopUpLink,
 	}
 	manualTopup := operation_setting.GetPaymentSetting()
@@ -480,9 +482,9 @@ func GetTopUpQuote(c *gin.Context) {
 	}
 	var quote service.PaymentQuote
 	if len(payMethods) > 0 {
-		quote, err = service.BuildPaymentQuoteWithPayMethods(req.Amount, req.PaymentMethod, group, payMethods)
+		quote, err = service.BuildPaymentQuoteWithPayMethods(req.Amount, req.PaymentMethod, group, payMethods, c.GetInt("id"))
 	} else {
-		quote, err = service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group)
+		quote, err = service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group, c.GetInt("id"))
 	}
 	if err != nil {
 		common.ApiError(c, err)
@@ -579,7 +581,7 @@ func RequestEpay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group, c.GetInt("id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return
@@ -884,7 +886,7 @@ func RequestAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
 		return
 	}
-	quote, err := service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group)
+	quote, err := service.BuildPaymentQuote(req.Amount, req.PaymentMethod, group, c.GetInt("id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
 		return

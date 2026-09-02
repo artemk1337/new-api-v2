@@ -310,6 +310,7 @@ export type BillingSettings = {
   QuotaForInviter: number
   QuotaForInvitee: number
   ReferralDepositPercent: number
+  ReferralRequiredTopUpUSD: number
   TopUpLink: string
   'general_setting.docs_link': string
   'quota_setting.enable_free_model_pre_consume': boolean
@@ -366,10 +367,6 @@ export type BillingSettings = {
   StripeUnitPrice: number
   StripeMinTopUp: number
   StripePromotionCodesEnabled: boolean
-  CreemApiKey: string
-  CreemWebhookSecret: string
-  CreemTestMode: boolean
-  CreemProducts: string
   WaffoEnabled: boolean
   WaffoApiKey: string
   WaffoPrivateKey: string

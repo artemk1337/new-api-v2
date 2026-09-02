@@ -24,11 +24,11 @@ import {
   mergePresetAmounts,
   getMinTopupAmount,
   normalizeCashbackTiers,
+  getEffectiveCashbackTiers,
 } from '../lib'
 import type {
   TopupInfo,
   PresetAmount,
-  CreemProduct,
   PaymentMethod,
   WaffoPayMethod,
   CashbackThreshold,
@@ -207,27 +207,6 @@ function parseWaffoPayMethods(data: unknown): WaffoPayMethod[] {
     .filter((item) => item.name)
 }
 
-function parseCreemProducts(data: unknown): CreemProduct[] {
-  return parseJsonArray(data)
-    .filter(
-      (item): item is Record<string, unknown> =>
-        !!item && typeof item === 'object'
-    )
-    .map((item) => {
-      const currency: CreemProduct['currency'] =
-        item.currency === 'EUR' ? 'EUR' : 'USD'
-
-      return {
-        name: typeof item.name === 'string' ? item.name : '',
-        productId: typeof item.productId === 'string' ? item.productId : '',
-        price: Number(item.price) || 0,
-        quota: Number(item.quota) || 0,
-        currency,
-      }
-    })
-    .filter((item) => item.name && item.productId)
-}
-
 function parseAmountOptions(data: unknown): number[] {
   return parseJsonArray(data)
     .map((item) => Number(item))
@@ -360,7 +339,6 @@ export function useTopupInfo() {
         ),
         amount_options: parseAmountOptions(response.data.amount_options),
         cashback,
-        creem_products: parseCreemProducts(response.data.creem_products),
         waffo_pay_methods: waffoPayMethods,
       }
       processedData.pay_methods = processedData.pay_methods.map((method) => ({
@@ -371,11 +349,15 @@ export function useTopupInfo() {
       }))
 
       setTopupInfo(processedData)
+      const effectiveCashback = getEffectiveCashbackTiers(
+        processedData.cashback,
+        processedData.is_referral_cashback
+      )
 
       if (processedData.amount_options.length > 0) {
         const customPresets = mergePresetAmounts(
           processedData.amount_options,
-          processedData.cashback || []
+          effectiveCashback
         )
         setPresetAmounts(customPresets)
       } else {

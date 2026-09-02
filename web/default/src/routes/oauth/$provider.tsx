@@ -26,10 +26,12 @@ import {
 } from '@tanstack/react-router'
 import i18next from 'i18next'
 import { toast } from 'sonner'
-import { useAuthStore, type AuthUser } from '@/stores/auth-store'
-import { api, getSelf } from '@/lib/api'
+
 import { OAuthCallbackScreen } from '@/features/auth/components/oauth-callback-screen'
 import { OAUTH_BIND_STORAGE_KEY } from '@/features/auth/constants'
+import { removeAffiliateCode } from '@/features/auth/lib/storage'
+import { api, getSelf } from '@/lib/api'
+import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 
 type OAuthRequestConfig = AxiosRequestConfig & {
   skipBusinessError?: boolean
@@ -124,6 +126,7 @@ function OAuthCallback() {
           }
           if (selfResponse?.success && selfResponse.data) {
             useAuthStore.getState().auth.setUser(selfResponse.data)
+            removeAffiliateCode()
             try {
               if (
                 typeof window !== 'undefined' &&
@@ -186,6 +189,7 @@ function OAuthCallback() {
           // Otherwise it's a login, use payload user if available
           if (loginUser) {
             useAuthStore.getState().auth.setUser(loginUser)
+            removeAffiliateCode()
             try {
               if (typeof window !== 'undefined' && loginUser.id != null) {
                 window.localStorage.setItem('uid', String(loginUser.id))

@@ -16,13 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect, useCallback } from 'react'
 import i18next from 'i18next'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { getSelf } from '@/lib/api'
+
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { getAffiliateCode, transferAffiliateQuota } from '../api'
+import { getSelf } from '@/lib/api'
+
+import { getAffiliateStatus, transferAffiliateQuota } from '../api'
 import { generateAffiliateLink } from '../lib'
+import type { AffiliateStatus } from '../types'
 
 // ============================================================================
 // Affiliate Hook
@@ -31,6 +34,7 @@ import { generateAffiliateLink } from '../lib'
 export function useAffiliate() {
   const [affiliateCode, setAffiliateCode] = useState<string>('')
   const [affiliateLink, setAffiliateLink] = useState<string>('')
+  const [status, setStatus] = useState<AffiliateStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [transferring, setTransferring] = useState(false)
   const { copyToClipboard } = useCopyToClipboard()
@@ -39,12 +43,16 @@ export function useAffiliate() {
   const fetchAffiliateCode = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await getAffiliateCode()
+      const response = await getAffiliateStatus()
 
       if (response.success && response.data) {
-        setAffiliateCode(response.data)
-        const link = generateAffiliateLink(response.data)
-        setAffiliateLink(link)
+        setStatus(response.data)
+        setAffiliateCode(response.data.code)
+        setAffiliateLink(
+          response.data.can_share
+            ? generateAffiliateLink(response.data.code)
+            : ''
+        )
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -88,6 +96,7 @@ export function useAffiliate() {
   return {
     affiliateCode,
     affiliateLink,
+    status,
     loading,
     transferring,
     copyAffiliateLink,

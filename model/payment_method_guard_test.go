@@ -203,6 +203,7 @@ func TestRechargeYooKassaCreditsConfiguredReferralPercentOnce(t *testing.T) {
 		PaymentMethod:   PaymentMethodYooKassaSBP,
 		PaymentProvider: PaymentProviderYooKassa,
 		QuotaToAdd:      5000000,
+		BaseQuotaToAdd:  5000000,
 		Status:          common.TopUpStatusPending,
 		CreateTime:      time.Now().Unix(),
 	}).Insert())
@@ -434,6 +435,7 @@ func TestRechargeEpayCreditsReferralRewardOnce(t *testing.T) {
 		TradeNo:         "epay-referral-percent",
 		PaymentProvider: PaymentProviderEpay,
 		QuotaToAdd:      5000000,
+		BaseQuotaToAdd:  5000000,
 		Status:          common.TopUpStatusPending,
 		CreateTime:      time.Now().Unix(),
 	}).Insert())

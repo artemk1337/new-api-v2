@@ -149,6 +149,13 @@ var QuotaForInvitee = 0
 var ReferralDepositPercent = 0.0
 var referralDepositPercentMu sync.RWMutex
 
+// DefaultReferralRequiredTopUpUSD is the minimum lifetime amount of successful
+// wallet top-ups required before a user can share a referral link.
+const DefaultReferralRequiredTopUpUSD = 100.0
+
+var referralRequiredTopUpUSD = DefaultReferralRequiredTopUpUSD
+var referralRequiredTopUpUSDMu sync.RWMutex
+
 // GetReferralDepositPercent returns the live referral reward setting. Keeping
 // access behind the mutex makes admin updates safe while settlements are
 // running concurrently.
@@ -163,6 +170,18 @@ func SetReferralDepositPercent(percent float64) {
 	referralDepositPercentMu.Lock()
 	ReferralDepositPercent = percent
 	referralDepositPercentMu.Unlock()
+}
+
+func GetReferralRequiredTopUpUSD() float64 {
+	referralRequiredTopUpUSDMu.RLock()
+	defer referralRequiredTopUpUSDMu.RUnlock()
+	return referralRequiredTopUpUSD
+}
+
+func SetReferralRequiredTopUpUSD(amount float64) {
+	referralRequiredTopUpUSDMu.Lock()
+	referralRequiredTopUpUSD = amount
+	referralRequiredTopUpUSDMu.Unlock()
 }
 
 // IsValidQuotaPerUnit reports whether quota-to-currency conversions are safe.

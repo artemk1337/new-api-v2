@@ -132,3 +132,20 @@ func TestActivePaymentCurrencyDependenciesUsesPersistedPayMethods(t *testing.T) 
 	dependencies = activePaymentCurrencyDependenciesFromDB(db, "RUB")
 	assert.Contains(t, dependencies, "YooKassa SBP")
 }
+
+func TestActivePaymentCurrencyDependenciesIgnoresRetiredCreem(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	for _, option := range []model.Option{
+		{Key: "payment_setting.compliance_confirmed", Value: "true"},
+		{Key: "CreemApiKey", Value: "legacy-api-key"},
+		{Key: "CreemWebhookSecret", Value: "legacy-webhook-secret"},
+		{Key: "CreemProducts", Value: `[{"name":"Euro","productId":"prod_eur","price":10,"currency":"EUR","quota":1}]`},
+	} {
+		require.NoError(t, db.Create(&option).Error)
+	}
+
+	assert.NotContains(t, activePaymentCurrencyDependenciesFromDB(db, "EUR"), "Creem")
+	require.NoError(t, ensurePlatformCurrencyCanBeDeletedFromDB(db, "EUR"))
+}

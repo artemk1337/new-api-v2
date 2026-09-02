@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useEffect, useMemo } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import * as z from 'zod'
+
 import {
   Form,
   FormControl,
@@ -30,6 +31,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
+
 import {
   SettingsControlChildren,
   SettingsForm,
@@ -49,6 +51,7 @@ import {
 const headerNavSchema = z.object({
   home: z.boolean(),
   console: z.boolean(),
+  referralProgram: z.boolean(),
   pricingEnabled: z.boolean(),
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
@@ -71,6 +74,10 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.console === undefined
       ? HEADER_NAV_DEFAULT.console
       : Boolean(config.console),
+  referralProgram:
+    config.referralProgram === undefined
+      ? HEADER_NAV_DEFAULT.referralProgram
+      : Boolean(config.referralProgram),
   pricingEnabled:
     config.pricing?.enabled === undefined
       ? HEADER_NAV_DEFAULT.pricing.enabled
@@ -117,6 +124,7 @@ export function HeaderNavigationSection({
       ...config,
       home: values.home,
       console: values.console,
+      referralProgram: values.referralProgram,
       docs: values.docs,
       about: values.about,
       pricing: {
@@ -160,6 +168,11 @@ export function HeaderNavigationSection({
       key: 'console',
       title: t('Dashboard tab'),
       description: t('User dashboard and quota controls.'),
+    },
+    {
+      key: 'referralProgram',
+      title: t('Referral Program'),
+      description: t('Public referral program rules and participation terms.'),
     },
     {
       key: 'docs',

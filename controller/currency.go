@@ -174,22 +174,6 @@ func activePaymentCurrencyDependenciesFromDB(db *gorm.DB, code string) []string 
 	if waffoReady && strings.EqualFold(code, strings.TrimSpace(waffoCurrency)) {
 		dependencies = append(dependencies, "Waffo")
 	}
-	config := setting.GetCreemConfig()
-	config.APIKey = latestPaymentOptionFromDB(db, "CreemApiKey", config.APIKey)
-	config.Products = latestPaymentOptionFromDB(db, "CreemProducts", config.Products)
-	config.WebhookSecret = latestPaymentOptionFromDB(db, "CreemWebhookSecret", config.WebhookSecret)
-	config.TestMode = latestPaymentOptionBoolFromDB(db, "CreemTestMode", config.TestMode)
-	if complianceConfirmed && strings.TrimSpace(config.APIKey) != "" && strings.TrimSpace(config.Products) != "" && strings.TrimSpace(config.Products) != "[]" && (config.TestMode || strings.TrimSpace(config.WebhookSecret) != "") {
-		var products []CreemProduct
-		if common.Unmarshal([]byte(config.Products), &products) == nil {
-			for _, product := range products {
-				if strings.EqualFold(code, strings.TrimSpace(product.Currency)) {
-					dependencies = append(dependencies, "Creem")
-					break
-				}
-			}
-		}
-	}
 	return dependencies
 }
 

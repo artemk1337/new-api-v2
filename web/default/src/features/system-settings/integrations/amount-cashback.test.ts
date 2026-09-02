@@ -36,6 +36,30 @@ describe('amount cashback settings validation', () => {
     )
   })
 
+  test('allows an omitted referral cashback and validates an explicit value', () => {
+    assert.equal(
+      isValidAmountCashbackConfig([
+        { min_amount: 10, cashback_percent: 1 },
+        {
+          min_amount: 100,
+          cashback_percent: 3,
+          referral_cashback_percent: 5,
+        },
+      ]),
+      true
+    )
+    assert.equal(
+      isValidAmountCashbackConfig([
+        {
+          min_amount: 100,
+          cashback_percent: 3,
+          referral_cashback_percent: 2,
+        },
+      ]),
+      false
+    )
+  })
+
   test('rejects numeric strings and duplicate thresholds', () => {
     assert.equal(
       isValidAmountCashbackConfig([{ min_amount: '10', cashback_percent: 1 }]),

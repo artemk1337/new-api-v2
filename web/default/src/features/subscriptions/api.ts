@@ -115,13 +115,6 @@ export async function paySubscriptionStripe(
   return res.data
 }
 
-export async function paySubscriptionCreem(
-  data: SubscriptionPayRequest
-): Promise<SubscriptionPayResponse> {
-  const res = await api.post('/api/subscription/creem/pay', data)
-  return res.data
-}
-
 export async function paySubscriptionWaffoPancake(
   data: SubscriptionPayRequest
 ): Promise<SubscriptionPayResponse> {

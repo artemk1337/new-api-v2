@@ -55,9 +55,37 @@ import {
   isUSDTTrc20TerminalStatus,
   isDirectUSDTPayment,
   getDirectUSDTNetwork,
+  getEffectiveCashbackTiers,
   normalizeCashbackTiers,
   submitPaymentForm,
 } from './payment'
+
+describe('referral cashback tiers', () => {
+  const regularTiers = [
+    { min_amount: 0, cashback_percent: 2, referral_cashback_percent: 3 },
+    { min_amount: 100, cashback_percent: 5, referral_cashback_percent: 8 },
+  ]
+
+  test('uses the referral percentage configured for each tier', () => {
+    assert.deepEqual(
+      getEffectiveCashbackTiers(regularTiers, true),
+      [
+        { min_amount: 0, cashback_percent: 3, referral_cashback_percent: 3 },
+        { min_amount: 100, cashback_percent: 8, referral_cashback_percent: 8 },
+      ]
+    )
+  })
+
+  test('falls back to regular cashback without a configured referral value', () => {
+    assert.deepEqual(
+      getEffectiveCashbackTiers(
+        [{ min_amount: 0, cashback_percent: 2 }],
+        true
+      ),
+      [{ min_amount: 0, cashback_percent: 2 }]
+    )
+  })
+})
 
 describe('payment redirect URL validation', () => {
   test('allows only internal USDT TRC20 payment routes', () => {

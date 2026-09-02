@@ -33,6 +33,43 @@ func TestReferralDepositPercentOptionValidation(t *testing.T) {
 	assert.Equal(t, 12.5, common.GetReferralDepositPercent())
 }
 
+func TestReferralRequiredTopUpUSDOptionValidation(t *testing.T) {
+	originalAmount := common.GetReferralRequiredTopUpUSD()
+	t.Cleanup(func() { common.SetReferralRequiredTopUpUSD(originalAmount) })
+
+	require.NoError(t, validateOptionValue("ReferralRequiredTopUpUSD", "125.5"))
+	require.Error(t, validateOptionValue("ReferralRequiredTopUpUSD", "0"))
+	require.Error(t, validateOptionValue("ReferralRequiredTopUpUSD", "-1"))
+	require.Error(t, validateOptionValue("ReferralRequiredTopUpUSD", "NaN"))
+	require.NoError(t, updateOptionMapFromDatabase("ReferralRequiredTopUpUSD", "125.5"))
+	assert.Equal(t, 125.5, common.GetReferralRequiredTopUpUSD())
+}
+
+func TestUpdateOptionPersistsReferralRequiredTopUpUSD(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	originalAmount := common.GetReferralRequiredTopUpUSD()
+	common.OptionMapRWMutex.RLock()
+	originalMapValue, hadOriginalMapValue := common.OptionMap["ReferralRequiredTopUpUSD"]
+	common.OptionMapRWMutex.RUnlock()
+	t.Cleanup(func() {
+		common.SetReferralRequiredTopUpUSD(originalAmount)
+		common.OptionMapRWMutex.Lock()
+		if hadOriginalMapValue {
+			common.OptionMap["ReferralRequiredTopUpUSD"] = originalMapValue
+		} else {
+			delete(common.OptionMap, "ReferralRequiredTopUpUSD")
+		}
+		common.OptionMapRWMutex.Unlock()
+	})
+
+	require.NoError(t, UpdateOption("ReferralRequiredTopUpUSD", "250"))
+	assert.Equal(t, 250.0, common.GetReferralRequiredTopUpUSD())
+	var option Option
+	require.NoError(t, DB.First(&option, "key = ?", "ReferralRequiredTopUpUSD").Error)
+	assert.Equal(t, "250", option.Value)
+}
+
 func TestOptionMapLoadsHundredthMinTopUp(t *testing.T) {
 	originalMinTopUp := operation_setting.MinTopUp
 	originalOptionValue := common.OptionMap["MinTopUp"]

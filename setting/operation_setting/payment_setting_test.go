@@ -34,6 +34,18 @@ func TestAmountCashbackConfigAllowsZeroPercentAtThreshold(t *testing.T) {
 	require.Equal(t, 0.0, cashbacks.CashbackPercentForAmount(20))
 }
 
+func TestAmountCashbackConfigUsesReferralTierOrRegularFallback(t *testing.T) {
+	referralPercent := 4.0
+	cashbacks := AmountCashbackConfig{
+		{MinAmount: 0, CashbackPercent: 1},
+		{MinAmount: 100, CashbackPercent: 3, ReferralCashbackPercent: &referralPercent},
+	}
+
+	require.Equal(t, 1.0, cashbacks.ReferralCashbackPercentForAmount(99))
+	require.Equal(t, 4.0, cashbacks.ReferralCashbackPercentForAmount(100))
+	require.Equal(t, 1.0, cashbacks.MaxReferralCashbackBonusPercent())
+}
+
 func TestValidateAmountCashback(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -47,6 +59,8 @@ func TestValidateAmountCashback(t *testing.T) {
 		{name: "negative percent", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: -1}}, wantError: true},
 		{name: "percent over 100", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: 101}}, wantError: true},
 		{name: "non-finite percent", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: math.NaN()}}, wantError: true},
+		{name: "referral percent below regular", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: 2, ReferralCashbackPercent: floatPtr(1)}}, wantError: true},
+		{name: "referral percent above 100", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: 2, ReferralCashbackPercent: floatPtr(101)}}, wantError: true},
 		{name: "duplicate amount", cashbacks: AmountCashbackConfig{{MinAmount: 1, CashbackPercent: 1}, {MinAmount: 1, CashbackPercent: 2}}, wantError: true},
 	}
 
@@ -70,6 +84,8 @@ func TestAmountCashbackConfigJSONContract(t *testing.T) {
 	}{
 		{name: "valid zero values", value: `[{"min_amount":0,"cashback_percent":0}]`},
 		{name: "valid fractional threshold", value: `[{"min_amount":0.1,"cashback_percent":1.5}]`},
+		{name: "valid referral cashback", value: `[{"min_amount":0.1,"cashback_percent":1.5,"referral_cashback_percent":2}]`},
+		{name: "referral cashback below regular", value: `[{"min_amount":0.1,"cashback_percent":2,"referral_cashback_percent":1.5}]`, wantError: true},
 		{name: "missing min amount", value: `[{"cashback_percent":1}]`, wantError: true},
 		{name: "missing cashback percent", value: `[{"min_amount":1}]`, wantError: true},
 		{name: "null min amount", value: `[{"min_amount":null,"cashback_percent":1}]`, wantError: true},
@@ -96,6 +112,10 @@ func TestAmountCashbackConfigJSONContract(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func floatPtr(value float64) *float64 {
+	return &value
 }
 
 func TestAmountCashbackConfigMarshalContract(t *testing.T) {

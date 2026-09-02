@@ -27,6 +27,20 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+const deprecatedReferralCashbackOption = "ReferralCashbackPercent"
+
+// removeDeprecatedReferralCashbackOption removes the obsolete global referral
+// cashback setting. Referral cashback is configured per amount tier instead.
+func removeDeprecatedReferralCashbackOption() error {
+	if err := DB.Where("key = ?", deprecatedReferralCashbackOption).Delete(&Option{}).Error; err != nil {
+		return err
+	}
+	common.OptionMapRWMutex.Lock()
+	delete(common.OptionMap, deprecatedReferralCashbackOption)
+	common.OptionMapRWMutex.Unlock()
+	return nil
+}
+
 // GetPayMethodsFromDB reads the persisted payment-method catalog. A missing
 // options table is treated as an uninitialized database so callers can use
 // their bootstrap snapshot; other database failures are preserved and must
@@ -46,7 +60,55 @@ func GetPayMethodsFromDB(db *gorm.DB) ([]map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return operation_setting.CanonicalizePayMethods(methods), nil
+	return filterRetiredPayMethods(operation_setting.CanonicalizePayMethods(methods)), nil
+}
+
+func filterRetiredPayMethods(methods []map[string]string) []map[string]string {
+	filtered := make([]map[string]string, 0, len(methods))
+	for _, method := range methods {
+		if method == nil || strings.EqualFold(strings.TrimSpace(method["type"]), PaymentMethodCreem) {
+			continue
+		}
+		filtered = append(filtered, method)
+	}
+	return filtered
+}
+
+// removeRetiredCreemPayMethod removes the retired checkout from the durable
+// catalog. Existing orders keep their own provider snapshot and can still be
+// settled by the legacy webhook.
+func removeRetiredCreemPayMethod() error {
+	var option Option
+	if err := DB.First(&option, "key = ?", "PayMethods").Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	methods, err := operation_setting.ParsePayMethodsJSON(option.Value)
+	if err != nil {
+		return err
+	}
+	hasCreem := false
+	for _, method := range methods {
+		if method != nil && strings.EqualFold(strings.TrimSpace(method["type"]), PaymentMethodCreem) {
+			hasCreem = true
+			break
+		}
+	}
+	if !hasCreem {
+		return nil
+	}
+	encoded, err := common.Marshal(filterRetiredPayMethods(operation_setting.CanonicalizePayMethods(methods)))
+	if err != nil {
+		return err
+	}
+	result := DB.Model(&Option{}).Where("key = ? AND value = ?", "PayMethods", option.Value).
+		Update("value", string(encoded))
+	if result.Error != nil || result.RowsAffected == 0 {
+		return result.Error
+	}
+	return updateOptionMapFromDatabase("PayMethods", string(encoded))
 }
 
 // HasDirectUSDTMethod reports whether the catalog explicitly enables the
@@ -294,6 +356,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
 	common.OptionMap["ReferralDepositPercent"] = strconv.FormatFloat(common.GetReferralDepositPercent(), 'f', -1, 64)
+	common.OptionMap["ReferralRequiredTopUpUSD"] = strconv.FormatFloat(common.GetReferralRequiredTopUpUSD(), 'f', -1, 64)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -430,7 +493,7 @@ func loadOptionsFromDatabaseLocked() {
 		return optionLoadPriority(options[i].Key) < optionLoadPriority(options[j].Key)
 	})
 	for _, option := range options {
-		if option.Key == removedChatsOptionKey || option.Key == operation_setting.DirectUSDTTRC20PayMethodsMigratedOption {
+		if option.Key == removedChatsOptionKey || option.Key == operation_setting.DirectUSDTTRC20PayMethodsMigratedOption || option.Key == referralEligibilityBackfillOption || option.Key == deprecatedReferralCashbackOption {
 			continue
 		}
 		if option.Key == "GroupRatio" {
@@ -454,6 +517,12 @@ func loadOptionsFromDatabaseLocked() {
 	}
 	if err := ensureNOWPaymentsPayMethodPersisted(); err != nil {
 		common.SysLog("failed to migrate NOWPayments payment method: " + err.Error())
+	}
+	if err := removeRetiredCreemPayMethod(); err != nil {
+		common.SysLog("failed to remove retired Creem payment method: " + err.Error())
+	}
+	if err := removeDeprecatedReferralCashbackOption(); err != nil {
+		common.SysLog("failed to remove deprecated referral cashback option: " + err.Error())
 	}
 	resolvedRateLimitDuration, err := applyModelRequestRateLimitDuration(
 		modelRequestRateLimitDuration,
@@ -841,6 +910,14 @@ func validateOptionValue(key string, value string) error {
 			return errors.New("referral deposit percent must be between 0 and 100")
 		}
 		return nil
+	case deprecatedReferralCashbackOption:
+		return errors.New("ReferralCashbackPercent is no longer supported; configure referral cashback in payment_setting.amount_cashback")
+	case "ReferralRequiredTopUpUSD":
+		amount, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) || amount <= 0 {
+			return errors.New("referral required top-up USD must be greater than zero")
+		}
+		return nil
 	case "QuotaPerUnit":
 		quotaPerUnit, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 		if err != nil || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) || quotaPerUnit <= 0 {
@@ -955,6 +1032,23 @@ func validateOptionValue(key string, value string) error {
 			}
 		}
 		return nil
+	default:
+		return nil
+	}
+}
+
+func isReferralCashbackOption(key string) bool {
+	return key == "payment_setting.amount_cashback"
+}
+
+func validateReferralCashbackOptionValue(key, value string) error {
+	switch key {
+	case "payment_setting.amount_cashback":
+		var cashbacks operation_setting.AmountCashbackConfig
+		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
+			return err
+		}
+		return operation_setting.ValidateAmountCashback(cashbacks)
 	default:
 		return nil
 	}
@@ -1504,6 +1598,17 @@ func updateOptionsBulkLockedWithPrepareTx(values map[string]string, prepare func
 	for _, k := range sortedOptionKeys(values) {
 		v := values[k]
 		if k == "UserUsableGroups" {
+			continue
+		}
+		if isReferralCashbackOption(k) {
+			if err := validateReferralCashbackOptionValue(k, v); err != nil {
+				return err
+			}
+			normalized, err := normalizeOptionValueForSave(k, v)
+			if err != nil {
+				return err
+			}
+			normalizedValues[k] = normalized
 			continue
 		}
 		if k == "AutoGroups" && prospectivePricingGroups != "" {
@@ -2358,6 +2463,12 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 			percent = 0
 		}
 		common.SetReferralDepositPercent(percent)
+	case "ReferralRequiredTopUpUSD":
+		amount, parseErr := strconv.ParseFloat(value, 64)
+		if parseErr != nil || math.IsNaN(amount) || math.IsInf(amount, 0) || amount <= 0 {
+			return fmt.Errorf("referral required top-up USD must be greater than zero")
+		}
+		common.SetReferralRequiredTopUpUSD(amount)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

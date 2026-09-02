@@ -7,12 +7,8 @@ describe('payment option update order', () => {
   test('saves gateway prerequisites before readiness fields', () => {
     const updates = orderPaymentOptionUpdates([
       { key: 'WaffoEnabled' },
-      { key: 'CreemWebhookSecret' },
       { key: 'WaffoApiKey' },
-      { key: 'CreemTestMode' },
-      { key: 'CreemProducts' },
       { key: 'WaffoCurrency' },
-      { key: 'CreemApiKey' },
       { key: 'WaffoPublicCert' },
       { key: 'YooKassaEnabled' },
       { key: 'YooKassaShopID' },
@@ -30,10 +26,6 @@ describe('payment option update order', () => {
     assert.ok(keys.indexOf('WaffoCurrency') < keys.indexOf('WaffoEnabled'))
     assert.ok(keys.indexOf('WaffoApiKey') < keys.indexOf('WaffoEnabled'))
     assert.ok(keys.indexOf('WaffoPublicCert') < keys.indexOf('WaffoEnabled'))
-    assert.ok(keys.indexOf('CreemProducts') < keys.indexOf('CreemApiKey'))
-    assert.ok(keys.indexOf('CreemApiKey') < keys.indexOf('CreemWebhookSecret'))
-    assert.ok(keys.indexOf('CreemProducts') < keys.indexOf('CreemWebhookSecret'))
-    assert.ok(keys.indexOf('CreemProducts') < keys.indexOf('CreemTestMode'))
     assert.ok(keys.indexOf('YooKassaShopID') < keys.indexOf('YooKassaEnabled'))
     assert.ok(keys.indexOf('YooKassaSecretKey') < keys.indexOf('YooKassaEnabled'))
     assert.ok(keys.indexOf('YooKassaReturnURL') < keys.indexOf('YooKassaEnabled'))

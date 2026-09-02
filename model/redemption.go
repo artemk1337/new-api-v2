@@ -177,7 +177,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if err = tx.Create(promoTopUp).Error; err != nil {
 			return err
 		}
-		return creditReferralDepositReward(tx, promoTopUp, redemption.Quota)
+		return nil
 	})
 	if err != nil {
 		common.SysError("redemption failed: " + err.Error())

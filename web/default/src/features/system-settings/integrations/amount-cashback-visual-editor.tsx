@@ -61,12 +61,19 @@ function parseAmountCashbacks(value: string): ParsedAmountCashbacks {
         const record = item as Record<string, unknown>
         const amount = Number(record.min_amount)
         const cashbackPercent = Number(record.cashback_percent)
+        const referralCashbackPercent =
+          record.referral_cashback_percent === undefined
+            ? undefined
+            : Number(record.referral_cashback_percent)
         if (!Number.isFinite(amount) || !Number.isFinite(cashbackPercent)) {
           return null
         }
         return {
           amount,
           cashbackPercent,
+          ...(referralCashbackPercent === undefined
+            ? {}
+            : { referralCashbackPercent }),
         }
       })
       .filter(
@@ -74,7 +81,10 @@ function parseAmountCashbacks(value: string): ParsedAmountCashbacks {
           item !== null &&
           item.amount >= 0 &&
           item.cashbackPercent >= 0 &&
-          item.cashbackPercent <= 100
+          item.cashbackPercent <= 100 &&
+          (item.referralCashbackPercent === undefined ||
+            (item.referralCashbackPercent >= item.cashbackPercent &&
+              item.referralCashbackPercent <= 100))
       )
       .sort((a, b) => a.amount - b.amount)
 
@@ -118,6 +128,9 @@ function stringifyAmountCashbacks(
     sorted.map((item) => ({
       min_amount: item.amount,
       cashback_percent: item.cashbackPercent,
+      ...(item.referralCashbackPercent === undefined
+        ? {}
+        : { referral_cashback_percent: item.referralCashbackPercent }),
     })),
     null,
     2
@@ -225,7 +238,7 @@ export function AmountCashbackVisualEditor({
               },
               {
                 id: 'cashback',
-                header: t('Cashback'),
+                header: t('Cashback for regular users'),
                 cell: (cashback) => (
                   <StatusBadge
                     variant={cashback.cashbackPercent > 0 ? 'info' : 'neutral'}
@@ -233,6 +246,27 @@ export function AmountCashbackVisualEditor({
                     copyable={false}
                   >
                     {formatPercentage(cashback.cashbackPercent)}
+                  </StatusBadge>
+                ),
+              },
+              {
+                id: 'referral-cashback',
+                header: t('Cashback for referrals'),
+                cell: (cashback) => (
+                  <StatusBadge
+                    variant={
+                      (cashback.referralCashbackPercent ??
+                        cashback.cashbackPercent) > 0
+                        ? 'info'
+                        : 'neutral'
+                    }
+                    className='font-mono'
+                    copyable={false}
+                  >
+                    {formatPercentage(
+                      cashback.referralCashbackPercent ??
+                        cashback.cashbackPercent
+                    )}
                   </StatusBadge>
                 ),
               },
@@ -273,7 +307,7 @@ export function AmountCashbackVisualEditor({
                     </div>
                     <div className='flex items-center gap-2 text-sm'>
                       <span className='text-muted-foreground'>
-                        {t('Cashback')}:
+                        {t('Cashback for regular users')}:
                       </span>
                       <StatusBadge
                         variant={
@@ -283,6 +317,26 @@ export function AmountCashbackVisualEditor({
                         copyable={false}
                       >
                         {formatPercentage(cashback.cashbackPercent)}
+                      </StatusBadge>
+                    </div>
+                    <div className='mt-2 flex items-center gap-2 text-sm'>
+                      <span className='text-muted-foreground'>
+                        {t('Cashback for referrals')}:
+                      </span>
+                      <StatusBadge
+                        variant={
+                          (cashback.referralCashbackPercent ??
+                            cashback.cashbackPercent) > 0
+                            ? 'info'
+                            : 'neutral'
+                        }
+                        className='font-mono'
+                        copyable={false}
+                      >
+                        {formatPercentage(
+                          cashback.referralCashbackPercent ??
+                            cashback.cashbackPercent
+                        )}
                       </StatusBadge>
                     </div>
                   </div>

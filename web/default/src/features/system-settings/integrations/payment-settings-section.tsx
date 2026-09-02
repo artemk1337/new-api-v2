@@ -60,9 +60,7 @@ import {
   buildPaymentSettingsPayload,
   getPaymentSettingsSaveErrorMessage,
   savePaymentSettings,
-  shouldUpdateCreemSecret,
 } from './creem-config-api'
-import { CreemProductsVisualEditor } from './creem-products-visual-editor'
 import {
   cryptoAmountTailVariants,
   decimalUsdtToMicroUnits,
@@ -177,18 +175,6 @@ const createPaymentSchema = (t: (key: string) => string) => z
     StripeUnitPrice: z.coerce.number().min(0),
     StripeMinTopUp: z.coerce.number().min(0),
     StripePromotionCodesEnabled: z.boolean(),
-    CreemApiKey: z.string(),
-    CreemWebhookSecret: z.string(),
-    CreemTestMode: z.boolean(),
-    CreemProducts: z.string().superRefine((value, ctx) => {
-      const error = getJsonError(value, (parsed) => Array.isArray(parsed))
-      if (error) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: error,
-        })
-      }
-    }),
     WaffoEnabled: z.boolean(),
     WaffoApiKey: z.string(),
     WaffoPrivateKey: z.string(),
@@ -255,6 +241,8 @@ type PaymentBaseFormValues = Omit<
 >
 
 const paymentTabContentClassName = 'mt-6 min-w-0'
+const paymentTabTriggerClassName =
+  'h-auto min-h-8 whitespace-normal px-2 py-1 text-center leading-tight'
 
 type PaymentSettingsSectionProps = {
   topupGroupRatio: string
@@ -311,8 +299,6 @@ export function PaymentSettingsSection({
     React.useState(true)
   const [amountCashbackVisualMode, setAmountCashbackVisualMode] =
     React.useState(true)
-  const [creemProductsVisualMode, setCreemProductsVisualMode] =
-    React.useState(true)
   const [waffoPayMethods, setWaffoPayMethods] = React.useState<PayMethod[]>(
     () => parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
   )
@@ -364,7 +350,6 @@ export function PaymentSettingsSection({
       PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
       AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
       AmountCashback: formatJsonForEditor(initialFormValues.AmountCashback),
-      CreemProducts: formatJsonForEditor(initialFormValues.CreemProducts),
     },
   })
 
@@ -372,10 +357,8 @@ export function PaymentSettingsSection({
   const availablePaymentIcons = parseAvailablePaymentIcons(
     form.watch('PaymentMethodAvailableIcons')
   )
-  const [creemSecretClearRequested, setCreemSecretClearRequested] =
-    React.useState({ apiKey: false, webhookSecret: false })
 
-  const { isSubmitting, dirtyFields } = form.formState
+  const { isSubmitting } = form.formState
 
   const setPaymentValue = React.useCallback(
     (
@@ -423,13 +406,11 @@ export function PaymentSettingsSection({
   React.useEffect(() => {
     const parsedDefaults = JSON.parse(defaultsSignature) as PaymentFormValues
     initialRef.current = parsedDefaults
-    setCreemSecretClearRequested({ apiKey: false, webhookSecret: false })
     form.reset({
       ...parsedDefaults,
       PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
       AmountCashback: formatJsonForEditor(parsedDefaults.AmountCashback),
-      CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
     })
   }, [defaultsSignature, form])
 
@@ -454,10 +435,6 @@ export function PaymentSettingsSection({
       StripeUnitPrice: values.StripeUnitPrice,
       StripeMinTopUp: values.StripeMinTopUp,
       StripePromotionCodesEnabled: values.StripePromotionCodesEnabled,
-      CreemApiKey: values.CreemApiKey.trim(),
-      CreemWebhookSecret: values.CreemWebhookSecret.trim(),
-      CreemTestMode: values.CreemTestMode,
-      CreemProducts: values.CreemProducts.trim(),
       WaffoEnabled: values.WaffoEnabled,
       WaffoSandbox: values.WaffoSandbox,
       WaffoMerchantId: values.WaffoMerchantId.trim(),
@@ -529,10 +506,6 @@ export function PaymentSettingsSection({
       StripeMinTopUp: initialRef.current.StripeMinTopUp,
       StripePromotionCodesEnabled:
         initialRef.current.StripePromotionCodesEnabled,
-      CreemApiKey: initialRef.current.CreemApiKey.trim(),
-      CreemWebhookSecret: initialRef.current.CreemWebhookSecret.trim(),
-      CreemTestMode: initialRef.current.CreemTestMode,
-      CreemProducts: initialRef.current.CreemProducts.trim(),
       WaffoEnabled: initialRef.current.WaffoEnabled,
       WaffoSandbox: initialRef.current.WaffoSandbox,
       WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
@@ -707,43 +680,6 @@ export function PaymentSettingsSection({
         value: sanitized.StripePromotionCodesEnabled,
       })
     }
-
-    const creemUpdate: {
-      api_key?: string
-      webhook_secret?: string
-      test_mode?: boolean
-      products?: string
-    } = {}
-    if (
-      shouldUpdateCreemSecret(
-        sanitized.CreemApiKey,
-        initial.CreemApiKey,
-        !!dirtyFields.CreemApiKey,
-        creemSecretClearRequested.apiKey
-      )
-    ) {
-      creemUpdate.api_key = sanitized.CreemApiKey
-    }
-    if (
-      shouldUpdateCreemSecret(
-        sanitized.CreemWebhookSecret,
-        initial.CreemWebhookSecret,
-        !!dirtyFields.CreemWebhookSecret,
-        creemSecretClearRequested.webhookSecret
-      )
-    ) {
-      creemUpdate.webhook_secret = sanitized.CreemWebhookSecret
-    }
-    if (sanitized.CreemTestMode !== initial.CreemTestMode) {
-      creemUpdate.test_mode = sanitized.CreemTestMode
-    }
-    if (
-      normalizeJsonForComparison(sanitized.CreemProducts) !==
-      normalizeJsonForComparison(initial.CreemProducts)
-    ) {
-      creemUpdate.products = sanitized.CreemProducts
-    }
-    const hasCreemChanges = Object.keys(creemUpdate).length > 0
 
     if (sanitized.YooKassaEnabled !== initial.YooKassaEnabled) {
       updates.push({
@@ -963,18 +899,13 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (updates.length === 0 && !hasCreemChanges && !hasWaffoPancakeChanges) {
+    if (updates.length === 0 && !hasWaffoPancakeChanges) {
       toast.info(t('No changes to save'))
       return
     }
 
     try {
-      await savePaymentSettings(
-        buildPaymentSettingsPayload(
-          updates,
-          hasCreemChanges ? creemUpdate : undefined
-        )
-      )
+      await savePaymentSettings(buildPaymentSettingsPayload(updates))
     } catch (error) {
       toast.error(
         getPaymentSettingsSaveErrorMessage(
@@ -1081,20 +1012,56 @@ export function PaymentSettingsSection({
             saveLabel='Save all settings'
           />
           <Tabs defaultValue='general' className='min-w-0'>
-            <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[76rem] grid-cols-10'>
-                <TabsTrigger value='general'>{t('General')}</TabsTrigger>
-                <TabsTrigger value='epay'>Epay</TabsTrigger>
-                <TabsTrigger value='manual'>{t('Manual')}</TabsTrigger>
-                <TabsTrigger value='yookassa'>YooKassa</TabsTrigger>
-                <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
-                <TabsTrigger value='crypto'>{t('Crypto')}</TabsTrigger>
-                <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
-                <TabsTrigger value='creem'>Creem</TabsTrigger>
-                <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
-                <TabsTrigger value='waffo'>Waffo</TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList className='grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8'>
+              <TabsTrigger
+                value='general'
+                className={paymentTabTriggerClassName}
+              >
+                {t('General')}
+              </TabsTrigger>
+               <TabsTrigger value='epay' className={paymentTabTriggerClassName}>
+                 Epay
+               </TabsTrigger>
+               <TabsTrigger value='manual' className={paymentTabTriggerClassName}>
+                 {t('Manual')}
+               </TabsTrigger>
+              <TabsTrigger
+                value='yookassa'
+                className={paymentTabTriggerClassName}
+              >
+                YooKassa
+              </TabsTrigger>
+              <TabsTrigger
+                value='nowpayments'
+                className={paymentTabTriggerClassName}
+              >
+                NOWPayments
+              </TabsTrigger>
+              <TabsTrigger
+                value='crypto'
+                className={paymentTabTriggerClassName}
+              >
+                {t('Crypto')}
+              </TabsTrigger>
+              <TabsTrigger
+                value='stripe'
+                className={paymentTabTriggerClassName}
+              >
+                {t('Stripe')}
+              </TabsTrigger>
+              <TabsTrigger
+                value='waffo-pancake'
+                className={paymentTabTriggerClassName}
+              >
+                Waffo Pancake
+              </TabsTrigger>
+               <TabsTrigger
+                 value='waffo'
+                className={paymentTabTriggerClassName}
+              >
+                Waffo
+               </TabsTrigger>
+             </TabsList>
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
@@ -2029,198 +1996,6 @@ export function PaymentSettingsSection({
               </div>
             </TabsContent>
 
-            <TabsContent value='creem' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Creem Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for Creem payment integration')}
-                  </p>
-                </div>
-
-                <div className='rounded-md bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100'>
-                  <p className='mb-2 font-medium'>
-                    {t('Webhook Configuration:')}
-                  </p>
-                  <ul className='list-inside list-disc space-y-1'>
-                    <li>
-                      {t('Webhook URL:')}{' '}
-                      <code className='rounded bg-blue-100 px-1 py-0.5 text-xs dark:bg-blue-900'>
-                        {'<ServerAddress>/api/creem/webhook'}
-                      </code>
-                    </li>
-                    <li>{t('Configure in your Creem dashboard')}</li>
-                  </ul>
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='CreemApiKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('API Key')}</FormLabel>
-                        <FormControl>
-                          <div className='flex gap-2'>
-                            <Input
-                              type='password'
-                              placeholder={t('Enter Creem API key')}
-                              autoComplete='new-password'
-                              {...field}
-                              onChange={(event) => {
-                                setCreemSecretClearRequested((previous) => ({
-                                  ...previous,
-                                  apiKey: false,
-                                }))
-                                field.onChange(event.target.value)
-                              }}
-                            />
-                            <Button
-                              type='button'
-                              variant='outline'
-                              onClick={() => {
-                                setCreemSecretClearRequested((previous) => ({
-                                  ...previous,
-                                  apiKey: true,
-                                }))
-                                field.onChange('')
-                              }}
-                            >
-                              {t('Clear')}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          {t('Creem API key (leave blank unless updating)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='CreemWebhookSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Webhook Secret')}</FormLabel>
-                        <FormControl>
-                          <div className='flex gap-2'>
-                            <Input
-                              type='password'
-                              placeholder={t('Enter webhook secret')}
-                              autoComplete='new-password'
-                              {...field}
-                              onChange={(event) => {
-                                setCreemSecretClearRequested((previous) => ({
-                                  ...previous,
-                                  webhookSecret: false,
-                                }))
-                                field.onChange(event.target.value)
-                              }}
-                            />
-                            <Button
-                              type='button'
-                              variant='outline'
-                              onClick={() => {
-                                setCreemSecretClearRequested((previous) => ({
-                                  ...previous,
-                                  webhookSecret: true,
-                                }))
-                                field.onChange('')
-                              }}
-                            >
-                              {t('Clear')}
-                            </Button>
-                          </div>
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Webhook signing secret (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name='CreemTestMode'
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>{t('Test Mode')}</FormLabel>
-                        <FormDescription>
-                          {t('Enable test mode for Creem payments')}
-                        </FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='CreemProducts'
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className='mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                        <FormLabel>{t('Products')}</FormLabel>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() =>
-                            setCreemProductsVisualMode(!creemProductsVisualMode)
-                          }
-                          className='w-full sm:w-auto'
-                        >
-                          {creemProductsVisualMode ? (
-                            <>
-                              <Code2 className='mr-2 h-3 w-3' />
-                              {t('JSON Editor')}
-                            </>
-                          ) : (
-                            <>
-                              <Eye className='mr-2 h-3 w-3' />
-                              {t('Visual Editor')}
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      <FormControl>
-                        {creemProductsVisualMode ? (
-                          <CreemProductsVisualEditor
-                            value={field.value}
-                            onChange={field.onChange}
-                          />
-                        ) : (
-                          <Textarea
-                            rows={4}
-                            placeholder='[{"name":"Basic","productId":"prod_xxx","price":10,"quota":500000,"currency":"USD"}]'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        )}
-                      </FormControl>
-                      <FormDescription>
-                        {t('Configure Creem products. Provide a JSON array.')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </TabsContent>
 
             <TabsContent
               value='waffo-pancake'
