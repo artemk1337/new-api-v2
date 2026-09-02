@@ -8,6 +8,7 @@ package operation_setting
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,6 +144,9 @@ func ValidatePayMethods(methods []map[string]string) error {
 			}
 		}
 		minimum := strings.TrimSpace(method["min_topup"])
+		if strings.EqualFold(strings.TrimSpace(method["type"]), "manual_transfer") && minimum == "" {
+			return fmt.Errorf("manual transfer min_topup must be a positive finite number")
+		}
 		if minimum != "" {
 			value, parseErr := strconv.ParseFloat(minimum, 64)
 			if parseErr != nil || value <= 0 || value > 1e12 || math.IsNaN(value) || math.IsInf(value, 0) {
@@ -159,8 +163,28 @@ func ValidatePayMethods(methods []map[string]string) error {
 		if group := strings.TrimSpace(method["topup_group"]); group != "" && !common.HasTopupGroupRatio(group) {
 			return fmt.Errorf("topup_group %q is not configured", group)
 		}
+		if strings.EqualFold(strings.TrimSpace(method["type"]), "manual_transfer") {
+			if err := ValidateManualTransferURL(method["contact_url"]); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// ValidateManualTransferURL restricts an operator-controlled destination to
+// known messenger hosts before it can reach a user's browser.
+func ValidateManualTransferURL(value string) error {
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" || parsed.Path == "" || parsed.Path == "/" {
+		return fmt.Errorf("manual transfer contact URL must be an HTTPS messenger link")
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "t.me", "telegram.me", "wa.me", "api.whatsapp.com", "m.me", "discord.com", "discord.gg", "vk.me":
+		return nil
+	default:
+		return fmt.Errorf("manual transfer contact URL must use a supported messenger host")
+	}
 }
 
 // ValidatePayMethodsForSave protects the transition from old catalogs that

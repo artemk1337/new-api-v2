@@ -54,9 +54,7 @@ import {
   shouldShowPaymentMethodQuote,
   canSelectPaymentMethod,
   formatWalletInputAmount,
-  getManualTopupContact,
   isLegacyCustomMethod,
-  isManualTopupAmountEligible,
   parseTopupAmount,
   sanitizeTopupAmount,
 } from './recharge-form-card'
@@ -116,44 +114,6 @@ describe('custom top-up amount', () => {
     assert.equal(sanitizeTopupAmount('abc12x,3$'), '12.3')
     assert.equal(sanitizeTopupAmount('1.2.3'), '1.23')
     assert.equal(sanitizeTopupAmount('1e3'), '13')
-  })
-})
-
-describe('manual top-up contact', () => {
-  test('allows the Telegram link only at the server-calculated minimum', () => {
-    const manualTopup = getManualTopupContact({
-      manual_topup_enabled: true,
-      manual_topup_min_amount: 5000,
-      manual_topup_min_amount_backend: 50,
-      manual_topup_contact_url: 'https://t.me/vibecode_support',
-    } as TopupInfo)
-
-    assert.notEqual(manualTopup, null)
-    assert.equal(isManualTopupAmountEligible(49.99, manualTopup), false)
-    assert.equal(isManualTopupAmountEligible(50, manualTopup), true)
-    assert.equal(isManualTopupAmountEligible(60, manualTopup), true)
-  })
-
-  test('fails closed when the server does not provide a wallet minimum', () => {
-    const manualTopup = getManualTopupContact({
-      manual_topup_enabled: true,
-      manual_topup_min_amount: 5000,
-      manual_topup_contact_url: 'https://t.me/vibecode_support',
-    } as TopupInfo)
-
-    assert.equal(manualTopup, null)
-    assert.equal(isManualTopupAmountEligible(100, manualTopup), false)
-  })
-
-  test('rejects a non-Telegram contact URL', () => {
-    const manualTopup = getManualTopupContact({
-      manual_topup_enabled: true,
-      manual_topup_min_amount: 5000,
-      manual_topup_min_amount_backend: 50,
-      manual_topup_contact_url: 'https://example.com/contact',
-    } as TopupInfo)
-
-    assert.equal(manualTopup, null)
   })
 })
 

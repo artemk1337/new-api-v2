@@ -62,6 +62,7 @@ type PaymentMethodsVisualEditorProps = {
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
+  manual_transfer: 'LuExternalLink',
   crypto_direct: 'LuWalletCards',
   nowpayments: 'LuBitcoin',
   stripe: 'SiStripe',
@@ -129,6 +130,8 @@ export function isPaymentMethodData(item: unknown): item is PaymentMethodData {
     (!('pending_ttl_minutes' in item) ||
       typeof item.pending_ttl_minutes === 'string') &&
     (!('color' in item) || typeof item.color === 'string') &&
+    (!('description' in item) || typeof item.description === 'string') &&
+    (!('contact_url' in item) || typeof item.contact_url === 'string') &&
     (!('topup_group' in item) || typeof item.topup_group === 'string') &&
     (!('currency' in item) || typeof item.currency === 'string') &&
     (!('admin_only' in item) ||

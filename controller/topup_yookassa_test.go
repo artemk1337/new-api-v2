@@ -256,7 +256,7 @@ func TestTopUpInfoDoesNotReaddExplicitlyRemovedYooKassaSBP(t *testing.T) {
 	}
 }
 
-func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
+func TestTopUpInfoDoesNotPublishLegacyManualLargePayment(t *testing.T) {
 	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
 	createAuthenticatedTopUpInfoUser(t, model.DB)
 	require.NoError(t, model.DB.AutoMigrate(&model.PlatformCurrency{}))
@@ -293,10 +293,10 @@ func TestTopUpInfoExposesConfiguredManualLargePayment(t *testing.T) {
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
-	assert.True(t, response.Data.Enabled)
-	assert.Equal(t, 5000.0, response.Data.Minimum)
-	assert.Equal(t, 50.0, response.Data.BackendMinimum)
-	assert.Equal(t, "https://t.me/vibecode_support", response.Data.Contact)
+	assert.False(t, response.Data.Enabled)
+	assert.Zero(t, response.Data.Minimum)
+	assert.Zero(t, response.Data.BackendMinimum)
+	assert.Empty(t, response.Data.Contact)
 }
 
 func TestTopUpInfoHidesManualLargePaymentWithoutRUBRate(t *testing.T) {
@@ -369,7 +369,35 @@ func TestTopUpInfoConvertsManualLargePaymentMinimumToTokens(t *testing.T) {
 		} `json:"data"`
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
-	assert.Equal(t, 50_000_000.0, response.Data.BackendMinimum)
+	assert.Zero(t, response.Data.BackendMinimum)
+}
+
+func TestManualTransferRejectsDirectPaymentRequests(t *testing.T) {
+	setupYooKassaWebhookTest(t, yookassaPaymentResponse("pending", false, "100.00"))
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	require.NoError(t, model.DB.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"manual_transfer","name":"Direct","contact_url":"https://t.me/support","min_topup":"5000","topup_group":"default"}]`}).Error)
+
+	router := gin.New()
+	for _, path := range []string{"/topup/quote", "/topup/amount"} {
+		router.POST(path, func(c *gin.Context) {
+			c.Set("id", 1)
+			if c.Request.URL.Path == "/topup/amount" {
+				RequestAmount(c)
+				return
+			}
+			GetTopUpQuote(c)
+		})
+	}
+	for _, path := range []string{"/topup/quote", "/topup/amount"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"amount":50,"payment_method":"manual_transfer"}`)))
+		require.Equal(t, http.StatusOK, recorder.Code, path)
+		var response struct {
+			Message string `json:"message"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		assert.NotEqual(t, "success", response.Message, path)
+	}
 }
 
 func TestYooKassaDirectRoutesRejectDisabledPersistedSBP(t *testing.T) {

@@ -70,6 +70,10 @@ func directCryptoMethodForUser(c *gin.Context) (map[string]string, bool) {
 }
 
 func paymentMethodAllowedForUser(c *gin.Context, paymentMethod string) bool {
+	if strings.EqualFold(strings.TrimSpace(paymentMethod), model.PaymentMethodManualTransfer) {
+		common.ApiErrorMsg(c, "Manual transfer must be started from the messenger link")
+		return false
+	}
 	if strings.EqualFold(strings.TrimSpace(paymentMethod), model.PaymentMethodCreem) {
 		common.ApiErrorMsg(c, "Payment method is no longer available")
 		return false
@@ -124,7 +128,13 @@ func GetTopUpInfo(c *gin.Context) {
 	// malformed/duplicate catalog data from publishing multiple Crypto cards.
 	filteredPayMethods := make([]map[string]string, 0, len(payMethods))
 	for _, method := range payMethods {
-		if method == nil || (!strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) && !strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem)) {
+		if method == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodManualTransfer) && operation_setting.ValidateManualTransferURL(method["contact_url"]) != nil {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) && !strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem) {
 			filteredPayMethods = append(filteredPayMethods, method)
 		}
 	}
@@ -378,22 +388,6 @@ func GetTopUpInfo(c *gin.Context) {
 		"cashback":                operation_setting.GetPaymentSetting().AmountCashback,
 		"is_referral_cashback":    isReferralUser,
 		"topup_link":              common.TopUpLink,
-	}
-	manualTopup := operation_setting.GetPaymentSetting()
-	if manualTopup.ManualTopupEnabled && strings.TrimSpace(manualTopup.ManualTopupContactURL) != "" && manualTopup.ManualTopupMinAmount > 0 {
-		rubRate, rateErr := service.GetPlatformCurrencyRate("RUB")
-		if rateErr == nil && rubRate > 0 && !math.IsNaN(rubRate) && !math.IsInf(rubRate, 0) {
-			minimumBackendAmount := manualTopup.ManualTopupMinAmount / rubRate
-			if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-				minimumBackendAmount *= common.GetQuotaPerUnit()
-			}
-			if minimumBackendAmount > 0 && !math.IsNaN(minimumBackendAmount) && !math.IsInf(minimumBackendAmount, 0) {
-				data["manual_topup_enabled"] = true
-				data["manual_topup_min_amount"] = manualTopup.ManualTopupMinAmount
-				data["manual_topup_min_amount_backend"] = minimumBackendAmount
-				data["manual_topup_contact_url"] = manualTopup.ManualTopupContactURL
-			}
-		}
 	}
 	if currencies, currencyErr := model.ListPlatformCurrencies(true); currencyErr == nil {
 		data["currencies"] = currencies
@@ -877,6 +871,9 @@ func RequestAmount(c *gin.Context) {
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
+		return
+	}
+	if !paymentMethodAllowedForUser(c, req.PaymentMethod) {
 		return
 	}
 

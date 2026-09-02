@@ -473,6 +473,11 @@ func prospectiveYooKassaSBPEnabledFromDB(db *gorm.DB, values map[string]string) 
 	return paymentMethodsJSONContainsType(payMethods, model.PaymentMethodYooKassaSBP)
 }
 
+func prospectiveManualTransferEnabledFromDB(db *gorm.DB, values map[string]string) bool {
+	payMethods := prospectiveOptionValue(values, "PayMethods", latestPaymentOptionFromDB(db, "PayMethods", operation_setting.PayMethods2JsonString()))
+	return paymentMethodsJSONContainsType(payMethods, model.PaymentMethodManualTransfer)
+}
+
 func validatePaymentSettingsReadiness(values map[string]string) error {
 	return validatePaymentSettingsReadinessFromDB(model.DB, values)
 }
@@ -497,6 +502,11 @@ func validatePaymentSettingsReadinessFromDB(db *gorm.DB, values map[string]strin
 	}
 	if prospectiveOptionBool(values, "NOWPaymentsEnabled", latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled)) && complianceConfirmed {
 		if err := validateEnabledPlatformCurrencyFromDB(db, "USDT", "NOWPayments"); err != nil {
+			return err
+		}
+	}
+	if complianceConfirmed && prospectiveManualTransferEnabledFromDB(db, values) {
+		if err := validateEnabledPlatformCurrencyFromDB(db, "RUB", "manual transfer"); err != nil {
 			return err
 		}
 	}
@@ -653,7 +663,7 @@ func isPaymentCurrencyGuardOption(key, value string) bool {
 	}
 	value = strings.ToLower(value)
 	return strings.Contains(value, "nowpayments") || strings.Contains(value, "yookassa") ||
-		strings.Contains(value, "waffo") || strings.Contains(value, "currency")
+		strings.Contains(value, "waffo") || strings.Contains(value, "manual_transfer") || strings.Contains(value, "currency")
 }
 
 // validatePaymentCurrencyReadinessForComplianceConfirmation uses the same

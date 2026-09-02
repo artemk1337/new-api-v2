@@ -6,6 +6,7 @@ type PaymentTypeOption = {
 }
 
 export const CRYPTO_PAYMENT_TYPE = 'crypto_direct'
+export const MANUAL_TRANSFER_PAYMENT_TYPE = 'manual_transfer'
 
 const LEGACY_CRYPTO_PAYMENT_TYPES = [
   'usdt_trc20_direct',
@@ -70,6 +71,12 @@ export function getPaymentTypeOptions(
       label: 'NOWPayments',
       name: 'NOWPayments',
       value: 'nowpayments',
+    },
+    {
+      iconName: 'LuExternalLink',
+      label: t('Direct transfer'),
+      name: t('Direct transfer'),
+      value: MANUAL_TRANSFER_PAYMENT_TYPE,
     },
     {
       iconName: 'LuWalletCards',

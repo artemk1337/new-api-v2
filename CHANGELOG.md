@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.169
+
+- Replaced the separate manual-payment card with a configurable Direct transfer payment method: administrators set its name, description, messenger URL, RUB minimum, and commission group alongside other payment methods.
+- Open Direct transfer only after its converted minimum is met; it never creates an automatic invoice or credits a balance. Restrict messenger links to approved HTTPS hosts and keep RUB availability protected while the method is configured.
+
 ## v1.1.168
 
 - Added a referral program with a dedicated page, referral-code registration and OAuth support, configurable qualifying top-up amount, and direct-inviter rewards only.

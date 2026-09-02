@@ -138,6 +138,10 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional react-icons component name or safe icon URL */
   icon?: string
+  /** Optional operator-provided explanation shown below the method name. */
+  description?: string
+  /** HTTPS messenger destination for the manual-transfer method. */
+  contact_url?: string
   /** Server-filtered visibility flag for administrator-only methods. */
   admin_only?: boolean
   /** Top-up price multiplier configured for this payment method */
@@ -217,14 +221,6 @@ export interface TopupInfo {
   enable_nowpayments_topup?: boolean
   /** Minimum topup amount for YooKassa */
   yookassa_min_topup?: number
-  /** Whether a manual large-payment contact card is available */
-  manual_topup_enabled?: boolean
-  /** Minimum manual payment amount in RUB */
-  manual_topup_min_amount?: number
-  /** Manual payment minimum in the wallet backend amount unit */
-  manual_topup_min_amount_backend?: number
-  /** Manager contact URL for manual large payments */
-  manual_topup_contact_url?: string
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */

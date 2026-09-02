@@ -103,22 +103,6 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
-function isTelegramUrl(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) return true
-  try {
-    const url = new URL(trimmed)
-    return (
-      url.protocol === 'https:' &&
-      url.hostname.toLowerCase() === 't.me' &&
-      url.port === '' &&
-      url.pathname !== '/'
-    )
-  } catch {
-    return false
-  }
-}
-
 const createPaymentSchema = (t: (key: string) => string) => z
   .object({
     PayAddress: z.string().refine((value) => {
@@ -164,11 +148,6 @@ const createPaymentSchema = (t: (key: string) => string) => z
         })
       }
     }),
-    ManualTopupEnabled: z.boolean(),
-    ManualTopupMinAmount: z.coerce.number().min(1),
-    ManualTopupContactURL: z
-      .string()
-      .refine(isTelegramUrl, t('Provide a Telegram link starting with https://t.me/')),
     StripeApiSecret: z.string(),
     StripeWebhookSecret: z.string(),
     StripePriceId: z.string(),
@@ -222,15 +201,6 @@ const createPaymentSchema = (t: (key: string) => string) => z
       (value) => decimalUsdtToMicroUnits(value) !== null,
       'Enter a value from 0.000002 to 0.01 USDT with up to 6 decimals'
     ),
-  })
-  .superRefine((values, ctx) => {
-    if (values.ManualTopupEnabled && !values.ManualTopupContactURL.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['ManualTopupContactURL'],
-        message: t('Provide a Telegram link starting with https://t.me/'),
-      })
-    }
   })
 
 type PaymentFormValues = z.infer<ReturnType<typeof createPaymentSchema>>
@@ -426,9 +396,6 @@ export function PaymentSettingsSection({
       PaymentMethodAvailableIcons: values.PaymentMethodAvailableIcons,
       AmountOptions: values.AmountOptions.trim(),
       AmountCashback: normalizeAmountCashbackConfig(values.AmountCashback),
-      ManualTopupEnabled: values.ManualTopupEnabled,
-      ManualTopupMinAmount: values.ManualTopupMinAmount,
-      ManualTopupContactURL: values.ManualTopupContactURL.trim(),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
@@ -496,9 +463,6 @@ export function PaymentSettingsSection({
       AmountCashback: normalizeAmountCashbackConfig(
         initialRef.current.AmountCashback
       ),
-      ManualTopupEnabled: initialRef.current.ManualTopupEnabled,
-      ManualTopupMinAmount: initialRef.current.ManualTopupMinAmount,
-      ManualTopupContactURL: initialRef.current.ManualTopupContactURL.trim(),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -624,16 +588,6 @@ export function PaymentSettingsSection({
         key: 'payment_setting.amount_cashback',
         value: sanitized.AmountCashback,
       })
-    }
-
-    if (sanitized.ManualTopupEnabled !== initial.ManualTopupEnabled) {
-      updates.push({ key: 'payment_setting.manual_topup_enabled', value: sanitized.ManualTopupEnabled })
-    }
-    if (sanitized.ManualTopupMinAmount !== initial.ManualTopupMinAmount) {
-      updates.push({ key: 'payment_setting.manual_topup_min_amount', value: sanitized.ManualTopupMinAmount })
-    }
-    if (sanitized.ManualTopupContactURL !== initial.ManualTopupContactURL) {
-      updates.push({ key: 'payment_setting.manual_topup_contact_url', value: sanitized.ManualTopupContactURL })
     }
 
     if (
@@ -1022,9 +976,6 @@ export function PaymentSettingsSection({
                <TabsTrigger value='epay' className={paymentTabTriggerClassName}>
                  Epay
                </TabsTrigger>
-               <TabsTrigger value='manual' className={paymentTabTriggerClassName}>
-                 {t('Manual')}
-               </TabsTrigger>
               <TabsTrigger
                 value='yookassa'
                 className={paymentTabTriggerClassName}
@@ -1261,31 +1212,6 @@ export function PaymentSettingsSection({
                       </FormItem>
                     )}
                   />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value='manual' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('Manual large payment')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Show a manager contact card in the wallet. It does not create or credit a payment automatically.')}
-                  </p>
-                </div>
-                <FormField control={form.control} name='ManualTopupEnabled' render={({ field }) => (
-                  <FormItem className='flex items-center justify-between rounded-lg border p-3'>
-                    <FormLabel>{t('Enable manual large payments')}</FormLabel>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
-                <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField control={form.control} name='ManualTopupMinAmount' render={({ field }) => (
-                    <FormItem><FormLabel>{t('Manual payment minimum (RUB)')}</FormLabel><FormControl><Input type='number' min='1' step='1' {...safeNumberFieldProps(field)} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name='ManualTopupContactURL' render={({ field }) => (
-                    <FormItem><FormLabel>{t('Manager contact URL')}</FormLabel><FormControl><Input placeholder='https://t.me/username' {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
                 </div>
               </div>
             </TabsContent>

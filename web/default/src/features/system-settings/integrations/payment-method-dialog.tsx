@@ -55,6 +55,7 @@ import {
 import {
   getPaymentTypeOptions,
   isCryptoPaymentType,
+  MANUAL_TRANSFER_PAYMENT_TYPE,
   normalizePaymentMethodType,
 } from './payment-method-options'
 
@@ -69,6 +70,8 @@ const createPaymentMethodDialogSchema = (
       name: z.string().min(1, t('Payment method name is required')),
       type: z.string().min(1, t('Payment type is required')),
       icon: z.string().optional(),
+      description: z.string().max(500).optional(),
+      contact_url: z.string().optional(),
       admin_only: z.boolean(),
       min_topup: z
         .string()
@@ -96,6 +99,17 @@ const createPaymentMethodDialogSchema = (
         ),
     })
     .superRefine((values, context) => {
+      if (
+        normalizePaymentMethodType(values.type) ===
+          MANUAL_TRANSFER_PAYMENT_TYPE &&
+        !isSafeMessengerURL(values.contact_url ?? '')
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['contact_url'],
+          message: t('Enter a valid HTTPS messenger link'),
+        })
+      }
       if (
         isDirectCryptoPaymentType(values.type) &&
         values.min_topup.trim() !== '' &&
@@ -129,7 +143,36 @@ export type PaymentMethodData = {
   min_topup?: string
   pending_ttl_minutes?: string
   color?: string
+  description?: string
+  contact_url?: string
   topup_group?: string
+}
+
+function isSafeMessengerURL(value: string): boolean {
+  try {
+    const url = new URL(value.trim())
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.pathname !== '/' &&
+      [
+        't.me',
+        'telegram.me',
+        'wa.me',
+        'api.whatsapp.com',
+        'm.me',
+        'discord.com',
+        'discord.gg',
+        'vk.me',
+      ].includes(
+        url.hostname.toLowerCase()
+      )
+    )
+  } catch {
+    return false
+  }
 }
 
 type PaymentMethodDialogProps = {
@@ -146,6 +189,7 @@ type PaymentMethodDialogProps = {
 
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
+  manual_transfer: 'LuExternalLink',
   crypto_direct: 'LuWalletCards',
   nowpayments: 'LuBitcoin',
   stripe: 'SiStripe',
@@ -186,6 +230,8 @@ export function PaymentMethodDialog({
       name: '',
       type: '',
       icon: '',
+      description: '',
+      contact_url: '',
       admin_only: false,
       min_topup: '',
       pending_ttl_minutes: '',
@@ -196,6 +242,8 @@ export function PaymentMethodDialog({
   const iconValue = form.watch('icon')
   const paymentType = form.watch('type')
   const isDirectCrypto = isDirectCryptoPaymentType(paymentType)
+  const isManualTransfer =
+    normalizePaymentMethodType(paymentType) === MANUAL_TRANSFER_PAYMENT_TYPE
   const minimumCurrency = getPaymentMethodMinimumCurrency(
     paymentType,
     waffoCurrency
@@ -211,6 +259,8 @@ export function PaymentMethodDialog({
         name: isCryptoPaymentType(normalizedType) ? 'Crypto' : editData.name,
         type: normalizedType,
         icon: editData.icon ?? getDefaultIconName(normalizedType),
+        description: editData.description ?? '',
+        contact_url: editData.contact_url ?? '',
         admin_only: isAdminOnly(editData.admin_only ?? editData.AdminOnly),
         min_topup: editData.min_topup ?? '',
         pending_ttl_minutes: editData.pending_ttl_minutes ?? '',
@@ -221,6 +271,8 @@ export function PaymentMethodDialog({
         name: '',
         type: '',
         icon: '',
+        description: '',
+        contact_url: '',
         admin_only: false,
         min_topup: '',
         pending_ttl_minutes: '',
@@ -237,6 +289,12 @@ export function PaymentMethodDialog({
     }
     if (values.icon && values.icon.trim() !== '') {
       data.icon = values.icon.trim()
+    }
+    if (values.description?.trim()) {
+      data.description = values.description.trim()
+    }
+    if (isManualTransfer) {
+      data.contact_url = values.contact_url?.trim()
     }
     if (
       (hasEditableMinimum || isDirectCrypto) &&
@@ -354,6 +412,51 @@ export function PaymentMethodDialog({
               </FormItem>
             )}
           />
+
+          <FormField
+            control={form.control}
+            name='description'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Description')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('Optional payment method description')}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t('Shown to users below the payment method name.')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {isManualTransfer && (
+            <FormField
+              control={form.control}
+              name='contact_url'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Messenger link')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='url'
+                      placeholder='https://t.me/manager'
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Supported HTTPS hosts: Telegram, WhatsApp, Messenger, Discord, VK.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}

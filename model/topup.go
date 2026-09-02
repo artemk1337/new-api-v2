@@ -69,7 +69,10 @@ const (
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodYooKassaSBP  = "yookassa_sbp"
 	PaymentMethodNOWPayments  = "nowpayments"
-	PaymentMethodBalance      = "balance"
+	// PaymentMethodManualTransfer opens an operator-configured messenger link.
+	// It deliberately has no provider checkout or TopUp lifecycle.
+	PaymentMethodManualTransfer = "manual_transfer"
+	PaymentMethodBalance        = "balance"
 )
 
 const (

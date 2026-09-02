@@ -211,6 +211,8 @@ func PaymentMethodCurrency(paymentMethod string) (string, error) {
 		return "USD", nil
 	case model.PaymentMethodYooKassaSBP:
 		return "RUB", nil
+	case model.PaymentMethodManualTransfer:
+		return "RUB", nil
 	case model.PaymentMethodWaffo:
 		currency := strings.ToUpper(strings.TrimSpace(setting.WaffoCurrency))
 		if currency == "" {
@@ -250,6 +252,8 @@ func paymentMethodCurrencyWithMethods(paymentMethod string, methods []map[string
 		return "USD", nil
 	case model.PaymentMethodYooKassaSBP:
 		return "RUB", nil
+	case model.PaymentMethodManualTransfer:
+		return "RUB", nil
 	case model.PaymentMethodWaffo:
 		currency := strings.ToUpper(strings.TrimSpace(setting.WaffoCurrency))
 		if currency == "" {
@@ -281,6 +285,10 @@ func ValidatePaymentMethodCurrency(paymentMethod, currency string) error {
 	case model.PaymentMethodYooKassaSBP:
 		if currency != "RUB" {
 			return fmt.Errorf("YooKassa SBP supports RUB only")
+		}
+	case model.PaymentMethodManualTransfer:
+		if currency != "RUB" {
+			return fmt.Errorf("manual transfer supports RUB only")
 		}
 	case model.PaymentMethodStripe:
 		if currency != "USD" {

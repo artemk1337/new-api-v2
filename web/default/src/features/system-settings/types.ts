@@ -353,9 +353,6 @@ export type BillingSettings = {
   PaymentMethodAvailableIcons: string
   'payment_setting.amount_options': string
   'payment_setting.amount_cashback': string
-  'payment_setting.manual_topup_enabled': boolean
-  'payment_setting.manual_topup_min_amount': number
-  'payment_setting.manual_topup_contact_url': string
   'payment_setting.compliance_confirmed': boolean
   'payment_setting.compliance_terms_version': string
   'payment_setting.compliance_confirmed_at': number

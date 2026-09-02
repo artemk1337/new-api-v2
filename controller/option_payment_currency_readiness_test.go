@@ -184,6 +184,19 @@ func TestYooKassaReadinessUsesProspectivePayMethods(t *testing.T) {
 	}))
 }
 
+func TestManualTransferReadinessRequiresRUB(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.PlatformCurrency{}))
+	require.NoError(t, db.Create(&model.Option{Key: "payment_setting.compliance_confirmed", Value: "true"}).Error)
+
+	methods := `[{"type":"manual_transfer","name":"Direct","contact_url":"https://t.me/support","min_topup":"5000","topup_group":"default"}]`
+	require.Error(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{"PayMethods": methods}))
+
+	require.NoError(t, db.Create(&model.PlatformCurrency{Code: "RUB", Name: "Russian Ruble", Symbol: "₽", Enabled: true, ManualRateToUSD: 0.01, RateToUSD: 0.01}).Error)
+	require.NoError(t, validatePaymentSettingsReadinessFromDB(db, map[string]string{"PayMethods": methods}))
+}
+
 func TestManualTopupSettingsRequireContactAndMinimum(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

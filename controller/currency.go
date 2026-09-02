@@ -155,6 +155,9 @@ func activePaymentCurrencyDependenciesFromDB(db *gorm.DB, code string) []string 
 	if code == "RUB" && complianceConfirmed && yooEnabled && strings.TrimSpace(yooShopID) != "" && strings.TrimSpace(yooSecret) != "" && paymentMethodsJSONContainsType(payMethods, model.PaymentMethodYooKassaSBP) {
 		dependencies = append(dependencies, "YooKassa SBP")
 	}
+	if code == "RUB" && complianceConfirmed && paymentMethodsJSONContainsType(payMethods, model.PaymentMethodManualTransfer) {
+		dependencies = append(dependencies, "manual transfer")
+	}
 	nowEnabled := latestPaymentOptionBoolFromDB(db, "NOWPaymentsEnabled", setting.NOWPaymentsEnabled)
 	nowAPIKey := latestPaymentOptionFromDB(db, "NOWPaymentsAPIKey", setting.NOWPaymentsAPIKey)
 	nowSecret := latestPaymentOptionFromDB(db, "NOWPaymentsIPNSecret", setting.NOWPaymentsIPNSecret)

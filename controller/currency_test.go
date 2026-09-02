@@ -133,6 +133,22 @@ func TestActivePaymentCurrencyDependenciesUsesPersistedPayMethods(t *testing.T) 
 	assert.Contains(t, dependencies, "YooKassa SBP")
 }
 
+func TestActivePaymentCurrencyDependenciesIncludesManualTransfer(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	for _, option := range []model.Option{
+		{Key: "payment_setting.compliance_confirmed", Value: "true"},
+		{Key: "PayMethods", Value: `[{"type":"manual_transfer"}]`},
+	} {
+		require.NoError(t, db.Create(&option).Error)
+	}
+
+	dependencies := activePaymentCurrencyDependenciesFromDB(db, "RUB")
+	assert.Contains(t, dependencies, "manual transfer")
+	require.Error(t, ensurePlatformCurrencyCanBeDeletedFromDB(db, "RUB"))
+}
+
 func TestActivePaymentCurrencyDependenciesIgnoresRetiredCreem(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)

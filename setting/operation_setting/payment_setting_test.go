@@ -351,6 +351,23 @@ func TestValidatePayMethodsRequiresConfiguredTopupGroupWhenExplicit(t *testing.T
 	require.NoError(t, ValidatePayMethods([]map[string]string{{"type": "alipay"}}))
 }
 
+func TestValidatePayMethodsManualTransferRequiresSafeMessengerURL(t *testing.T) {
+	previous := common.TopupGroupRatio2JSONString()
+	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1}`))
+	t.Cleanup(func() { require.NoError(t, common.UpdateTopupGroupRatioByJSONString(previous)) })
+
+	valid := map[string]string{"type": "manual_transfer", "contact_url": "https://t.me/support", "min_topup": "5000", "topup_group": "default"}
+	require.NoError(t, ValidatePayMethods([]map[string]string{valid}))
+	for _, contactURL := range []string{"", "http://t.me/support", "https://example.com/support", "https://t.me/"} {
+		method := map[string]string{"type": "manual_transfer", "contact_url": contactURL, "min_topup": "5000", "topup_group": "default"}
+		require.Error(t, ValidatePayMethods([]map[string]string{method}), contactURL)
+	}
+	for _, minimum := range []string{"", "0"} {
+		method := map[string]string{"type": "manual_transfer", "contact_url": "https://t.me/support", "min_topup": minimum, "topup_group": "default"}
+		require.Error(t, ValidatePayMethods([]map[string]string{method}), minimum)
+	}
+}
+
 func TestValidatePayMethodsForSavePreservesOnlyExistingLegacyOmission(t *testing.T) {
 	previous := common.TopupGroupRatio2JSONString()
 	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1,"premium":1.2}`))

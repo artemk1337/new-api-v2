@@ -181,44 +181,31 @@ export function getRechargeValidationTarget(
   return hasPaymentMethod ? null : 'payment-method'
 }
 
-export function getManualTopupContact(
-  topupInfo: TopupInfo | null
-): { minAmount: number; minBackendAmount: number; url: string } | null {
-  const minAmount = topupInfo?.manual_topup_min_amount
-  const minBackendAmount = topupInfo?.manual_topup_min_amount_backend
-  const url = topupInfo?.manual_topup_contact_url?.trim()
-  if (
-    !topupInfo?.manual_topup_enabled ||
-    !minAmount ||
-    minAmount <= 0 ||
-    !minBackendAmount ||
-    minBackendAmount <= 0 ||
-    !url
-  ) {
-    return null
-  }
+function isSafeManualTransferURL(value: string | undefined): value is string {
   try {
-    const parsedURL = new URL(url)
-    return parsedURL.protocol === 'https:' &&
-      parsedURL.hostname.toLowerCase() === 't.me' &&
-      !parsedURL.port &&
-      parsedURL.pathname !== '/'
-      ? { minAmount, minBackendAmount, url }
-      : null
+    const url = new URL(value?.trim() ?? '')
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.pathname !== '/' &&
+      [
+        't.me',
+        'telegram.me',
+        'wa.me',
+        'api.whatsapp.com',
+        'm.me',
+        'discord.com',
+        'discord.gg',
+        'vk.me',
+      ].includes(
+        url.hostname.toLowerCase()
+      )
+    )
   } catch {
-    return null
+    return false
   }
-}
-
-export function isManualTopupAmountEligible(
-  topupAmount: number,
-  manualTopup: ReturnType<typeof getManualTopupContact>
-): boolean {
-  return Boolean(
-    manualTopup &&
-      Number.isFinite(topupAmount) &&
-      topupAmount >= manualTopup.minBackendAmount
-  )
 }
 
 export function getTopupAmountErrorMessage(
@@ -405,11 +392,6 @@ export function RechargeFormCard({
     onTopupAmountChange(backendAmount)
   }
 
-  const manualTopup = getManualTopupContact(topupInfo)
-  const manualTopupEligible = isManualTopupAmountEligible(
-    topupAmount,
-    manualTopup
-  )
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
@@ -423,9 +405,10 @@ export function RechargeFormCard({
         'usdt_trc20_direct',
         'usdt_ton_direct',
         'usdt_solana_direct',
+        'manual_transfer',
       ].includes(method.type)
     )
-  const hasAnyTopup = hasConfigurableTopup || manualTopup
+  const hasAnyTopup = hasConfigurableTopup
   const hasStandardPaymentMethods = standardPaymentMethods.length > 0
   const availableWaffoMethods = getAvailableWaffoMethods(waffoPayMethods)
   const hasWaffoPaymentMethods = availableWaffoMethods.length > 0
@@ -665,6 +648,18 @@ export function RechargeFormCard({
                                   }
                                   return
                                 }
+                                if (method.type === 'manual_transfer') {
+                                  if (
+                                    isSafeManualTransferURL(method.contact_url)
+                                  ) {
+                                    window.open(
+                                      method.contact_url,
+                                      '_blank',
+                                      'noopener,noreferrer'
+                                    )
+                                  }
+                                  return
+                                }
                                 if (method.type === 'crypto_direct') {
                                   const selected =
                                     selectedPaymentMethod?.type ===
@@ -695,7 +690,9 @@ export function RechargeFormCard({
                                   'border-destructive ring-1 ring-destructive/50'
                               )}
                             >
-                              {method.type === 'crypto_direct' ? (
+                              {method.type === 'manual_transfer' ? (
+                                <ExternalLink className='size-4 shrink-0' />
+                              ) : method.type === 'crypto_direct' ? (
                                 cryptoDisclosureIcon
                               ) : (
                                 <span
@@ -707,17 +704,23 @@ export function RechargeFormCard({
                                   )}
                                 />
                               )}
-                              {getPaymentIcon(
-                                method.type,
-                                'h-4 w-4',
-                                method.icon,
-                                method.name
-                              )}
+                              {method.type !== 'manual_transfer' &&
+                                getPaymentIcon(
+                                  method.type,
+                                  'h-4 w-4',
+                                  method.icon,
+                                  method.name
+                                )}
                               <span className='flex min-w-0 flex-1 items-center gap-3'>
                                 <span className='min-w-0 flex-1'>
                                   <span className='block truncate font-medium'>
                                     {getPaymentMethodDisplayLabel(method)}
                                   </span>
+                                  {method.description?.trim() && (
+                                    <span className='text-muted-foreground block break-words text-xs leading-4'>
+                                      {method.description}
+                                    </span>
+                                  )}
                                 </span>
                                 <span className='flex shrink-0 flex-col items-end text-right'>
                                   {shouldShowPaymentMethodQuote(
@@ -913,30 +916,6 @@ export function RechargeFormCard({
                     </div>
                   )}
               </>
-            )}
-            {manualTopup && (
-              <a
-                href={manualTopupEligible ? manualTopup.url : undefined}
-                target={manualTopupEligible ? '_blank' : undefined}
-                rel={manualTopupEligible ? 'noreferrer' : undefined}
-                aria-disabled={!manualTopupEligible}
-                className={cn(
-                  'border-primary/30 bg-primary/5 flex min-h-[88px] w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                  manualTopupEligible
-                    ? 'hover:bg-primary/10'
-                    : 'cursor-not-allowed opacity-60'
-                )}
-              >
-                <ExternalLink className='text-primary size-4 shrink-0' aria-hidden='true' />
-                <span className='min-w-0 flex-1'>
-                  <span className='block font-medium'>{t('Large payment without commission')}</span>
-                  <span className='text-muted-foreground block text-sm'>
-                    {t('From {{amount}} ₽ — contact the manager to arrange an SBP transfer.', { amount: new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(manualTopup.minAmount) })}
-                  </span>
-                  <span className='text-muted-foreground mt-0.5 block text-xs'>{t('Balance is credited manually after payment confirmation.')}</span>
-                </span>
-                <ExternalLink className='text-muted-foreground size-4 shrink-0' aria-hidden='true' />
-              </a>
             )}
           </div>
         ) : (

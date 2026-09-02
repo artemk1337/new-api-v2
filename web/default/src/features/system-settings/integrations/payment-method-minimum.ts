@@ -6,6 +6,7 @@ const FIXED_PAYMENT_CURRENCIES: Record<string, string> = {
   stripe: 'USD',
   waffo_pancake: 'USD',
   yookassa_sbp: 'RUB',
+  manual_transfer: 'RUB',
   nowpayments: 'USDT',
 }
 
