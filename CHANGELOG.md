@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.171
+
+- Updated the payment-method currency regression test for the configurable direct-transfer method.
+
 ## v1.1.170
 
 - Fixed visibility of configurable direct-transfer payments when legacy EPay is disabled.

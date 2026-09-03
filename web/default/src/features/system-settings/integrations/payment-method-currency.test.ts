@@ -86,6 +86,7 @@ describe('payment method currency capabilities', () => {
       'waffo_pancake',
       'waffo',
       'nowpayments',
+      'manual_transfer',
       'crypto_direct',
     ])
     const crypto = getPaymentTypeOptions((key) => key).find(
