@@ -12,6 +12,7 @@ import { describe, test } from 'node:test'
 import {
   filterAvailablePaymentMethods,
   parseCryptoNetworks,
+  parsePaymentMethods,
 } from './use-topup-info'
 
 const allMethods = [
@@ -96,5 +97,59 @@ describe('top-up payment method availability', () => {
       methods.map((method) => method.type),
       ['crypto_direct']
     )
+  })
+
+  test('keeps manual transfer visible when legacy online top-up is disabled', () => {
+    const methods = filterAvailablePaymentMethods(
+      [{ name: 'Direct transfer', type: 'manual_transfer' }],
+      {
+        enable_online_topup: false,
+        enable_stripe_topup: false,
+        enable_waffo_topup: false,
+        enable_waffo_pancake_topup: false,
+        enable_yookassa_topup: false,
+        enable_nowpayments_topup: false,
+        crypto_networks: [],
+      },
+      false
+    )
+    assert.deepEqual(
+      methods.map((method) => method.type),
+      ['manual_transfer']
+    )
+  })
+
+  test('preserves the direct transfer link and description from the server', () => {
+    const [method] = parsePaymentMethods(
+      [
+        {
+          name: 'Direct transfer',
+          type: 'manual_transfer',
+          contact_url: 'https://t.me/support',
+          description: 'Contact the manager before paying.',
+        },
+      ],
+      0,
+      []
+    )
+
+    assert.deepEqual(method, {
+      name: 'Direct transfer',
+      type: 'manual_transfer',
+      color: undefined,
+      icon: undefined,
+      description: 'Contact the manager before paying.',
+      contact_url: 'https://t.me/support',
+      admin_only: undefined,
+      min_topup: 0,
+      topup_ratio: 1,
+      rate_to_usd: undefined,
+      base_amount_multiplier: undefined,
+      rounding_decimals: undefined,
+      currency: undefined,
+      payment_amount: undefined,
+      currency_symbol: undefined,
+      crypto_networks: undefined,
+    })
   })
 })

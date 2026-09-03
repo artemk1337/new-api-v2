@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.170
+
+- Fixed visibility of configurable direct-transfer payments when legacy EPay is disabled.
+- Preserved the messenger link and operator description in the wallet, and added `LuExternalLink` to the payment icon library.
+
 ## v1.1.169
 
 - Replaced the separate manual-payment card with a configurable Direct transfer payment method: administrators set its name, description, messenger URL, RUB minimum, and commission group alongside other payment methods.

@@ -1,5 +1,6 @@
 export const BUILT_IN_PAYMENT_ICONS = [
   'LuCreditCard',
+  'LuExternalLink',
   'LuWalletCards',
   'LuBitcoin',
   'LuBanknote',

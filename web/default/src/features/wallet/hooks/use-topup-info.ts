@@ -90,7 +90,7 @@ function parseJsonArray(data: unknown): unknown[] {
   return []
 }
 
-function parsePaymentMethods(
+export function parsePaymentMethods(
   data: unknown,
   stripeMinTopup: number,
   cryptoNetworks: DirectUSDTNetwork[]
@@ -130,6 +130,10 @@ function parsePaymentMethods(
         type,
         color: typeof item.color === 'string' ? item.color : undefined,
         icon: typeof item.icon === 'string' ? item.icon : undefined,
+        description:
+          typeof item.description === 'string' ? item.description : undefined,
+        contact_url:
+          typeof item.contact_url === 'string' ? item.contact_url : undefined,
         admin_only: adminOnly,
         min_topup:
           type === 'stripe' && normalizedMinTopup <= 0
@@ -249,6 +253,10 @@ export function filterAvailablePaymentMethods(
           Array.isArray(topupInfo.crypto_networks) &&
           topupInfo.crypto_networks.length > 0
         )
+      case 'manual_transfer':
+        // Direct transfers have their own server-side validation and do not
+        // depend on the legacy EPay gateway.
+        return true
       default:
         return Boolean(topupInfo.enable_online_topup)
     }

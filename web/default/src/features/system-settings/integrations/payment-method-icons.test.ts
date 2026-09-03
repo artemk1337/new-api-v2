@@ -20,8 +20,13 @@ describe('payment method icon library', () => {
 
   test('serializes only known icons in stable catalog order', () => {
     assert.equal(
-      serializeAvailablePaymentIcons(['SiStripe', 'SiAlipay', 'Unknown']),
-      '["SiAlipay","SiStripe"]'
+      serializeAvailablePaymentIcons([
+        'SiStripe',
+        'LuExternalLink',
+        'SiAlipay',
+        'Unknown',
+      ]),
+      '["LuExternalLink","SiAlipay","SiStripe"]'
     )
   })
 })
