@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.172
+
+- Fixed authenticated page overflow so payment settings and header actions stay within the available width beside the sidebar.
+
 ## v1.1.171
 
 - Updated the payment-method currency regression test for the configurable direct-transfer method.
