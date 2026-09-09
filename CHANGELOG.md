@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.175
+
+- Added up/down controls for administrator-configured payment methods and preserved their configured order in the wallet.
+- Kept Crypto canonicalization and legacy duplicate suppression while honoring its configured position.
+
 ## v1.1.174
 
 - Added automatic expiration handling for terminal NOWPayments payment statuses.
