@@ -145,16 +145,18 @@ export function getRechargeStep(
   return hasPaymentMethod ? 3 : 2
 }
 
-function getPaymentMethodDisplayLabel(method: PaymentMethod): string {
+export function getPaymentMethodDisplayLabel(method: PaymentMethod): string {
+  const methodName = method.name || 'Crypto'
   if (method.type === 'crypto_direct') {
     const network = method.crypto_network
     return network
-      ? `Crypto · ${network === 'SOLANA' ? 'Solana' : network}`
-      : 'Crypto'
+      ? `${methodName} · ${network === 'SOLANA' ? 'Solana' : network}`
+      : methodName
   }
   const network = getDirectUSDTNetwork(method.type)
-  if (network) return `Crypto · ${network === 'SOLANA' ? 'Solana' : network}`
-  return method.name
+  if (network)
+    return `${methodName} · ${network === 'SOLANA' ? 'Solana' : network}`
+  return methodName
 }
 
 /**

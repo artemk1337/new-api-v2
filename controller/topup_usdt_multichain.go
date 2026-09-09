@@ -29,7 +29,8 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 		common.ApiErrorMsg(c, "Unsupported USDT network")
 		return
 	}
-	if _, allowed := directCryptoMethodForUser(c); !allowed || !operation_setting.IsPaymentComplianceConfirmed() {
+	directMethod, allowed := directCryptoMethodForUser(c)
+	if !allowed || !operation_setting.IsPaymentComplianceConfirmed() {
 		common.ApiErrorMsg(c, "USDT payments are not available")
 		return
 	}
@@ -86,7 +87,11 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 	}
 	now := time.Now().Unix()
 	tradeNo := fmt.Sprintf("%s%d%s", strings.ToUpper(network), userID, common.GetRandomString(20))
-	topUp := &model.TopUp{UserId: userID, TradeNo: tradeNo, Amount: int64(baseAmount), RequestedAmount: baseAmount, PaymentMethod: model.DirectCryptoProvider, PaymentMethodName: "Crypto", PaymentProvider: model.DirectCryptoProvider, QuotaToAdd: quotaToAdd, CreateTime: now, Status: common.TopUpStatusPending}
+	methodName := strings.TrimSpace(directMethod["name"])
+	if methodName == "" {
+		methodName = model.PaymentMethodDisplayName(model.DirectCryptoProvider)
+	}
+	topUp := &model.TopUp{UserId: userID, TradeNo: tradeNo, Amount: int64(baseAmount), RequestedAmount: baseAmount, PaymentMethod: model.DirectCryptoProvider, PaymentMethodName: methodName, PaymentProvider: model.DirectCryptoProvider, QuotaToAdd: quotaToAdd, CreateTime: now, Status: common.TopUpStatusPending}
 	service.ApplyPaymentSnapshot(topUp, "USD", 1, baseAmount, 1, baseAmount)
 	// ApplyPaymentSnapshot captures the immutable paid principal. Keep the
 	// user-specific effective cashback calculated above as the total credit.

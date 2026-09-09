@@ -285,7 +285,7 @@ func TestCanonicalizePayMethodsDeduplicatesAndFixesDirectUSDTMetadata(t *testing
 func TestCanonicalizePayMethodsPrefersExplicitCryptoParentMetadata(t *testing.T) {
 	methods := []map[string]string{
 		{"type": DirectUSDTTONPaymentMethod, "min_topup": "11", "pending_ttl_minutes": "10"},
-		{"type": DirectCryptoPaymentMethod, "min_topup": "21", "pending_ttl_minutes": "20", "admin_only": "true"},
+		{"type": DirectCryptoPaymentMethod, "name": "USDT on-chain", "min_topup": "21", "pending_ttl_minutes": "20", "admin_only": "true"},
 		{"type": DirectUSDTSolanaPaymentMethod, "min_topup": "31"},
 	}
 
@@ -295,6 +295,22 @@ func TestCanonicalizePayMethodsPrefersExplicitCryptoParentMetadata(t *testing.T)
 	require.Equal(t, "21", canonical[0]["min_topup"])
 	require.Equal(t, "20", canonical[0]["pending_ttl_minutes"])
 	require.Equal(t, "true", canonical[0]["admin_only"])
+	require.Equal(t, "USDT on-chain", canonical[0]["name"])
+}
+
+func TestNormalizePayMethodsPreservesConfiguredCryptoName(t *testing.T) {
+	methods := []map[string]string{
+		{"type": DirectCryptoPaymentMethod, "name": "USDT on-chain"},
+		{"type": DirectUSDTTRC20PaymentMethod, "name": "Legacy custom label"},
+		{"type": DirectUSDTTONPaymentMethod},
+	}
+
+	NormalizePayMethods(methods)
+
+	require.Equal(t, "USDT on-chain", methods[0]["name"])
+	require.Equal(t, DirectCryptoPaymentMethod, methods[0]["type"])
+	require.Equal(t, "Crypto", methods[1]["name"])
+	require.Equal(t, "Crypto", methods[2]["name"])
 }
 
 func TestNormalizePayMethodsNormalizesLegacyYooKassaLabels(t *testing.T) {

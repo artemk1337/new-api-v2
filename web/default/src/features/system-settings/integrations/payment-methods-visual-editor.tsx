@@ -84,9 +84,7 @@ const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
 }
 
 function getPaymentMethodDisplayName(method: PaymentMethodData) {
-  return normalizePaymentMethodType(method.type) === CRYPTO_PAYMENT_TYPE
-    ? 'Crypto'
-    : method.name
+  return method.name
 }
 
 function getPaymentTypeDisplayName(
@@ -116,7 +114,7 @@ function normalizePaymentMethodData(
   return {
     ...method,
     type,
-    name: type === CRYPTO_PAYMENT_TYPE ? 'Crypto' : method.name,
+    name: method.name,
   }
 }
 
@@ -254,10 +252,6 @@ export function PaymentMethodsVisualEditor({
       .map((method) => ({
         ...method,
         type: normalizePaymentMethodType(method.type),
-        name:
-          normalizePaymentMethodType(method.type) === CRYPTO_PAYMENT_TYPE
-            ? 'Crypto'
-            : method.name,
       }))
       .filter((method) => {
         if (method.type !== CRYPTO_PAYMENT_TYPE) return true

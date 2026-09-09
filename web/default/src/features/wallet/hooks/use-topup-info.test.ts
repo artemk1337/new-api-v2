@@ -152,4 +152,14 @@ describe('top-up payment method availability', () => {
       crypto_networks: undefined,
     })
   })
+
+  test('preserves a configured name for direct crypto payments', () => {
+    const [method] = parsePaymentMethods(
+      [{ name: 'USDT', type: 'crypto_direct' }],
+      0,
+      []
+    )
+
+    assert.equal(method.name, 'USDT')
+  })
 })

@@ -112,12 +112,9 @@ export function parsePaymentMethods(
       const rawBaseAmountMultiplier = Number(item.base_amount_multiplier)
       const rawRoundingDecimals = Number(item.rounding_decimals)
       const rawAdminOnly = item.admin_only
-      let name = ''
-      if (type === 'crypto_direct') {
-        name = 'Crypto'
-      } else if (typeof item.name === 'string') {
-        name = item.name
-      }
+      const configuredName =
+        typeof item.name === 'string' ? item.name.trim() : ''
+      const name = configuredName || (type === 'crypto_direct' ? 'Crypto' : '')
       let adminOnly: boolean | undefined
       if (rawAdminOnly === true || rawAdminOnly === 'true') {
         adminOnly = true

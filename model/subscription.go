@@ -1130,7 +1130,7 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 		snapshotAmount = snapshot.ProviderAmount
 	}
 	if isDirectUSDTNetworkProvider(order.PaymentMethod) {
-		order.PaymentMethodName = "Crypto"
+		order.PaymentMethodName = PaymentMethodDisplayName(order.PaymentMethod)
 	} else if !validStoredPaymentMethodName(order.PaymentMethod, order.PaymentMethodName) {
 		if canonicalName, canonical := canonicalPaymentMethodDisplayName(order.PaymentMethod); canonical {
 			order.PaymentMethodName = canonicalName

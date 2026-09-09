@@ -322,12 +322,10 @@ func PaymentMethodDisplayName(paymentMethod string) string {
 	if method == "" {
 		return ""
 	}
-	if strings.EqualFold(method, DirectCryptoProvider) || strings.EqualFold(method, DirectUSDTTRC20Provider) ||
-		strings.EqualFold(method, operation_setting.DirectUSDTTONPaymentMethod) || strings.EqualFold(method, operation_setting.DirectUSDTSolanaPaymentMethod) {
-		return "Crypto"
-	}
 	for _, configured := range operation_setting.PayMethodsSnapshot() {
-		if !strings.EqualFold(strings.TrimSpace(configured["type"]), method) {
+		configuredType := strings.TrimSpace(configured["type"])
+		if !strings.EqualFold(configuredType, method) &&
+			!(isDirectUSDTNetworkProvider(method) && strings.EqualFold(configuredType, DirectCryptoProvider)) {
 			continue
 		}
 		name := strings.TrimSpace(configured["name"])
@@ -338,6 +336,10 @@ func PaymentMethodDisplayName(paymentMethod string) string {
 			return name
 		}
 		break
+	}
+	if strings.EqualFold(method, DirectCryptoProvider) || strings.EqualFold(method, DirectUSDTTRC20Provider) ||
+		strings.EqualFold(method, operation_setting.DirectUSDTTONPaymentMethod) || strings.EqualFold(method, operation_setting.DirectUSDTSolanaPaymentMethod) {
+		return "Crypto"
 	}
 	if name, ok := canonicalPaymentMethodDisplayName(method); ok {
 		return name
@@ -398,9 +400,7 @@ func annotateTopupSources(topups []*TopUp) {
 			// Stable, non-sensitive categories are safe to expose.
 		default:
 			topUp.Source = ""
-			if isDirectUSDTNetworkProvider(topUp.PaymentMethod) {
-				topUp.PaymentMethodName = "Crypto"
-			} else if strings.EqualFold(strings.TrimSpace(topUp.PaymentMethod), PaymentMethodYooKassaSBP) && strings.EqualFold(strings.TrimSpace(topUp.PaymentMethodName), "yookassa") {
+			if strings.EqualFold(strings.TrimSpace(topUp.PaymentMethod), PaymentMethodYooKassaSBP) && strings.EqualFold(strings.TrimSpace(topUp.PaymentMethodName), "yookassa") {
 				topUp.PaymentMethodName = "СБП"
 			} else if !validStoredPaymentMethodName(topUp.PaymentMethod, topUp.PaymentMethodName) {
 				topUp.PaymentMethodName = PaymentMethodDisplayName(topUp.PaymentMethod)

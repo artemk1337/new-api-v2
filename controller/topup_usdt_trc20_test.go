@@ -93,7 +93,7 @@ func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "crypto_parent_routes.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}, &model.User{}, &model.TopUp{}, &model.DirectCryptoPayment{}, &model.PaymentMetadata{}))
-	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"crypto_direct","min_topup":"10","pending_ttl_minutes":"31"}]`}).Error)
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"crypto_direct","name":"USDT on-chain","min_topup":"10","pending_ttl_minutes":"31"}]`}).Error)
 	require.NoError(t, db.Create(&model.User{Id: 991, Username: "crypto-parent", Password: "password123", AffCode: "crypto-parent", InviterId: 990, ReferralCashbackEligible: true}).Error)
 	previousDB := model.DB
 	previousAddress := setting.USDTTRC20ReceivingAddress
@@ -140,6 +140,7 @@ func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.
 	for _, topUp := range topUps {
 		assert.Equal(t, model.DirectCryptoProvider, topUp.PaymentMethod)
 		assert.Equal(t, model.DirectCryptoProvider, topUp.PaymentProvider)
+		assert.Equal(t, "USDT on-chain", topUp.PaymentMethodName)
 		assert.Equal(t, int64(31*60), topUp.PaymentPendingTTLSeconds)
 		assert.Equal(t, topUp.BaseQuotaToAdd*120/100, topUp.QuotaToAdd)
 	}
@@ -177,7 +178,7 @@ func TestGetTopUpInfoPublishesConfiguredDirectUSDTMethod(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
 	createAuthenticatedTopUpInfoUser(t, db)
-	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay","name":"First"},{"type":" USDT_TRC20_DIRECT ","name":"bad","currency":"BTC","min_topup":"0"},{"type":"usdt_trc20_direct","name":"duplicate"},{"type":"wxpay","name":"Last"}]`}).Error)
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay","name":"First"},{"type":" USDT_TRC20_DIRECT ","name":"bad","currency":"BTC","min_topup":"0"},{"type":"crypto_direct","name":"USDT on-chain"},{"type":"usdt_trc20_direct","name":"duplicate"},{"type":"wxpay","name":"Last"}]`}).Error)
 
 	previousDB := model.DB
 	previousDatabaseType := common.MainDatabaseType()
@@ -232,7 +233,7 @@ func TestGetTopUpInfoPublishesConfiguredDirectUSDTMethod(t *testing.T) {
 	assert.Equal(t, "alipay", response.Data.PayMethods[0]["type"])
 	assert.Equal(t, model.DirectCryptoProvider, response.Data.PayMethods[1]["type"])
 	assert.Equal(t, "wxpay", response.Data.PayMethods[2]["type"])
-	assert.Equal(t, "Crypto", direct["name"])
+	assert.Equal(t, "USDT on-chain", direct["name"])
 	assert.Equal(t, "USDT", direct["currency"])
 	assert.Equal(t, "1", direct["rate_to_usd"])
 	assert.Equal(t, "6", direct["rounding_decimals"])

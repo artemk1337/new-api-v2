@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.177
+
+- Made the Crypto payment method name configurable in administrator settings and preserved the configured label in wallet cards and payment history.
+
 ## v1.1.176
 
 - Added mandatory account verification with an administrator-selected provider: Email, Telegram, or GitHub; any selected provider is sufficient.

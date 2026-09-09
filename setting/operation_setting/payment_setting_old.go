@@ -278,7 +278,17 @@ func NormalizePayMethods(methods []map[string]string) {
 		switch canonicalType {
 		case "nowpayments", "yookassa_sbp", "stripe", "waffo", "waffo_pancake":
 			method["type"] = canonicalType
-		case DirectCryptoPaymentMethod, DirectUSDTTRC20PaymentMethod, DirectUSDTTONPaymentMethod, DirectUSDTSolanaPaymentMethod:
+		case DirectCryptoPaymentMethod:
+			method["type"] = DirectCryptoPaymentMethod
+			// The parent method is operator-editable. Keep an explicit label and
+			// only materialize the historical default for legacy rows that omit it.
+			if strings.TrimSpace(method["name"]) == "" {
+				method["name"] = "Crypto"
+			}
+		case DirectUSDTTRC20PaymentMethod, DirectUSDTTONPaymentMethod, DirectUSDTSolanaPaymentMethod:
+			// Network-specific IDs are legacy aliases. They never had an
+			// independent public label, so retain the canonical default while the
+			// parent crypto_direct entry remains fully editable.
 			method["type"] = DirectCryptoPaymentMethod
 			method["name"] = "Crypto"
 		}

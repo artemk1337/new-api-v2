@@ -256,7 +256,7 @@ export function PaymentMethodDialog({
     if (editData) {
       const normalizedType = normalizePaymentMethodType(editData.type)
       form.reset({
-        name: isCryptoPaymentType(normalizedType) ? 'Crypto' : editData.name,
+        name: editData.name,
         type: normalizedType,
         icon: editData.icon ?? getDefaultIconName(normalizedType),
         description: editData.description ?? '',
@@ -283,7 +283,7 @@ export function PaymentMethodDialog({
 
   const handleSubmit = (values: PaymentMethodDialogFormValues) => {
     const data: PaymentMethodData = {
-      name: isDirectCryptoPaymentType(values.type) ? 'Crypto' : values.name,
+      name: values.name.trim(),
       type: normalizePaymentMethodType(values.type),
       admin_only: values.admin_only,
     }
@@ -351,7 +351,6 @@ export function PaymentMethodDialog({
                 <FormControl>
                   <Input
                     placeholder={t('e.g., Alipay, WeChat')}
-                    disabled={isDirectCrypto}
                     {...field}
                   />
                 </FormControl>

@@ -141,7 +141,7 @@ func GetTopUpInfo(c *gin.Context) {
 				continue
 			}
 			directMethod := map[string]string{
-				"name":      "Crypto",
+				"name":      model.PaymentMethodDisplayName(model.DirectCryptoProvider),
 				"type":      model.DirectCryptoProvider,
 				"currency":  "USDT",
 				"color":     "#26A17B",
@@ -150,9 +150,11 @@ func GetTopUpInfo(c *gin.Context) {
 			for key, value := range directConfig {
 				directMethod[key] = value
 			}
-			directMethod["name"] = "Crypto"
 			directMethod["type"] = model.DirectCryptoProvider
 			directMethod["currency"] = "USDT"
+			if strings.TrimSpace(directMethod["name"]) == "" {
+				directMethod["name"] = model.PaymentMethodDisplayName(model.DirectCryptoProvider)
+			}
 			if parsed, err := strconv.ParseFloat(strings.TrimSpace(directMethod["min_topup"]), 64); err != nil || parsed < 10 {
 				directMethod["min_topup"] = "10"
 			}

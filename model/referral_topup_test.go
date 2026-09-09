@@ -122,6 +122,15 @@ func TestPaymentMethodDisplayNamePrefersConfiguredBuiltinName(t *testing.T) {
 	assert.Equal(t, "Alipay", PaymentMethodDisplayName("alipay"))
 }
 
+func TestPaymentMethodDisplayNameUsesConfiguredCryptoName(t *testing.T) {
+	originalMethods := operation_setting.PayMethods
+	operation_setting.PayMethods = []map[string]string{{"type": DirectCryptoProvider, "name": "USDT on-chain"}}
+	t.Cleanup(func() { operation_setting.PayMethods = originalMethods })
+
+	assert.Equal(t, "USDT on-chain", PaymentMethodDisplayName(DirectCryptoProvider))
+	assert.Equal(t, "USDT on-chain", PaymentMethodDisplayName(DirectUSDTTRC20Provider))
+}
+
 func TestPaymentMethodDisplayNameUsesSnapshotDuringUpdates(t *testing.T) {
 	originalMethods := operation_setting.PayMethods
 	t.Cleanup(func() { operation_setting.PayMethods = originalMethods })

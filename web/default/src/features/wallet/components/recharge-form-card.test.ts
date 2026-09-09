@@ -49,6 +49,7 @@ import {
   getPaymentQuoteDisplay,
   getRechargeValidationTarget,
   getRechargeStep,
+  getPaymentMethodDisplayLabel,
   getTopupAmountErrorMessage,
   isTopupAmountValidationActive,
   shouldShowPaymentMethodQuote,
@@ -87,6 +88,17 @@ describe('custom top-up amount', () => {
     assert.equal(isPaymentMethodAmountEligible(5, methods[0]), true)
     assert.equal(isPaymentMethodAmountEligible(5, methods[1]), false)
     assert.equal(isPaymentMethodAmountEligible(20, methods[1]), true)
+  })
+
+  test('uses the configured name for direct crypto payment labels', () => {
+    assert.equal(
+      getPaymentMethodDisplayLabel({
+        name: 'USDT',
+        type: 'crypto_direct',
+        crypto_network: 'TON',
+      }),
+      'USDT · TON'
+    )
   })
   test('does not apply a USD minimum to converted wallet units', () => {
     // In TOKENS mode the value sent to the backend is quota units, not USD.
