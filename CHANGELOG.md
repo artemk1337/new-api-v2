@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.174
+
+- Added automatic expiration handling for terminal NOWPayments payment statuses.
+- Added a user-triggered payment-status check for pending crypto top-ups with provider-side verification before crediting balance.
+
 ## v1.1.173
 
 - Added configurable administrator controls for password-signup attempt and successful-account limits per client IP, backed by atomic Redis reservations with a safe in-memory fallback.
