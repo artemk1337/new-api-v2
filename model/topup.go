@@ -325,7 +325,7 @@ func PaymentMethodDisplayName(paymentMethod string) string {
 	for _, configured := range operation_setting.PayMethodsSnapshot() {
 		configuredType := strings.TrimSpace(configured["type"])
 		if !strings.EqualFold(configuredType, method) &&
-			!(isDirectUSDTNetworkProvider(method) && strings.EqualFold(configuredType, DirectCryptoProvider)) {
+			!(isDirectUSDTNetworkProvider(method) && isDirectUSDTNetworkProvider(configuredType)) {
 			continue
 		}
 		name := strings.TrimSpace(configured["name"])
