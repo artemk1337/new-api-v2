@@ -1,4 +1,12 @@
-import { Lightbulb, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Lightbulb,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -49,6 +57,10 @@ import {
   getPaymentTypeOptions,
   normalizePaymentMethodType,
 } from './payment-method-options'
+import {
+  movePaymentMethodInJson,
+  type PaymentMethodMoveDirection,
+} from './payment-method-order'
 
 type PaymentMethodsVisualEditorProps = {
   value: string
@@ -344,6 +356,14 @@ export function PaymentMethodsVisualEditor({
     onChange(JSON.stringify(updatedArray, null, 2))
   }
 
+  const handleMove = (
+    method: PaymentMethodData,
+    direction: PaymentMethodMoveDirection
+  ) => {
+    const nextValue = movePaymentMethodInJson(value, method, direction)
+    if (nextValue !== null) onChange(nextValue)
+  }
+
   const handleEdit = (method: PaymentMethodData) => {
     setEditData(method)
     setDialogOpen(true)
@@ -518,6 +538,48 @@ export function PaymentMethodsVisualEditor({
             getRowKey={(method, index) => `${method.type}-${index}`}
             columns={[
               {
+                id: 'order',
+                header: t('Order'),
+                cell: (method) => {
+                  const methodIndex = paymentMethods.indexOf(method)
+                  return (
+                    <div className='flex items-center gap-0.5'>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='icon-sm'
+                        aria-label={t('Move payment method up')}
+                        disabled={methodIndex <= 0}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleMove(method, 'up')
+                        }}
+                      >
+                        <ArrowUp aria-hidden='true' />
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='icon-sm'
+                        aria-label={t('Move payment method down')}
+                        disabled={
+                          methodIndex === -1 ||
+                          methodIndex >= paymentMethods.length - 1
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleMove(method, 'down')
+                        }}
+                      >
+                        <ArrowDown aria-hidden='true' />
+                      </Button>
+                    </div>
+                  )
+                },
+              },
+              {
                 id: 'name',
                 header: t('Name'),
                 cellClassName: 'font-medium',
@@ -626,6 +688,38 @@ export function PaymentMethodsVisualEditor({
                       </span>
                     </div>
                     <div className='flex gap-1'>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        aria-label={t('Move payment method up')}
+                        disabled={paymentMethods.indexOf(method) <= 0}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleMove(method, 'up')
+                        }}
+                      >
+                        <ArrowUp aria-hidden='true' />
+                      </Button>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        aria-label={t('Move payment method down')}
+                        disabled={
+                          !paymentMethods.includes(method) ||
+                          paymentMethods.indexOf(method) >=
+                            paymentMethods.length - 1
+                        }
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          handleMove(method, 'down')
+                        }}
+                      >
+                        <ArrowDown aria-hidden='true' />
+                      </Button>
                       <Button
                         type='button'
                         variant='ghost'

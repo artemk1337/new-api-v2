@@ -124,9 +124,11 @@ func GetTopUpInfo(c *gin.Context) {
 	if complianceConfirmed && directConfig != nil {
 		directNetworks = model.DirectUSDTReadyNetworks()
 	}
-	// Remove the parent before adding one canonical method below. This keeps
-	// malformed/duplicate catalog data from publishing multiple Crypto cards.
+	// Publish one canonical Crypto parent at its configured position. This keeps
+	// malformed/duplicate catalog data from publishing multiple Crypto cards
+	// without discarding the operator-defined payment method order.
 	filteredPayMethods := make([]map[string]string, 0, len(payMethods))
+	directAdded := false
 	for _, method := range payMethods {
 		if method == nil {
 			continue
@@ -134,7 +136,31 @@ func GetTopUpInfo(c *gin.Context) {
 		if strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodManualTransfer) && operation_setting.ValidateManualTransferURL(method["contact_url"]) != nil {
 			continue
 		}
-		if !strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) && !strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem) {
+		if strings.EqualFold(strings.TrimSpace(method["type"]), model.DirectCryptoProvider) {
+			if len(directNetworks) == 0 || directConfig == nil || directAdded {
+				continue
+			}
+			directMethod := map[string]string{
+				"name":      "Crypto",
+				"type":      model.DirectCryptoProvider,
+				"currency":  "USDT",
+				"color":     "#26A17B",
+				"min_topup": "10",
+			}
+			for key, value := range directConfig {
+				directMethod[key] = value
+			}
+			directMethod["name"] = "Crypto"
+			directMethod["type"] = model.DirectCryptoProvider
+			directMethod["currency"] = "USDT"
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(directMethod["min_topup"]), 64); err != nil || parsed < 10 {
+				directMethod["min_topup"] = "10"
+			}
+			filteredPayMethods = append(filteredPayMethods, directMethod)
+			directAdded = true
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(method["type"]), model.PaymentMethodCreem) {
 			filteredPayMethods = append(filteredPayMethods, method)
 		}
 	}
@@ -239,27 +265,6 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
-	// Crypto is one parent method. Networks are a server-derived list, never
-	// independent PayMethods entries, so their policy cannot diverge.
-	if len(directNetworks) > 0 && directConfig != nil {
-		directMethod := map[string]string{
-			"name":      "Crypto",
-			"type":      model.DirectCryptoProvider,
-			"currency":  "USDT",
-			"color":     "#26A17B",
-			"min_topup": "10",
-		}
-		for key, value := range directConfig {
-			directMethod[key] = value
-		}
-		directMethod["name"] = "Crypto"
-		directMethod["type"] = model.DirectCryptoProvider
-		directMethod["currency"] = "USDT"
-		if parsed, err := strconv.ParseFloat(strings.TrimSpace(directMethod["min_topup"]), 64); err != nil || parsed < 10 {
-			directMethod["min_topup"] = "10"
-		}
-		payMethods = append(payMethods, directMethod)
-	}
 	// Synthetic provider entries inherit the persisted visibility flag. This
 	// prevents an admin-only Stripe/NOWPayments method from being re-added as a
 	// public synthetic card when its integration is enabled.

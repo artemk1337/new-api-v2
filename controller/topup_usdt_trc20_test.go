@@ -177,7 +177,7 @@ func TestGetTopUpInfoPublishesConfiguredDirectUSDTMethod(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&model.Option{}))
 	createAuthenticatedTopUpInfoUser(t, db)
-	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":" USDT_TRC20_DIRECT ","name":"bad","currency":"BTC","min_topup":"0"},{"type":"usdt_trc20_direct","name":"duplicate"}]`}).Error)
+	require.NoError(t, db.Create(&model.Option{Key: "PayMethods", Value: `[{"type":"alipay","name":"First"},{"type":" USDT_TRC20_DIRECT ","name":"bad","currency":"BTC","min_topup":"0"},{"type":"usdt_trc20_direct","name":"duplicate"},{"type":"wxpay","name":"Last"}]`}).Error)
 
 	previousDB := model.DB
 	previousDatabaseType := common.MainDatabaseType()
@@ -228,6 +228,10 @@ func TestGetTopUpInfoPublishesConfiguredDirectUSDTMethod(t *testing.T) {
 	}
 	require.NotNil(t, direct)
 	assert.Equal(t, 1, directCount)
+	require.Len(t, response.Data.PayMethods, 3)
+	assert.Equal(t, "alipay", response.Data.PayMethods[0]["type"])
+	assert.Equal(t, model.DirectCryptoProvider, response.Data.PayMethods[1]["type"])
+	assert.Equal(t, "wxpay", response.Data.PayMethods[2]["type"])
 	assert.Equal(t, "Crypto", direct["name"])
 	assert.Equal(t, "USDT", direct["currency"])
 	assert.Equal(t, "1", direct["rate_to_usd"])
