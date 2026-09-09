@@ -33,7 +33,7 @@ func TestInMemoryRateLimiterRetainsAttemptsAcrossWindowIncrease(t *testing.T) {
 	now := time.Now()
 	limiter := InMemoryRateLimiter{store: map[string]inMemoryRateLimitEntry{
 		"payment:42": {
-			requests:           []time.Time{now.Add(-2 * time.Minute)},
+			requests:           []inMemoryRateLimitRequest{{at: now.Add(-2 * time.Minute)}},
 			expirationDuration: time.Minute,
 		},
 	}}
@@ -48,7 +48,7 @@ func TestInMemoryRateLimiterCleanupUsesEntryRetention(t *testing.T) {
 		expirationDuration: 20 * time.Minute,
 	}
 	limiter.store["payment:42"] = inMemoryRateLimitEntry{
-		requests:           []time.Time{now.Add(-30 * time.Minute)},
+		requests:           []inMemoryRateLimitRequest{{at: now.Add(-30 * time.Minute)}},
 		expirationDuration: time.Hour,
 	}
 
@@ -75,4 +75,35 @@ func TestInMemoryRateLimiterConcurrentInit(t *testing.T) {
 	wg.Wait()
 
 	require.NotNil(t, limiter.store)
+}
+
+func TestInMemoryRateLimiterReleaseReservationFreesReservedCapacity(t *testing.T) {
+	limiter := InMemoryRateLimiter{store: make(map[string]inMemoryRateLimitEntry)}
+	reservationID, allowed := limiter.ReserveWithRetention("registration:success:ip", 1, time.Hour, 24*time.Hour)
+	require.True(t, allowed)
+	require.False(t, limiter.RequestWithRetention("registration:success:ip", 1, time.Hour, 24*time.Hour))
+
+	limiter.ReleaseReservation("registration:success:ip", reservationID)
+
+	assert.True(t, limiter.RequestWithRetention("registration:success:ip", 1, time.Hour, 24*time.Hour))
+}
+
+func TestInMemoryRateLimiterReleasesExactReservation(t *testing.T) {
+	limiter := InMemoryRateLimiter{store: make(map[string]inMemoryRateLimitEntry)}
+	key := "registration:success:ip"
+	olderReservationID, allowed := limiter.ReserveWithRetention(key, 1, time.Minute, 24*time.Hour)
+	require.True(t, allowed)
+
+	entry := limiter.store[key]
+	entry.requests[0].at = time.Now().Add(-2 * time.Minute)
+	limiter.store[key] = entry
+	newerReservationID, allowed := limiter.ReserveWithRetention(key, 1, time.Minute, 24*time.Hour)
+	require.True(t, allowed)
+
+	limiter.ReleaseReservation(key, olderReservationID)
+
+	entry = limiter.store[key]
+	require.Len(t, entry.requests, 1)
+	assert.Equal(t, newerReservationID, entry.requests[0].reservationID)
+	assert.False(t, limiter.RequestWithRetention(key, 1, time.Minute, 24*time.Hour))
 }

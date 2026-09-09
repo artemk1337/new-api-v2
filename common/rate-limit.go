@@ -9,11 +9,17 @@ type InMemoryRateLimiter struct {
 	store              map[string]inMemoryRateLimitEntry
 	mutex              sync.Mutex
 	expirationDuration time.Duration
+	nextReservationID  uint64
 }
 
 type inMemoryRateLimitEntry struct {
-	requests           []time.Time
+	requests           []inMemoryRateLimitRequest
 	expirationDuration time.Duration
+}
+
+type inMemoryRateLimitRequest struct {
+	at            time.Time
+	reservationID uint64
 }
 
 func (l *InMemoryRateLimiter) Init(expirationDuration time.Duration) {
@@ -44,7 +50,7 @@ func (l *InMemoryRateLimiter) deleteExpiredItems(now time.Time) {
 		if expirationDuration <= 0 {
 			expirationDuration = l.expirationDuration
 		}
-		if len(entry.requests) == 0 || now.Sub(entry.requests[len(entry.requests)-1]) > expirationDuration {
+		if len(entry.requests) == 0 || now.Sub(entry.requests[len(entry.requests)-1].at) > expirationDuration {
 			delete(l.store, key)
 		}
 	}
@@ -61,7 +67,7 @@ func (l *InMemoryRateLimiter) request(key string, maxRequestNum int, duration ti
 	now := time.Now()
 	entry := l.store[key]
 	firstActive := 0
-	for firstActive < len(entry.requests) && now.Sub(entry.requests[firstActive]) >= duration {
+	for firstActive < len(entry.requests) && now.Sub(entry.requests[firstActive].at) >= duration {
 		firstActive++
 	}
 	entry.requests = entry.requests[firstActive:]
@@ -70,7 +76,7 @@ func (l *InMemoryRateLimiter) request(key string, maxRequestNum int, duration ti
 		l.store[key] = entry
 		return false
 	}
-	entry.requests = append(entry.requests, now)
+	entry.requests = append(entry.requests, inMemoryRateLimitRequest{at: now})
 	l.store[key] = entry
 	return true
 }
@@ -84,28 +90,69 @@ func (l *InMemoryRateLimiter) RequestWithDuration(key string, maxRequestNum int,
 // the active window. It is for limits whose window can be changed at runtime:
 // a later larger window still sees attempts made under the earlier setting.
 func (l *InMemoryRateLimiter) RequestWithRetention(key string, maxRequestNum int, duration, retention time.Duration) bool {
+	_, allowed := l.ReserveWithRetention(key, maxRequestNum, duration, retention)
+	return allowed
+}
+
+// ReserveWithRetention returns an identifier that can release this exact
+// reservation if the protected operation fails.
+func (l *InMemoryRateLimiter) ReserveWithRetention(key string, maxRequestNum int, duration, retention time.Duration) (uint64, bool) {
 	if maxRequestNum <= 0 || duration <= 0 || retention < duration {
-		return false
+		return 0, false
 	}
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 	now := time.Now()
 	entry := l.store[key]
 	firstRetained := 0
-	for firstRetained < len(entry.requests) && now.Sub(entry.requests[firstRetained]) >= retention {
+	for firstRetained < len(entry.requests) && now.Sub(entry.requests[firstRetained].at) >= retention {
 		firstRetained++
 	}
 	entry.requests = entry.requests[firstRetained:]
 	entry.expirationDuration = retention
 	active := 0
-	for i := len(entry.requests) - 1; i >= 0 && now.Sub(entry.requests[i]) < duration; i-- {
+	for i := len(entry.requests) - 1; i >= 0 && now.Sub(entry.requests[i].at) < duration; i-- {
 		active++
 	}
 	if active >= maxRequestNum {
 		l.store[key] = entry
-		return false
+		return 0, false
 	}
-	entry.requests = append(entry.requests, now)
+	l.nextReservationID++
+	if l.nextReservationID == 0 {
+		l.nextReservationID++
+	}
+	reservationID := l.nextReservationID
+	entry.requests = append(entry.requests, inMemoryRateLimitRequest{at: now, reservationID: reservationID})
 	l.store[key] = entry
-	return true
+	return reservationID, true
+}
+
+// ReleaseReservation removes one previously accepted reservation.
+func (l *InMemoryRateLimiter) ReleaseReservation(key string, reservationID uint64) {
+	if reservationID == 0 {
+		return
+	}
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	entry, ok := l.store[key]
+	if !ok || len(entry.requests) == 0 {
+		return
+	}
+	reservationIndex := -1
+	for i := len(entry.requests) - 1; i >= 0; i-- {
+		if entry.requests[i].reservationID == reservationID {
+			reservationIndex = i
+			break
+		}
+	}
+	if reservationIndex == -1 {
+		return
+	}
+	entry.requests = append(entry.requests[:reservationIndex], entry.requests[reservationIndex+1:]...)
+	if len(entry.requests) == 0 {
+		delete(l.store, key)
+		return
+	}
+	l.store[key] = entry
 }

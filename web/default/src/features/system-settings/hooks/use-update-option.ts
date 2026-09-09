@@ -38,6 +38,8 @@ const statusRelatedKeys = new Set([
   'general_setting.custom_currency_exchange_rate',
   'TelegramOAuthEnabled',
   'TelegramBotName',
+  'TurnstileCheckEnabled',
+  'TurnstileSiteKey',
 ])
 
 export function useUpdateOption() {

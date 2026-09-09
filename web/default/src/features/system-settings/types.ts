@@ -219,6 +219,10 @@ export type AuthSettings = {
   WeChatServerAddress: string
   WeChatServerToken: string
   WeChatAccountQRCodeImageURL: string
+  RegistrationRateLimitEnabled: boolean
+  RegistrationRateLimitAttempts: number
+  RegistrationRateLimitSuccesses: number
+  RegistrationRateLimitWindowMinutes: number
   TurnstileCheckEnabled: boolean
   TurnstileSiteKey: string
   TurnstileSecretKey: string

@@ -16,16 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import i18next from 'i18next'
+import { useState } from 'react'
 import { toast } from 'sonner'
+
 import { useCountdown } from '@/hooks/use-countdown'
+
 import { sendEmailVerification } from '../api'
 import { EMAIL_VERIFICATION_COUNTDOWN } from '../constants'
 
 interface UseEmailVerificationOptions {
   turnstileToken?: string
   validateTurnstile?: () => boolean
+  resetTurnstile?: () => void
 }
 
 /**
@@ -65,11 +68,12 @@ export function useEmailVerification(options?: UseEmailVerificationOptions) {
         res?.message || i18next.t('Failed to send verification email')
       )
       return false
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
       return false
     } finally {
       setIsSending(false)
+      options?.resetTurnstile?.()
     }
   }
 

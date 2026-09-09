@@ -105,6 +105,12 @@ const AUTH_SECTIONS = [
     build: (settings: AuthSettings) => (
       <BotProtectionSection
         defaultValues={{
+          RegistrationRateLimitEnabled: settings.RegistrationRateLimitEnabled,
+          RegistrationRateLimitAttempts: settings.RegistrationRateLimitAttempts,
+          RegistrationRateLimitSuccesses:
+            settings.RegistrationRateLimitSuccesses,
+          RegistrationRateLimitWindowMinutes:
+            settings.RegistrationRateLimitWindowMinutes,
           TurnstileCheckEnabled: settings.TurnstileCheckEnabled,
           TurnstileSiteKey: settings.TurnstileSiteKey,
           TurnstileSecretKey: settings.TurnstileSecretKey,

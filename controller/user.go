@@ -218,6 +218,20 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserExists)
 		return
 	}
+	releaseRegistrationSlot, allowed := service.ReserveRegistrationSuccess(c.ClientIP())
+	if !allowed {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"success": false,
+			"message": "Too many accounts were registered from this address. Please try again later.",
+		})
+		return
+	}
+	registrationCreated := false
+	defer func() {
+		if !registrationCreated {
+			releaseRegistrationSlot()
+		}
+	}()
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId := 0
 	cleanUser := model.User{
@@ -247,6 +261,17 @@ func Register(c *gin.Context) {
 		}
 		return
 	}
+	registrationCreated = true
+	userAgent := []rune(strings.ToValidUTF8(c.Request.UserAgent(), ""))
+	if len(userAgent) > 256 {
+		userAgent = userAgent[:256]
+	}
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf(
+		"password registration succeeded user_id=%d client_ip=%s user_agent=%q",
+		cleanUser.Id,
+		c.ClientIP(),
+		string(userAgent),
+	))
 	cleanUser.FinishInsert(inviterId)
 
 	// 获取插入后的用户ID

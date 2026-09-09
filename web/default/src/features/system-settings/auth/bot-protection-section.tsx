@@ -16,11 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useEffect } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from '@/components/ui/field'
 import {
   Form,
   FormControl,
@@ -32,6 +42,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -40,14 +51,11 @@ import {
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-
-const botProtectionSchema = z.object({
-  TurnstileCheckEnabled: z.boolean(),
-  TurnstileSiteKey: z.string().optional(),
-  TurnstileSecretKey: z.string().optional(),
-})
-
-type BotProtectionFormValues = z.infer<typeof botProtectionSchema>
+import {
+  createBotProtectionSchema,
+  getBotProtectionOptionUpdates,
+  type BotProtectionFormValues,
+} from './bot-protection-options'
 
 type BotProtectionSectionProps = {
   defaultValues: BotProtectionFormValues
@@ -58,24 +66,25 @@ export function BotProtectionSection({
 }: BotProtectionSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const botProtectionSchema = createBotProtectionSchema(t)
 
   const form = useForm<BotProtectionFormValues>({
     resolver: zodResolver(botProtectionSchema),
     defaultValues,
   })
+  const registrationRateLimitEnabled = form.watch(
+    'RegistrationRateLimitEnabled'
+  )
 
   useEffect(() => {
     form.reset(defaultValues)
   }, [defaultValues, form])
 
   const onSubmit = async (data: BotProtectionFormValues) => {
-    const updates = Object.entries(data).filter(
-      ([key, value]) =>
-        value !== defaultValues[key as keyof BotProtectionFormValues]
-    )
+    const updates = getBotProtectionOptionUpdates(data, defaultValues)
 
-    for (const [key, value] of updates) {
-      await updateOption.mutateAsync({ key, value: value ?? '' })
+    for (const update of updates) {
+      await updateOption.mutateAsync(update)
     }
   }
 
@@ -87,6 +96,156 @@ export function BotProtectionSection({
             onSave={form.handleSubmit(onSubmit)}
             isSaving={updateOption.isPending}
           />
+
+          <FieldSet className='rounded-lg border p-4'>
+            <FieldLegend>{t('Registration rate limiting')}</FieldLegend>
+            <FieldDescription>
+              {t(
+                'Limits are enforced per client IP. Ensure trusted proxy settings preserve the real visitor IP.'
+              )}
+            </FieldDescription>
+
+            <FieldGroup className='gap-4'>
+              <FormField
+                control={form.control}
+                name='RegistrationRateLimitEnabled'
+                render={({ field, fieldState }) => (
+                  <Field
+                    orientation='horizontal'
+                    data-invalid={fieldState.invalid}
+                  >
+                    <FieldContent>
+                      <FieldLabel htmlFor='registration-rate-limit-enabled'>
+                        {t('Enable registration rate limiting')}
+                      </FieldLabel>
+                      <FieldDescription>
+                        {t(
+                          'Reject excessive signup attempts with HTTP 429 before creating an account.'
+                        )}
+                      </FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      id='registration-rate-limit-enabled'
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      aria-invalid={fieldState.invalid}
+                    />
+                  </Field>
+                )}
+              />
+
+              <FieldGroup className='grid gap-4 md:grid-cols-3'>
+                <FormField
+                  control={form.control}
+                  name='RegistrationRateLimitAttempts'
+                  render={({ field, fieldState }) => (
+                    <Field
+                      data-invalid={fieldState.invalid}
+                      data-disabled={!registrationRateLimitEnabled}
+                    >
+                      <FieldLabel htmlFor='registration-rate-limit-attempts'>
+                        {t('Registration attempts')}
+                      </FieldLabel>
+                      <Input
+                        id='registration-rate-limit-attempts'
+                        type='number'
+                        min={1}
+                        max={1000}
+                        step={1}
+                        disabled={!registrationRateLimitEnabled}
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                        onChange={(event) =>
+                          field.onChange(
+                            Number.parseInt(event.target.value, 10) || 1
+                          )
+                        }
+                      />
+                      <FieldDescription>
+                        {t(
+                          'Maximum signup attempts per IP in the configured window. Default: 10.'
+                        )}
+                      </FieldDescription>
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='RegistrationRateLimitSuccesses'
+                  render={({ field, fieldState }) => (
+                    <Field
+                      data-invalid={fieldState.invalid}
+                      data-disabled={!registrationRateLimitEnabled}
+                    >
+                      <FieldLabel htmlFor='registration-rate-limit-successes'>
+                        {t('Successful registrations')}
+                      </FieldLabel>
+                      <Input
+                        id='registration-rate-limit-successes'
+                        type='number'
+                        min={1}
+                        max={1000}
+                        step={1}
+                        disabled={!registrationRateLimitEnabled}
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                        onChange={(event) =>
+                          field.onChange(
+                            Number.parseInt(event.target.value, 10) || 1
+                          )
+                        }
+                      />
+                      <FieldDescription>
+                        {t(
+                          'Maximum accounts created per IP in the configured window. Default: 3.'
+                        )}
+                      </FieldDescription>
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name='RegistrationRateLimitWindowMinutes'
+                  render={({ field, fieldState }) => (
+                    <Field
+                      data-invalid={fieldState.invalid}
+                      data-disabled={!registrationRateLimitEnabled}
+                    >
+                      <FieldLabel htmlFor='registration-rate-limit-window'>
+                        {t('Registration window (minutes)')}
+                      </FieldLabel>
+                      <Input
+                        id='registration-rate-limit-window'
+                        type='number'
+                        min={1}
+                        max={1440}
+                        step={1}
+                        disabled={!registrationRateLimitEnabled}
+                        aria-invalid={fieldState.invalid}
+                        {...field}
+                        onChange={(event) =>
+                          field.onChange(
+                            Number.parseInt(event.target.value, 10) || 1
+                          )
+                        }
+                      />
+                      <FieldDescription>
+                        {t(
+                          'Time window shared by attempt and success limits. Default: 24 hours.'
+                        )}
+                      </FieldDescription>
+                      <FieldError errors={[fieldState.error]} />
+                    </Field>
+                  )}
+                />
+              </FieldGroup>
+            </FieldGroup>
+          </FieldSet>
+
           <FormField
             control={form.control}
             name='TurnstileCheckEnabled'

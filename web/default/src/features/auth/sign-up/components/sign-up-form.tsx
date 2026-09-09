@@ -71,8 +71,10 @@ export function SignUpForm({
     isTurnstileEnabled,
     turnstileSiteKey,
     turnstileToken,
+    turnstileResetKey,
     setTurnstileToken,
     validateTurnstile,
+    resetTurnstile,
   } = useTurnstile()
   const { redirectToLogin, handleLoginSuccess } = useAuthRedirect()
   const {
@@ -83,6 +85,7 @@ export function SignUpForm({
   } = useEmailVerification({
     turnstileToken,
     validateTurnstile,
+    resetTurnstile,
   })
 
   const form = useForm<z.infer<typeof registerFormSchema>>({
@@ -182,10 +185,11 @@ export function SignUpForm({
         }
         toast.error(res?.message || t('Failed to create account'))
       }
-    } catch (_error) {
+    } catch {
       // Errors are handled by global interceptor
     } finally {
       setIsLoading(false)
+      resetTurnstile()
     }
   }
 
@@ -226,11 +230,21 @@ export function SignUpForm({
       } else {
         toast.error(res?.message || t('Login failed'))
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('Login failed'))
     } finally {
       setIsWeChatSubmitting(false)
     }
+  }
+
+  let verificationButtonContent: React.ReactNode = t('Send code')
+  if (isSendingCode) {
+    verificationButtonContent = <Loader2 className='h-4 w-4 animate-spin' />
+  }
+  if (isActive) {
+    verificationButtonContent = t('Resend ({{seconds}}s)', {
+      seconds: secondsLeft,
+    })
   }
 
   return (
@@ -333,13 +347,7 @@ export function SignUpForm({
                 }
                 onClick={handleSendVerificationCode}
               >
-                {isActive ? (
-                  t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-                ) : isSendingCode ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  t('Send code')
-                )}
+                {verificationButtonContent}
               </Button>
             </div>
           </>
@@ -374,7 +382,10 @@ export function SignUpForm({
           <div className='mt-2'>
             <Turnstile
               siteKey={turnstileSiteKey}
+              action='signup'
               onVerify={setTurnstileToken}
+              onExpire={resetTurnstile}
+              resetKey={turnstileResetKey}
             />
           </div>
         )}

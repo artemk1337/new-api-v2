@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+
 import type {
   LoginPayload,
   LoginResponse,
@@ -105,8 +106,9 @@ export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
 
 // User registration
 export async function register(payload: RegisterPayload): Promise<ApiResponse> {
-  const res = await api.post(`/api/user/register`, payload, {
-    params: { turnstile: payload.turnstile ?? '' },
+  const { turnstile, ...body } = payload
+  const res = await api.post(`/api/user/register`, body, {
+    headers: { 'X-Turnstile-Token': turnstile ?? '' },
   })
   return res.data
 }
@@ -117,7 +119,8 @@ export async function sendEmailVerification(
   turnstile?: string
 ): Promise<ApiResponse> {
   const res = await api.get('/api/verification', {
-    params: { email, turnstile },
+    params: { email },
+    headers: { 'X-Turnstile-Token': turnstile ?? '' },
   })
   return res.data
 }

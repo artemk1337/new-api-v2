@@ -343,6 +343,10 @@ func InitOptionMap() {
 	common.OptionMap[operation_setting.PaymentPendingTTLMinutes] = "1440"
 	common.OptionMap[operation_setting.PaymentCreationRateLimit] = "5"
 	common.OptionMap[operation_setting.PaymentCreationRateLimitDurationMinutes] = "1"
+	common.OptionMap[operation_setting.RegistrationRateLimitEnabled] = "true"
+	common.OptionMap[operation_setting.RegistrationRateLimitAttempts] = "10"
+	common.OptionMap[operation_setting.RegistrationRateLimitSuccesses] = "3"
+	common.OptionMap[operation_setting.RegistrationRateLimitWindowMinutes] = "1440"
 	common.OptionMap["GitHubClientId"] = ""
 	common.OptionMap["GitHubClientSecret"] = ""
 	common.OptionMap["TelegramBotToken"] = ""
@@ -940,6 +944,23 @@ func validateOptionValue(key string, value string) error {
 		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxPaymentCreationRateLimitWindowMinutes {
 			return fmt.Errorf("payment creation rate limit window must be between 1 and %d minutes", operation_setting.MaxPaymentCreationRateLimitWindowMinutes)
+		}
+		return nil
+	case operation_setting.RegistrationRateLimitEnabled:
+		if value != "true" && value != "false" {
+			return errors.New("registration rate limit enabled must be true or false")
+		}
+		return nil
+	case operation_setting.RegistrationRateLimitAttempts, operation_setting.RegistrationRateLimitSuccesses:
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxRegistrationRateLimitCount {
+			return fmt.Errorf("registration rate limit count must be between 1 and %d", operation_setting.MaxRegistrationRateLimitCount)
+		}
+		return nil
+	case operation_setting.RegistrationRateLimitWindowMinutes:
+		valueInt, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || valueInt <= 0 || valueInt > operation_setting.MaxRegistrationRateLimitWindowMinutes {
+			return fmt.Errorf("registration rate limit window must be between 1 and %d minutes", operation_setting.MaxRegistrationRateLimitWindowMinutes)
 		}
 		return nil
 	case "USDTTRC20Enabled":
