@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.173
+
+- Added configurable administrator controls for password-signup attempt and successful-account limits per client IP, backed by atomic Redis reservations with a safe in-memory fallback.
+- Added one-shot, action-bound Turnstile verification for signup and email verification, with localized administrator settings and validation.
+- Added explicit trusted-proxy configuration for reliable client IP handling and fail-closed registration protection when configured Redis is unavailable.
+
 ## v1.1.172
 
 - Fixed authenticated page overflow so payment settings and header actions stay within the available width beside the sidebar.
