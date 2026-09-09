@@ -86,6 +86,7 @@ export function BillingHistoryDialog({
     handleSearch,
     handleCompleteOrder,
     handleCheckYooKassaPayment,
+    handleCheckNOWPaymentsPayment,
   } = useBillingHistory()
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
@@ -210,6 +211,9 @@ export function BillingHistoryDialog({
                   const canCheckYooKassaPayment =
                     record.payment_provider === 'yookassa' &&
                     (record.status === 'pending' || record.status === 'expired')
+                  const canCheckNOWPaymentsPayment =
+                    record.payment_provider === 'nowpayments' &&
+                    record.status === 'pending'
                   return (
                     <div
                       key={record.id}
@@ -254,6 +258,20 @@ export function BillingHistoryDialog({
                               variant='outline'
                               onClick={() =>
                                 handleCheckYooKassaPayment(record.trade_no)
+                              }
+                              disabled={checkingPayment}
+                            >
+                              {checkingPaymentTradeNo === record.trade_no
+                                ? t('Processing...')
+                                : t('Check payment')}
+                            </Button>
+                          )}
+                          {canCheckNOWPaymentsPayment && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() =>
+                                handleCheckNOWPaymentsPayment(record.trade_no)
                               }
                               disabled={checkingPayment}
                             >

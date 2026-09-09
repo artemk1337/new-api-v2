@@ -27,6 +27,7 @@ import {
   getAllBillingHistory,
   completeOrder,
   syncYooKassaPayment,
+  syncNOWPaymentsPayment,
   isApiSuccess,
 } from '../api'
 import type { TopupRecord } from '../types'
@@ -180,6 +181,30 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     [fetchBillingHistory]
   )
 
+  const handleCheckNOWPaymentsPayment = useCallback(
+    async (tradeNo: string) => {
+      setCheckingPaymentTradeNo(tradeNo)
+      try {
+        const response = await syncNOWPaymentsPayment({ trade_no: tradeNo })
+        if (isApiSuccess(response)) {
+          toast.success(i18next.t('Payment checked successfully'))
+          await fetchBillingHistory()
+          return true
+        }
+        toast.error(response.message || i18next.t('Failed to check payment'))
+        return false
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to check NOWPayments payment:', error)
+        toast.error(i18next.t('Failed to check payment'))
+        return false
+      } finally {
+        setCheckingPaymentTradeNo(null)
+      }
+    },
+    [fetchBillingHistory]
+  )
+
   /**
    * Change page
    */
@@ -227,6 +252,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     handleSearch,
     handleCompleteOrder,
     handleCheckYooKassaPayment,
+    handleCheckNOWPaymentsPayment,
     refresh: fetchBillingHistory,
   }
 }

@@ -131,6 +131,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/yookassa/sync", controller.SyncYooKassaTopUp)
 				selfRoute.POST("/nowpayments/amount", controller.RequestNOWPaymentsAmount)
 				selfRoute.POST("/nowpayments/pay", middleware.PaymentCreationRateLimit(), controller.RequestNOWPaymentsPay)
+				selfRoute.POST("/nowpayments/sync", middleware.CriticalRateLimit(), controller.SyncNOWPaymentsTopUp)
 				selfRoute.POST("/usdt-trc20/pay", middleware.PaymentCreationRateLimit(), controller.RequestDirectUSDTTRC20Pay)
 				selfRoute.GET("/usdt-trc20/:trade_no", controller.GetDirectUSDTTRC20Status)
 				selfRoute.POST("/crypto/:network/pay", middleware.PaymentCreationRateLimit(), controller.RequestDirectUSDTNetworkPay)

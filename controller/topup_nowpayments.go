@@ -32,6 +32,10 @@ func nowPaymentsInvoicePriceCurrency(_ *model.TopUp) string {
 	return "usdt"
 }
 
+type NOWPaymentsSyncRequest struct {
+	TradeNo string `json:"trade_no"`
+}
+
 func RequestNOWPaymentsAmount(c *gin.Context) {
 	if !paymentMethodAllowedForUser(c, model.PaymentMethodNOWPayments) {
 		return
@@ -165,6 +169,26 @@ func NOWPaymentsWebhook(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	if isNOWPaymentsTerminalFailure(payload.PaymentStatus) {
+		tradeNo := strings.TrimSpace(payload.OrderID)
+		if tradeNo == "" {
+			if metadata := model.GetPaymentMetadataByExternalPaymentID(model.PaymentProviderNOWPayments, payload.PaymentID); metadata != nil {
+				tradeNo = metadata.TradeNo
+			}
+		}
+		if err := model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderNOWPayments, common.TopUpStatusExpired); err != nil && !errors.Is(err, model.ErrTopUpStatusInvalid) {
+			if errors.Is(err, model.ErrTopUpNotFound) || tradeNo == "" {
+				logger.LogWarn(c.Request.Context(), fmt.Sprintf("NOWPayments terminal webhook has no local order trade_no=%s payment_id=%s", tradeNo, payload.PaymentID))
+				c.Status(http.StatusOK)
+				return
+			}
+			logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments failed to expire payment order trade_no=%s payment_id=%s error=%q", tradeNo, payload.PaymentID, err.Error()))
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusOK)
+		return
+	}
 	if payload.PaymentStatus != "finished" && payload.PaymentStatus != "confirmed" {
 		c.Status(http.StatusOK)
 		return
@@ -188,6 +212,78 @@ func NOWPaymentsWebhook(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusOK)
+}
+
+func SyncNOWPaymentsTopUp(c *gin.Context) {
+	var req NOWPaymentsSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.TradeNo) == "" {
+		common.ApiErrorMsg(c, "Invalid parameters")
+		return
+	}
+	tradeNo := strings.TrimSpace(req.TradeNo)
+	topUp := model.GetTopUpByTradeNo(tradeNo)
+	if topUp == nil || topUp.PaymentProvider != model.PaymentProviderNOWPayments {
+		common.ApiErrorMsg(c, "Order does not exist")
+		return
+	}
+	if topUp.UserId != c.GetInt("id") && c.GetInt("role") < common.RoleAdminUser {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if topUp.Status != common.TopUpStatusPending {
+		common.ApiSuccess(c, gin.H{"status": topUp.Status})
+		return
+	}
+	metadata := model.GetPaymentMetadataByTradeNo(tradeNo)
+	if metadata == nil || strings.TrimSpace(metadata.ExternalPaymentID) == "" {
+		common.ApiErrorMsg(c, "Payment information does not exist")
+		return
+	}
+	ctx, cancel := service.NOWPaymentsRequestTimeoutContext(c.Request.Context())
+	defer cancel()
+	invoice, err := service.NewNOWPaymentsClient(nil).GetInvoice(ctx, metadata.ExternalPaymentID)
+	if err != nil {
+		common.ApiErrorMsg(c, "Failed to synchronize payment status")
+		return
+	}
+	invoiceStatus := invoice.PaymentStatus
+	if invoiceStatus == "" {
+		invoiceStatus = invoice.Status
+	}
+	if isNOWPaymentsTerminalFailure(invoiceStatus) {
+		if err := model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderNOWPayments, common.TopUpStatusExpired); err != nil {
+			common.ApiErrorMsg(c, "Failed to update payment status")
+			return
+		}
+		common.ApiSuccess(c, gin.H{"status": common.TopUpStatusExpired})
+		return
+	}
+	if invoiceStatus != "finished" && invoiceStatus != "confirmed" {
+		common.ApiSuccess(c, gin.H{"status": common.TopUpStatusPending})
+		return
+	}
+	payment := &service.NOWPaymentsPayment{PaymentID: invoice.PaymentID, PaymentStatus: invoiceStatus, OrderID: invoice.OrderID, PriceAmount: string(invoice.PriceAmount), PriceCurrency: invoice.PriceCurrency}
+	if invoice.PaymentID != "" {
+		payment, err = service.NewNOWPaymentsClient(nil).GetPayment(ctx, invoice.PaymentID)
+		if err != nil {
+			common.ApiErrorMsg(c, "Failed to synchronize payment status")
+			return
+		}
+	}
+	if _, err := completeNOWPaymentsPayment(payment, c.ClientIP()); err != nil {
+		common.ApiErrorMsg(c, "Failed to synchronize payment status")
+		return
+	}
+	common.ApiSuccess(c, gin.H{"status": common.TopUpStatusSuccess})
+}
+
+func isNOWPaymentsTerminalFailure(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "expired", "failed", "refunded", "canceled", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 func verifyNOWPaymentsSignature(body []byte, signature, secret string) bool {

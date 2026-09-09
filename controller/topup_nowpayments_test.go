@@ -46,3 +46,12 @@ func TestCompleteNOWPaymentsPaymentAcknowledgesExpiredOrder(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 200, status)
 }
+
+func TestIsNOWPaymentsTerminalFailure(t *testing.T) {
+	for _, status := range []string{"expired", "failed", "refunded", "cancelled"} {
+		assert.True(t, isNOWPaymentsTerminalFailure(status), status)
+	}
+	for _, status := range []string{"waiting", "confirming", "confirmed", "finished", "partially_paid"} {
+		assert.False(t, isNOWPaymentsTerminalFailure(status), status)
+	}
+}

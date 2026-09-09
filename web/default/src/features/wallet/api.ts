@@ -232,6 +232,15 @@ export async function syncYooKassaPayment(
   return res.data
 }
 
+export async function syncNOWPaymentsPayment(
+  request: { trade_no: string }
+): Promise<ApiResponse<{ status: string }>> {
+  const res = await api.post('/api/user/nowpayments/sync', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
 export async function calculateNOWPaymentsAmount(
   request: AmountRequest
 ): Promise<AmountResponse> {

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,33 @@ type NOWPaymentsInvoiceRequest struct {
 type NOWPaymentsInvoice struct {
 	ID         string `json:"id"`
 	InvoiceURL string `json:"invoice_url"`
+}
+
+type NOWPaymentsInvoiceDetails struct {
+	ID            string         `json:"id"`
+	PaymentID     string         `json:"payment_id"`
+	PaymentStatus string         `json:"invoice_status"`
+	Status        string         `json:"status"`
+	OrderID       string         `json:"order_id"`
+	PriceAmount   FlexibleString `json:"price_amount"`
+	PriceCurrency string         `json:"price_currency"`
+}
+
+// FlexibleString accepts provider fields returned either as JSON strings or numbers.
+type FlexibleString string
+
+func (value *FlexibleString) UnmarshalJSON(data []byte) error {
+	var stringValue string
+	if err := common.Unmarshal(data, &stringValue); err == nil {
+		*value = FlexibleString(stringValue)
+		return nil
+	}
+	var numberValue json.Number
+	if err := common.Unmarshal(data, &numberValue); err != nil {
+		return err
+	}
+	*value = FlexibleString(numberValue.String())
+	return nil
 }
 
 type NOWPaymentsPayment struct {
@@ -70,6 +98,14 @@ func (client *NOWPaymentsClient) GetPayment(ctx context.Context, paymentID strin
 		return nil, err
 	}
 	return &payment, nil
+}
+
+func (client *NOWPaymentsClient) GetInvoice(ctx context.Context, invoiceID string) (*NOWPaymentsInvoiceDetails, error) {
+	var invoice NOWPaymentsInvoiceDetails
+	if err := client.do(ctx, http.MethodGet, "/invoice/"+url.PathEscape(strings.TrimSpace(invoiceID)), nil, &invoice); err != nil {
+		return nil, err
+	}
+	return &invoice, nil
 }
 
 func (client *NOWPaymentsClient) do(ctx context.Context, method, path string, body, result any) error {
