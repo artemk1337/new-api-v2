@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback } from 'react'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 import { getUserProfile, updateUserProfile, updateUserSettings } from '../api'
+import { useAuthStore, type AuthUser } from '@/stores/auth-store'
 import type {
   UserProfile,
   UpdateUserRequest,
@@ -31,6 +32,7 @@ import type {
 // ============================================================================
 
 export function useProfile() {
+  const setUser = useAuthStore((state) => state.auth.setUser)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -45,6 +47,7 @@ export function useProfile() {
 
       if (response.success && response.data) {
         setProfile(response.data)
+        setUser(response.data as AuthUser)
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -57,7 +60,7 @@ export function useProfile() {
         setLoading(false)
       }
     }
-  }, [])
+  }, [setUser])
 
   // Refresh profile silently (without loading state)
   const refreshProfile = useCallback(async () => {

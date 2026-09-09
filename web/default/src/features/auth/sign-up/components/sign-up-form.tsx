@@ -28,6 +28,7 @@ import { Dialog } from '@/components/dialog'
 import { PasswordInput } from '@/components/password-input'
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Form,
   FormControl,
@@ -100,7 +101,32 @@ export function SignUpForm({
   })
 
   const emailValue = form.watch('email')
-  const emailVerificationRequired = !!status?.email_verification
+  const accountVerificationEnabled = Boolean(
+    status?.account_verification_enabled ??
+      status?.data?.account_verification_enabled
+  )
+  const accountVerificationProviders = String(
+    status?.account_verification_providers ??
+      status?.data?.account_verification_providers ??
+      ''
+  )
+  const accountVerificationEmailRequired =
+    accountVerificationEnabled &&
+    accountVerificationProviders
+      .split(',')
+      .some((provider) => provider.trim().toLowerCase() === 'email')
+  const emailVerificationRequired =
+    Boolean(status?.email_verification) || accountVerificationEmailRequired
+  const accountVerificationDelayMinutes = Number(
+    status?.account_verification_freeze_delay_minutes ??
+      status?.data?.account_verification_freeze_delay_minutes ??
+      1440
+  )
+  const accountVerificationDelay =
+    accountVerificationDelayMinutes >= 60 &&
+    accountVerificationDelayMinutes % 60 === 0
+      ? `${accountVerificationDelayMinutes / 60} ${t('hours')}`
+      : `${accountVerificationDelayMinutes} ${t('minutes')}`
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
@@ -254,6 +280,16 @@ export function SignUpForm({
         className={cn('grid gap-4', className)}
         {...props}
       >
+        {accountVerificationEnabled && (
+          <Alert>
+            <AlertDescription>
+              {t(
+                'Account verification is required. Please complete it within {{delay}}. Otherwise, your account will be frozen and deleted 30 days later.',
+                { delay: accountVerificationDelay }
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
         {/* Username Field */}
         <FormField
           control={form.control}

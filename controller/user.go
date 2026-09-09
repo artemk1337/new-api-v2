@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -198,7 +199,9 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
-	if common.EmailVerificationEnabled {
+	verificationConfig := model.AccountVerificationConfigFromOptions()
+	emailVerificationRequired := common.EmailVerificationEnabled || (verificationConfig.Enabled && verificationConfig.Providers["email"])
+	if emailVerificationRequired {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
@@ -240,8 +243,9 @@ func Register(c *gin.Context) {
 		DisplayName: user.Username,
 		Role:        common.RoleCommonUser,
 	}
-	if common.EmailVerificationEnabled {
+	if emailVerificationRequired {
 		cleanUser.Email = user.Email
+		cleanUser.EmailVerifiedAt = time.Now().Unix()
 	}
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		resolvedInviterId, resolveErr := model.ResolveQualifiedInviterWithDB(tx, affCode)
@@ -534,34 +538,43 @@ func GetSelf(c *gin.Context) {
 
 	// 获取用户设置并提取sidebar_modules
 	userSetting := user.GetSetting()
+	verificationConfig := model.AccountVerificationConfigFromOptions()
+	verificationRequired := verificationConfig.Enabled && user.VerificationRequiredAt > 0 && !model.IsAccountVerificationSatisfied(user)
+	verificationDeadline := int64(0)
+	if verificationRequired {
+		verificationDeadline = time.Unix(user.VerificationRequiredAt, 0).Add(verificationConfig.FreezeDelay).Unix()
+	}
 
 	// 构建响应数据，包含用户信息和权限
 	responseData := map[string]interface{}{
-		"id":                user.Id,
-		"username":          user.Username,
-		"display_name":      user.DisplayName,
-		"role":              user.Role,
-		"status":            user.Status,
-		"email":             user.Email,
-		"github_id":         user.GitHubId,
-		"discord_id":        user.DiscordId,
-		"oidc_id":           user.OidcId,
-		"wechat_id":         user.WeChatId,
-		"telegram_id":       user.TelegramId,
-		"group":             user.Group,
-		"quota":             user.Quota,
-		"used_quota":        user.UsedQuota,
-		"request_count":     user.RequestCount,
-		"aff_code":          user.AffCode,
-		"aff_count":         user.AffCount,
-		"aff_quota":         user.AffQuota,
-		"aff_history_quota": user.AffHistoryQuota,
-		"inviter_id":        user.InviterId,
-		"linux_do_id":       user.LinuxDOId,
-		"setting":           user.Setting,
-		"stripe_customer":   user.StripeCustomer,
-		"sidebar_modules":   userSetting.SidebarModules, // 正确提取sidebar_modules字段
-		"permissions":       permissions,                // 新增权限字段
+		"id":                    user.Id,
+		"username":              user.Username,
+		"display_name":          user.DisplayName,
+		"role":                  user.Role,
+		"status":                user.Status,
+		"email":                 user.Email,
+		"github_id":             user.GitHubId,
+		"discord_id":            user.DiscordId,
+		"oidc_id":               user.OidcId,
+		"wechat_id":             user.WeChatId,
+		"telegram_id":           user.TelegramId,
+		"group":                 user.Group,
+		"quota":                 user.Quota,
+		"used_quota":            user.UsedQuota,
+		"request_count":         user.RequestCount,
+		"aff_code":              user.AffCode,
+		"aff_count":             user.AffCount,
+		"aff_quota":             user.AffQuota,
+		"aff_history_quota":     user.AffHistoryQuota,
+		"inviter_id":            user.InviterId,
+		"linux_do_id":           user.LinuxDOId,
+		"setting":               user.Setting,
+		"stripe_customer":       user.StripeCustomer,
+		"sidebar_modules":       userSetting.SidebarModules, // 正确提取sidebar_modules字段
+		"permissions":           permissions,                // 新增权限字段
+		"verification_required": verificationRequired,
+		"verification_deadline": verificationDeadline,
+		"verification_frozen":   user.Status == model.UserStatusVerificationFrozen,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1119,6 +1132,8 @@ func ManageUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
 		return
 	}
+	verificationLifecycleActive := user.Status == model.UserStatusVerificationFrozen ||
+		user.VerificationRequiredAt != 0 || user.VerificationReminderSentAt != 0 || user.VerificationFrozenAt != 0
 	switch req.Action {
 	case "disable":
 		user.Status = common.UserStatusDisabled
@@ -1127,7 +1142,12 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 	case "enable":
-		user.Status = common.UserStatusEnabled
+		if model.AccountVerificationBlocksManualEnable(&user) {
+			common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{
+				"Error": "account verification is required",
+			})
+			return
+		}
 	case "delete":
 		if user.Role == common.RoleRootUser {
 			common.ApiErrorI18n(c, i18n.MsgUserCannotDeleteRootUser)
@@ -1155,6 +1175,14 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		user.Role = common.RoleAdminUser
+		if verificationLifecycleActive {
+			if user.Status == model.UserStatusVerificationFrozen {
+				user.Status = common.UserStatusEnabled
+			}
+			user.VerificationRequiredAt = 0
+			user.VerificationReminderSentAt = 0
+			user.VerificationFrozenAt = 0
+		}
 	case "demote":
 		if user.Role == common.RoleRootUser {
 			common.ApiErrorI18n(c, i18n.MsgUserCannotDemoteRootUser)
@@ -1213,7 +1241,30 @@ func ManageUser(c *gin.Context) {
 	}
 
 	authzTouched := false
-	if req.Action == "demote" {
+	if req.Action == "enable" {
+		if err := model.EnableUser(user.Id); err != nil {
+			if errors.Is(err, model.ErrAccountVerificationRequired) {
+				common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{
+					"Error": "account verification is required",
+				})
+			} else {
+				common.ApiError(c, err)
+			}
+			return
+		}
+		user.Status = common.UserStatusEnabled
+	} else if req.Action == "promote" && verificationLifecycleActive {
+		if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Updates(map[string]any{
+			"role":                          user.Role,
+			"status":                        user.Status,
+			"verification_required_at":      0,
+			"verification_reminder_sent_at": 0,
+			"verification_frozen_at":        0,
+		}).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	} else if req.Action == "demote" {
 		if err := model.DB.Transaction(func(tx *gorm.DB) error {
 			if err := user.UpdateWithTx(tx, false); err != nil {
 				return err
@@ -1240,7 +1291,7 @@ func ManageUser(c *gin.Context) {
 	// 避免在 Redis TTL 过期前仍使用旧状态（尤其是禁用后仍可发起请求的问题）。
 	// InvalidateUserCache 会让下一次 GetUserCache 从数据库重新加载，
 	// InvalidateUserTokensCache 则确保令牌侧的缓存也同步刷新。
-	if req.Action == "disable" || req.Action == "promote" || req.Action == "demote" {
+	if req.Action == "enable" || req.Action == "disable" || req.Action == "promote" || req.Action == "demote" {
 		if err := model.InvalidateUserCache(user.Id); err != nil {
 			common.SysLog(fmt.Sprintf("failed to invalidate user cache for user %d: %s", user.Id, err.Error()))
 		}
@@ -1283,21 +1334,28 @@ func EmailBind(c *gin.Context) {
 		return
 	}
 	session := sessions.Default(c)
-	id := session.Get("id")
-	user := model.User{
-		Id: id.(int),
-	}
-	err := user.FillUserById()
-	if err != nil {
-		common.ApiError(c, err)
+	id, ok := session.Get("id").(int)
+	if !ok || id == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户已注销"})
 		return
 	}
-	user.Email = email
 	// no need to check if this email already taken, because we have used verification code to check it
-	err = user.Update(false)
+	err := model.BindUserEmail(id, email, time.Now().Unix())
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if user.Status == common.UserStatusEnabled {
+		session.Set("status", common.UserStatusEnabled)
+		if err := session.Save(); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

@@ -7,8 +7,11 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
@@ -25,6 +28,76 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 	service.RegisterSystemTaskHandler(billingOutboxHandler{})
+	service.RegisterSystemTaskHandler(accountVerificationHandler{})
+}
+
+// accountVerificationHandler applies the account-verification lifecycle on a
+// master node. The system-task lease makes the pass safe in multi-instance
+// deployments; the model layer supplies CAS guards for freeze/delete races.
+type accountVerificationHandler struct{}
+
+func (accountVerificationHandler) Type() string { return model.SystemTaskTypeAccountVerification }
+
+func (accountVerificationHandler) Enabled() bool {
+	return model.AccountVerificationConfigFromOptions().Enabled
+}
+
+func (accountVerificationHandler) Interval() time.Duration { return time.Minute }
+
+func (accountVerificationHandler) NewPayload() any { return nil }
+
+func (accountVerificationHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	now := time.Now().Unix()
+	users, err := model.FindUsersDueVerificationReminder(now)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	config := model.AccountVerificationConfigFromOptions()
+	reminded := 0
+	for _, user := range users {
+		if err := ctx.Err(); err != nil {
+			finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+			return
+		}
+		if user == nil {
+			continue
+		}
+		claimed, claimErr := model.ClaimVerificationReminder(user.Id, now)
+		if claimErr != nil {
+			logger.LogWarn(context.Background(), fmt.Sprintf("account verification reminder claim failed for user %d: %v", user.Id, claimErr))
+			continue
+		}
+		if !claimed {
+			continue
+		}
+		deadline := time.Unix(user.VerificationRequiredAt, 0).Add(config.FreezeDelay)
+		content := fmt.Sprintf("Your account must be verified by %s or it will be frozen and deleted %d days later. Complete verification in your account settings.", deadline.UTC().Format(time.RFC3339), setting.AccountVerificationDeletionDelayDays)
+		notification := dto.NewNotify("account_verification", "Account verification required", content, nil)
+		if err := service.NotifyUser(user.Id, user.Email, user.GetSetting(), notification); err != nil {
+			if releaseErr := model.ReleaseVerificationReminder(user.Id, now); releaseErr != nil {
+				logger.LogWarn(context.Background(), fmt.Sprintf("account verification reminder release failed for user %d: %v", user.Id, releaseErr))
+			}
+			logger.LogWarn(context.Background(), fmt.Sprintf("account verification notification failed for user %d: %v", user.Id, err))
+			continue
+		}
+		if err := model.CompleteVerificationReminder(user.Id, now, now); err != nil {
+			logger.LogWarn(context.Background(), fmt.Sprintf("account verification reminder completion failed for user %d: %v", user.Id, err))
+			continue
+		}
+		reminded++
+	}
+	if err := ctx.Err(); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	summary, err := model.EnforceAccountVerification(now)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	summary.ReminderCandidates = reminded
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 
 type billingOutboxHandler struct{}

@@ -44,7 +44,11 @@ import { useUsers } from './users-provider'
 const route = getRouteApi('/_authenticated/users/')
 
 function isDisabledUserRow(user: User) {
-  return isUserDeleted(user) || user.status === USER_STATUS.DISABLED
+  return (
+    isUserDeleted(user) ||
+    user.status === USER_STATUS.DISABLED ||
+    user.status === USER_STATUS.VERIFICATION_FROZEN
+  )
 }
 
 export function UsersTable() {

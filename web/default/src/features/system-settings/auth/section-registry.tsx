@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { AuthSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AccountVerificationSection } from './account-verification-section'
 import { BasicAuthSection } from './basic-auth-section'
 import { BotProtectionSection } from './bot-protection-section'
 import { CustomOAuthSection } from './custom-oauth/custom-oauth-section'
@@ -25,6 +26,20 @@ import { OAuthSection } from './oauth-section'
 import { PasskeySection } from './passkey-section'
 
 const AUTH_SECTIONS = [
+  {
+    id: 'account-verification',
+    titleKey: 'Account Verification',
+    build: (settings: AuthSettings) => (
+      <AccountVerificationSection
+        defaultValues={{
+          AccountVerificationEnabled: settings.AccountVerificationEnabled,
+          AccountVerificationProviders: settings.AccountVerificationProviders,
+          AccountVerificationFreezeDelayMinutes:
+            settings.AccountVerificationFreezeDelayMinutes,
+        }}
+      />
+    ),
+  },
   {
     id: 'basic-auth',
     titleKey: 'Basic Authentication',

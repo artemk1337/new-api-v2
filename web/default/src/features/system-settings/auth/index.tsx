@@ -25,6 +25,9 @@ import {
 } from './section-registry.tsx'
 
 const defaultAuthSettings: AuthSettings = {
+  AccountVerificationEnabled: false,
+  AccountVerificationProviders: 'email',
+  AccountVerificationFreezeDelayMinutes: 1440,
   PasswordLoginEnabled: true,
   PasswordRegisterEnabled: true,
   EmailVerificationEnabled: false,

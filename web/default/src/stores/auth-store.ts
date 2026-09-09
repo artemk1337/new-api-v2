@@ -50,6 +50,9 @@ export interface AuthUser {
   stripe_customer?: string
   sidebar_modules?: string
   permissions?: UserPermissions
+  verification_required?: boolean
+  verification_deadline?: number
+  verification_frozen?: boolean
 }
 
 interface AuthState {

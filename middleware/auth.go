@@ -34,6 +34,25 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+// sessionUserStatus refreshes status from the database instead of trusting the
+// login-time session snapshot. This closes the window where a lifecycle pass
+// freezes an account while an old browser session still carries status=enabled.
+func sessionUserStatus(id any, fallback any) (int, error) {
+	userID, ok := id.(int)
+	if !ok || userID <= 0 {
+		status, ok := fallback.(int)
+		if !ok {
+			return 0, errors.New("invalid session user status")
+		}
+		return status, nil
+	}
+	user, err := model.GetUserById(userID, false)
+	if err != nil {
+		return 0, err
+	}
+	return user.Status, nil
+}
+
 func authHelper(c *gin.Context, minRole int) {
 	session := sessions.Default(c)
 	username := session.Get("username")
@@ -121,7 +140,36 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if status.(int) == common.UserStatusDisabled {
+	currentStatus, statusOK := status.(int)
+	if !statusOK {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid)})
+		c.Abort()
+		return
+	}
+	verificationEnabled := model.AccountVerificationConfigFromOptions().Enabled
+	if !useAccessToken && (verificationEnabled || currentStatus == model.UserStatusVerificationFrozen) {
+		var statusErr error
+		currentStatus, statusErr = sessionUserStatus(id, status)
+		if statusErr != nil {
+			common.SysLog("failed to refresh session user status: " + statusErr.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgDatabaseError),
+			})
+			c.Abort()
+			return
+		}
+	}
+	verificationSelfRead := c.Request.Method == http.MethodGet &&
+		(c.FullPath() == "/api/user/self" || c.Request.URL.Path == "/api/user/self")
+	verificationBindingsRead := c.Request.Method == http.MethodGet &&
+		(c.FullPath() == "/api/user/oauth/bindings" || c.Request.URL.Path == "/api/user/oauth/bindings")
+	// Recovery metadata is exposed only to the browser session used by the
+	// dashboard; an access token must not bypass the frozen-account barrier.
+	verificationRecoveryRead := !useAccessToken && currentStatus == model.UserStatusVerificationFrozen &&
+		(verificationSelfRead || verificationBindingsRead)
+	if currentStatus != common.UserStatusEnabled &&
+		!verificationRecoveryRead {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
@@ -150,6 +198,7 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
+	c.Set("status", currentStatus)
 	c.Set("group", session.Get("group"))
 	c.Set("user_group", session.Get("group"))
 	c.Set("use_access_token", useAccessToken)
@@ -223,7 +272,13 @@ func TokenOrUserAuth() func(c *gin.Context) {
 		// Try session auth first (dashboard users)
 		session := sessions.Default(c)
 		if id := session.Get("id"); id != nil {
-			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
+			status, statusOK := session.Get("status").(int)
+			if model.AccountVerificationConfigFromOptions().Enabled || status == model.UserStatusVerificationFrozen {
+				var statusErr error
+				status, statusErr = sessionUserStatus(id, status)
+				statusOK = statusErr == nil
+			}
+			if statusOK && status == common.UserStatusEnabled {
 				c.Set("id", id)
 				c.Next()
 				return

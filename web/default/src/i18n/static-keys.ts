@@ -38,6 +38,7 @@ export const STATIC_I18N_KEYS = [
   'System Administration',
   'General',
   'Authentication',
+  'Account Verification',
   'Request Limits',
   'Content',
   'Integrations',
@@ -47,6 +48,7 @@ export const STATIC_I18N_KEYS = [
   'System menu: Quota',
   'System menu: Channel Affinity',
   'System menu: Rate Limiting',
+  'Select at least one verification provider',
 
   // System info
   'online',
@@ -118,6 +120,7 @@ export const STATIC_I18N_KEYS = [
   // Users
   'Root',
   'Deleted',
+  'Verification Frozen',
   'User created successfully',
   'User updated successfully',
   'User updated successfully',

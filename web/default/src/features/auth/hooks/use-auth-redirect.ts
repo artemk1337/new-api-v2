@@ -89,7 +89,10 @@ export function useAuthRedirect() {
     }
 
     // Navigate to target page
-    const targetPath = redirectTo || '/dashboard'
+    const targetPath =
+      useAuthStore.getState().auth.user?.status === 3
+        ? '/profile'
+        : redirectTo || '/dashboard'
     navigate({ to: targetPath, replace: true })
   }
 

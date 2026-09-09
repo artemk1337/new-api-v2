@@ -8,10 +8,12 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -20,43 +22,508 @@ import (
 
 const UserNameMaxLength = 20
 
+const verificationReminderClaimTimeout = 5 * time.Minute
+
+// Account verification is intentionally represented by ordinary user columns.
+// Zero values preserve the legacy meaning for accounts created before the
+// feature was enabled: they are not retroactively enrolled in the lifecycle.
+const UserStatusVerificationFrozen = 3
+
+type AccountVerificationConfig struct {
+	Enabled     bool
+	Providers   map[string]bool
+	FreezeDelay time.Duration
+}
+
+// AccountVerificationConfigFromOptions reads the live root options. Missing or
+// malformed options fail closed and therefore cannot enroll legacy users
+// accidentally.
+func AccountVerificationConfigFromOptions() AccountVerificationConfig {
+	common.OptionMapRWMutex.RLock()
+	enabledValue, enabledExists := common.OptionMap[setting.AccountVerificationEnabledOption]
+	providersValue, providersExists := common.OptionMap[setting.AccountVerificationProvidersOption]
+	delayValue, delayExists := common.OptionMap[setting.AccountVerificationFreezeDelayMinutesOption]
+	common.OptionMapRWMutex.RUnlock()
+	if !enabledExists {
+		enabledValue = strconv.FormatBool(setting.AccountVerificationEnabled)
+	}
+	if !providersExists {
+		providersValue = setting.AccountVerificationProviders
+	}
+	if !delayExists {
+		delayValue = strconv.Itoa(setting.AccountVerificationFreezeDelayMinutes)
+	}
+
+	enabled, err := strconv.ParseBool(strings.TrimSpace(enabledValue))
+	if err != nil || !enabled {
+		return AccountVerificationConfig{}
+	}
+	canonicalProviders, err := setting.NormalizeAccountVerificationProviders(providersValue)
+	if err != nil {
+		return AccountVerificationConfig{}
+	}
+	providers := make(map[string]bool)
+	for _, provider := range strings.Split(canonicalProviders, ",") {
+		providers[provider] = true
+	}
+	delayMinutes, err := strconv.Atoi(strings.TrimSpace(delayValue))
+	if err != nil || delayMinutes < 1 || delayMinutes > setting.MaxAccountVerificationFreezeDelayMinutes {
+		return AccountVerificationConfig{}
+	}
+	return AccountVerificationConfig{
+		Enabled:     true,
+		Providers:   providers,
+		FreezeDelay: time.Duration(delayMinutes) * time.Minute,
+	}
+}
+
+func (user *User) accountVerificationSatisfied(config AccountVerificationConfig) bool {
+	for provider := range config.Providers {
+		switch provider {
+		case "email":
+			if user.EmailVerifiedAt > 0 {
+				return true
+			}
+		case "telegram":
+			// A successful Telegram OAuth login/bind is authoritative. Keep the
+			// ID check for accounts linked before the marker column existed.
+			if user.TelegramVerifiedAt > 0 || user.TelegramId != "" {
+				return true
+			}
+		case "github":
+			if user.GitHubVerifiedAt > 0 || user.GitHubId != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsAccountVerificationSatisfied reports whether the user has completed one
+// of the providers selected by the administrator.
+func IsAccountVerificationSatisfied(user *User) bool {
+	if user == nil {
+		return false
+	}
+	config := AccountVerificationConfigFromOptions()
+	return config.Enabled && user.accountVerificationSatisfied(config)
+}
+
+// AccountVerificationBlocksManualEnable reports whether an administrator
+// would bypass an enrolled account's verification by enabling it directly.
+// Keep the check in the model so every caller observes the same lifecycle
+// fields, including users that were manually disabled while pending/frozen.
+func AccountVerificationBlocksManualEnable(user *User) bool {
+	if user == nil || user.Role != common.RoleCommonUser {
+		return false
+	}
+	config := AccountVerificationConfigFromOptions()
+	if !config.Enabled {
+		return false
+	}
+	lifecycleActive := user.Status == UserStatusVerificationFrozen ||
+		user.VerificationRequiredAt > 0 ||
+		user.VerificationReminderSentAt != 0 ||
+		user.VerificationFrozenAt > 0
+	return lifecycleActive && !user.accountVerificationSatisfied(config)
+}
+
+// EnableUser applies an administrator enable atomically. Enrolled common
+// users must already have an active verification proof; when they do, clear
+// the lifecycle markers with a map update so zero values are persisted too.
+func EnableUser(userID int) error {
+	if userID == 0 {
+		return errors.New("id is empty")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var current User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&current).Error; err != nil {
+			return err
+		}
+		if AccountVerificationBlocksManualEnable(&current) {
+			return ErrAccountVerificationRequired
+		}
+
+		updates := map[string]any{"status": common.UserStatusEnabled}
+		lifecycleActive := current.Role == common.RoleCommonUser &&
+			(current.VerificationRequiredAt > 0 || current.VerificationReminderSentAt != 0 || current.VerificationFrozenAt > 0)
+		if lifecycleActive {
+			updates["verification_required_at"] = 0
+			updates["verification_reminder_sent_at"] = 0
+			updates["verification_frozen_at"] = 0
+		}
+		return tx.Model(&User{}).Where("id = ?", userID).Updates(updates).Error
+	})
+}
+
+func markVerificationPending(user *User, now int64) {
+	if user.Role != common.RoleCommonUser || now <= 0 {
+		return
+	}
+	config := AccountVerificationConfigFromOptions()
+	if config.Enabled && !user.accountVerificationSatisfied(config) && user.VerificationRequiredAt == 0 {
+		user.VerificationRequiredAt = now
+	}
+}
+
+// MarkUserVerificationPending enrolls an existing account explicitly. This is
+// the only supported way for an already-created account to enter the new
+// lifecycle, which keeps rollout backwards compatible.
+func MarkUserVerificationPending(userID int, now int64) error {
+	if userID == 0 {
+		return errors.New("id is empty")
+	}
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	config := AccountVerificationConfigFromOptions()
+	if !config.Enabled {
+		return errors.New("account verification is disabled")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND role = ? AND status = ? AND verification_required_at = 0", userID, common.RoleCommonUser, common.UserStatusEnabled).
+			First(&user).Error; err != nil {
+			return err
+		}
+		if user.accountVerificationSatisfied(config) {
+			return nil
+		}
+		return tx.Model(&User{}).Where("id = ? AND role = ? AND status = ? AND verification_required_at = 0", userID, common.RoleCommonUser, common.UserStatusEnabled).
+			Updates(map[string]any{"verification_required_at": now, "verification_reminder_sent_at": 0}).Error
+	})
+}
+
+func markUserVerified(userID int, provider string, now int64) error {
+	if userID == 0 {
+		return errors.New("id is empty")
+	}
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	updates := map[string]any{}
+	switch provider {
+	case setting.AccountVerificationProviderEmail:
+		updates["email_verified_at"] = now
+	case setting.AccountVerificationProviderTelegram:
+		updates["telegram_verified_at"] = now
+	case setting.AccountVerificationProviderGitHub:
+		updates["github_verified_at"] = now
+	default:
+		return fmt.Errorf("unsupported verification provider %q", provider)
+	}
+	return updateUserVerification(userID, provider, updates)
+}
+
+func updateUserVerification(userID int, provider string, updates map[string]any) error {
+	if userID == 0 {
+		return errors.New("id is empty")
+	}
+	config := AccountVerificationConfigFromOptions()
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
+			return err
+		}
+		// A successful verification is the recovery path only for our own frozen
+		// state and only when that provider is in the active policy. An
+		// administrator-disabled account must remain disabled.
+		if config.Enabled && config.Providers[provider] {
+			// A provider proof completes the lifecycle. Clear all timestamps so a
+			// later policy change cannot resurrect an old pending/frozen deadline.
+			updates["verification_required_at"] = 0
+			updates["verification_reminder_sent_at"] = 0
+			updates["verification_frozen_at"] = 0
+			if user.Status == UserStatusVerificationFrozen {
+				updates["status"] = common.UserStatusEnabled
+			}
+		}
+		return tx.Model(&User{}).Where("id = ? AND status = ?", userID, user.Status).Updates(updates).Error
+	})
+	if err != nil {
+		return err
+	}
+	if err := invalidateUserCache(userID); err != nil {
+		common.SysLog(fmt.Sprintf("failed to invalidate user cache after verification for user %d: %v", userID, err))
+	}
+	return InvalidateUserTokensCache(userID)
+}
+
+func BindUserEmail(userID int, email string, now int64) error {
+	if strings.TrimSpace(email) == "" {
+		return errors.New("email is empty")
+	}
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	return updateUserVerification(userID, setting.AccountVerificationProviderEmail, map[string]any{
+		"email":             email,
+		"email_verified_at": now,
+	})
+}
+
+func BindUserTelegram(userID int, telegramID string, now int64) error {
+	if strings.TrimSpace(telegramID) == "" {
+		return errors.New("telegram id is empty")
+	}
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	return updateUserVerification(userID, setting.AccountVerificationProviderTelegram, map[string]any{
+		"telegram_id":          telegramID,
+		"telegram_verified_at": now,
+	})
+}
+
+func BindUserGitHub(userID int, githubID string, now int64) error {
+	if strings.TrimSpace(githubID) == "" {
+		return errors.New("github id is empty")
+	}
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	return updateUserVerification(userID, setting.AccountVerificationProviderGitHub, map[string]any{
+		"github_id":          githubID,
+		"github_verified_at": now,
+	})
+}
+
+func MarkUserEmailVerified(userID int, now int64) error {
+	return markUserVerified(userID, "email", now)
+}
+
+func MarkUserTelegramVerified(userID int, now int64) error {
+	return markUserVerified(userID, "telegram", now)
+}
+
+func MarkUserGitHubVerified(userID int, now int64) error {
+	return markUserVerified(userID, "github", now)
+}
+
+type VerificationLifecycleSummary struct {
+	ReminderCandidates int `json:"reminder_candidates"`
+	Frozen             int `json:"frozen"`
+	Deleted            int `json:"deleted"`
+}
+
+// FindUsersDueVerificationReminder returns pending accounts whose reminder is
+// unclaimed or whose previous sender likely crashed. The caller must claim the
+// reminder before sending to avoid duplicate deliveries.
+func FindUsersDueVerificationReminder(now int64) ([]*User, error) {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	config := AccountVerificationConfigFromOptions()
+	if !config.Enabled {
+		return nil, nil
+	}
+	var users []*User
+	claimCutoff := now - int64(verificationReminderClaimTimeout/time.Second)
+	if claimCutoff < 0 {
+		claimCutoff = 0
+	}
+	err := DB.Where("verification_required_at > 0 AND (verification_reminder_sent_at = 0 OR (verification_reminder_sent_at < 0 AND verification_reminder_sent_at >= ?)) AND role = ? AND status = ?", -claimCutoff, common.RoleCommonUser, common.UserStatusEnabled).
+		Where("verification_required_at <= ?", now).Order("id asc").Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	filtered := users[:0]
+	for _, user := range users {
+		if user != nil && !user.accountVerificationSatisfied(config) {
+			filtered = append(filtered, user)
+		}
+	}
+	return filtered, nil
+}
+
+func MarkVerificationReminderSent(userID int, now int64) error {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	return DB.Model(&User{}).Where("id = ? AND verification_reminder_sent_at <= 0", userID).
+		Update("verification_reminder_sent_at", now).Error
+}
+
+// ClaimVerificationReminder reserves a reminder for one sender. Negative
+// timestamps are in-flight claims; they remain eligible for a later retry if a
+// process crashes before completing the send.
+func ClaimVerificationReminder(userID int, now int64) (bool, error) {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	claimed := false
+	claimCutoff := now - int64(verificationReminderClaimTimeout/time.Second)
+	if claimCutoff < 0 {
+		claimCutoff = 0
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND role = ? AND status = ? AND verification_required_at > 0 AND verification_required_at <= ? AND (verification_reminder_sent_at = 0 OR (verification_reminder_sent_at < 0 AND verification_reminder_sent_at >= ?))", userID, common.RoleCommonUser, common.UserStatusEnabled, now, -claimCutoff).
+			First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		config := AccountVerificationConfigFromOptions()
+		if !config.Enabled || user.accountVerificationSatisfied(config) {
+			return nil
+		}
+		result := tx.Model(&User{}).Where("id = ? AND (verification_reminder_sent_at = 0 OR (verification_reminder_sent_at < 0 AND verification_reminder_sent_at >= ?))", userID, -claimCutoff).
+			Update("verification_reminder_sent_at", -now)
+		if result.Error != nil {
+			return result.Error
+		}
+		claimed = result.RowsAffected == 1
+		return nil
+	})
+	return claimed, err
+}
+
+func CompleteVerificationReminder(userID int, claimedAt, sentAt int64) error {
+	if userID == 0 || claimedAt <= 0 {
+		return errors.New("invalid verification reminder claim")
+	}
+	if sentAt <= 0 {
+		sentAt = time.Now().Unix()
+	}
+	return DB.Model(&User{}).Where("id = ? AND verification_reminder_sent_at = ?", userID, -claimedAt).
+		Update("verification_reminder_sent_at", sentAt).Error
+}
+
+func ReleaseVerificationReminder(userID int, claimedAt int64) error {
+	if userID == 0 || claimedAt <= 0 {
+		return errors.New("invalid verification reminder claim")
+	}
+	return DB.Model(&User{}).Where("id = ? AND verification_reminder_sent_at = ?", userID, -claimedAt).
+		Update("verification_reminder_sent_at", 0).Error
+}
+
+func freezeUnverifiedUser(userID int, requiredAt, now int64, config AccountVerificationConfig) (bool, error) {
+	changed := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND role = ? AND status = ? AND verification_required_at = ?", userID, common.RoleCommonUser, common.UserStatusEnabled, requiredAt).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if user.accountVerificationSatisfied(config) || now-requiredAt < int64(config.FreezeDelay/time.Second) {
+			return nil
+		}
+		result := tx.Model(&User{}).Where("id = ? AND status = ? AND verification_frozen_at = 0", userID, common.UserStatusEnabled).
+			Updates(map[string]any{"status": UserStatusVerificationFrozen, "verification_frozen_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		changed = result.RowsAffected == 1
+		return nil
+	})
+	if changed {
+		_ = invalidateUserCache(userID)
+		_ = InvalidateUserTokensCache(userID)
+	}
+	return changed, err
+}
+
+// EnforceAccountVerification performs one idempotent lifecycle pass. It only
+// touches rows explicitly enrolled with VerificationRequiredAt, freezes after
+// the configured delay, and permanently removes frozen rows after 30 days.
+func EnforceAccountVerification(now int64) (VerificationLifecycleSummary, error) {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	config := AccountVerificationConfigFromOptions()
+	if !config.Enabled {
+		return VerificationLifecycleSummary{}, nil
+	}
+	var pending []*User
+	if err := DB.Where("verification_required_at > 0 AND role = ? AND status = ?", common.RoleCommonUser, common.UserStatusEnabled).
+		Find(&pending).Error; err != nil {
+		return VerificationLifecycleSummary{}, err
+	}
+	summary := VerificationLifecycleSummary{}
+	for _, user := range pending {
+		if user == nil {
+			continue
+		}
+		changed, err := freezeUnverifiedUser(user.Id, user.VerificationRequiredAt, now, config)
+		if err != nil {
+			return summary, err
+		}
+		if changed {
+			summary.Frozen++
+		}
+	}
+
+	cutoff := now - int64(setting.AccountVerificationDeletionDelayDays*24*60*60)
+	var frozen []*User
+	if err := DB.Where("status = ? AND role = ? AND verification_required_at > 0 AND verification_frozen_at > 0 AND verification_frozen_at <= ?", UserStatusVerificationFrozen, common.RoleCommonUser, cutoff).
+		Find(&frozen).Error; err != nil {
+		return summary, err
+	}
+	for _, user := range frozen {
+		if user == nil {
+			continue
+		}
+		removed, err := HardDeleteVerificationUser(user.Id, user.VerificationFrozenAt)
+		if err != nil {
+			return summary, err
+		}
+		if removed {
+			summary.Deleted++
+		}
+	}
+	return summary, nil
+}
+
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id                       int                        `json:"id"`
-	Username                 string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password                 string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword         string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName              string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role                     int                        `json:"role" gorm:"type:int;default:1;index"`   // admin, common
-	Status                   int                        `json:"status" gorm:"type:int;default:1;index"` // enabled, disabled
-	Email                    string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId                 string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId                string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId                   string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId                 string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId               string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode         string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken              *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota                    int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota                int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount             int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	Group                    string                     `json:"group" gorm:"type:varchar(64);default:'default';index"`
-	AffCode                  string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount                 int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota                 int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota          int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId                int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	ReferralCashbackEligible bool                       `json:"referral_cashback_eligible" gorm:"column:referral_cashback_eligible;index"`
-	ReferralProgramQualified bool                       `json:"referral_program_qualified" gorm:"column:referral_program_qualified;index"`
-	DeletedAt                gorm.DeletedAt             `gorm:"index"`
-	LinuxDOId                string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting                  string                     `json:"setting" gorm:"type:text;column:setting"`
-	Remark                   string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer           string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt                int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt              int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	AdminPermissions         map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	Id                         int                        `json:"id"`
+	Username                   string                     `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password                   string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword           string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName                string                     `json:"display_name" gorm:"index" validate:"max=20"`
+	Role                       int                        `json:"role" gorm:"type:int;default:1;index"`   // admin, common
+	Status                     int                        `json:"status" gorm:"type:int;default:1;index"` // enabled, disabled
+	VerificationRequiredAt     int64                      `json:"verification_required_at,omitempty" gorm:"index"`
+	EmailVerifiedAt            int64                      `json:"email_verified_at,omitempty" gorm:"index"`
+	TelegramVerifiedAt         int64                      `json:"telegram_verified_at,omitempty" gorm:"column:telegram_verified_at;index"`
+	GitHubVerifiedAt           int64                      `json:"github_verified_at,omitempty" gorm:"column:github_verified_at;index"`
+	VerificationReminderSentAt int64                      `json:"verification_reminder_sent_at,omitempty" gorm:"index"`
+	VerificationFrozenAt       int64                      `json:"verification_frozen_at,omitempty" gorm:"index"`
+	Email                      string                     `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId                   string                     `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId                  string                     `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId                     string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId                   string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId                 string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode           string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken                *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota                      int                        `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota                  int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount               int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Group                      string                     `json:"group" gorm:"type:varchar(64);default:'default';index"`
+	AffCode                    string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount                   int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota                   int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota            int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId                  int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	ReferralCashbackEligible   bool                       `json:"referral_cashback_eligible" gorm:"column:referral_cashback_eligible;index"`
+	ReferralProgramQualified   bool                       `json:"referral_program_qualified" gorm:"column:referral_program_qualified;index"`
+	DeletedAt                  gorm.DeletedAt             `gorm:"index"`
+	LinuxDOId                  string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting                    string                     `json:"setting" gorm:"type:text;column:setting"`
+	Remark                     string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer             string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt                  int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt                int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	AdminPermissions           map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -446,12 +913,95 @@ func HardDeleteUserById(id int) error {
 	if id == 0 {
 		return errors.New("id 为空！")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := deleteUserOAuthBindingsByUserId(tx, id); err != nil {
+	// Invalidate token cache while token rows still exist so Redis keys can be
+	// enumerated before the transaction removes them.
+	_ = InvalidateUserTokensCache(id)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteUserRelatedData(tx, id); err != nil {
 			return err
 		}
 		return tx.Unscoped().Delete(&User{}, "id = ?", id).Error
+	}); err != nil {
+		return err
+	}
+	_ = invalidateUserCache(id)
+	return nil
+}
+
+// deleteUserRelatedData removes credentials and bearer tokens that must never
+// survive account deletion. Financial and audit rows are intentionally kept.
+func deleteUserRelatedData(tx *gorm.DB, userID int) error {
+	if err := deleteUserOAuthBindingsByUserId(tx, userID); err != nil {
+		return err
+	}
+	for _, record := range []any{&Token{}, &PasskeyCredential{}, &TwoFA{}, &TwoFABackupCode{}} {
+		if err := tx.Unscoped().Where("user_id = ?", userID).Delete(record).Error; err != nil && !isMissingUserRelatedTableError(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func isMissingUserRelatedTableError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such table") || strings.Contains(message, "doesn't exist") || strings.Contains(message, "does not exist")
+}
+
+// HardDeleteVerificationUser conditionally removes a frozen verification
+// account. The frozen timestamp is a CAS guard, so a concurrent successful
+// verification wins over the cleanup pass instead of being deleted by a stale
+// snapshot.
+func HardDeleteVerificationUser(userID int, frozenAt int64) (bool, error) {
+	if userID == 0 || frozenAt <= 0 {
+		return false, errors.New("invalid verification deletion target")
+	}
+	_ = InvalidateUserTokensCache(userID)
+	deleted := false
+	recovered := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Unscoped().Where("id = ? AND role = ? AND status = ? AND verification_required_at > 0 AND verification_frozen_at = ?", userID, common.RoleCommonUser, UserStatusVerificationFrozen, frozenAt).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		config := AccountVerificationConfigFromOptions()
+		if user.accountVerificationSatisfied(config) {
+			result := tx.Model(&User{}).Where("id = ? AND role = ? AND status = ? AND verification_required_at > 0 AND verification_frozen_at = ?", userID, common.RoleCommonUser, UserStatusVerificationFrozen, frozenAt).
+				Updates(map[string]any{
+					"status":                        common.UserStatusEnabled,
+					"verification_required_at":      0,
+					"verification_reminder_sent_at": 0,
+					"verification_frozen_at":        0,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				recovered = true
+			}
+			return nil
+		}
+		if err := deleteUserRelatedData(tx, userID); err != nil {
+			return err
+		}
+		result := tx.Unscoped().Delete(&user)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		deleted = true
+		return nil
 	})
+	if err != nil || (!deleted && !recovered) {
+		return deleted, err
+	}
+	_ = invalidateUserCache(userID)
+	_ = InvalidateUserTokensCache(userID)
+	return deleted, nil
 }
 
 func recordReferralRegistration(inviterId int) error {
@@ -517,6 +1067,7 @@ func (user *User) Insert(inviterId int) error {
 	user.Quota = common.QuotaForNewUser
 	user.InviterId = inviterId
 	user.ReferralCashbackEligible = inviterId != 0
+	markVerificationPending(user, time.Now().Unix())
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -580,6 +1131,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	user.Quota = common.QuotaForNewUser
 	user.InviterId = inviterId
 	user.ReferralCashbackEligible = inviterId != 0
+	markVerificationPending(user, time.Now().Unix())
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置
@@ -684,6 +1236,20 @@ func (user *User) ClearBinding(bindingType string) error {
 		return errors.New("user id is empty")
 	}
 
+	switch bindingType {
+	case "github_id":
+		bindingType = "github"
+	case "telegram_id":
+		bindingType = "telegram"
+	case "discord_id":
+		bindingType = "discord"
+	case "oidc_id":
+		bindingType = "oidc"
+	case "wechat_id":
+		bindingType = "wechat"
+	case "linux_do_id":
+		bindingType = "linuxdo"
+	}
 	bindingColumnMap := map[string]string{
 		"email":    "email",
 		"github":   "github_id",
@@ -699,7 +1265,50 @@ func (user *User) ClearBinding(bindingType string) error {
 		return errors.New("invalid binding type")
 	}
 
-	if err := DB.Model(&User{}).Where("id = ?", user.Id).Update(column, "").Error; err != nil {
+	updates := map[string]any{column: ""}
+	switch bindingType {
+	case "email":
+		updates["email_verified_at"] = 0
+	case "github":
+		updates["github_verified_at"] = 0
+	case "telegram":
+		updates["telegram_verified_at"] = 0
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var current User
+		if err := tx.Unscoped().First(&current, user.Id).Error; err != nil {
+			return err
+		}
+		if current.Role == common.RoleCommonUser && current.Status == common.UserStatusEnabled {
+			config := AccountVerificationConfigFromOptions()
+			currentUpdate := current
+			proofPresent := false
+			switch bindingType {
+			case "email":
+				proofPresent = current.EmailVerifiedAt > 0
+				currentUpdate.Email = ""
+				currentUpdate.EmailVerifiedAt = 0
+			case "github":
+				proofPresent = current.GitHubVerifiedAt > 0 || current.GitHubId != ""
+				currentUpdate.GitHubId = ""
+				currentUpdate.GitHubVerifiedAt = 0
+			case "telegram":
+				proofPresent = current.TelegramVerifiedAt > 0 || current.TelegramId != ""
+				currentUpdate.TelegramId = ""
+				currentUpdate.TelegramVerifiedAt = 0
+			}
+			// Clearing an unrelated binding must not enroll a legacy account into
+			// the verification lifecycle. Enroll only when the cleared binding
+			// was an actual proof for a provider selected by the current policy.
+			if config.Enabled && config.Providers[bindingType] && proofPresent &&
+				!currentUpdate.accountVerificationSatisfied(config) && current.VerificationRequiredAt == 0 {
+				updates["verification_required_at"] = time.Now().Unix()
+				updates["verification_reminder_sent_at"] = 0
+			}
+		}
+		return tx.Model(&User{}).Where("id = ?", user.Id).Updates(updates).Error
+	})
+	if err != nil {
 		return err
 	}
 
@@ -758,12 +1367,17 @@ func (user *User) HardDelete() error {
 	if user.Id == 0 {
 		return errors.New("id 为空！")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := deleteUserOAuthBindingsByUserId(tx, user.Id); err != nil {
+	_ = InvalidateUserTokensCache(user.Id)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteUserRelatedData(tx, user.Id); err != nil {
 			return err
 		}
 		return tx.Unscoped().Delete(user).Error
-	})
+	}); err != nil {
+		return err
+	}
+	_ = invalidateUserCache(user.Id)
+	return nil
 }
 
 // ValidateAndFill check password & user status
@@ -785,7 +1399,7 @@ func (user *User) ValidateAndFill() (err error) {
 		return fmt.Errorf("%w: %v", ErrDatabase, err)
 	}
 	okay := common.ValidatePasswordAndHash(password, user.Password)
-	if !okay || user.Status != common.UserStatusEnabled {
+	if !okay || (user.Status != common.UserStatusEnabled && user.Status != UserStatusVerificationFrozen) {
 		return ErrInvalidCredentials
 	}
 	return nil

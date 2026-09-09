@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -133,6 +135,19 @@ func HandleOAuth(c *gin.Context) {
 		return
 	}
 
+	if strings.EqualFold(provider.GetName(), "github") {
+		if err := model.MarkUserGitHubVerified(user.Id, time.Now().Unix()); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		freshUser, err := model.GetUserById(user.Id, false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		user = freshUser
+	}
+
 	// 8. Check user status
 	if user.Status != common.UserStatusEnabled {
 		common.ApiErrorI18n(c, i18n.MsgOAuthUserBanned)
@@ -180,8 +195,12 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 
 	// Get current user from session
 	session := sessions.Default(c)
-	id := session.Get("id")
-	user := model.User{Id: id.(int)}
+	id, ok := session.Get("id").(int)
+	if !ok || id == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "用户已注销"})
+		return
+	}
+	user := model.User{Id: id}
 	err = user.FillUserById()
 	if err != nil {
 		common.ApiError(c, err)
@@ -198,11 +217,28 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider) {
 		}
 	} else {
 		// Built-in provider: update user record directly
-		provider.SetProviderUserID(&user, oauthUser.ProviderUserID)
-		err = user.Update(false)
+		if strings.EqualFold(provider.GetName(), "github") {
+			err = model.BindUserGitHub(user.Id, oauthUser.ProviderUserID, time.Now().Unix())
+		} else {
+			provider.SetProviderUserID(&user, oauthUser.ProviderUserID)
+			err = user.Update(false)
+		}
 		if err != nil {
 			common.ApiError(c, err)
 			return
+		}
+		freshUser, err := model.GetUserById(user.Id, false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		user = *freshUser
+		if user.Status == common.UserStatusEnabled {
+			session.Set("status", common.UserStatusEnabled)
+			if err := session.Save(); err != nil {
+				common.ApiError(c, err)
+				return
+			}
 		}
 	}
 
@@ -277,6 +313,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
+	if strings.EqualFold(provider.GetName(), "github") {
+		user.GitHubVerifiedAt = time.Now().Unix()
+	}
 
 	// Handle affiliate code
 	affCodeValue := session.Get("aff")

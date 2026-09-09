@@ -40,6 +40,9 @@ const statusRelatedKeys = new Set([
   'TelegramBotName',
   'TurnstileCheckEnabled',
   'TurnstileSiteKey',
+  'AccountVerificationEnabled',
+  'AccountVerificationProviders',
+  'AccountVerificationFreezeDelayMinutes',
 ])
 
 export function useUpdateOption() {

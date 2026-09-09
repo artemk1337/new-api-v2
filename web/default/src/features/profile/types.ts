@@ -51,7 +51,7 @@ export interface UserProfile {
   used_quota: number
   /** Total request count */
   request_count: number
-  /** Account status (1=启用, 2=禁用, 3=待审核, 4=已删除) */
+  /** Account status (1=启用, 2=禁用, 3=验证冻结) */
   status: number
   /** Access token (system token) */
   access_token?: string
@@ -81,6 +81,9 @@ export interface UserProfile {
   telegram_id?: string
   /** LinuxDO ID (OAuth) */
   linux_do_id?: string
+  verification_required?: boolean
+  verification_deadline?: number
+  verification_frozen?: boolean
 }
 
 /**

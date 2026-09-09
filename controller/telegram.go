@@ -48,21 +48,6 @@ func TelegramBind(c *gin.Context) {
 		})
 		return
 	}
-	user := model.User{Id: id}
-	if err := user.FillUserById(); err != nil {
-		c.JSON(200, gin.H{
-			"message": err.Error(),
-			"success": false,
-		})
-		return
-	}
-	if user.Id == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "用户已注销",
-		})
-		return
-	}
 	if model.IsTelegramIdAlreadyTaken(telegramId) {
 		c.JSON(200, gin.H{
 			"message": "该 Telegram 账户已被绑定",
@@ -70,13 +55,24 @@ func TelegramBind(c *gin.Context) {
 		})
 		return
 	}
-	user.TelegramId = telegramId
-	if err := user.Update(false); err != nil {
+	if err := model.BindUserTelegram(id, telegramId, time.Now().Unix()); err != nil {
 		c.JSON(200, gin.H{
 			"message": err.Error(),
 			"success": false,
 		})
 		return
+	}
+	user, err := model.GetUserById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if user.Status == common.UserStatusEnabled {
+		session.Set("status", common.UserStatusEnabled)
+		if err := session.Save(); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 
 	c.Redirect(302, common.ThemeAwarePath("/console/personal"))
@@ -111,6 +107,22 @@ func TelegramLogin(c *gin.Context) {
 			return
 		}
 		common.ApiError(c, err)
+		return
+	}
+	// A successful Telegram OAuth authentication is itself a verified
+	// ownership proof and also recovers a verification-frozen account.
+	if err := model.MarkUserTelegramVerified(user.Id, time.Now().Unix()); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	freshUser, err := model.GetUserById(user.Id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user = *freshUser
+	if user.Status != common.UserStatusEnabled {
+		common.ApiErrorI18n(c, i18n.MsgOAuthUserBanned)
 		return
 	}
 	setupLogin(&user, c)

@@ -4,7 +4,8 @@ import "errors"
 
 // Common errors
 var (
-	ErrDatabase = errors.New("database error")
+	ErrDatabase                    = errors.New("database error")
+	ErrAccountVerificationRequired = errors.New("account verification is required")
 )
 
 // User auth errors

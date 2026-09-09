@@ -232,6 +232,9 @@ func InitOptionMap() {
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
 	common.OptionMap["LinuxDOOAuthEnabled"] = strconv.FormatBool(common.LinuxDOOAuthEnabled)
 	common.OptionMap["TelegramOAuthEnabled"] = strconv.FormatBool(common.TelegramOAuthEnabled)
+	common.OptionMap[setting.AccountVerificationEnabledOption] = strconv.FormatBool(setting.AccountVerificationEnabled)
+	common.OptionMap[setting.AccountVerificationProvidersOption] = setting.AccountVerificationProviders
+	common.OptionMap[setting.AccountVerificationFreezeDelayMinutesOption] = strconv.Itoa(setting.AccountVerificationFreezeDelayMinutes)
 	common.OptionMap["WeChatAuthEnabled"] = strconv.FormatBool(common.WeChatAuthEnabled)
 	common.OptionMap["TurnstileCheckEnabled"] = strconv.FormatBool(common.TurnstileCheckEnabled)
 	common.OptionMap["RegisterEnabled"] = strconv.FormatBool(common.RegisterEnabled)
@@ -444,6 +447,7 @@ func loadOptionsFromDatabaseLocked() {
 	legacyUsableGroups := make(map[string]string)
 	hasTailLimit := false
 	legacyPrecision := 0
+	accountVerificationEnabledOptionPresent, accountVerificationExplicitlyDisabled, accountVerificationOptionInvalid := accountVerificationOptionsState(options)
 	for _, option := range options {
 		switch option.Key {
 		case "USDTTRC20AmountTailLimitUnits":
@@ -507,10 +511,12 @@ func loadOptionsFromDatabaseLocked() {
 		if err != nil {
 			common.SysLog("failed to update option map: " + err.Error())
 			if option.Key == "PricingGroups" {
+				reconcileAccountVerificationLifecycleAfterLoad(accountVerificationEnabledOptionPresent, accountVerificationExplicitlyDisabled, accountVerificationOptionInvalid)
 				return
 			}
 		}
 	}
+	reconcileAccountVerificationLifecycleAfterLoad(accountVerificationEnabledOptionPresent, accountVerificationExplicitlyDisabled, accountVerificationOptionInvalid)
 	setting.PublishCreemConfig(setting.CreemConfig{
 		APIKey: setting.CreemApiKey, Products: setting.CreemProducts,
 		TestMode: setting.CreemTestMode, WebhookSecret: setting.CreemWebhookSecret,
@@ -963,6 +969,15 @@ func validateOptionValue(key string, value string) error {
 			return fmt.Errorf("registration rate limit window must be between 1 and %d minutes", operation_setting.MaxRegistrationRateLimitWindowMinutes)
 		}
 		return nil
+	case setting.AccountVerificationEnabledOption:
+		if value != "true" && value != "false" {
+			return errors.New("account verification enabled must be true or false")
+		}
+		return nil
+	case setting.AccountVerificationProvidersOption:
+		return setting.ValidateAccountVerificationProviders(value)
+	case setting.AccountVerificationFreezeDelayMinutesOption:
+		return setting.ValidateAccountVerificationFreezeDelayMinutes(value)
 	case "USDTTRC20Enabled":
 		if value != "true" && value != "false" {
 			return errors.New("USDT TRC20 enabled must be true or false")
@@ -1275,6 +1290,14 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		err        error
 	)
 	switch key {
+	case setting.AccountVerificationProvidersOption:
+		return setting.NormalizeAccountVerificationProviders(value)
+	case setting.AccountVerificationFreezeDelayMinutesOption:
+		parsed, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return value, parseErr
+		}
+		return strconv.Itoa(parsed), nil
 	case "USDTTRC20AmountPrecision", "USDTTRC20AmountTailLimitUnits":
 		parsed, parseErr := strconv.Atoi(strings.TrimSpace(value))
 		if parseErr != nil {
@@ -1734,7 +1757,14 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	if err != nil {
 		return err
 	}
+	var accountVerificationResetUserIDs []int
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if values[setting.AccountVerificationEnabledOption] == "false" {
+			accountVerificationResetUserIDs, err = clearAccountVerificationLifecycleTx(tx)
+			if err != nil {
+				return err
+			}
+		}
 		if payMethods, included := values["PayMethods"]; included {
 			if err := validatePayMethodsForSaveTx(tx, payMethods); err != nil {
 				return err
@@ -1842,7 +1872,45 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	if pricingGroupsChanged {
 		InvalidatePricingCache()
 	}
+	for _, userID := range accountVerificationResetUserIDs {
+		if err := invalidateUserCache(userID); err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate user cache after disabling account verification for user %d: %v", userID, err))
+		}
+		if err := InvalidateUserTokensCache(userID); err != nil {
+			common.SysLog(fmt.Sprintf("failed to invalidate token cache after disabling account verification for user %d: %v", userID, err))
+		}
+	}
 	return nil
+}
+
+// clearAccountVerificationLifecycleTx removes state owned by the verification
+// policy before it is disabled. This makes disabling the policy a real reset:
+// pending accounts are no longer enrolled, frozen accounts are restored, and a
+// later re-enable cannot delete accounts based on an old frozen timestamp.
+func clearAccountVerificationLifecycleTx(tx *gorm.DB) ([]int, error) {
+	var users []User
+	if err := tx.Select("id").Where("role = ? AND (verification_required_at > 0 OR verification_reminder_sent_at != 0 OR verification_frozen_at > 0)", common.RoleCommonUser).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(users))
+	for _, user := range users {
+		ids = append(ids, user.Id)
+	}
+	if err := tx.Model(&User{}).Where("id IN ?", ids).Where("status = ?", UserStatusVerificationFrozen).
+		Update("status", common.UserStatusEnabled).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&User{}).Where("id IN ?", ids).Updates(map[string]any{
+		"verification_required_at":      0,
+		"verification_reminder_sent_at": 0,
+		"verification_frozen_at":        0,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // validatePayMethodsForSaveTx compares a candidate catalog with the last
@@ -2117,7 +2185,84 @@ func sortedOptionKeys(values map[string]string) []string {
 	return keys
 }
 
+func isAccountVerificationOptionKey(key string) bool {
+	switch key {
+	case setting.AccountVerificationEnabledOption,
+		setting.AccountVerificationProvidersOption,
+		setting.AccountVerificationFreezeDelayMinutesOption:
+		return true
+	default:
+		return false
+	}
+}
+
+// accountVerificationOptionsState describes the persisted policy independently
+// from the runtime option map. In particular, an absent or malformed option is
+// not evidence that the administrator disabled the policy.
+func accountVerificationOptionsState(options []*Option) (enabledPresent, explicitlyDisabled, invalid bool) {
+	for _, option := range options {
+		if option == nil || !isAccountVerificationOptionKey(option.Key) {
+			continue
+		}
+		if validateOptionValue(option.Key, option.Value) != nil {
+			invalid = true
+		}
+		if option.Key == setting.AccountVerificationEnabledOption {
+			enabledPresent = true
+			// Only the canonical persisted value is an intentional disable. A
+			// malformed value must remain fail-closed without resetting state.
+			explicitlyDisabled = explicitlyDisabled || option.Value == "false"
+		}
+	}
+	return enabledPresent, explicitlyDisabled, invalid
+}
+
+func reconcileAccountVerificationLifecycleAfterLoad(enabledPresent, explicitlyDisabled, invalid bool) {
+	// Missing or malformed persisted policy data fails closed, but is not an
+	// explicit administrator request to release pending/frozen accounts.
+	if !enabledPresent || invalid {
+		setting.AccountVerificationEnabled = false
+		common.OptionMapRWMutex.Lock()
+		if common.OptionMap == nil {
+			common.OptionMap = make(map[string]string)
+		}
+		common.OptionMap[setting.AccountVerificationEnabledOption] = "false"
+		common.OptionMapRWMutex.Unlock()
+		return
+	}
+	if !explicitlyDisabled || DB == nil {
+		return
+	}
+	var resetUserIDs []int
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		resetUserIDs, err = clearAccountVerificationLifecycleTx(tx)
+		return err
+	}); err != nil {
+		common.SysLog("failed to clear account verification lifecycle after loading disabled policy: " + err.Error())
+		return
+	}
+	for _, userID := range resetUserIDs {
+		_ = invalidateUserCache(userID)
+		_ = InvalidateUserTokensCache(userID)
+	}
+}
+
 func updateOptionMapFromDatabase(key string, value string) error {
+	if isAccountVerificationOptionKey(key) {
+		if err := validateOptionValue(key, value); err != nil {
+			// A malformed persisted policy must never keep an already-enabled
+			// runtime verifier active during option synchronization.
+			common.OptionMapRWMutex.Lock()
+			setting.AccountVerificationEnabled = false
+			if common.OptionMap == nil {
+				common.OptionMap = make(map[string]string)
+			}
+			common.OptionMap[setting.AccountVerificationEnabledOption] = "false"
+			common.OptionMapRWMutex.Unlock()
+			return err
+		}
+	}
 	if key == "QuotaPerUnit" {
 		if err := validateOptionValue(key, value); err != nil {
 			return err
@@ -2146,6 +2291,30 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 	}
 	if key == "UserUsableGroups" {
 		return nil
+	}
+	// Validate and normalize account-verification values before publishing them
+	// to the shared option map. Persisted rows are loaded at startup as well as
+	// through the admin API, so malformed legacy data must not become an active
+	// runtime policy through a partial map update.
+	switch key {
+	case setting.AccountVerificationEnabledOption:
+		if value != "true" && value != "false" {
+			return errors.New("account verification enabled must be true or false")
+		}
+	case setting.AccountVerificationProvidersOption:
+		value, err = setting.NormalizeAccountVerificationProviders(value)
+		if err != nil {
+			return err
+		}
+	case setting.AccountVerificationFreezeDelayMinutesOption:
+		if err = setting.ValidateAccountVerificationFreezeDelayMinutes(value); err != nil {
+			return err
+		}
+		delay, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return parseErr
+		}
+		value = strconv.Itoa(delay)
 	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
@@ -2190,6 +2359,8 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 			common.WeChatAuthEnabled = boolValue
 		case "TelegramOAuthEnabled":
 			common.TelegramOAuthEnabled = boolValue
+		case setting.AccountVerificationEnabledOption:
+			setting.AccountVerificationEnabled = boolValue
 		case "TurnstileCheckEnabled":
 			common.TurnstileCheckEnabled = boolValue
 		case "RegisterEnabled":
@@ -2468,6 +2639,23 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		common.TelegramBotToken = value
 	case "TelegramBotName":
 		common.TelegramBotName = value
+	case setting.AccountVerificationProvidersOption:
+		canonical, normalizeErr := setting.NormalizeAccountVerificationProviders(value)
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		setting.AccountVerificationProviders = canonical
+		common.OptionMap[key] = canonical
+	case setting.AccountVerificationFreezeDelayMinutesOption:
+		delay, parseErr := strconv.Atoi(strings.TrimSpace(value))
+		if parseErr != nil {
+			return parseErr
+		}
+		if err = setting.ValidateAccountVerificationFreezeDelayMinutes(strconv.Itoa(delay)); err != nil {
+			return err
+		}
+		setting.AccountVerificationFreezeDelayMinutes = delay
+		common.OptionMap[key] = strconv.Itoa(delay)
 	case "TurnstileSiteKey":
 		common.TurnstileSiteKey = value
 	case "TurnstileSecretKey":

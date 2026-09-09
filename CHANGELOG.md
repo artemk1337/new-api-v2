@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.176
+
+- Added mandatory account verification with an administrator-selected provider: Email, Telegram, or GitHub; any selected provider is sufficient.
+- Added administrator controls for the verification deadline, in-app reminders, automatic freezing after the configured delay, and permanent deletion 30 days after freezing.
+- Added recovery-aware authentication, verification lifecycle status in user APIs, localized signup/profile notices, and cleanup of OAuth bindings, tokens, passkeys, and 2FA credentials on deletion.
+
 ## v1.1.175
 
 - Added up/down controls for administrator-configured payment methods and preserved their configured order in the wallet.

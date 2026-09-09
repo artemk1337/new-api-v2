@@ -23,7 +23,7 @@ import type { AdminPermissionMatrix } from '@/lib/admin-permissions'
 // User Schema & Types
 // ============================================================================
 
-/** User status: 1 = enabled, 2 = disabled, 3+ = other states */
+/** User status: 1 = enabled, 2 = disabled, 3 = verification frozen */
 export const userStatusSchema = z.number()
 export type UserStatus = z.infer<typeof userStatusSchema>
 

@@ -188,6 +188,9 @@ export type SiteSettings = {
 }
 
 export type AuthSettings = {
+  AccountVerificationEnabled: boolean
+  AccountVerificationProviders: string
+  AccountVerificationFreezeDelayMinutes: number
   PasswordLoginEnabled: boolean
   PasswordRegisterEnabled: boolean
   EmailVerificationEnabled: boolean
