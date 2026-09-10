@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.179
+
+- Fixed payment-method reordering so legacy Crypto entries retain their configured order when moved together with another payment method.
+
 ## v1.1.178
 
 - Added an administrator-managed IP blacklist in System settings → Security. It accepts individual IPv4/IPv6 addresses and CIDR ranges and rejects matching requests before authentication, rate limiting, and route handlers.
