@@ -93,6 +93,50 @@ describe('payment method order', () => {
     ])
   })
 
+  test('keeps legacy duplicate crypto entries in order when moved up', () => {
+    const value = JSON.stringify([
+      { name: 'SBP', type: 'yookassa_sbp' },
+      { name: 'USDT TRC20', type: 'crypto_direct', min_topup: '10' },
+      { name: 'USDT TON', type: 'crypto_direct', min_topup: '10' },
+      { name: 'Stripe', type: 'stripe' },
+    ])
+
+    const moved = movePaymentMethodInJson(
+      value,
+      { name: 'Crypto', type: 'crypto_direct' },
+      'up'
+    )
+
+    assert.deepEqual(JSON.parse(moved ?? ''), [
+      { name: 'USDT TRC20', type: 'crypto_direct', min_topup: '10' },
+      { name: 'USDT TON', type: 'crypto_direct', min_topup: '10' },
+      { name: 'SBP', type: 'yookassa_sbp' },
+      { name: 'Stripe', type: 'stripe' },
+    ])
+  })
+
+  test('keeps legacy duplicate crypto entries in order when another method moves up', () => {
+    const value = JSON.stringify([
+      { name: 'SBP', type: 'yookassa_sbp' },
+      { name: 'USDT TRC20', type: 'crypto_direct', min_topup: '10' },
+      { name: 'USDT TON', type: 'crypto_direct', min_topup: '10' },
+      { name: 'Stripe', type: 'stripe' },
+    ])
+
+    const moved = movePaymentMethodInJson(
+      value,
+      { name: 'Stripe', type: 'stripe' },
+      'up'
+    )
+
+    assert.deepEqual(JSON.parse(moved ?? ''), [
+      { name: 'SBP', type: 'yookassa_sbp' },
+      { name: 'Stripe', type: 'stripe' },
+      { name: 'USDT TRC20', type: 'crypto_direct', min_topup: '10' },
+      { name: 'USDT TON', type: 'crypto_direct', min_topup: '10' },
+    ])
+  })
+
   test('does not change the value at the boundary or for an unknown method', () => {
     const value = JSON.stringify([{ name: 'SBP', type: 'yookassa_sbp' }])
 

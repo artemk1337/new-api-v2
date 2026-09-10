@@ -62,10 +62,46 @@ export function movePaymentMethodInJson(
   const reordered = [...parsed]
   const currentArrayIndex = methodIndexes[targetIndex]
   const adjacentArrayIndex = methodIndexes[adjacentIndex]
-  ;[reordered[currentArrayIndex], reordered[adjacentArrayIndex]] = [
-    reordered[adjacentArrayIndex],
-    reordered[currentArrayIndex],
-  ]
+  const adjacentItem = parsed[adjacentArrayIndex]
+  if (!isPaymentMethodItem(adjacentItem)) return null
+  const adjacentType = normalizePaymentMethodType(adjacentItem.type)
+  const targetArrayIndexes =
+    normalizedType === CRYPTO_PAYMENT_TYPE
+      ? parsed.reduce<number[]>((indexes, item, index) => {
+          if (
+            isPaymentMethodItem(item) &&
+            normalizePaymentMethodType(item.type) === CRYPTO_PAYMENT_TYPE
+          ) {
+            indexes.push(index)
+          }
+          return indexes
+        }, [])
+      : [currentArrayIndex]
+  const adjacentArrayIndexes =
+    adjacentType === CRYPTO_PAYMENT_TYPE
+      ? parsed.reduce<number[]>((indexes, item, index) => {
+          if (
+            isPaymentMethodItem(item) &&
+            normalizePaymentMethodType(item.type) === CRYPTO_PAYMENT_TYPE
+          ) {
+            indexes.push(index)
+          }
+          return indexes
+        }, [])
+      : [adjacentArrayIndex]
+  const reorderedIndexes = [...targetArrayIndexes, ...adjacentArrayIndexes].sort(
+    (left, right) => left - right
+  )
+  const targetEntries = targetArrayIndexes.map((index) => parsed[index])
+  const adjacentEntries = adjacentArrayIndexes.map((index) => parsed[index])
+  const entries =
+    direction === 'up'
+      ? [...targetEntries, ...adjacentEntries]
+      : [...adjacentEntries, ...targetEntries]
+
+  for (const [index, arrayIndex] of reorderedIndexes.entries()) {
+    reordered[arrayIndex] = entries[index]
+  }
 
   return JSON.stringify(reordered, null, 2)
 }
