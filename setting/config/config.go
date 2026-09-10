@@ -163,6 +163,11 @@ func configToMap(config interface{}) (map[string]string, error) {
 
 // 辅助函数：从map更新配置对象
 func updateConfigFromMap(config interface{}, configMap map[string]string) error {
+	if updater, ok := config.(interface {
+		UpdateConfigFromMap(map[string]string) error
+	}); ok {
+		return updater.UpdateConfigFromMap(configMap)
+	}
 	val := reflect.ValueOf(config)
 	if val.Kind() != reflect.Ptr {
 		return nil

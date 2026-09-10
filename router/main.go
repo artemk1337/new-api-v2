@@ -13,6 +13,9 @@ import (
 )
 
 func SetRouter(router *gin.Engine, assets ThemeAssets) {
+	// Run admission checks before registering route-specific middleware such as
+	// authentication, rate limits, and request-body processing.
+	router.Use(middleware.IPBlacklist())
 	SetApiRouter(router)
 	SetDashboardRouter(router)
 	SetRelayRouter(router)

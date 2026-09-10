@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.178
+
+- Added an administrator-managed IP blacklist in System settings → Security. It accepts individual IPv4/IPv6 addresses and CIDR ranges and rejects matching requests before authentication, rate limiting, and route handlers.
+- Validate blacklist entries consistently in the dashboard and backend, including IPv4-mapped IPv6 addresses, and apply updates atomically while requests are in flight.
+
 ## v1.1.177
 
 - Made the Crypto payment method name configurable in administrator settings and preserved the configured label in wallet cards and payment history.

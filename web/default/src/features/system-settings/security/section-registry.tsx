@@ -22,8 +22,20 @@ import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
 import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { BlacklistSection } from './blacklist-section'
 
 const SECURITY_SECTIONS = [
+  {
+    id: 'blacklist',
+    titleKey: 'Blacklist',
+    build: (settings: SecuritySettings) => (
+      <BlacklistSection
+        defaultValues={{
+          'security.ip_blacklist': settings['security.ip_blacklist'],
+        }}
+      />
+    ),
+  },
   {
     id: 'rate-limit',
     titleKey: 'System menu: Rate Limiting',

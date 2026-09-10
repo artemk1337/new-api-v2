@@ -26,6 +26,7 @@ import {
 import { resolveSecuritySettings } from './security-settings'
 
 const defaultSecuritySettings: SecuritySettings = {
+  'security.ip_blacklist': [],
   ModelRequestRateLimitEnabled: false,
   ModelRequestRateLimitCount: 0,
   ModelRequestRateLimitSuccessCount: 1000,

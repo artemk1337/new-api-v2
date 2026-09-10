@@ -908,6 +908,8 @@ func validateOptionValue(key string, value string) error {
 			return errors.New("PayMethods must be valid JSON")
 		}
 		return operation_setting.ValidatePayMethods(methods)
+	case system_setting.IPBlacklistOption:
+		return system_setting.ValidateIPBlacklist(value)
 	case "payment_setting.amount_cashback":
 		var cashbacks operation_setting.AmountCashbackConfig
 		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
@@ -2249,6 +2251,11 @@ func reconcileAccountVerificationLifecycleAfterLoad(enabledPresent, explicitlyDi
 }
 
 func updateOptionMapFromDatabase(key string, value string) error {
+	if key == system_setting.IPBlacklistOption {
+		if err := system_setting.ValidateIPBlacklist(value); err != nil {
+			return err
+		}
+	}
 	if isAccountVerificationOptionKey(key) {
 		if err := validateOptionValue(key, value); err != nil {
 			// A malformed persisted policy must never keep an already-enabled

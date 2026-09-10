@@ -454,6 +454,7 @@ export type OperationsSettings = {
 }
 
 export type SecuritySettings = {
+  'security.ip_blacklist': string[]
   ModelRequestRateLimitEnabled: boolean
   ModelRequestRateLimitCount: number
   ModelRequestRateLimitSuccessCount: number
