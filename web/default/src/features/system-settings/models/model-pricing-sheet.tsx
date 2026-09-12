@@ -24,7 +24,6 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import { useForm } from 'react-hook-form'
@@ -64,7 +63,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
-import type { PricingSyncModelPreference } from '../types'
 import {
   EMPTY_LANE_ENABLED,
   EMPTY_LANE_PRICES,
@@ -83,10 +81,6 @@ import {
 } from './model-pricing-core'
 import { PriceInput, PriceLane } from './model-pricing-inputs'
 import { formatPricingNumber } from './pricing-format'
-import {
-  PricingSyncModelSource,
-  type PricingSyncModelSourceHandle,
-} from './pricing-sync-model-source'
 import { TieredPricingEditor } from './tiered-pricing-editor'
 
 export type { ModelRatioData } from './model-pricing-core'
@@ -95,9 +89,7 @@ type ModelPricingSheetProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   editData?: ModelRatioData | null
-  onSave?: (
-    preference?: PricingSyncModelPreference
-  ) => boolean | void | Promise<boolean | void>
+  onSave?: () => boolean | void | Promise<boolean | void>
   isSaving?: boolean
 }
 
@@ -164,7 +156,6 @@ export const ModelPricingEditorPanel = forwardRef<
   const [billingExpr, setBillingExpr] = useState('')
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
   const [editorReloadToken, setEditorReloadToken] = useState(0)
-  const pricingSyncSourceRef = useRef<PricingSyncModelSourceHandle>(null)
   const isEditMode = !!editData
 
   const form = useForm<ModelPricingFormValues>({
@@ -548,12 +539,6 @@ export const ModelPricingEditorPanel = forwardRef<
                   )}
                 />
 
-                <PricingSyncModelSource
-                  ref={pricingSyncSourceRef}
-                  modelName={watchedValues.name}
-                  disabled={isSaving}
-                />
-
                 <Tabs
                   value={pricingMode}
                   onValueChange={handleModeChange}
@@ -702,13 +687,7 @@ export const ModelPricingEditorPanel = forwardRef<
                   <Button
                     type='button'
                     onClick={async () => {
-                      const preference =
-                        pricingSyncSourceRef.current?.getDraft() ?? undefined
-                      const saved = await onSave(preference)
-                      if (saved === false) return
-                      if (preference) {
-                        pricingSyncSourceRef.current?.markDraftSaved()
-                      }
+                      await onSave()
                     }}
                     disabled={isSaving}
                     className='w-full sm:w-auto'
