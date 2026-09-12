@@ -183,3 +183,44 @@ export function stringToColor(str: string): SemanticColor {
   const index = sum % TAG_COLORS.length
   return TAG_COLORS[index]
 }
+
+/**
+ * Return the theme color used by group badges for chart libraries.
+ *
+ * CSS variables keep the chart colors in sync with the active theme while
+ * using the same semantic color selected by `GroupBadge`.
+ */
+export function getGroupChartColor(group: string): string {
+  switch (stringToColor(group)) {
+    case 'blue':
+    case 'indigo':
+      return 'var(--chart-1)'
+    case 'cyan':
+    case 'teal':
+      return 'var(--chart-2)'
+    case 'green':
+      return 'var(--success)'
+    case 'lime':
+      return 'var(--chart-3)'
+    case 'purple':
+    case 'violet':
+      return 'var(--chart-4)'
+    case 'pink':
+      return 'var(--chart-5)'
+    case 'red':
+      return 'var(--destructive)'
+    case 'orange':
+    case 'amber':
+    case 'yellow':
+      return 'var(--warning)'
+    case 'light-blue':
+      return 'var(--info)'
+    case 'light-green':
+      return 'var(--success)'
+    case 'grey':
+    case 'slate':
+      return 'var(--neutral)'
+    default:
+      return 'var(--neutral)'
+  }
+}

@@ -16,10 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowLeft,
   CalendarClock,
@@ -32,9 +30,15 @@ import {
   Sparkles,
   Timer,
 } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getLobeIcon } from '@/lib/lobe-icon'
-import { cn } from '@/lib/utils'
+
+import { CopyButton } from '@/components/copy-button'
+import { StaticDataTable } from '@/components/data-table'
+import { sideDrawerContentClassName } from '@/components/drawer-layout'
+import { GroupBadge } from '@/components/group-badge'
+import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -45,12 +49,6 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CopyButton } from '@/components/copy-button'
-import { StaticDataTable } from '@/components/data-table'
-import { sideDrawerContentClassName } from '@/components/drawer-layout'
-import { MOTION_TRANSITION } from '@/lib/motion'
-import { GroupBadge } from '@/components/group-badge'
-import { PublicLayout } from '@/components/layout'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -58,10 +56,13 @@ import {
   formatUptimePct,
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
-import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { getLobeIcon } from '@/lib/lobe-icon'
+import { MOTION_TRANSITION } from '@/lib/motion'
+import { cn } from '@/lib/utils'
+
+import { DEFAULT_TOKEN_UNIT, FILTER_ALL, QUOTA_TYPE_VALUES } from '../constants'
 import { usePricingData } from '../hooks/use-pricing-data'
 import { getAutoGroupChain } from '../lib/auto-group-chain'
-import { sortGroupsByRatio } from '../lib/pricing-group-order'
 import {
   getDynamicPriceEntries,
   getDynamicPricingSummary,
@@ -75,6 +76,7 @@ import {
   isTokenBasedModel,
 } from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
+import { sortGroupsByRatio } from '../lib/pricing-group-order'
 import type {
   ModelCapability,
   PriceType,
@@ -178,11 +180,18 @@ function OverviewMetric(props: {
   )
 }
 
-function OverviewSummaryGrid(props: { model: PricingModel }) {
+function OverviewSummaryGrid(props: {
+  model: PricingModel
+  groupFilter?: string
+}) {
   const { t } = useTranslation()
+  const group =
+    props.groupFilter && props.groupFilter !== FILTER_ALL
+      ? props.groupFilter
+      : undefined
   const metricsQuery = useQuery({
-    queryKey: ['perf-metrics', props.model.model_name],
-    queryFn: () => getPerfMetrics(props.model.model_name, 24),
+    queryKey: ['perf-metrics', props.model.model_name, group ?? FILTER_ALL],
+    queryFn: () => getPerfMetrics(props.model.model_name, 24, group),
     staleTime: 60 * 1000,
   })
 
@@ -837,7 +846,10 @@ function AutoGroupChain(props: {
       {autoChain.map((g, idx) => (
         <span key={g} className='flex items-center gap-1'>
           <GroupBadge
-            group={props.groupNames?.[g] ?? getPricingGroupDisplayName(props.model, g)}
+            group={
+              props.groupNames?.[g] ??
+              getPricingGroupDisplayName(props.model, g)
+            }
             size='sm'
           />
           {idx < autoChain.length - 1 && (
@@ -1199,6 +1211,7 @@ const TAB_META: Record<
 
 export interface ModelDetailsContentProps {
   model: PricingModel
+  groupFilter?: string
   groupRatio: Record<string, number>
   usableGroup: Record<string, { desc: string; ratio: number }>
   endpointMap: Record<string, { path?: string; method?: string }>
@@ -1240,7 +1253,10 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         </TabsList>
 
         <TabsContent value='overview' className='space-y-6 outline-none'>
-          <OverviewSummaryGrid model={props.model} />
+          <OverviewSummaryGrid
+            model={props.model}
+            groupFilter={props.groupFilter}
+          />
 
           <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
@@ -1271,7 +1287,10 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
         </TabsContent>
 
         <TabsContent value='performance' className='outline-none'>
-          <ModelDetailsPerformance model={props.model} />
+          <ModelDetailsPerformance
+            model={props.model}
+            groupFilter={props.groupFilter}
+          />
         </TabsContent>
 
         <TabsContent value='api' className='outline-none'>
@@ -1417,6 +1436,7 @@ export function ModelDetails() {
 
         <ModelDetailsContent
           model={model}
+          groupFilter={search.group === FILTER_ALL ? undefined : search.group}
           groupRatio={groupRatio || {}}
           usableGroup={usableGroup || {}}
           autoGroups={autoGroups || []}

@@ -57,6 +57,7 @@ export type LatencyTimePoint = {
 
 export type UptimeDayPoint = {
   date: string
+  group?: string
   uptime_pct: number
   incidents: number
   outage_minutes: number

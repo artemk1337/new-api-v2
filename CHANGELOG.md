@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.180
+
+- Added per-group latency and availability chart series in model performance details, with line and point colors matching the group badges.
+- Removed the aggregate performance cards and duplicate group selector while preserving the per-group performance table and external group filters.
+
 ## v1.1.179
 
 - Fixed payment-method reordering so legacy Crypto entries retain their configured order when moved together with another payment method.

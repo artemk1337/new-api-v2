@@ -16,15 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
 import { VChart } from '@visactor/react-vchart'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useThemeRadiusPx } from '@/lib/theme-radius'
 import { useChartTheme } from '@/lib/use-chart-theme'
 import { cn } from '@/lib/utils'
 import { VCHART_OPTION } from '@/lib/vchart'
-import { useThemeCustomization } from '@/context/theme-customization-provider'
-import { getSuccessRateColor } from '@/features/performance-metrics/lib/format'
+
 import type { LatencyTimePoint, UptimeDayPoint } from '../lib/mock-stats'
 
 function formatHourLabel(iso: string): string {
@@ -87,12 +88,41 @@ function stripUptimePointSuffix(value: string): string {
   return value.replace(/__(start|end)$/, '')
 }
 
+function resolveChartColors(colors: Record<string, string>) {
+  if (typeof document === 'undefined') return colors
+
+  const probe = document.createElement('span')
+  probe.style.position = 'absolute'
+  probe.style.visibility = 'hidden'
+  // Theme presets are applied to <body>; resolve variables in that subtree
+  // so chart colors stay in sync with GroupBadge across custom themes.
+  document.body.append(probe)
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  if (!context) {
+    probe.remove()
+    return colors
+  }
+
+  const resolvedColors = Object.fromEntries(
+    Object.entries(colors).map(([group, color]) => {
+      probe.style.color = color
+      const resolved = getComputedStyle(probe).color || color
+      context.fillStyle = resolved
+      return [group, context.fillStyle]
+    })
+  )
+  probe.remove()
+  return resolvedColors
+}
+
 // ---------------------------------------------------------------------------
 // Latency trend chart (24h, multi-group point-line chart)
 // ---------------------------------------------------------------------------
 
 export function LatencyTrendChart(props: {
   series: LatencyTimePoint[]
+  colors: Record<string, string>
   className?: string
 }) {
   const { t } = useTranslation()
@@ -101,6 +131,7 @@ export function LatencyTrendChart(props: {
 
   const spec = useMemo(() => {
     if (props.series.length === 0) return null
+    const colors = resolveChartColors(props.colors)
     const data = props.series.map((point) => ({
       time: formatHourLabel(point.timestamp),
       group: point.group,
@@ -115,11 +146,21 @@ export function LatencyTrendChart(props: {
       smooth: true,
       point: {
         visible: true,
-        style: { size: 5, stroke: '#ffffff', lineWidth: 1.5 },
+        style: {
+          size: 5,
+          stroke: '#ffffff',
+          lineWidth: 1.5,
+          fill: (datum: { group: string }) =>
+            colors[datum.group] ?? colors[Object.keys(colors)[0] ?? ''],
+        },
       },
       line: {
-        style: { lineWidth: 2 },
+        style: {
+          lineWidth: 2,
+          stroke: (datum: { group: string }) => colors[datum.group],
+        },
       },
+      color: { specified: colors },
       legends: { visible: false },
       tooltip: {
         mark: {
@@ -153,7 +194,7 @@ export function LatencyTrendChart(props: {
         },
       ],
     }
-  }, [gridColor, props.series, t, textColor])
+  }, [gridColor, props.colors, props.series, t, textColor])
 
   if (props.series.length === 0) {
     return (
@@ -191,6 +232,7 @@ export function LatencyTrendChart(props: {
 
 export function UptimeTrendChart(props: {
   series: UptimeDayPoint[]
+  colors: Record<string, string>
   className?: string
 }) {
   const { t } = useTranslation()
@@ -199,20 +241,30 @@ export function UptimeTrendChart(props: {
 
   const spec = useMemo(() => {
     if (props.series.length === 0) return null
+    const colors = resolveChartColors(props.colors)
 
     const rawData = props.series.map((point) => ({
       date: formatDayLabel(point.date),
+      group: point.group ?? 'uptime',
       uptime: toUptimeChartValue(point.uptime_pct),
       incidents: point.incidents,
       outage: point.outage_minutes,
     }))
-    const data =
-      rawData.length === 1
+    const data = [
+      ...rawData.reduce((groups, point) => {
+        const points = groups.get(point.group) ?? []
+        points.push(point)
+        groups.set(point.group, points)
+        return groups
+      }, new Map<string, typeof rawData>()),
+    ].flatMap(([, points]) =>
+      points.length === 1
         ? [
-            { ...rawData[0], date: `${rawData[0].date}__start` },
-            { ...rawData[0], date: `${rawData[0].date}__end` },
+            { ...points[0], date: `${points[0].date}__start` },
+            { ...points[0], date: `${points[0].date}__end` },
           ]
-        : rawData
+        : points
+    )
     const axisMin = getUptimeAxisMin(rawData.map((point) => point.uptime))
 
     return {
@@ -220,19 +272,26 @@ export function UptimeTrendChart(props: {
       data: [{ id: 'uptime', values: data }],
       xField: 'date',
       yField: 'uptime',
+      seriesField: 'group',
       smooth: true,
-      line: {
-        style: { stroke: '#10b981', lineWidth: 2 },
-      },
       point: {
         visible: true,
         style: {
           size: 5,
           stroke: '#ffffff',
           lineWidth: 1.5,
-          fill: (datum: { uptime: number }) => getSuccessRateColor(datum.uptime),
+          fill: (datum: { group: string }) =>
+            colors[datum.group] ?? colors[Object.keys(colors)[0] ?? ''],
         },
       },
+      line: {
+        style: {
+          lineWidth: 2,
+          stroke: (datum: { group: string }) => colors[datum.group],
+        },
+      },
+      color: { specified: colors },
+      legends: { visible: false },
       tooltip: {
         mark: {
           title: {
@@ -280,7 +339,7 @@ export function UptimeTrendChart(props: {
         },
       ],
     }
-  }, [gridColor, props.series, t, textColor])
+  }, [gridColor, props.colors, props.series, t, textColor])
 
   if (props.series.length === 0) {
     return (

@@ -280,6 +280,7 @@ export function Pricing() {
                 if (!open) setSelectedModelName(null)
               }}
               model={selectedModel}
+              groupFilter={groupFilter === FILTER_ALL ? undefined : groupFilter}
               groupRatio={groupRatio || {}}
               usableGroup={usableGroup || {}}
               endpointMap={
