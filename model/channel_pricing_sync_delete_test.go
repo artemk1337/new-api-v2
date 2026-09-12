@@ -81,8 +81,8 @@ func TestChannelDeletePathsClearPricingSyncOwnership(t *testing.T) {
 
 			state, err := GetPricingSyncModelState(modelName)
 			require.NoError(t, err)
-			assert.Equal(t, PricingSyncModelModeManual, state.Mode)
-			assert.Equal(t, PricingSyncModelStatusUnavailable, state.Status)
+			assert.Equal(t, PricingSyncModelModeGeneral, state.Mode)
+			assert.Equal(t, PricingSyncModelStatusReady, state.Status)
 
 			var option Option
 			require.NoError(t, DB.First(&option, "key = ?", "ModelPrice").Error)

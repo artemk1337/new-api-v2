@@ -81,8 +81,8 @@ func TestDisablePricingSyncSourcesClearsOwnedModelPricing(t *testing.T) {
 	}
 	state, err := GetPricingSyncModelState(modelName)
 	require.NoError(t, err)
-	assert.Equal(t, PricingSyncModelModeManual, state.Mode)
-	assert.Equal(t, PricingSyncModelStatusUnavailable, state.Status)
+	assert.Equal(t, PricingSyncModelModeGeneral, state.Mode)
+	assert.Equal(t, PricingSyncModelStatusReady, state.Status)
 	var sourceCount, quoteCount int64
 	require.NoError(t, DB.Model(&PricingSyncSource{}).Where("channel_id = ?", 11).Count(&sourceCount).Error)
 	require.NoError(t, DB.Model(&PricingSyncQuote{}).Where("channel_id = ?", 11).Count(&quoteCount).Error)
@@ -106,9 +106,30 @@ func TestDisablePricingSyncSourcesClearsGeneralProvenance(t *testing.T) {
 	require.NoError(t, DisablePricingSyncSources([]int{9}))
 	updated, err := GetPricingSyncModelState(state.ModelName)
 	require.NoError(t, err)
-	assert.Equal(t, PricingSyncModelModeManual, updated.Mode)
-	assert.Equal(t, PricingSyncModelStatusUnavailable, updated.Status)
+	assert.Equal(t, PricingSyncModelModeGeneral, updated.Mode)
+	assert.Equal(t, PricingSyncModelStatusReady, updated.Status)
 	assert.Empty(t, updated.Provenance)
+}
+
+func TestDisablePricingSyncSourcesKeepsExplicitManualState(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	const modelName = "explicit-manual-model"
+	require.NoError(t, DB.Create(&PricingSyncSource{
+		ChannelID: 12, Enabled: true, Endpoint: "/api/pricing",
+	}).Error)
+	require.NoError(t, SavePricingSyncModelState(PricingSyncModelState{
+		ModelName: modelName,
+		Mode:      PricingSyncModelModeManual,
+		Status:    PricingSyncModelStatusReady,
+	}))
+
+	require.NoError(t, DisablePricingSyncSources([]int{12}))
+
+	state, err := GetPricingSyncModelState(modelName)
+	require.NoError(t, err)
+	assert.Equal(t, PricingSyncModelModeManual, state.Mode)
+	assert.Equal(t, PricingSyncModelStatusReady, state.Status)
 }
 
 func TestApplyPricingSyncUpdatePersistsPriceAndProvenance(t *testing.T) {

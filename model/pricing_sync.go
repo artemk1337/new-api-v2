@@ -549,10 +549,7 @@ func disablePricingSyncSourcesWithMutationChecked(channelIDs []int, check func(*
 			return err
 		}
 		if len(modelNames) > 0 {
-			if err := tx.Model(&PricingSyncModelState{}).Where("model_name IN ?", modelNames).Updates(map[string]any{
-				"mode": PricingSyncModelModeManual, "channel_id": 0, "provenance": "",
-				"conflict_details": "", "status": PricingSyncModelStatusUnavailable,
-			}).Error; err != nil {
+			if err := tx.Where("model_name IN ?", modelNames).Delete(&PricingSyncModelState{}).Error; err != nil {
 				return err
 			}
 		}
