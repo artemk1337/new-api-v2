@@ -54,10 +54,6 @@ import type {
   UpstreamConfig,
 } from '../types'
 import {
-  ConflictConfirmDialog,
-  type ConflictItem,
-} from './conflict-confirm-dialog'
-import {
   DEFAULT_ENDPOINT,
   MODELS_DEV_PRESET_ENDPOINT,
   MODELS_DEV_PRESET_ID,
@@ -69,7 +65,6 @@ import {
 import { PricingSyncSources } from './pricing-sync-sources'
 import {
   buildPricingSyncPatches,
-  RATIO_SYNC_FIELDS,
   getPricingSyncErrorMessage,
   getPreferredSyncField,
   getRunnablePricingSyncSources,
@@ -80,25 +75,6 @@ import {
   type ResolutionsMap,
 } from './upstream-ratio-sync-helpers'
 import { UpstreamRatioSyncTable } from './upstream-ratio-sync-table'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type UpstreamRatioSyncProps = {
-  modelRatios: {
-    ModelPrice: string
-    ModelRatio: string
-    CompletionRatio: string
-    CacheRatio: string
-    CreateCacheRatio: string
-    ImageRatio: string
-    AudioRatio: string
-    AudioCompletionRatio: string
-    'billing_setting.billing_mode': string
-    'billing_setting.billing_expr': string
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,14 +100,6 @@ function getBillingCategory(ratioType: string): 'price' | 'ratio' | 'tiered' {
   return 'ratio'
 }
 
-function parseJsonRecord<T>(raw: string | undefined | null): Record<string, T> {
-  try {
-    return JSON.parse(raw || '{}') as Record<string, T>
-  } catch {
-    return {}
-  }
-}
-
 function deleteResolutionField(
   res: ResolutionsMap,
   model: string,
@@ -155,11 +123,10 @@ function deleteResolutionField(
 // Component
 // ---------------------------------------------------------------------------
 
-export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
+export function UpstreamRatioSync() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
-  const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
   const [syncConfig, setSyncConfig] = useState<PricingSyncConfig>({
     strategy: 'highest',
     sources: [],
@@ -175,8 +142,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     number | null
   >(null)
   const [resolutions, setResolutions] = useState<ResolutionsMap>({})
-  const [conflictItems, setConflictItems] = useState<ConflictItem[]>([])
-  const [confirmLoading, setConfirmLoading] = useState(false)
   const [pendingAutoModels, setPendingAutoModels] = useState<string[]>([])
 
   const { data: channelsData } = useQuery({
@@ -224,8 +189,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     setDifferences({})
     setModelStates({})
     setResolutions({})
-    setConflictItems([])
-    setConflictDialogOpen(false)
     setPendingAutoModels([])
   }, [])
 
@@ -474,48 +437,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     []
   )
 
-  const parsedRatios = useMemo(() => {
-    return {
-      ModelRatio: parseJsonRecord<number>(modelRatios.ModelRatio),
-      CompletionRatio: parseJsonRecord<number>(modelRatios.CompletionRatio),
-      CacheRatio: parseJsonRecord<number>(modelRatios.CacheRatio),
-      CreateCacheRatio: parseJsonRecord<number>(modelRatios.CreateCacheRatio),
-      ImageRatio: parseJsonRecord<number>(modelRatios.ImageRatio),
-      AudioRatio: parseJsonRecord<number>(modelRatios.AudioRatio),
-      AudioCompletionRatio: parseJsonRecord<number>(
-        modelRatios.AudioCompletionRatio
-      ),
-      ModelPrice: parseJsonRecord<number>(modelRatios.ModelPrice),
-      'billing_setting.billing_mode': parseJsonRecord<string>(
-        modelRatios['billing_setting.billing_mode']
-      ),
-      'billing_setting.billing_expr': parseJsonRecord<string>(
-        modelRatios['billing_setting.billing_expr']
-      ),
-    }
-  }, [modelRatios])
-
-  type ParsedRatios = typeof parsedRatios
-
-  const getLocalBillingCategory = (
-    model: string,
-    currentRatios: ParsedRatios
-  ): 'price' | 'ratio' | null => {
-    if (currentRatios.ModelPrice[model] !== undefined) return 'price'
-    if (
-      currentRatios.ModelRatio[model] !== undefined ||
-      currentRatios.CompletionRatio[model] !== undefined ||
-      currentRatios.CacheRatio[model] !== undefined ||
-      currentRatios.CreateCacheRatio[model] !== undefined ||
-      currentRatios.ImageRatio[model] !== undefined ||
-      currentRatios.AudioRatio[model] !== undefined ||
-      currentRatios.AudioCompletionRatio[model] !== undefined
-    ) {
-      return 'ratio'
-    }
-    return null
-  }
-
   const performSync = useCallback(async (): Promise<boolean> => {
     if (pricingSnapshotVersion === null) return false
 
@@ -638,82 +559,9 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     ]
   )
 
-  const findSourceChannel = (
-    model: string,
-    ratioType: RatioType,
-    value: number | string
-  ): string => {
-    const upMap = differences[model]?.[ratioType]?.upstreams
-    if (!upMap) return 'Unknown'
-    const entry = Object.entries(upMap).find(([, v]) => v === value)
-    return entry ? entry[0] : 'Unknown'
-  }
-
   const handleApplySync = () => {
-    const currentRatios = parsedRatios
-    const conflicts: ConflictItem[] = []
-
-    const fixedPriceLabel = t('Fixed price')
-    const modelRatioLabel = t('Model ratio')
-    const completionRatioLabel = t('Completion ratio')
-
-    Object.entries(resolutions).forEach(([model, ratios]) => {
-      const localCat = getLocalBillingCategory(model, currentRatios)
-      const selectedTypes = Object.keys(ratios)
-      let newCat: 'price' | 'ratio' | 'tiered'
-      if ('model_price' in ratios) {
-        newCat = 'price'
-      } else if (RATIO_SYNC_FIELDS.some((rt) => selectedTypes.includes(rt))) {
-        newCat = 'ratio'
-      } else {
-        newCat = 'tiered'
-      }
-
-      if (localCat && newCat !== 'tiered' && localCat !== newCat) {
-        const currentDesc =
-          localCat === 'price'
-            ? `${fixedPriceLabel}: ${currentRatios.ModelPrice[model]}`
-            : `${modelRatioLabel}: ${currentRatios.ModelRatio[model] ?? '-'}\n${completionRatioLabel}: ${currentRatios.CompletionRatio[model] ?? '-'}`
-
-        const newDesc =
-          newCat === 'price'
-            ? `${fixedPriceLabel}: ${ratios.model_price}`
-            : `${modelRatioLabel}: ${ratios.model_ratio ?? '-'}\n${completionRatioLabel}: ${ratios.completion_ratio ?? '-'}`
-
-        const channelNames = selectedTypes
-          .map((rt) => findSourceChannel(model, rt as RatioType, ratios[rt]))
-          .filter((v, idx, arr) => arr.indexOf(v) === idx)
-          .join(', ')
-
-        conflicts.push({
-          channel: channelNames,
-          model,
-          current: currentDesc,
-          newVal: newDesc,
-        })
-      }
-    })
-
-    if (conflicts.length > 0) {
-      setConflictItems(conflicts)
-      setConflictDialogOpen(true)
-      return
-    }
-
     toast.info(t('Syncing prices, please wait...'))
     performSync()
-  }
-
-  const handleConfirmConflict = async () => {
-    setConfirmLoading(true)
-    try {
-      const success = await performSync()
-      if (success) {
-        setConflictDialogOpen(false)
-      }
-    } finally {
-      setConfirmLoading(false)
-    }
   }
 
   const hasSelections = Object.keys(resolutions).length > 0
@@ -725,7 +573,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
     !isPricingSyncReady ||
     fetchMutation.isPending ||
     isSyncPending ||
-    confirmLoading ||
     saveConfigMutation.isPending
 
   return (
@@ -752,7 +599,7 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
             onClick={handleApplySync}
             disabled={!hasSelections || isLoading}
           >
-            {(isSyncPending || confirmLoading) && (
+            {isSyncPending && (
               <span className='mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
             )}
             <CheckSquare className='mr-2 h-4 w-4' />
@@ -818,13 +665,6 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
         </TabsContent>
       </Tabs>
 
-      <ConflictConfirmDialog
-        open={conflictDialogOpen}
-        onOpenChange={setConflictDialogOpen}
-        conflicts={conflictItems}
-        onConfirm={handleConfirmConflict}
-        isLoading={confirmLoading}
-      />
       <AlertDialog
         open={pendingAutoModels.length > 0}
         onOpenChange={(open) => !open && setPendingAutoModels([])}

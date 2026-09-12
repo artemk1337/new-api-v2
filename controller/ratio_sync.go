@@ -1181,7 +1181,7 @@ func ApplyPricingSyncPatches(c *gin.Context) {
 		if _, ok := preferences[name]; !ok {
 			preferenceInputs = append(preferenceInputs, model.PricingSyncModelPreferenceInput{
 				ModelName: name,
-				Mode:      model.PricingSyncModelModeManual,
+				Mode:      model.PricingSyncModelModeGeneral,
 			})
 		}
 	}

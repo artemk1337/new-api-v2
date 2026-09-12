@@ -141,7 +141,7 @@ func TestApplyPricingSyncPatchesPersistsPreferencesAtomically(t *testing.T) {
 	t.Cleanup(func() { model.DB = previousDB })
 
 	body := []byte(`{
-		"patches":{"ModelPrice":{"set":{"channel-model":1,"general-model":2,"manual-model":3}}},
+		"patches":{"ModelPrice":{"set":{"channel-model":1,"general-model":2,"implicit-general-model":3}}},
 		"preferences":[
 			{"model_name":"channel-model","mode":"channel","channel_id":8},
 			{"model_name":"general-model","mode":"general","channel_id":999}
@@ -163,9 +163,9 @@ func TestApplyPricingSyncPatchesPersistsPreferencesAtomically(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.PricingSyncModelModeGeneral, generalState.Mode)
 	require.Zero(t, generalState.ChannelID)
-	manualState, err := model.GetPricingSyncModelState("manual-model")
+	implicitGeneralState, err := model.GetPricingSyncModelState("implicit-general-model")
 	require.NoError(t, err)
-	require.Equal(t, model.PricingSyncModelModeManual, manualState.Mode)
+	require.Equal(t, model.PricingSyncModelModeGeneral, implicitGeneralState.Mode)
 }
 
 func TestApplyPricingSyncPatchesRejectsDisabledSource(t *testing.T) {

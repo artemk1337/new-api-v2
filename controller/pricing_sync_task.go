@@ -869,14 +869,12 @@ func buildUpstreamPricingSyncPatchesWithPreferences(local map[string]any, upstre
 
 	for _, modelName := range models {
 		modelUpstreams := upstreams
-		explicitChannel := false
 		if preference, ok := preferences[modelName]; ok {
 			switch preference.Mode {
 			case model.PricingSyncModelModeManual:
 				skipped = append(skipped, modelName)
 				continue
 			case model.PricingSyncModelModeChannel:
-				explicitChannel = true
 				modelUpstreams = make([]map[string]any, 0, 1)
 				for index, sourceID := range sourceIDs {
 					if sourceID == preference.ChannelID && index < len(upstreams) {
@@ -904,8 +902,7 @@ func buildUpstreamPricingSyncPatchesWithPreferences(local map[string]any, upstre
 			}
 			category = upstreamCategory
 		}
-		if conflict || category == "" ||
-			(!explicitChannel && pricingCategory(local, modelName) != "" && pricingCategory(local, modelName) != category) {
+		if conflict || category == "" {
 			skipped = append(skipped, modelName)
 			continue
 		}
@@ -1125,7 +1122,7 @@ func pricingSyncAppliedStates(patches map[string]model.JSONObjectPatch, unavaila
 	return states
 }
 
-func pricingSyncIncompatibleStates(local map[string]any, upstreams []map[string]any, sourceIDs []int, staleSources map[int]struct{}, preferences map[string]model.PricingSyncModelState, now int64) []model.PricingSyncModelState {
+func pricingSyncIncompatibleStates(upstreams []map[string]any, sourceIDs []int, staleSources map[int]struct{}, preferences map[string]model.PricingSyncModelState, now int64) []model.PricingSyncModelState {
 	modelNames := make(map[string]struct{})
 	for _, upstream := range upstreams {
 		for _, field := range pricingSyncFields {
@@ -1183,10 +1180,6 @@ func pricingSyncIncompatibleStates(local map[string]any, upstreams []map[string]
 				signatures[string(encoded)] = struct{}{}
 			}
 			incompatible = len(signatures) > 1
-		}
-		localCategory := pricingCategory(local, modelName)
-		if mode != model.PricingSyncModelModeChannel && localCategory != "" && localCategory != category {
-			incompatible = true
 		}
 		if !incompatible {
 			continue
@@ -1293,7 +1286,6 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 			return summary, err
 		}
 		delete(staleSources, source.ChannelID)
-		summary.SkippedModels = append(summary.SkippedModels, fetched.UnsupportedModels...)
 	}
 	if ctx.Err() != nil {
 		return summary, ctx.Err()
@@ -1347,7 +1339,7 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 	}
 	summary.SkippedModels = lo.Uniq(append(summary.SkippedModels, skipped...))
 	states := pricingSyncAppliedStates(patches, unavailable, staleSources, upstreams, sourceIDs, preferences, now)
-	for _, state := range pricingSyncIncompatibleStates(localPricing, upstreams, sourceIDs, staleSources, preferences, now) {
+	for _, state := range pricingSyncIncompatibleStates(upstreams, sourceIDs, staleSources, preferences, now) {
 		replaced := false
 		for index := range states {
 			if states[index].ModelName == state.ModelName {

@@ -41,7 +41,7 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 		require.Equal(t, 1.0, valueMap(local["model_ratio"])["model-a"])
 	})
 
-	t.Run("skips billing category transition", func(t *testing.T) {
+	t.Run("replaces local billing category with upstream category", func(t *testing.T) {
 		local := map[string]any{"model_price": map[string]any{"model-a": 0.2}}
 		upstreams := []map[string]any{
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
@@ -49,9 +49,11 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 
 		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams)
 
-		require.Empty(t, patches)
-		require.Equal(t, []string{"model-a"}, skipped)
-		require.Zero(t, applied)
+		require.Empty(t, skipped)
+		require.Equal(t, 1, applied)
+		require.Equal(t, 2.0, patches["ModelRatio"].Set["model-a"])
+		require.Equal(t, 3.0, patches["CompletionRatio"].Set["model-a"])
+		require.Equal(t, []string{"model-a"}, patches["ModelPrice"].Delete)
 	})
 
 	t.Run("resolves upstream disagreement with highest price", func(t *testing.T) {
@@ -538,7 +540,6 @@ func TestPricingSyncAppliedStatesKeepsAndClearsStaleStatus(t *testing.T) {
 
 func TestPricingSyncIncompatibleStatesCreatesInitialConflict(t *testing.T) {
 	states := pricingSyncIncompatibleStates(
-		map[string]any{},
 		[]map[string]any{
 			{"model_price": map[string]any{"model-a": 1.0}},
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
@@ -555,6 +556,23 @@ func TestPricingSyncIncompatibleStatesCreatesInitialConflict(t *testing.T) {
 	require.Equal(t, model.PricingSyncModelStatusConflict, states[0].Status)
 	require.JSONEq(t, `[8,9]`, states[0].Provenance)
 	require.NotEmpty(t, states[0].ConflictDetails)
+}
+
+func TestPricingSyncIncompatibleStatesIgnoresLocalCategoryTransition(t *testing.T) {
+	states := pricingSyncIncompatibleStates(
+		[]map[string]any{{
+			"model_ratio":      map[string]any{"model-a": 2.0},
+			"completion_ratio": map[string]any{"model-a": 3.0},
+		}},
+		[]int{8},
+		nil,
+		map[string]model.PricingSyncModelState{
+			"model-a": {ModelName: "model-a", Mode: model.PricingSyncModelModeGeneral},
+		},
+		100,
+	)
+
+	require.Empty(t, states)
 }
 
 func TestPricingStepRatiosExpr(t *testing.T) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.183
+
+- Made upstream pricing synchronization automatic: configured highest/lowest/average conflict rules now resolve compatible upstream price differences without a manual confirmation dialog.
+- Replaced stale local billing categories when synchronized upstream sources agree, while preserving protection for incompatible fixed-price and ratio sources.
+- Removed obsolete per-model source overrides; synchronization state is cleaned up when sources are removed, and unsupported upstream models no longer block valid synchronization.
+
 ## v1.1.181
 
 - Added a local, navigable API-key setup guide under `/docs`, including desktop and mobile section navigation.

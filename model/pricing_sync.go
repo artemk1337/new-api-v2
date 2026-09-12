@@ -459,8 +459,7 @@ func SavePricingSyncModelState(state PricingSyncModelState) error {
 }
 
 // DisablePricingSyncSources clears prices owned by an explicitly selected
-// source. It deliberately does not silently fall back to another channel:
-// using a potentially cheaper replacement can undercharge real upstream cost.
+// source. Remaining sources can be adopted by a later sync after confirmation.
 func DisablePricingSyncSources(channelIDs []int) error {
 	return disablePricingSyncSourcesWithMutation(channelIDs, nil)
 }
