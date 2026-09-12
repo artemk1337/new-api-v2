@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.181
+
+- Added a local, navigable API-key setup guide under `/docs`, including desktop and mobile section navigation.
+- Documented Claude Code onboarding with CLI configuration and one successful CLI request required before opening the application or integration.
+- Routed the migrated Google Docs guide to local `/docs` while preserving other configured external documentation URLs.
+
 ## v1.1.180
 
 - Added per-group latency and availability chart series in model performance details, with line and point colors matching the group badges.
