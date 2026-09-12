@@ -845,14 +845,14 @@ func resolveComparableNumericPricing(upstreams []map[string]any, modelName, cate
 	return resolved, true
 }
 
-// buildUpstreamPricingSyncPatches accepts a value only when every upstream
-// exposing that model agrees on its billing category and field values. A
-// category transition is intentionally left for the manual conflict dialog.
-func buildUpstreamPricingSyncPatches(local map[string]any, upstreams []map[string]any, blockedModels map[string]struct{}) (map[string]model.JSONObjectPatch, []string, int) {
-	return buildUpstreamPricingSyncPatchesWithPreferences(local, upstreams, nil, blockedModels, nil)
+// buildUpstreamPricingSyncPatches resolves a model from the sources that
+// expose it. A source that does not provide a model is ignored; it must not
+// globally block valid prices from the other sources.
+func buildUpstreamPricingSyncPatches(local map[string]any, upstreams []map[string]any) (map[string]model.JSONObjectPatch, []string, int) {
+	return buildUpstreamPricingSyncPatchesWithPreferences(local, upstreams, nil, nil)
 }
 
-func buildUpstreamPricingSyncPatchesWithPreferences(local map[string]any, upstreams []map[string]any, sourceIDs []int, blockedModels map[string]struct{}, preferences map[string]model.PricingSyncModelState) (map[string]model.JSONObjectPatch, []string, int) {
+func buildUpstreamPricingSyncPatchesWithPreferences(local map[string]any, upstreams []map[string]any, sourceIDs []int, preferences map[string]model.PricingSyncModelState) (map[string]model.JSONObjectPatch, []string, int) {
 	allModels := make(map[string]struct{})
 	for _, upstream := range upstreams {
 		for _, field := range pricingSyncFields {
@@ -868,10 +868,6 @@ func buildUpstreamPricingSyncPatchesWithPreferences(local map[string]any, upstre
 	applied := 0
 
 	for _, modelName := range models {
-		if _, blocked := blockedModels[modelName]; blocked {
-			skipped = append(skipped, modelName)
-			continue
-		}
 		modelUpstreams := upstreams
 		explicitChannel := false
 		if preference, ok := preferences[modelName]; ok {
@@ -1243,7 +1239,6 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 
 	upstreams := make([]map[string]any, 0)
 	sources := make([]string, 0)
-	blockedModels := make(map[string]struct{})
 	staleSources := make(map[int]struct{})
 	activeSourceIDs := make(map[int]struct{})
 	for index, source := range syncSources {
@@ -1299,9 +1294,6 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 		}
 		delete(staleSources, source.ChannelID)
 		summary.SkippedModels = append(summary.SkippedModels, fetched.UnsupportedModels...)
-		for _, modelName := range fetched.UnsupportedModels {
-			blockedModels[modelName] = struct{}{}
-		}
 	}
 	if ctx.Err() != nil {
 		return summary, ctx.Err()
@@ -1337,7 +1329,7 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 	patches, skipped, applied := buildUpstreamPricingSyncPatchesWithPreferences(localPricing, upstreams, lo.Map(sources, func(source string, _ int) int {
 		channelID, _ := strconv.Atoi(source)
 		return channelID
-	}), blockedModels, preferences)
+	}), preferences)
 	sourceIDs := lo.Map(sources, func(source string, _ int) int {
 		channelID, _ := strconv.Atoi(source)
 		return channelID

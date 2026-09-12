@@ -32,7 +32,7 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams, nil)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams)
 
 		require.Equal(t, 1, applied)
 		require.Empty(t, skipped)
@@ -47,7 +47,7 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams, nil)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams)
 
 		require.Empty(t, patches)
 		require.Equal(t, []string{"model-a"}, skipped)
@@ -60,28 +60,28 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			{"model_ratio": map[string]any{"model-a": 3.0}, "completion_ratio": map[string]any{"model-a": 1.0}},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams, nil)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams)
 
 		require.Empty(t, skipped)
 		require.Equal(t, 1, applied)
 		require.Equal(t, 3.0, patches["ModelRatio"].Set["model-a"])
 	})
 
-	t.Run("skips model unsupported by another upstream", func(t *testing.T) {
+	t.Run("uses model from upstreams that support it", func(t *testing.T) {
 		upstreams := []map[string]any{
 			{},
-			{"model_ratio": map[string]any{"model-a": 2.0}},
+			{
+				"model_ratio":      map[string]any{"model-a": 2.0},
+				"completion_ratio": map[string]any{"model-a": 3.0},
+			},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(
-			map[string]any{},
-			upstreams,
-			map[string]struct{}{"model-a": {}},
-		)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams)
 
-		require.Empty(t, patches)
-		require.Equal(t, []string{"model-a"}, skipped)
-		require.Zero(t, applied)
+		require.Empty(t, skipped)
+		require.Equal(t, 1, applied)
+		require.Equal(t, 2.0, patches["ModelRatio"].Set["model-a"])
+		require.Equal(t, 3.0, patches["CompletionRatio"].Set["model-a"])
 	})
 
 	t.Run("deletes optional ratio absent from every source", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams, nil)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(local, upstreams)
 
 		require.Empty(t, skipped)
 		require.Equal(t, 1, applied)
@@ -108,7 +108,7 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			{"model_ratio": map[string]any{"model-a": 2.0}, "completion_ratio": map[string]any{"model-a": 3.0}},
 		}
 
-		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams, nil)
+		patches, skipped, applied := buildUpstreamPricingSyncPatches(map[string]any{}, upstreams)
 
 		require.Empty(t, patches)
 		require.Equal(t, []string{"model-a"}, skipped)
@@ -124,7 +124,6 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			map[string]any{},
 			upstreams,
 			[]int{10, 20},
-			nil,
 			map[string]model.PricingSyncModelState{
 				"model-a": {Mode: model.PricingSyncModelModeChannel, ChannelID: 10},
 			},
@@ -143,7 +142,6 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 				"completion_ratio": map[string]any{"model-a": 3.0},
 			}},
 			[]int{10},
-			nil,
 			map[string]model.PricingSyncModelState{
 				"model-a": {Mode: model.PricingSyncModelModeChannel, ChannelID: 10},
 			},
@@ -161,7 +159,6 @@ func TestBuildUpstreamPricingSyncPatches(t *testing.T) {
 			map[string]any{},
 			[]map[string]any{{"model_price": map[string]any{"model-a": 2.0}}},
 			[]int{10},
-			nil,
 			map[string]model.PricingSyncModelState{
 				"model-a": {Mode: model.PricingSyncModelModeManual},
 			},
