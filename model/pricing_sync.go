@@ -302,10 +302,7 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 		}
 		if len(ownedStates) > 0 {
 			names := lo.Map(ownedStates, func(state PricingSyncModelState, _ int) string { return state.ModelName })
-			if err := tx.Model(&PricingSyncModelState{}).Where("model_name IN ?", names).Updates(map[string]any{
-				"mode": PricingSyncModelModeManual, "channel_id": 0, "provenance": "",
-				"conflict_details": "", "status": PricingSyncModelStatusUnavailable,
-			}).Error; err != nil {
+			if err := tx.Where("model_name IN ?", names).Delete(&PricingSyncModelState{}).Error; err != nil {
 				return err
 			}
 		}

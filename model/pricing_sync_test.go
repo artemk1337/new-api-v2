@@ -321,3 +321,35 @@ func TestSavePricingSyncConfigurationAcceptsCurrentVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, version+1, updatedVersion)
 }
+
+func TestSavePricingSyncConfigurationDeletesRemovedSourceState(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncSource{}, &PricingSyncModelState{}, &Channel{}))
+	previous := []PricingSyncSource{{ChannelID: 1, Enabled: true, Endpoint: "/api/pricing"}}
+	require.NoError(t, DB.Create(&previous[0]).Error)
+	require.NoError(t, DB.Create(&Channel{Id: 1, Status: common.ChannelStatusEnabled}).Error)
+	const modelName = "removed-source-model"
+	require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{
+		"ModelPrice": {Set: map[string]any{modelName: 0.25}},
+	}))
+	require.NoError(t, SavePricingSyncModelState(PricingSyncModelState{
+		ModelName: modelName, Mode: PricingSyncModelModeChannel, ChannelID: 1,
+		Provenance: "[1]", Status: PricingSyncModelStatusReady,
+	}))
+	version, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+
+	require.NoError(t, SavePricingSyncConfigurationIfVersion(
+		nil, PricingSyncStrategyHighest, []int{1}, previous, version,
+	))
+
+	var option Option
+	require.NoError(t, DB.First(&option, "key = ?", "ModelPrice").Error)
+	values := map[string]any{}
+	require.NoError(t, common.UnmarshalJsonStr(option.Value, &values))
+	assert.NotContains(t, values, modelName)
+	state, err := GetPricingSyncModelState(modelName)
+	require.NoError(t, err)
+	assert.Equal(t, PricingSyncModelModeGeneral, state.Mode)
+	assert.Equal(t, PricingSyncModelStatusReady, state.Status)
+}
