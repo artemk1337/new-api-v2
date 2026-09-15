@@ -200,6 +200,24 @@ models:
 
 Точный model ID возьмите из ответа `/v1/models` или из списка моделей в диалоге создания/редактирования ключа. Общая административная страница моделей может быть недоступна обычному пользователю.
 
+### Codex CLI
+
+Codex CLI можно подключить как отдельный custom provider, указав API-ключ прямо в `~/.codex/config.toml`:
+
+```toml
+model_provider = "custom"
+
+[model_providers.custom]
+name = "VibeCode API"
+base_url = "https://vibecode-api.online/v1"
+experimental_bearer_token = "sk-xxxxxxxx"
+wire_api = "responses"
+```
+
+Замените `sk-xxxxxxxx` на реальный ключ. `experimental_bearer_token` хранит ключ прямо в конфиге, поэтому ограничьте доступ к файлу командой `chmod 600 ~/.codex/config.toml` и не добавляйте его в репозиторий.
+
+Дополнительные параметры custom providers описаны в [официальной документации Codex](https://developers.openai.com/codex/config-file/config-advanced#custom-model-providers).
+
 ### Cline, Cursor и другие клиенты
 
 В каждом клиенте проверьте четыре поля: тип провайдера — OpenAI Compatible, Base URL — с `/v1`, API Key — токен `sk-...`, Model — точный `id` из `/v1/models`. Не угадывайте имя модели и не добавляйте префиксы вручную. Возможность подключить свой endpoint зависит от версии и тарифа самого клиента.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.184
+
+- Added Codex CLI setup documentation for connecting through a custom OpenAI-compatible provider.
+
 ## v1.1.183
 
 - Made upstream pricing synchronization automatic: configured highest/lowest/average conflict rules now resolve compatible upstream price differences without a manual confirmation dialog.

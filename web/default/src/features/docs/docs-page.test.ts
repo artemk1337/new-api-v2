@@ -49,6 +49,16 @@ describe('API-key guide', () => {
     assert.match(guide, /https:\/\/vibecode-api\.online\/v1\/models/)
   })
 
+  test('documents Codex custom provider configuration', () => {
+    assert.match(guide, /model_provider = "custom"/)
+    assert.match(guide, /\[model_providers\.custom\]/)
+    assert.match(guide, /experimental_bearer_token = "sk-xxxxxxxx"/)
+    assert.match(guide, /wire_api = "responses"/)
+    assert.doesNotMatch(guide, /export VIBECODE_API_KEY/)
+    assert.doesNotMatch(guide, /env_key = "VIBECODE_API_KEY"/)
+    assert.match(guide, /https:\/\/developers\.openai\.com\/codex\/config-file\/config-advanced#custom-model-providers/)
+  })
+
   test('warns before exposing the dangerous permissions bypass', () => {
     const warningIndex = guide.indexOf('> **Опасный режим.')
     const commandIndex = guide.indexOf('claude --dangerously-skip-permissions')
