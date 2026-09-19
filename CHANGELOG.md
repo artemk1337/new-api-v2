@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.185
+
+- Reworked the Russian `/docs` API-key guide with shorter explanations and clearer Claude Code, Codex CLI, URL, authentication, and troubleshooting instructions.
+
 ## v1.1.184
 
 - Added Codex CLI setup documentation for connecting through a custom OpenAI-compatible provider.
