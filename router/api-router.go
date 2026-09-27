@@ -136,6 +136,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/usdt-trc20/:trade_no", controller.GetDirectUSDTTRC20Status)
 				selfRoute.POST("/crypto/:network/pay", middleware.PaymentCreationRateLimit(), controller.RequestDirectUSDTNetworkPay)
 				selfRoute.GET("/crypto/:network/:trade_no", controller.GetDirectUSDTNetworkStatus)
+				selfRoute.POST("/crypto/:network/:trade_no/cancel", controller.CancelDirectUSDTNetworkPayment)
 				selfRoute.POST("/aff_transfer", controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 

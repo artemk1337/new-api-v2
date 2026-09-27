@@ -87,6 +87,7 @@
     "@tanstack/react-query-devtools": "^5.100.14",
     "@tanstack/react-router-devtools": "^1.167.0",
     "@tanstack/router-plugin": "^1.168.11",
+    "@types/bun": "^1.4.2",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",

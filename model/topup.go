@@ -16,6 +16,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TopUp struct {
@@ -50,11 +51,15 @@ type TopUp struct {
 	// change when an administrator edits the current payment-method catalog.
 	PaymentMinimumAmount     float64 `json:"payment_minimum_amount" gorm:"not null;default:0"`
 	PaymentPendingTTLSeconds int64   `json:"payment_pending_ttl_seconds" gorm:"not null;default:0"`
-	QuotaToAdd               int     `json:"quota_to_add"`
-	BaseQuotaToAdd           int     `json:"base_quota_to_add" gorm:"not null;default:0"`
-	CreateTime               int64   `json:"create_time"`
-	CompleteTime             int64   `json:"complete_time"`
-	Status                   string  `json:"status"`
+	// Nullable in the database so an older binary can still insert TopUp rows
+	// after the additive direct-crypto migration. NULL is read as false and
+	// existing rows are backfilled by the startup migration.
+	PaymentRoundToCents bool   `json:"payment_round_to_cents"`
+	QuotaToAdd          int    `json:"quota_to_add"`
+	BaseQuotaToAdd      int    `json:"base_quota_to_add" gorm:"not null;default:0"`
+	CreateTime          int64  `json:"create_time"`
+	CompleteTime        int64  `json:"complete_time"`
+	Status              string `json:"status"`
 	// AccountingAmountUSD is a presentation-only snapshot populated for
 	// history responses. It is deliberately not persisted: payment settlement
 	// keeps using the immutable payment fields above, while the wallet can
@@ -266,7 +271,7 @@ func ExpireStalePendingTopUps(userID int) error {
 			var current TopUp
 			query := tx.Where("id = ? AND status = ?", topUp.Id, common.TopUpStatusPending)
 			if tx.Dialector.Name() != "sqlite" {
-				query = query.Set("gorm:query_option", "FOR UPDATE")
+				query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 			}
 			if err := query.First(&current).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -644,7 +649,7 @@ func completeTopUpCASWithOptions(tradeNo, expectedProvider string, allowExpiredS
 		err = DB.Transaction(func(tx *gorm.DB) error {
 			query := tx.Where("trade_no = ?", tradeNo)
 			if tx.Dialector.Name() != "sqlite" {
-				query = query.Set("gorm:query_option", "FOR UPDATE")
+				query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 			}
 			if err := query.First(&topUp).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {

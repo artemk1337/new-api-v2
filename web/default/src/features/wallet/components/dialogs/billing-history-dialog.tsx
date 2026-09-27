@@ -45,8 +45,14 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
+import {
+  canOpenDirectCryptoHistoryPayment,
+  getDirectCryptoHistoryNetwork,
+  getDirectCryptoInvoicePath,
+} from '../../lib/direct-crypto-checkout'
 import {
   getStatusConfig,
   getTopupStatusLabel,
@@ -70,6 +76,7 @@ export function BillingHistoryDialog({
   onOpenChange,
 }: BillingHistoryDialogProps) {
   const { t } = useTranslation()
+  const currentUserId = useAuthStore((state) => state.auth.user?.id)
   const {
     records,
     total,
@@ -214,6 +221,13 @@ export function BillingHistoryDialog({
                   const canCheckNOWPaymentsPayment =
                     record.payment_provider === 'nowpayments' &&
                     record.status === 'pending'
+                  const directNetwork = getDirectCryptoHistoryNetwork(
+                    record.payment_provider,
+                    record.payment_method,
+                    record.trade_no
+                  )
+                  const canOpenDirectPayment =
+                    canOpenDirectCryptoHistoryPayment(record, currentUserId)
                   return (
                     <div
                       key={record.id}
@@ -278,6 +292,22 @@ export function BillingHistoryDialog({
                               {checkingPaymentTradeNo === record.trade_no
                                 ? t('Processing...')
                                 : t('Check payment')}
+                            </Button>
+                          )}
+                          {canOpenDirectPayment && directNetwork && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              render={
+                                <a
+                                  href={getDirectCryptoInvoicePath(
+                                    directNetwork,
+                                    record.trade_no
+                                  )}
+                                />
+                              }
+                            >
+                              {t('Open payment')}
                             </Button>
                           )}
                           <StatusBadge

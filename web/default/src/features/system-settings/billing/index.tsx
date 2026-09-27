@@ -116,6 +116,8 @@ const defaultBillingSettings: BillingSettings = {
   NOWPaymentsPayCurrency: '',
   NOWPaymentsIPNCallbackURL: '',
   USDTTRC20Enabled: false,
+  USDTTRC20RoundToCents: false,
+  USDTReceivingWallets: '',
   USDTTRC20ReceivingAddress: '',
   USDTTONReceivingAddress: '',
   USDTSolanaReceivingAddress: '',

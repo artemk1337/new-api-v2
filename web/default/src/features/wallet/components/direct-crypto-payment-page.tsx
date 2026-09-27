@@ -14,7 +14,14 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { getDirectCryptoPaymentStatus } from '@/features/wallet/api'
+import {
+  cancelDirectCryptoPayment,
+  getDirectCryptoPaymentStatus,
+} from '@/features/wallet/api'
+import {
+  formatDirectCryptoAmount,
+  getDirectCryptoPaymentAddress,
+} from '@/features/wallet/lib/direct-crypto-checkout'
 import {
   getUSDTTrc20DisplayStatus,
   isUSDTTrc20TerminalStatus,
@@ -52,6 +59,8 @@ export function DirectCryptoPaymentPage({
   const [error, setError] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState(false)
   const terminalRef = useRef(false)
   const requestSequenceRef = useRef(0)
 
@@ -59,12 +68,16 @@ export function DirectCryptoPaymentPage({
     let cancelled = false
     terminalRef.current = false
     requestSequenceRef.current = 0
+    setPayment(null)
+    setError(false)
+    setCancelError(false)
     const poll = async () => {
       const requestSequence = ++requestSequenceRef.current
       try {
         const response = await getDirectCryptoPaymentStatus(network, tradeNo)
         if (cancelled || requestSequence !== requestSequenceRef.current) return
         if (response.success && response.data) {
+          setError(false)
           setPayment(response.data)
           if (isUSDTTrc20TerminalStatus(response.data.status)) {
             terminalRef.current = true
@@ -96,15 +109,12 @@ export function DirectCryptoPaymentPage({
     expiresAt && secondsLeft === 0 && payment?.status === 'pending'
   )
   const status = getUSDTTrc20DisplayStatus(payment?.status, expiredByTime)
-  // Solana USDT must be sent to the SPL token account, never the wallet
-  // owner. Fail closed if the destination is missing instead of falling back
-  // to an owner/legacy address that could permanently lose the transfer.
-  const address =
-    network === 'SOLANA'
-      ? payment?.destination_token_account || ''
-      : payment?.receiving_address || payment?.address || ''
+  // Send to the immutable token destination (SPL token account on Solana or
+  // jetton destination on TON), never an owner address. Fail closed if it is
+  // missing instead of falling back to an address that could lose funds.
+  const address = payment ? getDirectCryptoPaymentAddress(payment, network) : ''
   const qrValue = useMemo(() => address, [address])
-  const amount = payment?.amount ?? ''
+  const amount = payment ? formatDirectCryptoAmount(payment.amount) : ''
   const tokenContract = payment?.token_contract || payment?.contract || ''
 
   const copyAddress = async () => {
@@ -114,13 +124,37 @@ export function DirectCryptoPaymentPage({
     setTimeout(() => setCopied(false), 1500)
   }
 
+  const cancelPayment = async () => {
+    if (!payment || cancelling || isUSDTTrc20TerminalStatus(payment.status)) {
+      return
+    }
+    setCancelling(true)
+    setCancelError(false)
+    try {
+      const response = await cancelDirectCryptoPayment(network, tradeNo)
+      if (response.success || response.message === 'success') {
+        setPayment({ ...payment, status: 'cancelled' })
+      } else {
+        setCancelError(true)
+      }
+    } catch {
+      setCancelError(true)
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Crypto payment')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <Card className='mx-auto max-w-lg'>
           <CardHeader>
-            <CardTitle>{t('Send the exact amount')}</CardTitle>
+            <CardTitle>
+              {status === 'pending'
+                ? t('Send the exact amount')
+                : t('Crypto payment')}
+            </CardTitle>
           </CardHeader>
           <CardContent className='space-y-5'>
             {error && (
@@ -130,52 +164,58 @@ export function DirectCryptoPaymentPage({
             )}
             {payment ? (
               <>
-                <div className='flex justify-center rounded-lg bg-white p-4'>
-                  <QRCodeSVG value={qrValue} size={220} />
-                </div>
-                <div className='text-center'>
-                  <p className='text-muted-foreground text-sm'>{t('Amount')}</p>
-                  <p className='text-3xl font-semibold'>{amount} USDT</p>
-                  <p className='text-muted-foreground text-sm'>
-                    {networkLabels[network]} · USDT
-                  </p>
-                </div>
-                <p
-                  role='alert'
-                  className='border-destructive/40 bg-destructive/10 text-destructive rounded-md border p-3 text-sm'
-                >
-                  {t(
-                    'Send exactly the amount shown. Transfers with a different amount are not credited automatically. If you have a problem with a transfer, contact technical support.'
-                  )}
-                </p>
-                <div className='space-y-2'>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Payment address')} · USDT
-                  </p>
-                  <div className='flex items-center gap-2'>
-                    <code className='bg-muted min-w-0 flex-1 rounded p-2 text-xs break-all'>
-                      {address}
-                    </code>
-                    <Button
-                      size='icon'
-                      variant='outline'
-                      onClick={copyAddress}
-                      aria-label={t('Copy address')}
+                {status === 'pending' && (
+                  <>
+                    <div className='flex justify-center rounded-lg bg-white p-4'>
+                      <QRCodeSVG value={qrValue} size={220} />
+                    </div>
+                    <div className='text-center'>
+                      <p className='text-muted-foreground text-sm'>
+                        {t('Amount')}
+                      </p>
+                      <p className='text-3xl font-semibold'>{amount} USDT</p>
+                      <p className='text-muted-foreground text-sm'>
+                        {networkLabels[network]} · USDT
+                      </p>
+                    </div>
+                    <p
+                      role='alert'
+                      className='border-destructive/40 bg-destructive/10 text-destructive rounded-md border p-3 text-sm'
                     >
-                      {copied ? <Check /> : <Copy />}
-                    </Button>
-                  </div>
-                  <p className='text-muted-foreground text-xs'>
-                    {t('Only send USDT on the {{network}} network.', {
-                      network: networkLabels[network],
-                    })}
-                  </p>
-                  {tokenContract && (
-                    <p className='text-muted-foreground text-xs break-all'>
-                      {t('Token contract')}: {tokenContract}
+                      {t(
+                        'Send exactly the amount shown. Transfers with a different amount are not credited automatically. If you have a problem with a transfer, contact technical support.'
+                      )}
                     </p>
-                  )}
-                </div>
+                    <div className='space-y-2'>
+                      <p className='text-muted-foreground text-sm'>
+                        {t('Payment address')} · USDT
+                      </p>
+                      <div className='flex items-center gap-2'>
+                        <code className='bg-muted min-w-0 flex-1 rounded p-2 text-xs break-all'>
+                          {address}
+                        </code>
+                        <Button
+                          size='icon'
+                          variant='outline'
+                          onClick={copyAddress}
+                          aria-label={t('Copy address')}
+                        >
+                          {copied ? <Check /> : <Copy />}
+                        </Button>
+                      </div>
+                      <p className='text-muted-foreground text-xs'>
+                        {t('Only send USDT on the {{network}} network.', {
+                          network: networkLabels[network],
+                        })}
+                      </p>
+                      {tokenContract && (
+                        <p className='text-muted-foreground text-xs break-all'>
+                          {t('Token contract')}: {tokenContract}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
                 <div className='text-center text-sm'>
                   {status === 'pending' && (
                     <span>
@@ -200,8 +240,30 @@ export function DirectCryptoPaymentPage({
                       {t('Payment failed')}
                     </span>
                   )}
+                  {status === 'cancelled' && (
+                    <span className='text-muted-foreground'>
+                      {t('Payment cancelled')}
+                    </span>
+                  )}
                   {!status && <Loader2 className='mx-auto animate-spin' />}
                 </div>
+                {status === 'pending' && (
+                  <div className='space-y-2'>
+                    {cancelError && (
+                      <p role='alert' className='text-destructive text-sm'>
+                        {t('Unable to cancel payment')}
+                      </p>
+                    )}
+                    <Button
+                      variant='outline'
+                      className='w-full'
+                      onClick={() => void cancelPayment()}
+                      disabled={cancelling}
+                    >
+                      {cancelling ? t('Processing...') : t('Cancel payment')}
+                    </Button>
+                  </div>
+                )}
               </>
             ) : (
               <Loader2 className='mx-auto animate-spin' />

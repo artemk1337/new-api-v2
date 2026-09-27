@@ -11,7 +11,11 @@ import { test } from 'node:test'
 
 import { getDirectCryptoPaymentEndpoint } from '../api'
 import {
+  formatDirectCryptoAmount,
+  getDirectCryptoPaymentAddress,
   getDirectCryptoInvoicePath,
+  getDirectCryptoHistoryNetwork,
+  canOpenDirectCryptoHistoryPayment,
   getDirectCryptoCheckoutSearch,
   isSafeDirectCryptoInvoiceUrl,
   parseDirectCryptoInvoiceUrl,
@@ -57,6 +61,82 @@ test('uses an immutable invoice route for the selected network only', () => {
     network: 'TON',
     tradeNo: 'trade-1',
   })
+})
+
+test('shows the immutable token destination for every network', () => {
+  assert.equal(
+    getDirectCryptoPaymentAddress(
+      {
+        receiving_address: 'ton-owner',
+        destination_token_account: 'ton-destination',
+      },
+      'TON'
+    ),
+    'ton-destination'
+  )
+  assert.equal(
+    getDirectCryptoPaymentAddress(
+      { receiving_address: 'legacy-address' },
+      'TRON'
+    ),
+    'legacy-address'
+  )
+  assert.equal(
+    getDirectCryptoPaymentAddress(
+      { receiving_address: 'solana-owner' },
+      'SOLANA'
+    ),
+    ''
+  )
+})
+
+test('trims API amount padding without losing exact decimals', () => {
+  assert.equal(formatDirectCryptoAmount('10.010000'), '10.01')
+  assert.equal(formatDirectCryptoAmount('10.000001'), '10.000001')
+  assert.equal(formatDirectCryptoAmount('10.000000'), '10')
+})
+
+test('recognizes legacy direct provider IDs in billing history', () => {
+  assert.equal(
+    getDirectCryptoHistoryNetwork(
+      'usdt_ton_direct',
+      'usdt_ton_direct',
+      'legacy-1'
+    ),
+    'TON'
+  )
+  assert.equal(
+    getDirectCryptoHistoryNetwork(
+      'usdt_solana_direct',
+      'crypto_direct',
+      'legacy-2'
+    ),
+    'SOLANA'
+  )
+  assert.equal(
+    getDirectCryptoHistoryNetwork(
+      'crypto_direct',
+      'crypto_direct',
+      'TONlegacy-3'
+    ),
+    'TON'
+  )
+  assert.equal(
+    getDirectCryptoHistoryNetwork('stripe', 'stripe', 'legacy-4'),
+    null
+  )
+})
+
+test('only lets the invoice owner reopen a pending history payment', () => {
+  const record = {
+    status: 'pending' as const,
+    user_id: 42,
+    payment_provider: 'crypto_direct',
+    payment_method: 'crypto_direct',
+    trade_no: 'TONlegacy-5',
+  }
+  assert.equal(canOpenDirectCryptoHistoryPayment(record, 7), false)
+  assert.equal(canOpenDirectCryptoHistoryPayment(record, 42), true)
 })
 
 test('uses the generic direct crypto endpoint for every selected network', () => {

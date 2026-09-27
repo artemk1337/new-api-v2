@@ -34,6 +34,22 @@ func TestValidDirectUSDTSolanaTransferRejectsFailedTx(t *testing.T) {
 	require.False(t, ValidDirectUSDTSolanaTransfer(transfer, transfer.Destination, 10, now))
 }
 
+func TestValidDirectUSDTSolanaTransferAcceptsReconciliationWindowBoundary(t *testing.T) {
+	now := int64(1_000_000)
+	blockTime := now - int64(directUSDTReconciliationOverlap/time.Second)
+	transfer := SolanaTransfer{
+		Signature:        "sig",
+		InstructionIndex: 0,
+		BlockTime:        &blockTime,
+		Mint:             setting.USDTSolanaMint,
+		Program:          setting.USDTSolanaTokenProgram,
+		Destination:      "11111111111111111111111111111111",
+		Amount:           10,
+		Decimals:         6,
+	}
+	require.True(t, ValidDirectUSDTSolanaTransfer(transfer, transfer.Destination, 10, now))
+}
+
 func TestSolanaExtractTransfersAcceptsOrdinarySPLTransferWithFinalizedDestinationMetadata(t *testing.T) {
 	now := time.Now().Unix()
 	destination := "11111111111111111111111111111111"
@@ -72,6 +88,44 @@ func TestSolanaExtractTransfersRejectsOrdinaryTransferWithoutDestinationMintProo
 		"meta": map[string]any{"err": nil},
 	}
 	require.Empty(t, solanaExtractTransfers(transaction, "signature", &now))
+}
+
+func TestSolanaExtractTransfersUsesStableOuterAndInnerInstructionPaths(t *testing.T) {
+	now := time.Now().Unix()
+	destination := "11111111111111111111111111111111"
+	transferChecked := func(amount string) map[string]any {
+		return map[string]any{
+			"programId": setting.USDTSolanaTokenProgram,
+			"parsed": map[string]any{
+				"type": "transferChecked",
+				"info": map[string]any{
+					"destination": destination,
+					"mint":        setting.USDTSolanaMint,
+					"tokenAmount": map[string]any{"amount": amount, "decimals": 6},
+				},
+			},
+		}
+	}
+	transaction := map[string]any{
+		"transaction": map[string]any{
+			"message": map[string]any{
+				"instructions": []any{transferChecked("1")},
+			},
+		},
+		"meta": map[string]any{
+			"err": nil,
+			"innerInstructions": []any{map[string]any{
+				"index":        0,
+				"instructions": []any{transferChecked("2"), transferChecked("3")},
+			}},
+		},
+	}
+
+	first := solanaExtractTransfers(transaction, "signature", &now)
+	require.Len(t, first, 3)
+	require.Equal(t, []string{"outer:0", "inner:0:0", "inner:0:1"}, []string{first[0].InstructionPath, first[1].InstructionPath, first[2].InstructionPath})
+	second := solanaExtractTransfers(transaction, "signature", &now)
+	require.Equal(t, []string{"outer:0", "inner:0:0", "inner:0:1"}, []string{second[0].InstructionPath, second[1].InstructionPath, second[2].InstructionPath})
 }
 
 func TestPollDirectUSDTTONOnceReconcilesHistoricalInvoiceWithoutCurrentAPIKey(t *testing.T) {

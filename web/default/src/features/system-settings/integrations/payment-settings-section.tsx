@@ -68,8 +68,8 @@ import {
   shouldUpdateCryptoPaymentCredential,
 } from './crypto-payment-settings'
 import { PaymentCurrencyField } from './payment-currency-field'
-import { parseAvailablePaymentIcons } from './payment-method-icons'
 import type { TopupGroupOption } from './payment-method-dialog'
+import { parseAvailablePaymentIcons } from './payment-method-icons'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
 import {
   formatJsonForEditor,
@@ -103,8 +103,133 @@ function isHttpOriginUrl(value: string) {
   }
 }
 
-const createPaymentSchema = (t: (key: string) => string) => z
-  .object({
+const base58AddressPattern = /^[1-9A-HJ-NP-Za-km-z]+$/
+const tronAddressPattern = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
+const tonRawAddressPattern = /^0:[0-9a-f]{64}$/i
+// TON friendly addresses may use either the URL-safe or standard base64
+// alphabet. The backend accepts both encodings before canonicalizing to raw.
+const tonFriendlyAddressPattern = /^[A-Za-z0-9_+\/-]{48}={0,2}$/
+
+function isLikelySolanaAddress(value: string): boolean {
+  return (
+    base58AddressPattern.test(value) && value.length >= 32 && value.length <= 44
+  )
+}
+
+function isLikelyTonAddress(value: string): boolean {
+  return (
+    tonRawAddressPattern.test(value) || tonFriendlyAddressPattern.test(value)
+  )
+}
+
+type Translate = (key: string) => string
+
+function createUSDTReceivingWalletSchema(t: Translate = (key) => key) {
+  return z
+    .object({
+      key: z.string().optional(),
+      network: z
+        .string()
+        .trim()
+        .toUpperCase()
+        .pipe(z.enum(['TRON', 'TON', 'SOLANA'])),
+      address: z.string().trim().min(1),
+      owner: z.string().trim().optional(),
+      destination: z.string().trim().optional(),
+      enabled: z.boolean().nullable().optional(),
+    })
+    .superRefine((wallet, ctx) => {
+      const address = wallet.address.trim()
+      const owner = wallet.owner?.trim() ?? ''
+      const destination = wallet.destination?.trim() ?? ''
+
+      // The backend keeps disabled entries as operator-ready placeholders and
+      // validates their address/destination only when they are enabled. Keep
+      // the form aligned so an invalid disabled wallet can be staged safely.
+      if (wallet.enabled === false) return
+
+      if (wallet.network === 'TRON') {
+        if (!tronAddressPattern.test(address)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['address'],
+            message: t('Invalid TRON address'),
+          })
+        }
+        if (destination) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['destination'],
+            message: t('TRON wallets do not use a destination field'),
+          })
+        }
+        return
+      }
+
+      if (wallet.network === 'TON') {
+        if (!isLikelyTonAddress(address)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['address'],
+            message: t('Invalid TON address'),
+          })
+        }
+        for (const [field, value] of [
+          ['owner', owner],
+          ['destination', destination],
+        ] as const) {
+          if (value && !isLikelyTonAddress(value)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [field],
+              message: t('Invalid TON address'),
+            })
+          }
+        }
+        return
+      }
+
+      if (!isLikelySolanaAddress(address)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['address'],
+          message: t('Invalid Solana address'),
+        })
+      }
+      if (owner && !isLikelySolanaAddress(owner)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['owner'],
+          message: t('Invalid Solana wallet owner address'),
+        })
+      }
+      if (!destination || !isLikelySolanaAddress(destination)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['destination'],
+          message: t('Solana token account is required'),
+        })
+      }
+    })
+}
+
+export const usdtReceivingWalletsSchema = z.array(
+  createUSDTReceivingWalletSchema()
+)
+
+export function normalizeUSDTReceivingWalletsValue(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    return Array.isArray(parsed) && parsed.length === 0 ? '' : trimmed
+  } catch {
+    return trimmed
+  }
+}
+
+const createPaymentSchema = (t: (key: string) => string) =>
+  z.object({
     PayAddress: z.string().refine((value) => {
       const trimmed = value.trim()
       if (!trimmed) return true
@@ -192,15 +317,28 @@ const createPaymentSchema = (t: (key: string) => string) => z
       return /^https?:\/\//.test(trimmed)
     }, 'Provide a valid URL starting with http:// or https://'),
     USDTTRC20Enabled: z.boolean(),
+    USDTTRC20RoundToCents: z.boolean(),
+    USDTReceivingWallets: z.string().refine((value) => {
+      if (!value.trim()) return true
+      try {
+        return z
+          .array(createUSDTReceivingWalletSchema(t))
+          .safeParse(JSON.parse(value)).success
+      } catch {
+        return false
+      }
+    }, t('Enter a JSON array of receiving wallets')),
     USDTTRC20ReceivingAddress: z.string(),
     USDTTRC20APIKey: z.string(),
     USDTTONReceivingAddress: z.string(),
     USDTSolanaReceivingAddress: z.string(),
     USDTSolanaReceivingTokenAccount: z.string(),
-    USDTTRC20AmountTailLimitUnits: z.string().refine(
-      (value) => decimalUsdtToMicroUnits(value) !== null,
-      'Enter a value from 0.000002 to 0.01 USDT with up to 6 decimals'
-    ),
+    USDTTRC20AmountTailLimitUnits: z
+      .string()
+      .refine(
+        (value) => decimalUsdtToMicroUnits(value) !== null,
+        'Enter a value from 0.000002 to 0.01 USDT with up to 6 decimals'
+      ),
   })
 
 type PaymentFormValues = z.infer<ReturnType<typeof createPaymentSchema>>
@@ -437,6 +575,10 @@ export function PaymentSettingsSection({
         values.NOWPaymentsIPNCallbackURL.trim()
       ),
       USDTTRC20Enabled: values.USDTTRC20Enabled,
+      USDTTRC20RoundToCents: values.USDTTRC20RoundToCents,
+      USDTReceivingWallets: normalizeUSDTReceivingWalletsValue(
+        values.USDTReceivingWallets
+      ),
       USDTTRC20ReceivingAddress: values.USDTTRC20ReceivingAddress.trim(),
       USDTTRC20APIKey: values.USDTTRC20APIKey.trim(),
       USDTTONReceivingAddress: values.USDTTONReceivingAddress.trim(),
@@ -458,7 +600,8 @@ export function PaymentSettingsSection({
         initialRef.current.CustomCallbackAddress
       ),
       PayMethods: initialRef.current.PayMethods.trim(),
-      PaymentMethodAvailableIcons: initialRef.current.PaymentMethodAvailableIcons,
+      PaymentMethodAvailableIcons:
+        initialRef.current.PaymentMethodAvailableIcons,
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountCashback: normalizeAmountCashbackConfig(
         initialRef.current.AmountCashback
@@ -507,6 +650,10 @@ export function PaymentSettingsSection({
         initialRef.current.NOWPaymentsIPNCallbackURL.trim()
       ),
       USDTTRC20Enabled: initialRef.current.USDTTRC20Enabled,
+      USDTTRC20RoundToCents: initialRef.current.USDTTRC20RoundToCents,
+      USDTReceivingWallets: normalizeUSDTReceivingWalletsValue(
+        initialRef.current.USDTReceivingWallets
+      ),
       USDTTRC20ReceivingAddress:
         initialRef.current.USDTTRC20ReceivingAddress.trim(),
       USDTTRC20APIKey: initialRef.current.USDTTRC20APIKey.trim(),
@@ -516,8 +663,8 @@ export function PaymentSettingsSection({
         initialRef.current.USDTSolanaReceivingAddress.trim(),
       USDTSolanaReceivingTokenAccount:
         initialRef.current.USDTSolanaReceivingTokenAccount.trim(),
-      USDTTRC20AmountTailLimitUnits: initialRef.current
-        .USDTTRC20AmountTailLimitUnits,
+      USDTTRC20AmountTailLimitUnits:
+        initialRef.current.USDTTRC20AmountTailLimitUnits,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -712,6 +859,18 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'USDTTRC20ReceivingAddress',
         value: sanitized.USDTTRC20ReceivingAddress,
+      })
+    }
+    if (sanitized.USDTTRC20RoundToCents !== initial.USDTTRC20RoundToCents) {
+      updates.push({
+        key: 'USDTTRC20RoundToCents',
+        value: sanitized.USDTTRC20RoundToCents,
+      })
+    }
+    if (sanitized.USDTReceivingWallets !== initial.USDTReceivingWallets) {
+      updates.push({
+        key: 'USDTReceivingWallets',
+        value: sanitized.USDTReceivingWallets,
       })
     }
     if (
@@ -966,16 +1125,16 @@ export function PaymentSettingsSection({
             saveLabel='Save all settings'
           />
           <Tabs defaultValue='general' className='min-w-0'>
-            <TabsList className='grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8'>
+            <TabsList className='grid !h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8'>
               <TabsTrigger
                 value='general'
                 className={paymentTabTriggerClassName}
               >
                 {t('General')}
               </TabsTrigger>
-               <TabsTrigger value='epay' className={paymentTabTriggerClassName}>
-                 Epay
-               </TabsTrigger>
+              <TabsTrigger value='epay' className={paymentTabTriggerClassName}>
+                Epay
+              </TabsTrigger>
               <TabsTrigger
                 value='yookassa'
                 className={paymentTabTriggerClassName}
@@ -1006,13 +1165,10 @@ export function PaymentSettingsSection({
               >
                 Waffo Pancake
               </TabsTrigger>
-               <TabsTrigger
-                 value='waffo'
-                className={paymentTabTriggerClassName}
-              >
+              <TabsTrigger value='waffo' className={paymentTabTriggerClassName}>
                 Waffo
-               </TabsTrigger>
-             </TabsList>
+              </TabsTrigger>
+            </TabsList>
 
             <TabsContent value='general' className={paymentTabContentClassName}>
               <div className='space-y-4'>
@@ -1286,7 +1442,6 @@ export function PaymentSettingsSection({
                     )}
                   />
                 </div>
-
                 <div className='grid gap-6 md:grid-cols-2'>
                   <FormField
                     control={form.control}
@@ -1632,6 +1787,52 @@ export function PaymentSettingsSection({
                 </div>
                 <FormField
                   control={form.control}
+                  name='USDTTRC20RoundToCents'
+                  render={({ field }) => (
+                    <FormItem className='flex items-center justify-between rounded-lg border p-3'>
+                      <div>
+                        <FormLabel>
+                          {t('Round crypto payment amounts to cents')}
+                        </FormLabel>
+                        <FormDescription>
+                          {t(
+                            'Use two decimal places for generated USDT invoices.'
+                          )}
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='USDTReceivingWallets'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('USDT receiving wallet pool')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          rows={5}
+                          placeholder='[{"key":"tron-1","network":"TRON","address":"..."}]'
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Optional JSON array. Add one object per wallet; empty keeps the legacy network addresses.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name='USDTTRC20ReceivingAddress'
                   render={({ field }) => (
                     <FormItem>
@@ -1694,7 +1895,9 @@ export function PaymentSettingsSection({
                   name='USDTSolanaReceivingAddress'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('USDT Solana receiving address')}</FormLabel>
+                      <FormLabel>
+                        {t('USDT Solana receiving address')}
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
@@ -1712,7 +1915,9 @@ export function PaymentSettingsSection({
                   name='USDTSolanaReceivingTokenAccount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('USDT Solana receiving token account')}</FormLabel>
+                      <FormLabel>
+                        {t('USDT Solana receiving token account')}
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
@@ -1921,7 +2126,6 @@ export function PaymentSettingsSection({
                 </div>
               </div>
             </TabsContent>
-
 
             <TabsContent
               value='waffo-pancake'

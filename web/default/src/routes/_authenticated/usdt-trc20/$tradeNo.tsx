@@ -44,6 +44,7 @@ function USDTTrc20PaymentPage() {
         const response = await getUSDTTrc20PaymentStatus(tradeNo)
         if (cancelled) return
         if (response.success && response.data) {
+          setError(false)
           // Keep the server's amount and status contract untouched. The
           // amount is a decimal string and must not be coerced through a
           // floating-point number before it is shown to the payer.

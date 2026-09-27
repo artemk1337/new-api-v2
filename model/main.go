@@ -274,6 +274,9 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if err := migrateDirectCryptoBooleanColumns(); err != nil {
+		return err
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
@@ -288,6 +291,7 @@ func migrateDB() error {
 		&TopUp{},
 		&PaymentMetadata{},
 		&DirectCryptoPayment{},
+		&DirectCryptoReconciliation{},
 		&QuotaData{},
 		&Task{},
 		&Model{},
@@ -341,7 +345,55 @@ func migrateDB() error {
 	return nil
 }
 
+// The direct-crypto policy snapshots are additive nullable booleans so an old
+// binary can still insert rows after the rollout. Add missing columns through a
+// migration-only schema and backfill existing rows to false. Keeping the model
+// tags free of boolean defaults avoids repeated ALTERs on MySQL/PostgreSQL
+// restarts.
+type directCryptoBooleanMigration struct {
+	RoundToCents        *bool `gorm:"column:round_to_cents"`
+	RoundPolicyCaptured *bool `gorm:"column:round_policy_captured"`
+}
+
+func (directCryptoBooleanMigration) TableName() string { return "direct_crypto_payments" }
+
+type topUpBooleanMigration struct {
+	PaymentRoundToCents *bool `gorm:"column:payment_round_to_cents"`
+}
+
+func (topUpBooleanMigration) TableName() string { return "top_ups" }
+
+func migrateDirectCryptoBooleanColumns() error {
+	columns := []struct {
+		model      any
+		migration  any
+		columnName string
+		update     any
+	}{
+		{model: &DirectCryptoPayment{}, migration: &directCryptoBooleanMigration{}, columnName: "round_to_cents", update: &DirectCryptoPayment{}},
+		{model: &DirectCryptoPayment{}, migration: &directCryptoBooleanMigration{}, columnName: "round_policy_captured", update: &DirectCryptoPayment{}},
+		{model: &TopUp{}, migration: &topUpBooleanMigration{}, columnName: "payment_round_to_cents", update: &TopUp{}},
+	}
+	for _, column := range columns {
+		if !DB.Migrator().HasTable(column.model) {
+			continue
+		}
+		if !DB.Migrator().HasColumn(column.model, column.columnName) {
+			if err := DB.Migrator().AddColumn(column.migration, column.columnName); err != nil {
+				return fmt.Errorf("add %s: %w", column.columnName, err)
+			}
+		}
+		if err := DB.Model(column.update).Where(column.columnName+" IS NULL").UpdateColumn(column.columnName, false).Error; err != nil {
+			return fmt.Errorf("backfill %s: %w", column.columnName, err)
+		}
+	}
+	return nil
+}
+
 func migrateDBFast() error {
+	if err := migrateDirectCryptoBooleanColumns(); err != nil {
+		return err
+	}
 
 	var wg sync.WaitGroup
 
@@ -361,6 +413,7 @@ func migrateDBFast() error {
 		{&TopUp{}, "TopUp"},
 		{&PaymentMetadata{}, "PaymentMetadata"},
 		{&DirectCryptoPayment{}, "DirectCryptoPayment"},
+		{&DirectCryptoReconciliation{}, "DirectCryptoReconciliation"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
 		{&Model{}, "Model"},

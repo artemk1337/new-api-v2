@@ -21,6 +21,43 @@ func TestGetPayMethodsFromDBTreatsMissingOptionsTableAsBootstrap(t *testing.T) {
 	require.Nil(t, methods)
 }
 
+func TestGetPayMethodsFromDBFailsClosedWhenCatalogRowIsMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+	methods, err := GetPayMethodsFromDB(db)
+	require.ErrorIs(t, err, ErrPayMethodsNotConfigured)
+	require.Nil(t, methods)
+}
+
+func TestNormalizeEmptyUSDTWalletPoolKeepsLegacyMode(t *testing.T) {
+	normalized, err := normalizeOptionValueForSave("USDTReceivingWallets", " [ ] ")
+	require.NoError(t, err)
+	require.Empty(t, normalized)
+}
+
+func TestDirectUSDTWalletPoolCanReplaceLegacyConfig(t *testing.T) {
+	previousEnabled := setting.USDTTRC20Enabled
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	previousPool := setting.USDTReceivingWallets
+	t.Cleanup(func() {
+		setting.USDTTRC20Enabled = previousEnabled
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		setting.USDTReceivingWallets = previousPool
+	})
+
+	setting.USDTTRC20Enabled = true
+	setting.USDTTRC20ReceivingAddress = ""
+	setting.USDTTRC20APIKey = ""
+	setting.USDTReceivingWallets = ""
+	require.NoError(t, validateDirectUSDTOptionValues(map[string]string{
+		"USDTTRC20Enabled":     "true",
+		"USDTReceivingWallets": `[{"key":"tron-1","network":"TRON","address":"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"}]`,
+	}))
+}
+
 func TestGetPayMethodsFromDBPreservesUnavailableDatabaseError(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -90,6 +127,48 @@ func TestLegacyDirectUSDTConfigMigratesToCanonicalPayMethod(t *testing.T) {
 	require.True(t, HasDirectUSDTMethod(methods))
 	var marker Option
 	require.NoError(t, db.First(&marker, "key = ?", operation_setting.DirectUSDTTRC20PayMethodsMigratedOption).Error)
+}
+
+func TestWalletPoolOnlyDirectUSDTConfigMigratesToCanonicalPayMethod(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&Option{}))
+
+	previousDB := DB
+	previousMethods := operation_setting.PayMethods
+	previousEnabled := setting.USDTTRC20Enabled
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	previousPool := setting.USDTReceivingWallets
+	paymentSetting := operation_setting.GetPaymentSetting()
+	previousCompliance := paymentSetting.ComplianceConfirmed
+	previousTermsVersion := paymentSetting.ComplianceTermsVersion
+	t.Cleanup(func() {
+		DB = previousDB
+		operation_setting.PayMethods = previousMethods
+		setting.USDTTRC20Enabled = previousEnabled
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		setting.USDTReceivingWallets = previousPool
+		paymentSetting.ComplianceConfirmed = previousCompliance
+		paymentSetting.ComplianceTermsVersion = previousTermsVersion
+	})
+
+	DB = db
+	operation_setting.PayMethods = []map[string]string{{"type": "custom1"}}
+	setting.USDTTRC20Enabled = true
+	setting.USDTTRC20ReceivingAddress = ""
+	setting.USDTTRC20APIKey = ""
+	setting.USDTReceivingWallets = `[{"key":"tron-1","network":"TRON","address":"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"}]`
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+
+	require.NoError(t, ensureYooKassaPayMethodPersisted())
+	var option Option
+	require.NoError(t, db.First(&option, "key = ?", "PayMethods").Error)
+	var methods []map[string]string
+	require.NoError(t, common.Unmarshal([]byte(option.Value), &methods))
+	require.True(t, HasDirectUSDTMethod(methods))
 }
 
 func TestLegacyDirectUSDTConfigDoesNotMigrateWhenInvalid(t *testing.T) {

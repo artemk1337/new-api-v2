@@ -52,6 +52,10 @@ export const STATUS_CONFIG: Record<TopupStatus, StatusConfig> = {
     variant: 'danger',
     label: 'Expired',
   },
+  cancelled: {
+    variant: 'neutral',
+    label: 'Cancelled',
+  },
 }
 
 /**

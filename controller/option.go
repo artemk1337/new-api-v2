@@ -145,6 +145,7 @@ func validateDirectUSDTOptionUpdate(key, value string) error {
 	enabled := setting.USDTTRC20Enabled
 	address := setting.USDTTRC20ReceivingAddress
 	apiKey := setting.USDTTRC20APIKey
+	walletPool := setting.USDTReceivingWallets
 	switch key {
 	case "USDTTRC20Enabled":
 		enabled = value == "true"
@@ -152,8 +153,21 @@ func validateDirectUSDTOptionUpdate(key, value string) error {
 		address = value
 	case "USDTTRC20APIKey":
 		apiKey = value
+	case "USDTReceivingWallets":
+		walletPool = value
 	default:
 		return nil
+	}
+	if enabled && strings.TrimSpace(walletPool) != "" {
+		wallets, err := setting.ParseUSDTReceivingWallets(walletPool)
+		if err != nil {
+			return err
+		}
+		for _, wallet := range wallets {
+			if wallet.Enabled == nil || *wallet.Enabled {
+				return nil
+			}
+		}
 	}
 	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey)
 }
@@ -1050,7 +1064,7 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
-	if strings.HasPrefix(option.Key, "USDTTRC20") {
+	if strings.HasPrefix(option.Key, "USDTTRC20") || option.Key == "USDTReceivingWallets" {
 		if err := validateDirectUSDTOptionUpdate(option.Key, option.Value.(string)); err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return

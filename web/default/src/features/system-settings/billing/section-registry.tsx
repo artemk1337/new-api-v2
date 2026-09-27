@@ -152,6 +152,8 @@ const BILLING_SECTIONS = [
           NOWPaymentsIPNSecret: settings.NOWPaymentsIPNSecret ?? '',
           NOWPaymentsIPNCallbackURL: settings.NOWPaymentsIPNCallbackURL ?? '',
           USDTTRC20Enabled: settings.USDTTRC20Enabled ?? false,
+          USDTTRC20RoundToCents: settings.USDTTRC20RoundToCents ?? false,
+          USDTReceivingWallets: settings.USDTReceivingWallets ?? '',
           USDTTRC20ReceivingAddress: settings.USDTTRC20ReceivingAddress ?? '',
           USDTTRC20APIKey: settings.USDTTRC20APIKey ?? '',
           USDTTONReceivingAddress: settings.USDTTONReceivingAddress ?? '',

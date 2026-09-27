@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.186
+
+- Added direct USDT checkout for TRON, TON, and Solana with immutable receiving-wallet snapshots, exact-amount matching, and on-chain confirmation before crediting.
+- Added an optional cents-only exact-amount policy and administrator-managed receiving-wallet pools. Duplicate pending amounts for one user are blocked, while matching amounts can be distributed across wallets.
+- Added payment cancellation, a way to reopen pending invoices from billing history, and non-crediting reconciliation records for unmatched or late transfers.
+- Hid transfer instructions after an invoice closes and serialized reconciliation with settlement to avoid conflicting outcomes for the same chain event.
+
 ## v1.1.185
 
 - Reworked the Russian `/docs` API-key guide with shorter explanations and clearer Claude Code, Codex CLI, URL, authentication, and troubleshooting instructions.

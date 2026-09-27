@@ -27,6 +27,12 @@ type Option struct {
 	Value string `json:"value"`
 }
 
+// ErrPayMethodsNotConfigured distinguishes an initialized database with no
+// persisted payment-method catalog from a database that has not created the
+// options table yet. The latter may use the bootstrap snapshot; the former
+// must fail closed so stale in-memory settings cannot re-enable payments.
+var ErrPayMethodsNotConfigured = errors.New("payment methods are not configured")
+
 const deprecatedReferralCashbackOption = "ReferralCashbackPercent"
 
 // removeDeprecatedReferralCashbackOption removes the obsolete global referral
@@ -51,8 +57,11 @@ func GetPayMethodsFromDB(db *gorm.DB) ([]map[string]string, error) {
 	}
 	var option Option
 	if err := db.Where("key = ?", "PayMethods").First(&option).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || isMissingOptionsTableError(err) {
+		if isMissingOptionsTableError(err) {
 			return nil, gorm.ErrRecordNotFound
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPayMethodsNotConfigured
 		}
 		return nil, err
 	}
@@ -326,6 +335,8 @@ func InitOptionMap() {
 	common.OptionMap["USDTSolanaReceivingAddress"] = setting.USDTSolanaReceivingAddress
 	common.OptionMap["USDTTRC20AmountPrecision"] = strconv.Itoa(setting.USDTTRC20AmountPrecision)
 	common.OptionMap["USDTTRC20AmountTailLimitUnits"] = strconv.Itoa(setting.USDTTRC20AmountTailLimitUnits)
+	common.OptionMap["USDTTRC20RoundToCents"] = strconv.FormatBool(setting.USDTTRC20RoundToCents)
+	common.OptionMap["USDTReceivingWallets"] = setting.USDTReceivingWallets
 	// Legacy suffix bounds remain visible to old clients during migration, but
 	// are no longer read by the direct payment runtime.
 	common.OptionMap["USDTTRC20AmountSuffixMinUnits"] = strconv.Itoa(setting.USDTTRC20AmountSuffixMinUnits)
@@ -805,7 +816,7 @@ func updateOptionLockedWithTxGuard(key string, value string, paymentCurrencyGuar
 	if err := validateOptionValue(key, value); err != nil {
 		return err
 	}
-	if strings.HasPrefix(key, "USDTTRC20") {
+	if strings.HasPrefix(key, "USDTTRC20") || key == "USDTReceivingWallets" {
 		if err := validateDirectUSDTOptionValues(map[string]string{key: value}); err != nil {
 			return err
 		}
@@ -985,6 +996,13 @@ func validateOptionValue(key string, value string) error {
 			return errors.New("USDT TRC20 enabled must be true or false")
 		}
 		return nil
+	case "USDTTRC20RoundToCents":
+		if value != "true" && value != "false" {
+			return errors.New("USDT TRC20 round to cents must be true or false")
+		}
+		return nil
+	case "USDTReceivingWallets":
+		return setting.ValidateUSDTReceivingWallets(value)
 	case "USDTTRC20ReceivingAddress":
 		if strings.TrimSpace(value) == "" {
 			return nil
@@ -1104,6 +1122,21 @@ func validateDirectUSDTOptionValues(values map[string]string) error {
 	}
 	if value, ok := values["USDTTRC20APIKey"]; ok {
 		apiKey = value
+	}
+	walletPool := optionStringValue(values, "USDTReceivingWallets", setting.USDTReceivingWallets)
+	if enabled && strings.TrimSpace(walletPool) != "" {
+		wallets, err := setting.ParseUSDTReceivingWallets(walletPool)
+		if err != nil {
+			return err
+		}
+		for _, wallet := range wallets {
+			if wallet.Enabled == nil || *wallet.Enabled {
+				// A configured enabled wallet is the source of truth for the new
+				// pool mode. Legacy TRON fields may remain empty when the pool is
+				// used for another network (or for a clean migration).
+				return nil
+			}
+		}
 	}
 	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey)
 }
@@ -1308,6 +1341,22 @@ func normalizeOptionValueForSave(key string, value string) (string, error) {
 		return strconv.Itoa(parsed), nil
 	case "USDTTRC20ReceivingAddress", "USDTTONReceivingAddress", "USDTSolanaReceivingAddress":
 		return strings.TrimSpace(value), nil
+	case "USDTReceivingWallets":
+		if strings.TrimSpace(value) == "" {
+			return "", nil
+		}
+		wallets, err := setting.ParseUSDTReceivingWallets(value)
+		if err != nil {
+			return value, err
+		}
+		if len(wallets) == 0 {
+			return "", nil
+		}
+		encoded, err := common.Marshal(wallets)
+		if err != nil {
+			return value, err
+		}
+		return string(encoded), nil
 	case "payment_setting.amount_cashback":
 		var cashbacks operation_setting.AmountCashbackConfig
 		if err := common.Unmarshal([]byte(value), &cashbacks); err != nil {
@@ -2091,6 +2140,18 @@ func directUSDTLegacyReadyForMigration(values map[string]string) bool {
 		return false
 	}
 	enabled := optionBoolValue(values, "USDTTRC20Enabled", setting.USDTTRC20Enabled)
+	walletPool := optionStringValue(values, "USDTReceivingWallets", setting.USDTReceivingWallets)
+	if enabled && strings.TrimSpace(walletPool) != "" {
+		wallets, err := setting.ParseUSDTReceivingWallets(walletPool)
+		if err != nil {
+			return false
+		}
+		for _, wallet := range wallets {
+			if wallet.Enabled == nil || *wallet.Enabled {
+				return true
+			}
+		}
+	}
 	address := optionStringValue(values, "USDTTRC20ReceivingAddress", setting.USDTTRC20ReceivingAddress)
 	apiKey := optionStringValue(values, "USDTTRC20APIKey", setting.USDTTRC20APIKey)
 	return setting.ValidateDirectUSDTConfigValues(enabled, address, apiKey) == nil && enabled
@@ -2440,6 +2501,8 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 			ratio_setting.SetExposeRatioEnabled(boolValue)
 		case "USDTTRC20Enabled":
 			setting.USDTTRC20Enabled = boolValue
+		case "USDTTRC20RoundToCents":
+			setting.USDTTRC20RoundToCents = boolValue
 		}
 	}
 	switch key {
@@ -2576,6 +2639,10 @@ func updateOptionMapWithPricingReferenceNormalization(key string, value string, 
 		setting.NOWPaymentsIPNCallbackURL = value
 	case "USDTTRC20ReceivingAddress":
 		setting.USDTTRC20ReceivingAddress = strings.TrimSpace(value)
+	case "USDTTRC20RoundToCents":
+		setting.USDTTRC20RoundToCents = value == "true"
+	case "USDTReceivingWallets":
+		setting.USDTReceivingWallets = strings.TrimSpace(value)
 	case "USDTTONReceivingAddress":
 		setting.USDTTONReceivingAddress = strings.TrimSpace(value)
 	case "USDTSolanaReceivingAddress":

@@ -89,6 +89,27 @@ func TestPaymentMethodGateRejectsRetiredCreem(t *testing.T) {
 	assert.False(t, paymentMethodAllowedForUser(context, model.PaymentMethodCreem))
 }
 
+func TestTopUpPayMethodsBootstrapsEnabledDirectCryptoMethod(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "crypto_bootstrap_methods.db")), &gorm.Config{})
+	require.NoError(t, err)
+	previousDB := model.DB
+	previousEnabled := setting.USDTTRC20Enabled
+	previousMethods := operation_setting.PayMethodsSnapshot()
+	model.DB = db
+	setting.USDTTRC20Enabled = true
+	operation_setting.PayMethods = []map[string]string{{"type": "alipay"}}
+	t.Cleanup(func() {
+		model.DB = previousDB
+		setting.USDTTRC20Enabled = previousEnabled
+		operation_setting.PayMethods = previousMethods
+	})
+
+	methods, err := topUpPayMethods()
+	require.NoError(t, err)
+	require.Len(t, methods, 2)
+	assert.Equal(t, model.DirectCryptoProvider, methods[1]["type"])
+}
+
 func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "crypto_parent_routes.db")), &gorm.Config{})
 	require.NoError(t, err)
@@ -123,6 +144,8 @@ func TestDirectCryptoGenericAndLegacyTRONRoutesCreateParentSnapshots(t *testing.
 	response := httptest.NewRecorder()
 	generic.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/crypto/tron/pay", bytes.NewBufferString(`{"amount":"10","payment_method":"crypto_direct"}`)))
 	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"token_contract":"`+setting.USDTTRC20Contract+`"`)
+	assert.Contains(t, response.Body.String(), `"address":"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"`)
 
 	legacy := gin.New()
 	legacy.POST("/usdt-trc20/pay", func(c *gin.Context) {
@@ -340,6 +363,8 @@ func TestGetDirectUSDTNetworkStatusUsesInvoiceSnapshotWithoutLiveSolanaReadiness
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), `"success":true`)
 	assert.Contains(t, recorder.Body.String(), `"network":"SOLANA"`)
+	assert.Contains(t, recorder.Body.String(), `"token_contract":"`+setting.USDTSolanaMint+`"`)
+	assert.Contains(t, recorder.Body.String(), `"address":"`+destination+`"`)
 }
 
 func TestGetTopUpInfoHidesDirectUSDTWhenCatalogMethodIsAbsent(t *testing.T) {

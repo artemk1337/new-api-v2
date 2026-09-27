@@ -67,6 +67,7 @@ func TestRandomDirectUSDTTRC20SuffixIgnoresLegacyBounds(t *testing.T) {
 func TestCreateDirectUSDTOrderIgnoresHistoricalSuffixesOutsideConfiguredRange(t *testing.T) {
 	setupDirectCryptoPaymentTest(t)
 	createDirectCryptoPaymentTestUser(t, 1030)
+	createDirectCryptoPaymentTestUser(t, 1032)
 	previousLimit := setting.USDTTRC20AmountTailLimitUnits
 	previousRead := directUSDTTRC20RandRead
 	setting.USDTTRC20AmountTailLimitUnits = 10
@@ -87,7 +88,7 @@ func TestCreateDirectUSDTOrderIgnoresHistoricalSuffixesOutsideConfiguredRange(t 
 		Status: DirectCryptoPending, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),
 	}).Error)
 
-	topUp, payment := newDirectCryptoPaymentTestOrder(1030, baseUnits)
+	topUp, payment := newDirectCryptoPaymentTestOrder(1032, baseUnits)
 	require.NoError(t, CreateDirectUSDTOrder(topUp, payment))
 	require.Equal(t, uint32(1), payment.SuffixUnits)
 }
@@ -95,6 +96,7 @@ func TestCreateDirectUSDTOrderIgnoresHistoricalSuffixesOutsideConfiguredRange(t 
 func TestCreateDirectUSDTOrderFailsClosedWhenConfiguredSuffixIsOccupied(t *testing.T) {
 	setupDirectCryptoPaymentTest(t)
 	createDirectCryptoPaymentTestUser(t, 1031)
+	createDirectCryptoPaymentTestUser(t, 1033)
 	previousLimit := setting.USDTTRC20AmountTailLimitUnits
 	previousRead := directUSDTTRC20RandRead
 	setting.USDTTRC20AmountTailLimitUnits = 2
@@ -115,6 +117,6 @@ func TestCreateDirectUSDTOrderFailsClosedWhenConfiguredSuffixIsOccupied(t *testi
 		Status: DirectCryptoPending, CreatedAt: time.Now().Unix(), ExpiresAt: time.Now().Add(time.Hour).Unix(),
 	}).Error)
 
-	topUp, payment := newDirectCryptoPaymentTestOrder(1031, baseUnits)
+	topUp, payment := newDirectCryptoPaymentTestOrder(1033, baseUnits)
 	require.ErrorIs(t, CreateDirectUSDTOrder(topUp, payment), ErrDirectPaymentAmountExhausted)
 }

@@ -17,6 +17,12 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 
 Layered architecture: Router -> Controller -> Service -> Model
 
+Direct USDT payments use `controller/topup_usdt_multichain.go` for checkout,
+`service/direct_usdt_*_watcher.go` for read-only chain observation, and
+`model/direct_crypto_*` for immutable invoices, atomic settlement, and
+non-crediting reconciliation. A chain event must never both credit an invoice
+and become an unmatched reconciliation record.
+
 ```
 router/        — HTTP routing (API, relay, dashboard, web)
 controller/    — Request handlers

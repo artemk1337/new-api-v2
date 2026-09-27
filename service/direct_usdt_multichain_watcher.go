@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +18,192 @@ import (
 
 var directUSDTMultiWatcherMu sync.Mutex
 var directUSDTMultiWatcherCancel context.CancelFunc
+
+const directUSDTReconciliationOverlap = 24 * time.Hour
+
+type directUSDTWatchTarget struct {
+	Key         string
+	Query       string
+	Destination string
+}
+
+// directUSDTWatchTargets includes configured wallets even when there is no
+// active invoice. That lets reconciliation retain orphan transfers instead of
+// silently losing them. Invalid legacy values are skipped so immutable invoice
+// snapshots can still be reconciled after a bad settings update.
+func directUSDTWatchTargets(network string) ([]directUSDTWatchTarget, error) {
+	network = strings.ToUpper(strings.TrimSpace(network))
+	wallets, err := setting.USDTReceivingWalletsForNetwork(network)
+	if err != nil {
+		return nil, err
+	}
+	if len(wallets) == 0 {
+		if strings.TrimSpace(setting.USDTReceivingWallets) != "" {
+			configuredWallets, parseErr := setting.ParseUSDTReceivingWallets(setting.USDTReceivingWallets)
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			if len(configuredWallets) > 0 {
+				return nil, nil
+			}
+		}
+		switch network {
+		case "TRON":
+			if setting.ValidateTRONAddress(setting.USDTTRC20ReceivingAddress) == nil {
+				address := strings.TrimSpace(setting.USDTTRC20ReceivingAddress)
+				return []directUSDTWatchTarget{{Key: address, Query: address, Destination: address}}, nil
+			}
+		case "TON":
+			address, canonicalErr := setting.CanonicalTONAddress(setting.USDTTONReceivingAddress)
+			if canonicalErr == nil {
+				return []directUSDTWatchTarget{{Key: address, Query: address, Destination: address}}, nil
+			}
+		case "SOLANA":
+			destination := strings.TrimSpace(setting.USDTSolanaReceivingTokenAccount)
+			if setting.ValidateSolanaAddress(destination) == nil {
+				return []directUSDTWatchTarget{{Key: destination, Query: destination, Destination: destination}}, nil
+			}
+		}
+		return nil, nil
+	}
+
+	targets := make([]directUSDTWatchTarget, 0, len(wallets))
+	seen := make(map[string]struct{}, len(wallets))
+	for _, wallet := range wallets {
+		var target directUSDTWatchTarget
+		switch network {
+		case "TRON":
+			if setting.ValidateTRONAddress(wallet.Address) != nil {
+				continue
+			}
+			address := strings.TrimSpace(wallet.Address)
+			target = directUSDTWatchTarget{Key: address, Query: address, Destination: address}
+		case "TON":
+			owner := wallet.Owner
+			if owner == "" {
+				owner = wallet.Address
+			}
+			owner, err = setting.CanonicalTONAddress(owner)
+			if err != nil {
+				continue
+			}
+			destination := wallet.Destination
+			if destination == "" {
+				destination = wallet.Address
+			}
+			destination, err = setting.CanonicalTONAddress(destination)
+			if err != nil {
+				continue
+			}
+			target = directUSDTWatchTarget{Key: owner + ":" + destination, Query: owner, Destination: destination}
+		case "SOLANA":
+			destination := strings.TrimSpace(wallet.Destination)
+			if setting.ValidateSolanaAddress(destination) != nil {
+				continue
+			}
+			target = directUSDTWatchTarget{Key: destination, Query: destination, Destination: destination}
+		default:
+			continue
+		}
+		if _, exists := seen[target.Key]; exists {
+			continue
+		}
+		seen[target.Key] = struct{}{}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func addDirectUSDTWatchTarget(targets []directUSDTWatchTarget, target directUSDTWatchTarget, seen map[string]struct{}) []directUSDTWatchTarget {
+	if strings.TrimSpace(target.Key) == "" || strings.TrimSpace(target.Query) == "" || strings.TrimSpace(target.Destination) == "" {
+		return targets
+	}
+	if _, exists := seen[target.Key]; exists {
+		return targets
+	}
+	seen[target.Key] = struct{}{}
+	return append(targets, target)
+}
+
+func directUSDTWatchTargetForPayment(payment model.DirectCryptoPayment, network string) (directUSDTWatchTarget, bool) {
+	network = strings.ToUpper(strings.TrimSpace(network))
+	switch network {
+	case "TRON":
+		address := strings.TrimSpace(payment.Address)
+		return directUSDTWatchTarget{Key: address, Query: address, Destination: address}, address != ""
+	case "TON":
+		owner := strings.TrimSpace(payment.ReceivingOwner)
+		if owner == "" {
+			owner = strings.TrimSpace(payment.Address)
+		}
+		destination := directUSDTPaymentDestination(payment)
+		owner, ownerErr := setting.CanonicalTONAddress(owner)
+		destination, destinationErr := setting.CanonicalTONAddress(destination)
+		if ownerErr != nil || destinationErr != nil {
+			return directUSDTWatchTarget{}, false
+		}
+		return directUSDTWatchTarget{Key: owner + ":" + destination, Query: owner, Destination: destination}, true
+	case "SOLANA":
+		destination := directUSDTPaymentDestination(payment)
+		if setting.ValidateSolanaAddress(destination) != nil {
+			return directUSDTWatchTarget{}, false
+		}
+		return directUSDTWatchTarget{Key: destination, Query: destination, Destination: destination}, true
+	default:
+		return directUSDTWatchTarget{}, false
+	}
+}
+
+func directUSDTPaymentDestination(payment model.DirectCryptoPayment) string {
+	if strings.TrimSpace(payment.Destination) != "" {
+		return strings.TrimSpace(payment.Destination)
+	}
+	return strings.TrimSpace(payment.Address)
+}
+
+func directUSDTPaymentMatchesTarget(payment model.DirectCryptoPayment, network, destination string) bool {
+	if !strings.EqualFold(payment.Network, network) {
+		return false
+	}
+	paymentDestination := directUSDTPaymentDestination(payment)
+	if strings.EqualFold(network, "TON") {
+		left, leftErr := setting.CanonicalTONAddress(paymentDestination)
+		right, rightErr := setting.CanonicalTONAddress(destination)
+		return leftErr == nil && rightErr == nil && left == right
+	}
+	return paymentDestination == strings.TrimSpace(destination)
+}
+
+func directUSDTMatchingPayments(payments []model.DirectCryptoPayment, network, destination string, amount uint64) []model.DirectCryptoPayment {
+	matches := make([]model.DirectCryptoPayment, 0, 1)
+	for _, payment := range payments {
+		if directUSDTPaymentMatchesTarget(payment, network, destination) && payment.ExpectedUnits == amount {
+			matches = append(matches, payment)
+		}
+	}
+	return matches
+}
+
+func recordDirectUSDTUnmatchedEvent(event model.DirectUSDTTransferEvent, candidates []model.DirectCryptoPayment) error {
+	settled, err := model.IsDirectUSDTEventSettled(event.EventID)
+	if err != nil {
+		return err
+	}
+	if settled {
+		return nil
+	}
+	reason := model.DirectCryptoReconciliationOrphan
+	tradeNo := ""
+	var expectedUnits uint64
+	if len(candidates) > 0 {
+		reason = model.DirectCryptoReconciliationAmountMismatch
+		if len(candidates) == 1 {
+			tradeNo = candidates[0].TradeNo
+			expectedUnits = candidates[0].ExpectedUnits
+		}
+	}
+	return model.RecordDirectUSDTReconciliationEvent(event, reason, tradeNo, expectedUnits)
+}
 
 func StartDirectUSDTMultiChainWatcher() func() {
 	directUSDTMultiWatcherMu.Lock()
@@ -102,7 +287,7 @@ func fetchTONTransfers(ctx context.Context, owner string, now int64) ([]TONJetto
 		q.Set("direction", "in")
 		q.Set("limit", "100")
 		q.Set("offset", strconv.Itoa(page*100))
-		q.Set("start_utime", strconv.FormatInt(now-48*3600, 10))
+		q.Set("start_utime", strconv.FormatInt(now-int64(directUSDTReconciliationOverlap/time.Second), 10))
 		q.Set("end_utime", strconv.FormatInt(now, 10))
 		u.RawQuery = q.Encode()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -191,7 +376,7 @@ func fetchTONTraceFinality(ctx context.Context, traceID, txHash, lt string) (boo
 	return false, nil
 }
 
-func ValidDirectUSDTTONTransfer(t TONJettonTransfer, owner string, expected uint64, now int64) bool {
+func validDirectUSDTTONTransferProof(t TONJettonTransfer, owner string, now int64) bool {
 	canonical, err := setting.CanonicalTONAddress(owner)
 	if err != nil {
 		return false
@@ -200,11 +385,19 @@ func ValidDirectUSDTTONTransfer(t TONJettonTransfer, owner string, expected uint
 	if err != nil || destination != canonical {
 		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(t.JettonMaster), setting.USDTTONJettonMaster) || !t.FinalityProof || t.Incomplete || t.TransactionAborted || t.TransactionHash == "" || t.Utime <= 0 || t.Utime < now-48*3600 || t.Utime > now {
+	if !strings.EqualFold(strings.TrimSpace(t.JettonMaster), setting.USDTTONJettonMaster) || !t.FinalityProof || t.Incomplete || t.TransactionAborted || t.TransactionHash == "" || t.Utime <= 0 || t.Utime < now-int64(directUSDTReconciliationOverlap/time.Second) || t.Utime > now {
 		return false
 	}
 	amount, err := strconv.ParseUint(strings.TrimSpace(t.Amount), 10, 64)
-	return err == nil && amount == expected
+	return err == nil && amount > 0
+}
+
+func ValidDirectUSDTTONTransfer(t TONJettonTransfer, owner string, expected uint64, now int64) bool {
+	if !validDirectUSDTTONTransferProof(t, owner, now) {
+		return false
+	}
+	amount, _ := strconv.ParseUint(strings.TrimSpace(t.Amount), 10, 64)
+	return amount == expected
 }
 
 // SolanaTransfer is a normalized legacy SPL transfer instruction extracted
@@ -215,13 +408,17 @@ func ValidDirectUSDTTONTransfer(t TONJettonTransfer, owner string, expected uint
 type SolanaTransfer struct {
 	Signature        string
 	InstructionIndex int
-	BlockTime        *int64
-	Mint             string
-	Program          string
-	Destination      string
-	Amount           uint64
-	Decimals         uint8
-	MetaErr          bool
+	// InstructionPath is the stable outer/inner instruction coordinate used
+	// for event identity. InstructionIndex remains for compatibility with
+	// existing validators and callers.
+	InstructionPath string
+	BlockTime       *int64
+	Mint            string
+	Program         string
+	Destination     string
+	Amount          uint64
+	Decimals        uint8
+	MetaErr         bool
 }
 type solanaSignatureInfo struct {
 	Signature string `json:"signature"`
@@ -292,15 +489,9 @@ func solanaRPC(ctx context.Context, method string, params any, out any) error {
 func solanaExtractTransfers(value any, signature string, blockTime *int64) []SolanaTransfer {
 	var result []SolanaTransfer
 	tokenAccounts := solanaPostTokenBalances(value)
-	var walk func(any)
-	walk = func(node any) {
+	appendInstruction := func(node any, instructionPath string, instructionIndex int) {
 		m, ok := node.(map[string]any)
 		if !ok {
-			if a, ok := node.([]any); ok {
-				for _, x := range a {
-					walk(x)
-				}
-			}
 			return
 		}
 		if parsed, ok := m["parsed"].(map[string]any); ok {
@@ -331,20 +522,46 @@ func solanaExtractTransfers(value any, signature string, blockTime *int64) []Sol
 					}
 				}
 				if validMetadata {
-					result = append(result, SolanaTransfer{Signature: signature, InstructionIndex: len(result), BlockTime: blockTime, Mint: mint, Program: fmt.Sprint(m["programId"]), Destination: destination, Amount: amount, Decimals: decimals})
+					result = append(result, SolanaTransfer{Signature: signature, InstructionIndex: instructionIndex, InstructionPath: instructionPath, BlockTime: blockTime, Mint: mint, Program: fmt.Sprint(m["programId"]), Destination: destination, Amount: amount, Decimals: decimals})
 				}
 			}
 		}
-		for _, x := range m {
-			walk(x)
-		}
 	}
-	walk(value)
 	metaErr := false
 	if root, ok := value.(map[string]any); ok {
 		if meta, ok := root["meta"].(map[string]any); ok {
 			if e, exists := meta["err"]; exists && e != nil {
 				metaErr = true
+			}
+		}
+		if transaction, ok := root["transaction"].(map[string]any); ok {
+			if message, ok := transaction["message"].(map[string]any); ok {
+				if instructions, ok := message["instructions"].([]any); ok {
+					for index, instruction := range instructions {
+						appendInstruction(instruction, fmt.Sprintf("outer:%d", index), index)
+					}
+				}
+			}
+		}
+		if meta, ok := root["meta"].(map[string]any); ok {
+			if groups, ok := meta["innerInstructions"].([]any); ok {
+				for groupIndex, rawGroup := range groups {
+					group, ok := rawGroup.(map[string]any)
+					if !ok {
+						continue
+					}
+					outerIndex := groupIndex
+					if parsedIndex, err := strconv.Atoi(fmt.Sprint(group["index"])); err == nil {
+						outerIndex = parsedIndex
+					}
+					instructions, ok := group["instructions"].([]any)
+					if !ok {
+						continue
+					}
+					for innerIndex, instruction := range instructions {
+						appendInstruction(instruction, fmt.Sprintf("inner:%d:%d", outerIndex, innerIndex), outerIndex)
+					}
+				}
 			}
 		}
 	}
@@ -419,11 +636,15 @@ func solanaPostTokenBalances(value any) map[string]solanaTokenAccountBalance {
 	return balances
 }
 
-func ValidDirectUSDTSolanaTransfer(t SolanaTransfer, destination string, expected uint64, now int64) bool {
-	if t.Signature == "" || t.InstructionIndex < 0 || t.BlockTime == nil || *t.BlockTime <= now-48*3600 || *t.BlockTime > now || t.MetaErr || t.Mint != setting.USDTSolanaMint || t.Program != setting.USDTSolanaTokenProgram || t.Destination != strings.TrimSpace(destination) || t.Amount != expected || t.Decimals != setting.USDTTONDecimals {
+func validDirectUSDTSolanaTransferProof(t SolanaTransfer, destination string, now int64) bool {
+	if t.Signature == "" || t.InstructionIndex < 0 || t.BlockTime == nil || *t.BlockTime < now-int64(directUSDTReconciliationOverlap/time.Second) || *t.BlockTime > now || t.MetaErr || t.Mint != setting.USDTSolanaMint || t.Program != setting.USDTSolanaTokenProgram || t.Destination != strings.TrimSpace(destination) || t.Amount == 0 || t.Decimals != setting.USDTTONDecimals {
 		return false
 	}
 	return setting.ValidateSolanaAddress(t.Destination) == nil
+}
+
+func ValidDirectUSDTSolanaTransfer(t SolanaTransfer, destination string, expected uint64, now int64) bool {
+	return validDirectUSDTSolanaTransferProof(t, destination, now) && t.Amount == expected
 }
 
 // PollDirectUSDTTONOnce and PollDirectUSDTSolanaOnce are intentionally
@@ -442,17 +663,34 @@ func PollDirectUSDTTONOnce(ctx context.Context) error {
 	// it; an auth-required endpoint returns an error and the watcher retries
 	// after the operator restores a read-only credential. API keys are never
 	// persisted in invoice snapshots.
-	payments, err := model.GetPendingDirectUSDTNetworkPayments("TON")
+	payments, err := model.GetDirectUSDTNetworkReconciliationPayments("TON")
 	if err != nil {
 		return err
 	}
-	for _, p := range payments {
-		transfers, fetchErr := fetchTONTransfers(ctx, p.Address, time.Now().Unix())
+	targets, targetErr := directUSDTWatchTargets("TON")
+	seenTargets := make(map[string]struct{}, len(targets)+len(payments))
+	for _, target := range targets {
+		seenTargets[target.Key] = struct{}{}
+	}
+	for _, payment := range payments {
+		target, ok := directUSDTWatchTargetForPayment(payment, "TON")
+		if ok {
+			targets = addDirectUSDTWatchTarget(targets, target, seenTargets)
+		}
+	}
+	for _, target := range targets {
+		candidates := make([]model.DirectCryptoPayment, 0)
+		for _, payment := range payments {
+			if directUSDTPaymentMatchesTarget(payment, "TON", target.Destination) {
+				candidates = append(candidates, payment)
+			}
+		}
+		transfers, fetchErr := fetchTONTransfers(ctx, target.Query, time.Now().Unix())
 		if fetchErr != nil {
 			return fetchErr
 		}
 		for _, transfer := range transfers {
-			if transfer.TraceID == "" {
+			if transfer.TraceID == "" || strings.TrimSpace(transfer.LT) == "" {
 				continue
 			}
 			proofErr := error(nil)
@@ -460,15 +698,30 @@ func PollDirectUSDTTONOnce(ctx context.Context) error {
 			if proofErr != nil {
 				return proofErr
 			}
-			if !ValidDirectUSDTTONTransfer(transfer, p.Address, p.ExpectedUnits, time.Now().Unix()) {
+			now := time.Now().Unix()
+			if !validDirectUSDTTONTransferProof(transfer, target.Destination, now) {
 				continue
 			}
-			if err := settleTONTransfer(p, transfer); err != nil && !errors.Is(err, model.ErrDirectPaymentAlreadySettled) && !errors.Is(err, model.ErrDirectPaymentExpired) && !errors.Is(err, model.ErrDirectPaymentInvalid) {
-				return err
+			amount, parseErr := strconv.ParseUint(strings.TrimSpace(transfer.Amount), 10, 64)
+			if parseErr != nil || amount == 0 {
+				continue
+			}
+			exactPayments := directUSDTMatchingPayments(candidates, "TON", target.Destination, amount)
+			eventID := model.DirectUSDTNetworkEventID("TON", transfer.TransactionHash, transfer.LT)
+			if len(exactPayments) == 0 {
+				if err := recordDirectUSDTUnmatchedEvent(model.DirectUSDTTransferEvent{Network: "TON", TxHash: transfer.TransactionHash, EventIndex: transfer.LT, EventID: eventID, Contract: transfer.JettonMaster, To: transfer.Destination, AmountUnits: amount, Confirmed: true, BlockTimestamp: transfer.Utime}, candidates); err != nil {
+					return err
+				}
+				continue
+			}
+			for _, payment := range exactPayments {
+				if err := settleTONTransfer(payment, transfer); err != nil && !isPermanentDirectSettlementError(err) {
+					return err
+				}
 			}
 		}
 	}
-	return nil
+	return targetErr
 }
 
 func PollDirectUSDTSolanaOnce(ctx context.Context) error {
@@ -478,16 +731,29 @@ func PollDirectUSDTSolanaOnce(ctx context.Context) error {
 	if model.DB == nil || strings.TrimSpace(setting.USDTSolanaRPCURL) == "" {
 		return nil
 	}
-	payments, err := model.GetPendingDirectUSDTNetworkPayments("SOLANA")
+	payments, err := model.GetDirectUSDTNetworkReconciliationPayments("SOLANA")
 	if err != nil {
 		return err
 	}
-	for _, p := range payments {
-		dest := p.Destination
-		if dest == "" {
-			dest = setting.USDTSolanaReceivingTokenAccount
+	targets, targetErr := directUSDTWatchTargets("SOLANA")
+	seenTargets := make(map[string]struct{}, len(targets)+len(payments))
+	for _, target := range targets {
+		seenTargets[target.Key] = struct{}{}
+	}
+	for _, payment := range payments {
+		target, ok := directUSDTWatchTargetForPayment(payment, "SOLANA")
+		if ok {
+			targets = addDirectUSDTWatchTarget(targets, target, seenTargets)
 		}
-		sigs, err := fetchSolanaSignatures(ctx, dest)
+	}
+	for _, target := range targets {
+		candidates := make([]model.DirectCryptoPayment, 0)
+		for _, payment := range payments {
+			if directUSDTPaymentMatchesTarget(payment, "SOLANA", target.Destination) {
+				candidates = append(candidates, payment)
+			}
+		}
+		sigs, err := fetchSolanaSignatures(ctx, target.Query)
 		if err != nil {
 			return err
 		}
@@ -507,24 +773,39 @@ func PollDirectUSDTSolanaOnce(ctx context.Context) error {
 				}
 			}
 			for _, tr := range solanaExtractTransfers(tx, s.Signature, blockTime) {
-				if !ValidDirectUSDTSolanaTransfer(tr, dest, p.ExpectedUnits, time.Now().Unix()) {
+				now := time.Now().Unix()
+				if !validDirectUSDTSolanaTransferProof(tr, target.Destination, now) {
 					continue
 				}
-				if err := model.SettleDirectUSDTTRC20Event(model.DirectUSDTTransferEvent{TradeNo: p.TradeNo, Network: "SOLANA", TxHash: s.Signature, EventIndex: strconv.Itoa(tr.InstructionIndex), EventID: directUSDTMultiChainEventID(s.Signature, tr.InstructionIndex), Contract: tr.Mint, To: tr.Destination, AmountUnits: tr.Amount, Confirmed: true, BlockTimestamp: *tr.BlockTime}); err != nil && !errors.Is(err, model.ErrDirectPaymentAlreadySettled) && !errors.Is(err, model.ErrDirectPaymentExpired) && !errors.Is(err, model.ErrDirectPaymentInvalid) {
-					return err
+				eventIndex := tr.InstructionPath
+				if eventIndex == "" {
+					eventIndex = strconv.Itoa(tr.InstructionIndex)
+				}
+				eventID := model.DirectUSDTNetworkEventID("SOLANA", s.Signature, eventIndex)
+				exactPayments := directUSDTMatchingPayments(candidates, "SOLANA", target.Destination, tr.Amount)
+				if len(exactPayments) == 0 {
+					if err := recordDirectUSDTUnmatchedEvent(model.DirectUSDTTransferEvent{Network: "SOLANA", TxHash: s.Signature, EventIndex: eventIndex, EventID: eventID, Contract: tr.Mint, To: tr.Destination, AmountUnits: tr.Amount, Confirmed: true, BlockTimestamp: *tr.BlockTime}, candidates); err != nil {
+						return err
+					}
+					continue
+				}
+				for _, payment := range exactPayments {
+					if err := model.SettleDirectUSDTTRC20Event(model.DirectUSDTTransferEvent{TradeNo: payment.TradeNo, Network: "SOLANA", TxHash: s.Signature, EventIndex: eventIndex, EventID: eventID, Contract: tr.Mint, To: tr.Destination, AmountUnits: tr.Amount, Confirmed: true, BlockTimestamp: *tr.BlockTime}); err != nil && !isPermanentDirectSettlementError(err) {
+						return err
+					}
 				}
 			}
 		}
 	}
-	return nil
+	return targetErr
 }
 
 func directUSDTMultiChainEventID(signature string, instructionIndex int) string {
-	return fmt.Sprintf("%s:%d", strings.TrimSpace(signature), instructionIndex)
+	return model.DirectUSDTNetworkEventID("SOLANA", signature, strconv.Itoa(instructionIndex))
 }
 
 func settleTONTransfer(p model.DirectCryptoPayment, t TONJettonTransfer) error {
 	amount, _ := strconv.ParseUint(t.Amount, 10, 64)
-	eventID := t.TransactionHash + ":" + t.LT
+	eventID := model.DirectUSDTNetworkEventID("TON", t.TransactionHash, t.LT)
 	return model.SettleDirectUSDTTRC20Event(model.DirectUSDTTransferEvent{TradeNo: p.TradeNo, Network: "TON", TxHash: t.TransactionHash, EventIndex: t.LT, EventID: eventID, Contract: t.JettonMaster, To: t.Destination, AmountUnits: amount, Confirmed: true, BlockTimestamp: t.Utime})
 }

@@ -16,13 +16,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
 const (
 	directUSDTWatcherInterval   = 30 * time.Second
 	directUSDTWatcherMaxBackoff = 5 * time.Minute
-	directUSDTReconcileOverlap  = operation_setting.MaxDirectUSDTTRC20PendingTTL
+	directUSDTReconcileOverlap  = 24 * time.Hour
 	directUSDTPageLimit         = 200
 	directUSDTMaxPages          = 100
 )
@@ -132,12 +131,13 @@ func directUSDTWatcherLoop(ctx context.Context) {
 // pagination restarts cannot lose a payment.
 func PollDirectUSDTTRC20Once(ctx context.Context) error {
 	now := time.Now()
-	addresses := make([]string, 0, 1)
+	configuredTargets, configErr := directUSDTWatchTargets("TRON")
+	addresses := make([]string, 0, len(configuredTargets)+1)
 	// The enable flag and current configuration gate only new order creation and
 	// publication. Reconciliation must continue for immutable snapshots after
 	// an operator disables the method or rotates/temporarily breaks settings.
-	if currentAddress := strings.TrimSpace(setting.USDTTRC20ReceivingAddress); setting.ValidateTRONAddress(currentAddress) == nil {
-		addresses = append(addresses, currentAddress)
+	for _, target := range configuredTargets {
+		addresses = append(addresses, target.Query)
 	}
 	// Include every address captured by an existing order. This is deliberately
 	// additive to the current setting so rotating the receiving wallet does not
@@ -148,6 +148,10 @@ func PollDirectUSDTTRC20Once(ctx context.Context) error {
 	activeAddresses, addressErr := model.GetActivePendingDirectUSDTPaymentAddresses(now.Unix())
 	if addressErr != nil {
 		return addressErr
+	}
+	allPayments, paymentErr := model.GetDirectUSDTNetworkReconciliationPayments("TRON")
+	if paymentErr != nil {
+		return paymentErr
 	}
 	seenAddresses := make(map[string]struct{}, len(addresses)+len(activeAddresses))
 	for _, address := range append(addresses, activeAddresses...) {
@@ -173,7 +177,8 @@ func PollDirectUSDTTRC20Once(ctx context.Context) error {
 		for i := range transfers {
 			transfer := transfers[i]
 			if !validDirectUSDTTransfer(transfer, address) ||
-				transfer.BlockTimestamp < now.Add(-directUSDTReconcileOverlap).UnixMilli() {
+				transfer.BlockTimestamp < now.Add(-directUSDTReconcileOverlap).UnixMilli() ||
+				transfer.BlockTimestamp > now.UnixMilli() {
 				// TronGrid should honor min_timestamp, but keep the horizon check
 				// local as well so an ignored/forged provider parameter cannot make
 				// a stale event eligible for settlement.
@@ -184,16 +189,44 @@ func PollDirectUSDTTRC20Once(ctx context.Context) error {
 				continue
 			}
 			eventIndex := directUSDTTransferEventIndex(transfer)
+			// Preserve the historical TRON event ID for existing metadata and
+			// retries; settlement also accepts the network-qualified form used by
+			// newer multichain watchers.
 			eventID := model.DirectUSDTEventID(transfer.TransactionID, eventIndex)
 			payments, lookupErr := model.GetPendingDirectUSDTPayments(amountUnits, address)
 			if lookupErr != nil {
 				return lookupErr
 			}
+			cancelledPayments, lookupErr := model.GetCancelledDirectUSDTPayments(amountUnits, address)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			// Reconcile active snapshots first. Cancelled snapshots are appended
+			// only for late-event audit and can never credit a balance.
+			payments = append(payments, cancelledPayments...)
+			if len(payments) == 0 {
+				candidates := make([]model.DirectCryptoPayment, 0)
+				for _, payment := range allPayments {
+					if directUSDTPaymentMatchesTarget(payment, "TRON", address) {
+						candidates = append(candidates, payment)
+					}
+				}
+				event := model.DirectUSDTTransferEvent{
+					Network: "TRON", TxHash: transfer.TransactionID, EventIndex: eventIndex, EventID: eventID,
+					Contract: transfer.TokenInfo.Address, Source: transfer.From, To: transfer.To,
+					AmountUnits: amountUnits, Confirmations: uint64(setting.USDTTRC20MinConfirmations), Confirmed: true,
+					BlockTimestamp: transfer.BlockTimestamp,
+				}
+				if err := recordDirectUSDTUnmatchedEvent(event, candidates); err != nil {
+					return err
+				}
+				continue
+			}
 			for _, payment := range payments {
 				event := model.DirectUSDTTransferEvent{
 					TradeNo: payment.TradeNo, TxHash: transfer.TransactionID,
 					EventIndex: eventIndex, EventID: eventID,
-					Contract: transfer.TokenInfo.Address, To: transfer.To,
+					Contract: transfer.TokenInfo.Address, Source: transfer.From, To: transfer.To,
 					AmountUnits:   amountUnits,
 					Confirmations: uint64(setting.USDTTRC20MinConfirmations), Confirmed: true,
 					BlockTimestamp: transfer.BlockTimestamp,
@@ -204,7 +237,7 @@ func PollDirectUSDTTRC20Once(ctx context.Context) error {
 			}
 		}
 	}
-	return nil
+	return configErr
 }
 
 // A chain event can be permanently unsuitable for one local order (for

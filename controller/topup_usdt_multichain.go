@@ -62,6 +62,12 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 		common.ApiErrorMsg(c, "Top-up amount cannot be less than $10")
 		return
 	}
+	// Snapshot the checkout rounding policy before calculating quota. The same
+	// normalized principal is later persisted by the model and cannot drift if
+	// an operator changes the setting while the request is in flight.
+	roundToCents := setting.USDTTRC20RoundToCents
+	baseUnits = model.NormalizeDirectUSDTBaseUnits(baseUnits, roundToCents)
+	baseAmountDecimal = decimal.NewFromUint64(baseUnits).Shift(-6)
 	userID := c.GetInt("id")
 	if userID == 0 {
 		c.Status(http.StatusUnauthorized)
@@ -100,17 +106,29 @@ func requestDirectUSDTNetworkPay(c *gin.Context, network string, legacyTRON bool
 	if network == "TON" {
 		contract = setting.USDTTONJettonMaster
 	}
-	payment := &model.DirectCryptoPayment{TradeNo: tradeNo, UserId: userID, Network: network, Token: "USDT", Address: address, ReceivingOwner: address, Destination: address, BaseUnits: baseUnits, Contract: contract, Status: model.DirectCryptoPending, ExpiresAt: now + int64(operation_setting.PendingTopUpTTL(model.DirectCryptoProvider)/time.Second), CreatedAt: now, UpdatedAt: now}
+	initialTTL := operation_setting.PendingTopUpTTL(model.DirectCryptoProvider)
+	if initialTTL > 24*time.Hour {
+		initialTTL = 24 * time.Hour
+	}
+	payment := &model.DirectCryptoPayment{TradeNo: tradeNo, UserId: userID, Network: network, Token: "USDT", Address: address, ReceivingOwner: address, Destination: address, BaseUnits: baseUnits, RoundToCents: roundToCents, RoundPolicyCaptured: true, Contract: contract, Status: model.DirectCryptoPending, ExpiresAt: now + int64(initialTTL/time.Second), CreatedAt: now, UpdatedAt: now}
 	if network == "SOLANA" {
 		payment.Contract = setting.USDTSolanaMint
 		payment.Destination = setting.USDTSolanaReceivingTokenAccount
 	}
 	if err := model.CreateDirectUSDTOrder(topUp, payment); err != nil {
 		common.SysError("create direct crypto order failed: " + err.Error())
+		if errors.Is(err, model.ErrDirectPaymentDuplicatePending) {
+			common.ApiErrorMsg(c, "You already have a pending USDT payment for this amount. Open or cancel the previous payment first.")
+			return
+		}
+		if errors.Is(err, model.ErrDirectPaymentAmountExhausted) {
+			common.ApiErrorMsg(c, "No receiving wallet is available for this amount right now. Try again later or choose another amount.")
+			return
+		}
 		common.ApiErrorMsg(c, "Failed to create order")
 		return
 	}
-	common.ApiSuccess(c, gin.H{"payment_url": "/crypto/" + strings.ToLower(network) + "/" + tradeNo, "trade_no": tradeNo, "network": network, "token": "USDT", "receiving_address": payment.Address, "destination_token_account": payment.Destination, "amount": model.DirectUSDTAmountString(payment.ExpectedUnits), "expires_at": payment.ExpiresAt})
+	common.ApiSuccess(c, gin.H{"payment_url": "/crypto/" + strings.ToLower(network) + "/" + tradeNo, "trade_no": tradeNo, "network": network, "token": "USDT", "token_contract": payment.Contract, "address": payment.Address, "receiving_address": payment.Address, "destination_token_account": payment.Destination, "amount": model.DirectUSDTAmountString(payment.ExpectedUnits), "expires_at": payment.ExpiresAt})
 }
 
 func GetDirectUSDTNetworkStatus(c *gin.Context) {
@@ -119,10 +137,9 @@ func GetDirectUSDTNetworkStatus(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	// Status is authorized by the parent method and the immutable invoice owner.
-	// Do not perform live RPC/readiness checks here: a key rotation or a slow
-	// Solana RPC must not make an already issued invoice unreadable every poll.
-	// New invoice creation remains gated by DirectUSDTNetworkIsReady.
+	// PayMethods is authoritative for all public direct-crypto endpoints. The
+	// immutable invoice snapshot still avoids live readiness checks, so wallet
+	// rotation or a slow RPC cannot break polling while the method is enabled.
 	if _, allowed := directCryptoMethodForUser(c); !allowed || !operation_setting.IsPaymentComplianceConfirmed() {
 		return
 	}
@@ -145,7 +162,33 @@ func GetDirectUSDTNetworkStatus(c *gin.Context) {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"trade_no": payment.TradeNo, "status": payment.Status, "network": payment.Network, "token": "USDT", "receiving_address": payment.Address, "destination_token_account": payment.Destination, "amount": model.DirectUSDTAmountString(payment.ExpectedUnits), "expires_at": payment.ExpiresAt})
+	common.ApiSuccess(c, gin.H{"trade_no": payment.TradeNo, "status": payment.Status, "network": payment.Network, "token": "USDT", "token_contract": payment.Contract, "address": payment.Address, "receiving_address": payment.Address, "destination_token_account": payment.Destination, "amount": model.DirectUSDTAmountString(payment.ExpectedUnits), "expires_at": payment.ExpiresAt})
+}
+
+func CancelDirectUSDTNetworkPayment(c *gin.Context) {
+	network := strings.ToUpper(strings.TrimSpace(c.Param("network")))
+	if network != "TRON" && network != "TON" && network != "SOLANA" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if _, allowed := directCryptoMethodForUser(c); !allowed || !operation_setting.IsPaymentComplianceConfirmed() {
+		return
+	}
+	tradeNo := strings.TrimSpace(c.Param("trade_no"))
+	payment, err := model.GetDirectCryptoPayment(tradeNo)
+	if err != nil || payment.UserId != c.GetInt("id") || !strings.EqualFold(payment.Network, network) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if err := model.CancelDirectCryptoPayment(tradeNo, c.GetInt("id")); err != nil {
+		if errors.Is(err, model.ErrDirectPaymentAlreadySettled) {
+			common.ApiErrorMsg(c, "Payment is already completed")
+		} else {
+			common.ApiError(c, err)
+		}
+		return
+	}
+	common.ApiSuccess(c, gin.H{"status": model.DirectCryptoCancelled, "trade_no": tradeNo})
 }
 
 func hasPaymentMethodType(methods []map[string]string, provider string) bool {

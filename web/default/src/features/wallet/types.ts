@@ -92,27 +92,31 @@ export type NOWPaymentsPaymentResponse = ApiResponse<{
 
 export type DirectUSDTNetwork = 'TRON' | 'TON' | 'SOLANA'
 
-export type DirectUSDTPaymentResponse = ApiResponse<{
-  payment_url: string
+type DirectUSDTInvoice = {
   trade_no: string
+  network: DirectUSDTNetwork
+  token: 'USDT'
+  token_contract: string
+  /** Backward-compatible alias used by the legacy TRON invoice page. */
+  address?: string
+  receiving_address?: string
+  destination_token_account?: string
+  amount: string
+  expires_at: number | string
+}
+
+export type DirectUSDTPaymentResponse = ApiResponse<DirectUSDTInvoice & {
+  payment_url: string
 }>
 
 /** @deprecated use DirectUSDTPaymentResponse */
 export type USDTTrc20PaymentResponse = DirectUSDTPaymentResponse
 
-export type DirectUSDTPaymentStatus = {
-  trade_no: string
+export type DirectUSDTPaymentStatus = DirectUSDTInvoice & {
   status: string
-  address: string
-  /** Receiving address may be returned under this explicit field by the multichain API. */
-  receiving_address?: string
-  destination_token_account?: string
-  network: DirectUSDTNetwork
-  token: 'USDT'
-  token_contract: string
+  /** Legacy status responses used `address`; new responses use receiving_address. */
+  address?: string
   contract?: string
-  amount: string
-  expires_at: number | string
 }
 
 /** @deprecated use DirectUSDTPaymentStatus */
@@ -349,7 +353,7 @@ export interface UserWalletData {
 /**
  * Topup record status
  */
-export type TopupStatus = 'success' | 'pending' | 'failed' | 'expired'
+export type TopupStatus = 'success' | 'pending' | 'failed' | 'expired' | 'cancelled'
 
 /**
  * Topup billing record

@@ -303,6 +303,18 @@ export async function getDirectCryptoPaymentStatus(
   return res.data
 }
 
+export async function cancelDirectCryptoPayment(
+  network: DirectUSDTNetwork,
+  tradeNo: string
+): Promise<ApiResponse<{ status: string; trade_no: string }>> {
+  const res = await api.post(
+    `/api/user/crypto/${directCryptoNetworkPath[network]}/${encodeURIComponent(tradeNo)}/cancel`,
+    undefined,
+    { skipBusinessError: true } as Record<string, unknown>
+  )
+  return res.data
+}
+
 export async function getUSDTTrc20PaymentStatus(
   tradeNo: string
 ): Promise<ApiResponse<DirectUSDTPaymentStatus>> {

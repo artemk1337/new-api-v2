@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // Direct USDT TRC20 payments are deliberately disabled until an operator
@@ -37,6 +39,13 @@ var (
 	// options. They are not read by the direct payment runtime anymore.
 	USDTTRC20AmountSuffixMinUnits = DefaultUSDTTRC20AmountSuffixMinUnits
 	USDTTRC20AmountSuffixMaxUnits = DefaultUSDTTRC20AmountSuffixMaxUnits
+	// USDTTRC20RoundToCents limits generated invoice amounts to two decimal
+	// places. It is opt-in so existing installations keep their six-decimal
+	// reservations until an operator explicitly enables the safer policy.
+	USDTTRC20RoundToCents = false
+	// USDTReceivingWallets is a JSON array of immutable receiving-wallet
+	// descriptors. An empty value keeps the legacy per-network address fields.
+	USDTReceivingWallets = ""
 )
 
 const (
@@ -54,6 +63,123 @@ const (
 	DefaultUSDTTRC20AmountSuffixMinUnits = 1
 	DefaultUSDTTRC20AmountSuffixMaxUnits = 9999
 )
+
+type USDTReceivingWallet struct {
+	Key         string `json:"key"`
+	Network     string `json:"network"`
+	Address     string `json:"address"`
+	Owner       string `json:"owner,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty"`
+}
+
+// ParseUSDTReceivingWallets parses the operator supplied wallet pool. A
+// malformed value is rejected instead of silently falling back to a legacy
+// wallet (fail-closed configuration).
+func ParseUSDTReceivingWallets(value string) ([]USDTReceivingWallet, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	if value == "null" {
+		return nil, errors.New("USDT receiving wallets must be a JSON array")
+	}
+	var wallets []USDTReceivingWallet
+	if err := common.Unmarshal([]byte(value), &wallets); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(wallets))
+	seenAddress := make(map[string]struct{}, len(wallets))
+	for i := range wallets {
+		w := &wallets[i]
+		w.Key = strings.TrimSpace(w.Key)
+		w.Network = strings.ToUpper(strings.TrimSpace(w.Network))
+		w.Address = strings.TrimSpace(w.Address)
+		w.Owner = strings.TrimSpace(w.Owner)
+		w.Destination = strings.TrimSpace(w.Destination)
+		if w.Key == "" {
+			w.Key = w.Network + ":" + w.Address
+		}
+		if w.Network != "TRON" && w.Network != "TON" && w.Network != "SOLANA" {
+			return nil, fmt.Errorf("unsupported USDT wallet network %q", w.Network)
+		}
+		if w.Address == "" {
+			return nil, errors.New("USDT receiving wallet address is required")
+		}
+		if _, exists := seen[w.Key]; exists {
+			return nil, fmt.Errorf("duplicate USDT receiving wallet key %q", w.Key)
+		}
+		seen[w.Key] = struct{}{}
+		if w.Enabled != nil && !*w.Enabled {
+			continue
+		}
+		switch w.Network {
+		case "TRON":
+			if err := ValidateTRONAddress(w.Address); err != nil {
+				return nil, err
+			}
+			if w.Destination != "" {
+				return nil, errors.New("TRON receiving wallet destination must be empty")
+			}
+		case "TON":
+			canonical, err := CanonicalTONAddress(w.Address)
+			if err != nil {
+				return nil, err
+			}
+			w.Address = canonical
+			if w.Owner == "" {
+				w.Owner = canonical
+			} else if owner, ownerErr := CanonicalTONAddress(w.Owner); ownerErr != nil {
+				return nil, ownerErr
+			} else {
+				w.Owner = owner
+			}
+			if w.Destination != "" {
+				if destination, destinationErr := CanonicalTONAddress(w.Destination); destinationErr != nil {
+					return nil, destinationErr
+				} else {
+					w.Destination = destination
+				}
+			}
+		case "SOLANA":
+			if err := ValidateSolanaAddress(w.Address); err != nil {
+				return nil, err
+			}
+			if w.Destination == "" {
+				return nil, errors.New("Solana receiving token account is required")
+			}
+			if err := ValidateSolanaAddress(w.Destination); err != nil {
+				return nil, err
+			}
+		}
+		addressKey := w.Network + ":" + w.Address + ":" + w.Destination
+		if _, exists := seenAddress[addressKey]; exists {
+			return nil, fmt.Errorf("duplicate USDT receiving wallet address %q", w.Address)
+		}
+		seenAddress[addressKey] = struct{}{}
+	}
+	return wallets, nil
+}
+
+func ValidateUSDTReceivingWallets(value string) error {
+	_, err := ParseUSDTReceivingWallets(value)
+	return err
+}
+
+func USDTReceivingWalletsForNetwork(network string) ([]USDTReceivingWallet, error) {
+	wallets, err := ParseUSDTReceivingWallets(USDTReceivingWallets)
+	if err != nil {
+		return nil, err
+	}
+	network = strings.ToUpper(strings.TrimSpace(network))
+	filtered := make([]USDTReceivingWallet, 0, len(wallets))
+	for _, wallet := range wallets {
+		if wallet.Network == network && (wallet.Enabled == nil || *wallet.Enabled) {
+			filtered = append(filtered, wallet)
+		}
+	}
+	return filtered, nil
+}
 
 // ValidateUSDTTRC20AmountTailLimit validates the exclusive upper bound for
 // random exact-amount suffixes.

@@ -38,6 +38,17 @@ func topUpPayMethods() ([]map[string]string, error) {
 	fallback := operation_setting.PayMethodsSnapshot()
 	methods, err := model.GetPayMethodsFromDB(model.DB)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// A database without an options table is still bootstrapping. Keep the
+		// legacy in-memory catalog, but mirror the direct-crypto migration
+		// fallback so the public checkout and the creation endpoint cannot
+		// disagree about whether an explicitly enabled integration exists.
+		fallback = operation_setting.CanonicalizePayMethods(fallback)
+		if setting.USDTTRC20Enabled && !model.HasDirectUSDTMethod(fallback) {
+			fallback = append(fallback, map[string]string{
+				"name": "Crypto",
+				"type": model.DirectCryptoProvider,
+			})
+		}
 		return fallback, nil
 	}
 	if err != nil {

@@ -402,6 +402,8 @@ export type BillingSettings = {
   NOWPaymentsPayCurrency: string
   NOWPaymentsIPNCallbackURL: string
   USDTTRC20Enabled: boolean
+  USDTTRC20RoundToCents: boolean
+  USDTReceivingWallets: string
   USDTTRC20ReceivingAddress: string
   USDTTONReceivingAddress: string
   USDTSolanaReceivingAddress: string

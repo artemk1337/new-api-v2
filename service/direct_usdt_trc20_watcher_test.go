@@ -21,7 +21,7 @@ import (
 func TestPollDirectUSDTTRC20OnceSettlesOnlyVerifiedTransfer(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_watcher.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}, &model.DirectCryptoReconciliation{}))
 
 	previousDB := model.DB
 	previousEnabled := setting.USDTTRC20Enabled
@@ -86,10 +86,127 @@ func TestPollDirectUSDTTRC20OnceSettlesOnlyVerifiedTransfer(t *testing.T) {
 	assert.Equal(t, 5_000_000, user.Quota)
 }
 
+func TestPollDirectUSDTTRC20OnceAuditsAmountMismatchWithoutCredit(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_watcher_mismatch.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}, &model.DirectCryptoReconciliation{}))
+
+	previousDB := model.DB
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	previousEndpoint := DirectUSDTTRC20TronGridBaseURL
+	previousClient := DirectUSDTTRC20HTTPClient
+	model.DB = db
+	setting.USDTTRC20ReceivingAddress = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
+	setting.USDTTRC20APIKey = "test-read-only-key"
+	t.Cleanup(func() {
+		model.DB = previousDB
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		DirectUSDTTRC20TronGridBaseURL = previousEndpoint
+		DirectUSDTTRC20HTTPClient = previousClient
+	})
+
+	userID := 2004
+	tradeNo := "direct-watcher-mismatch-order"
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&model.User{Id: userID, Username: "direct-watcher-mismatch", Password: "password123", AffCode: "watcher-2004"}).Error)
+	require.NoError(t, db.Create(&model.TopUp{
+		UserId: userID, TradeNo: tradeNo, Amount: 10, RequestedAmount: 10,
+		PaymentMethod: model.DirectCryptoProvider, PaymentProvider: model.DirectCryptoProvider,
+		PaymentCurrency: "USD", PaymentRateToUSD: 1, PaymentCoefficient: 1,
+		PaymentBaseAmount: 10, PaymentChargedAmount: 10, Money: 10, QuotaToAdd: 5_000_000,
+		CreateTime: now, Status: common.TopUpStatusPending,
+	}).Error)
+	payment := &model.DirectCryptoPayment{
+		TradeNo: tradeNo, UserId: userID, Network: "TRON", Token: "USDT", Contract: setting.USDTTRC20Contract,
+		Address: setting.USDTTRC20ReceivingAddress, BaseUnits: 10_000_000, ExpectedUnits: 10_000_007,
+		SuffixUnits: 7, Status: model.DirectCryptoPending, CreatedAt: now, ExpiresAt: now + 30*60, UpdatedAt: now,
+	}
+	require.NoError(t, db.Create(payment).Error)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":[{"transaction_id":"tx-mismatch","from":"TFrom","to":%q,"value":"%d","event_index":0,"block_timestamp":%d,"block_number":123,"token_info":{"address":%q},"transaction_ret":[{"contractRet":"SUCCESS"}]}],"meta":{}}`, setting.USDTTRC20ReceivingAddress, payment.ExpectedUnits+1, now*1000, setting.USDTTRC20Contract)
+	}))
+	defer server.Close()
+	DirectUSDTTRC20TronGridBaseURL = server.URL
+	DirectUSDTTRC20HTTPClient = server.Client()
+
+	require.NoError(t, PollDirectUSDTTRC20Once(context.Background()))
+	var stored model.DirectCryptoPayment
+	require.NoError(t, db.Where("trade_no = ?", tradeNo).First(&stored).Error)
+	assert.Equal(t, model.DirectCryptoPending, stored.Status)
+	var user model.User
+	require.NoError(t, db.First(&user, userID).Error)
+	assert.Zero(t, user.Quota)
+	var review model.DirectCryptoReconciliation
+	require.NoError(t, db.Where("event_id = ?", "tx-mismatch:0").First(&review).Error)
+	assert.Equal(t, model.DirectCryptoReconciliationAmountMismatch, review.Reason)
+	assert.Equal(t, tradeNo, review.TradeNo)
+	assert.Equal(t, payment.ExpectedUnits, review.ExpectedUnits)
+}
+
+func TestPollDirectUSDTTRC20OnceAuditsCancelledSnapshotWithoutCredit(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_watcher_cancelled.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}, &model.DirectCryptoReconciliation{}))
+
+	previousDB := model.DB
+	previousAddress := setting.USDTTRC20ReceivingAddress
+	previousAPIKey := setting.USDTTRC20APIKey
+	previousEndpoint := DirectUSDTTRC20TronGridBaseURL
+	previousClient := DirectUSDTTRC20HTTPClient
+	model.DB = db
+	setting.USDTTRC20ReceivingAddress = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
+	setting.USDTTRC20APIKey = "test-read-only-key"
+	t.Cleanup(func() {
+		model.DB = previousDB
+		setting.USDTTRC20ReceivingAddress = previousAddress
+		setting.USDTTRC20APIKey = previousAPIKey
+		DirectUSDTTRC20TronGridBaseURL = previousEndpoint
+		DirectUSDTTRC20HTTPClient = previousClient
+	})
+
+	userID := 2002
+	tradeNo := "direct-watcher-cancelled-order"
+	now := time.Now().Unix()
+	amount := uint64(10_000_007)
+	require.NoError(t, db.Create(&model.User{Id: userID, Username: "direct-watcher-cancelled", Password: "password123", AffCode: "watcher-2002"}).Error)
+	require.NoError(t, db.Create(&model.TopUp{
+		UserId: userID, TradeNo: tradeNo, Amount: 10, RequestedAmount: 10,
+		PaymentMethod: model.DirectCryptoProvider, PaymentProvider: model.DirectCryptoProvider,
+		PaymentCurrency: "USD", PaymentRateToUSD: 1, PaymentCoefficient: 1,
+		PaymentBaseAmount: 10, PaymentChargedAmount: 10, Money: 10, QuotaToAdd: 5_000_000,
+		CreateTime: now, Status: common.TopUpStatusCancelled,
+	}).Error)
+	require.NoError(t, db.Create(&model.DirectCryptoPayment{
+		TradeNo: tradeNo, UserId: userID, Network: "TRON", Token: "USDT", Contract: setting.USDTTRC20Contract,
+		Address: setting.USDTTRC20ReceivingAddress, BaseUnits: 10_000_000, ExpectedUnits: amount,
+		SuffixUnits: 7, Status: model.DirectCryptoCancelled, CreatedAt: now, ExpiresAt: now + 30*60, UpdatedAt: now,
+	}).Error)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":[{"transaction_id":"tx-cancelled-watcher","from":"TFrom","to":%q,"value":"%d","event_index":0,"block_timestamp":%d,"block_number":123,"token_info":{"address":%q},"transaction_ret":[{"contractRet":"SUCCESS"}]}],"meta":{}}`, setting.USDTTRC20ReceivingAddress, amount, now*1000, setting.USDTTRC20Contract)
+	}))
+	defer server.Close()
+	DirectUSDTTRC20TronGridBaseURL = server.URL
+	DirectUSDTTRC20HTTPClient = server.Client()
+
+	require.NoError(t, PollDirectUSDTTRC20Once(context.Background()))
+	var user model.User
+	require.NoError(t, db.First(&user, userID).Error)
+	assert.Zero(t, user.Quota)
+	metadata, err := model.GetPaymentMetadataByExternalPaymentIDWithError(model.DirectCryptoProvider, "tx-cancelled-watcher:0")
+	require.NoError(t, err)
+	assert.Contains(t, metadata.Metadata, `"credited":false`)
+}
+
 func TestPollDirectUSDTTRC20OnceReconcilesSnapshotWhenDisabledAndCurrentConfigInvalid(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_watcher_disabled.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}, &model.DirectCryptoReconciliation{}))
 
 	previousDB := model.DB
 	previousEnabled := setting.USDTTRC20Enabled
@@ -177,7 +294,7 @@ func TestPollDirectUSDTTRC20OnceReturnsProviderErrors(t *testing.T) {
 func TestPollDirectUSDTTRC20OnceSkipsOldEventAndSettlesLaterEvent(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "direct_watcher_poison.db")), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.PaymentMetadata{}, &model.DirectCryptoPayment{}, &model.DirectCryptoReconciliation{}))
 
 	previousDB := model.DB
 	previousEnabled := setting.USDTTRC20Enabled

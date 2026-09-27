@@ -228,7 +228,8 @@ export function isUSDTTrc20TerminalStatus(status: string): boolean {
     status === 'paid' ||
     status === 'success' ||
     status === 'expired' ||
-    status === 'failed'
+    status === 'failed' ||
+    status === 'cancelled'
   )
 }
 
