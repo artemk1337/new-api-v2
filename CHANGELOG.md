@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.187
+
+- Split large channel, option, relay override, and tiered-pricing UI files along feature boundaries without changing their public contracts.
+- Added a hierarchical set of `AGENTS.md` instructions for backend, relay, internal library, and frontend areas, and reduced the root guide to shared rules and links.
+
 ## v1.1.186
 
 - Added direct USDT checkout for TRON, TON, and Solana with immutable receiving-wallet snapshots, exact-amount matching, and on-chain confirmation before crediting.

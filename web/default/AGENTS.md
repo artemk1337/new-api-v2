@@ -1,5 +1,7 @@
 # 前端开发规范
 
+Parent: [../../AGENTS.md](../../AGENTS.md). Source map: [src/AGENTS.md](src/AGENTS.md).
+
 本文档定义前端项目的开发规范与最佳实践，供开发与 AI 助手共同遵循。具体依赖与脚本以 `package.json` 为准。
 
 ---
