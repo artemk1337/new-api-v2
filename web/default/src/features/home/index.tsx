@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import '@/styles/home.css'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
@@ -24,7 +25,7 @@ import { RichContent } from '@/components/rich-content'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { Hero, HowItWorks } from './components'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -72,12 +73,11 @@ export function Home() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
-      <Footer />
+      <main className='home-redesign'>
+        <Hero isAuthenticated={isAuthenticated} />
+        <HowItWorks />
+      </main>
+      <Footer hideBrand />
     </PublicLayout>
   )
 }

@@ -5507,6 +5507,15 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Images": "Images",
+    "Start building": "Start building",
+    "Choose your model": "Choose your model",
+    "Explore models": "Explore models",
+    "Get connected": "Get connected",
+    "Workspace": "Workspace",
+    "Connect your app": "Connect your app",
+    "Create an API key": "Create an API key",
+    "Many models - <em>one API.</em>": "Many models - <em>one API.</em>"
   }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.188
+
+- Redesigned the homepage with a compact layout, animated blue-purple light ribbons, responsive typography, and reduced-motion support.
+- Shortened homepage copy, renamed the Russian primary action to «Приступить» and header dashboard link to «Кабинет», and updated all six locales.
+- Simplified the homepage footer and corrected its repository link to `artemk1337/new-api-v2`.
+
 ## v1.1.187
 
 - Split large channel, option, relay override, and tiered-pricing UI files along feature boundaries without changing their public contracts.

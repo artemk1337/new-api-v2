@@ -5507,6 +5507,15 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Images": "画像",
+    "Start building": "作り始める",
+    "Choose your model": "モデルを選ぼう",
+    "Explore models": "モデルを選ぶ",
+    "Get connected": "接続する",
+    "Workspace": "ワークスペース",
+    "Connect your app": "アプリを接続",
+    "Create an API key": "API キーを作成",
+    "Many models - <em>one API.</em>": "多彩なモデル - <em>ひとつのAPI。</em>"
   }
 }

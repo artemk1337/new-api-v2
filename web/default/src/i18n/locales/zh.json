@@ -5507,6 +5507,15 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Images": "图像",
+    "Start building": "开始构建",
+    "Choose your model": "选择你的模型",
+    "Explore models": "选择模型",
+    "Get connected": "开始接入",
+    "Workspace": "工作空间",
+    "Connect your app": "连接你的应用",
+    "Create an API key": "创建 API 密钥",
+    "Many models - <em>one API.</em>": "多种模型 - <em>一个 API。</em>"
   }
 }

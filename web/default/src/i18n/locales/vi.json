@@ -5507,6 +5507,15 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Images": "Hình ảnh",
+    "Start building": "Bắt đầu xây dựng",
+    "Choose your model": "Chọn mô hình của bạn",
+    "Explore models": "Chọn mô hình",
+    "Get connected": "Kết nối",
+    "Workspace": "Không gian làm việc",
+    "Connect your app": "Kết nối ứng dụng của bạn",
+    "Create an API key": "Tạo khóa API",
+    "Many models - <em>one API.</em>": "Nhiều mô hình - <em>một API.</em>"
   }
 }

@@ -1311,7 +1311,7 @@
     "Dashboard": "Панель управления",
     "Dashboard navigation": "Статистика",
     "Dashboard Preferences": "Настройки панели управления",
-    "Dashboard tab": "Дашборд",
+    "Dashboard tab": "Кабинет",
     "Dashboards, tokens, and usage analytics.": "Панели управления, токены и аналитика использования.",
     "Data Dashboard": "Панель данных",
     "Data directory:": "Каталог данных:",
@@ -5507,6 +5507,15 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Images": "Изображения",
+    "Start building": "Приступить",
+    "Choose your model": "Выберите модель",
+    "Explore models": "Выбрать модель",
+    "Get connected": "Подключение",
+    "Workspace": "Рабочее пространство",
+    "Connect your app": "Подключите приложение",
+    "Create an API key": "Создайте API-ключ",
+    "Many models - <em>one API.</em>": "Много моделей - <em>один API.</em>"
   }
 }
