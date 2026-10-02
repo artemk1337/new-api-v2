@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.189
+
+- Removed the project copyright and contributor attribution row from the footer, including custom footers, and cleaned up its translations in all six locales.
+
 ## v1.1.188
 
 - Redesigned the homepage with a compact layout, animated blue-purple light ribbons, responsive typography, and reduced-motion support.
