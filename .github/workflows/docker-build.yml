@@ -13,6 +13,9 @@ on:
         required: true
         type: string
 
+env:
+  DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+
 jobs:
   build_single_arch:
     name: Build & push (${{ matrix.arch }})
