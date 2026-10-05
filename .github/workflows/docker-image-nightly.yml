@@ -11,7 +11,7 @@ on:
         required: false
 
 env:
-  DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+  DOCKER_BUILD_RECORD_RETENTION_DAYS: 90
 
 jobs:
   build_single_arch:
