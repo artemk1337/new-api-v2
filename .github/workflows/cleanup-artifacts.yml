@@ -1,0 +1,86 @@
+name: Keep latest 5 build artifacts
+
+on:
+  workflow_run:
+    workflows: ["Publish Docker image (Multi-arch)","Publish Docker image (alpha)","Publish Docker image (nightly)","Build Electron App"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview deletions without removing artifacts
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+
+concurrency:
+  group: keep-latest-five-build-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Keep artifact sets from the latest five successful builds per workflow
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const keep = 5;
+            const allowedPaths = new Set([".github/workflows/docker-build.yml",".github/workflows/docker-image-alpha.yml",".github/workflows/docker-image-nightly.yml",".github/workflows/electron-build.yml"]);
+            const dryRun = context.eventName === 'workflow_dispatch' && context.payload.inputs?.dry_run !== 'false';
+            const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, {owner, repo, per_page: 100});
+            const allowedIds = new Set(workflows.filter(w => allowedPaths.has(w.path)).map(w => w.id));
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {owner, repo, per_page: 100});
+            const byRun = new Map();
+            for (const artifact of artifacts) {
+              if (artifact.expired || !artifact.workflow_run?.id) continue;
+              const id = artifact.workflow_run.id;
+              if (!byRun.has(id)) byRun.set(id, []);
+              byRun.get(id).push(artifact);
+            }
+            const groups = new Map();
+            for (const [runId, runArtifacts] of byRun) {
+              let run;
+              try {
+                ({data: run} = await github.rest.actions.getWorkflowRun({owner, repo, run_id: runId}));
+              } catch (error) {
+                if (error.status === 404) continue;
+                throw error;
+              }
+              if (!allowedIds.has(run.workflow_id) || run.status !== 'completed' || run.conclusion !== 'success') continue;
+              if (!['push', 'workflow_dispatch', 'schedule'].includes(run.event)) continue;
+              if (run.head_repository?.full_name?.toLowerCase() !== (owner + '/' + repo).toLowerCase()) continue;
+              if (!groups.has(run.workflow_id)) groups.set(run.workflow_id, []);
+              groups.get(run.workflow_id).push({run, artifacts: runArtifacts});
+            }
+            const rows = [];
+            for (const [workflowId, builds] of groups) {
+              builds.sort((a, b) => b.run.run_number - a.run.run_number || b.run.id - a.run.id);
+              const retained = builds.slice(0, keep);
+              core.info('Keeping workflow ' + workflowId + ' runs: ' + retained.map(b => b.run.id).join(', '));
+              for (const build of retained) rows.push([String(workflowId), String(build.run.id), 'Keep', String(build.artifacts.length)]);
+              for (const build of builds.slice(keep)) {
+                // Recheck completion before deleting; a rerun may have started meanwhile.
+                const {data: latest} = await github.rest.actions.getWorkflowRun({owner, repo, run_id: build.run.id});
+                if (latest.status !== 'completed' || latest.conclusion !== 'success' || latest.run_attempt !== build.run.run_attempt) continue;
+                for (const artifact of build.artifacts) {
+                  core.info((dryRun ? 'Would delete ' : 'Deleting ') + artifact.name + ' (' + artifact.id + ') from run ' + build.run.id);
+                  if (!dryRun) {
+                    try {
+                      await github.rest.actions.deleteArtifact({owner, repo, artifact_id: artifact.id});
+                    } catch (error) {
+                      if (error.status !== 404) throw error;
+                    }
+                  }
+                }
+                rows.push([String(workflowId), String(build.run.id), dryRun ? 'Would delete artifacts' : 'Deleted artifacts', String(build.artifacts.length)]);
+              }
+            }
+            await core.summary.addHeading('Keep the latest 5 successful builds')
+              .addRaw('Only artifacts of completed successful builds are pruned. Workflow runs, logs, releases, packages and caches are preserved.\n')
+              .addTable([[{data: 'Workflow', header: true}, {data: 'Run', header: true}, {data: 'Action', header: true}, {data: 'Artifacts', header: true}], ...rows])
+              .write();
