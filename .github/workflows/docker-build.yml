@@ -12,9 +12,15 @@ on:
         description: 'Tag name to build (e.g., v0.10.8-alpha.3)'
         required: true
         type: string
+      local_runner:
+        description: 'Build on the registered local new-api-build runner'
+        required: false
+        default: false
+        type: boolean
 
 env:
   DOCKER_BUILD_RECORD_RETENTION_DAYS: 90
+  DOCKER_BUILD_RECORD_UPLOAD: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') }}
 
 jobs:
   build_single_arch:
@@ -29,7 +35,7 @@ jobs:
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ (inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && fromJSON('["self-hosted","macOS","ARM64","new-api-build"]') || matrix.runner }}
     outputs:
       tag: ${{ steps.version.outputs.tag }}
 
@@ -89,8 +95,8 @@ jobs:
             ghcr.io/artemk1337/new-api-v2:${{ env.TAG }}-${{ matrix.arch }}
             ghcr.io/artemk1337/new-api-v2:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha' || '' }}
+          cache-to: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha,mode=max' || '' }}
           provenance: mode=max
           sbom: true
 
@@ -106,8 +112,8 @@ jobs:
             ghcr.io/artemk1337/new-api-v2-updater:${{ env.TAG }}-${{ matrix.arch }}
             ghcr.io/artemk1337/new-api-v2-updater:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha' || '' }}
+          cache-to: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha,mode=max' || '' }}
           provenance: mode=max
           sbom: true
 
@@ -123,8 +129,8 @@ jobs:
             ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:${{ env.TAG }}-${{ matrix.arch }}
             ghcr.io/artemk1337/new-api-v2-system-telemetry-agent:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha' || '' }}
+          cache-to: ${{ !(inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && 'type=gha,mode=max' || '' }}
           provenance: mode=max
           sbom: true
 
@@ -155,7 +161,7 @@ jobs:
   create_manifests:
     name: Create multi-arch manifests
     needs: [build_single_arch]
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true') && fromJSON('["self-hosted","macOS","ARM64","new-api-build"]') || 'ubuntu-latest' }}
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     permissions:
       packages: write
