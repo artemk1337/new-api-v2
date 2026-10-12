@@ -45,6 +45,15 @@ jobs:
       id-token: write
 
     steps:
+      - name: Isolate local Docker credentials
+        if: inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true'
+        run: |
+          DOCKER_CONFIG_DIR=$(mktemp -d "$RUNNER_TEMP/new-api-docker.XXXXXX")
+          chmod 700 "$DOCKER_CONFIG_DIR"
+          echo 'DOCKER_HOST='"$(docker context inspect --format '{{.Endpoints.docker.Host}}')" >> "$GITHUB_ENV"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG_DIR" >> "$GITHUB_ENV"
+          echo '{"cliPluginsExtraDirs":["/Applications/Docker.app/Contents/Resources/cli-plugins"]}' > "$DOCKER_CONFIG_DIR/config.json"
+
       - name: Check out
         uses: actions/checkout@v4
         with:
@@ -168,6 +177,15 @@ jobs:
       contents: read
 
     steps:
+      - name: Isolate local Docker credentials
+        if: inputs.local_runner || vars.NEW_API_USE_LOCAL_RUNNER == 'true'
+        run: |
+          DOCKER_CONFIG_DIR=$(mktemp -d "$RUNNER_TEMP/new-api-docker.XXXXXX")
+          chmod 700 "$DOCKER_CONFIG_DIR"
+          echo 'DOCKER_HOST='"$(docker context inspect --format '{{.Endpoints.docker.Host}}')" >> "$GITHUB_ENV"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG_DIR" >> "$GITHUB_ENV"
+          echo '{"cliPluginsExtraDirs":["/Applications/Docker.app/Contents/Resources/cli-plugins"]}' > "$DOCKER_CONFIG_DIR/config.json"
+
       - name: Set version
         run: echo "TAG=${{ needs.build_single_arch.outputs.tag }}" >> $GITHUB_ENV
 
