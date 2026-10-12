@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.190 — 2026-10-12
+
+- Added Bybit P2P as a RUB synchronization source, using the median USDT/RUB buying price and CoinGecko USDT/USD quotes to calculate the USD-based platform rate without CBR.
+- Preserved the selected Bybit source during currency normalization and startup, and exposed both quote sources in currency settings.
+
 ## v1.1.189
 
 - Removed the project copyright and contributor attribution row from the footer, including custom footers, and cleaned up its translations in all six locales.

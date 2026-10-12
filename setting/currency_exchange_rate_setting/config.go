@@ -44,14 +44,15 @@ func ValidateProvider(provider string) error {
 }
 
 // SupportedProvidersForCurrency returns providers that can quote 1 USD in the
-// requested platform currency. The registry stores USD-based rates, so the
-// legacy USDT/RUB Bybit P2P pair is intentionally not a platform-currency
-// provider.
+// requested platform currency. Bybit P2P converts its USDT/RUB quote using
+// the CoinGecko USDT/USD rate.
 func SupportedProvidersForCurrency(currency string) []string {
 	switch strings.ToUpper(strings.TrimSpace(currency)) {
 	case "USDT":
 		return []string{ProviderCoinGecko}
-	case "AED", "AMD", "AUD", "AZN", "BGN", "BRL", "BYN", "CAD", "CHF", "CNY", "CZK", "DKK", "EGP", "EUR", "GBP", "GEL", "HKD", "HUF", "IDR", "INR", "JPY", "KGS", "KRW", "KZT", "MDL", "NOK", "NZD", "PLN", "QAR", "RON", "RSD", "RUB", "SEK", "SGD", "THB", "TJS", "TMT", "TRY", "UAH", "UZS", "VND", "XDR", "ZAR":
+	case "RUB":
+		return []string{ProviderCBR, ProviderBybitP2P}
+	case "AED", "AMD", "AUD", "AZN", "BGN", "BRL", "BYN", "CAD", "CHF", "CNY", "CZK", "DKK", "EGP", "EUR", "GBP", "GEL", "HKD", "HUF", "IDR", "INR", "JPY", "KGS", "KRW", "KZT", "MDL", "NOK", "NZD", "PLN", "QAR", "RON", "RSD", "SEK", "SGD", "THB", "TJS", "TMT", "TRY", "UAH", "UZS", "VND", "XDR", "ZAR":
 		return []string{ProviderCBR}
 	default:
 		return nil

@@ -1,5 +1,5 @@
 const PROVIDER_LABELS: Record<string, string> = {
-  bybit_p2p: 'Bybit',
+  bybit_p2p: 'Bybit P2P (USDT/RUB) + CoinGecko (USDT/USD)',
   cbr: 'CBR',
   coingecko: 'CoinGecko',
 }
@@ -50,6 +50,7 @@ const PROVIDER_CURRENCIES: Record<string, ReadonlySet<string>> = {
     'XDR',
     'ZAR',
   ]),
+  bybit_p2p: new Set(['RUB']),
   coingecko: new Set(['USDT']),
 }
 

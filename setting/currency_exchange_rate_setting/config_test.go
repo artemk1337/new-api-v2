@@ -21,8 +21,8 @@ func TestValidateUpdateInterval(t *testing.T) {
 }
 
 func TestSupportedProvidersForCurrencyUsesUSDQuotes(t *testing.T) {
-	assert.Equal(t, []string{ProviderCBR}, SupportedProvidersForCurrency("rub"))
+	assert.Equal(t, []string{ProviderCBR, ProviderBybitP2P}, SupportedProvidersForCurrency("rub"))
 	assert.Equal(t, []string{ProviderCoinGecko}, SupportedProvidersForCurrency("USDT"))
 	assert.Empty(t, SupportedProvidersForCurrency("USD"))
-	assert.False(t, IsProviderSupportedForCurrency(ProviderBybitP2P, "RUB"))
+	assert.True(t, IsProviderSupportedForCurrency(ProviderBybitP2P, "RUB"))
 }

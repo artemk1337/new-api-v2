@@ -31,7 +31,7 @@ func TestPlatformCurrencyDefaultsAndLatestRate(t *testing.T) {
 	got, err = GetPlatformCurrency("RUB")
 	require.NoError(t, err)
 	assert.True(t, got.SyncEnabled)
-	assert.Equal(t, "cbr", got.SyncProvider)
+	assert.Equal(t, "bybit_p2p", got.SyncProvider)
 	now := time.Now().UTC()
 	require.NoError(t, CreateCurrencyExchangeRate(&CurrencyExchangeRate{BaseCurrency: "USD", QuoteCurrency: "RUB", Provider: "cbr", Rate: 91, RecordedAt: now}))
 	require.NoError(t, CreateCurrencyExchangeRate(&CurrencyExchangeRate{BaseCurrency: "USD", QuoteCurrency: "RUB", Provider: "cbr", Rate: 92, RecordedAt: now.Add(time.Second)}))
@@ -41,7 +41,7 @@ func TestPlatformCurrencyDefaultsAndLatestRate(t *testing.T) {
 	assert.Error(t, DeletePlatformCurrency("USD"))
 }
 
-func TestNormalizePlatformCurrencyDropsUnsupportedLegacyProvider(t *testing.T) {
+func TestNormalizePlatformCurrencyPreservesSupportedBybitProvider(t *testing.T) {
 	currency := PlatformCurrency{
 		Code:         "rub",
 		Name:         "Russian Ruble",
@@ -53,7 +53,7 @@ func TestNormalizePlatformCurrencyDropsUnsupportedLegacyProvider(t *testing.T) {
 	NormalizePlatformCurrency(&currency)
 
 	assert.True(t, currency.SyncEnabled)
-	assert.Equal(t, "cbr", currency.SyncProvider)
+	assert.Equal(t, "bybit_p2p", currency.SyncProvider)
 }
 
 func TestNormalizePlatformCurrencyDisablesUnsupportedCurrencySync(t *testing.T) {

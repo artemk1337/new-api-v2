@@ -274,11 +274,22 @@ func FetchCurrencyExchangeRateForPair(ctx context.Context, provider, baseCurrenc
 		rate, err := fetchCBRPair(ctx, baseCurrency, quoteCurrency)
 		return currencyExchangeRateQuote{BaseCurrency: baseCurrency, QuoteCurrency: quoteCurrency, Rate: rate}, err
 	case currencyExchangeRateProviderBybitP2P:
-		if baseCurrency != "USDT" || quoteCurrency != "RUB" {
-			return currencyExchangeRateQuote{}, fmt.Errorf("bybit_p2p supports only USDT/RUB")
+		if (baseCurrency != "USDT" && baseCurrency != "USD") || quoteCurrency != "RUB" {
+			return currencyExchangeRateQuote{}, fmt.Errorf("bybit_p2p supports only USDT/RUB and USD/RUB")
 		}
 		rate, err := fetchBybitP2PUSDTRUB(ctx)
-		return currencyExchangeRateQuote{BaseCurrency: baseCurrency, QuoteCurrency: quoteCurrency, Rate: rate}, err
+		if err != nil {
+			return currencyExchangeRateQuote{}, err
+		}
+		if baseCurrency == "USD" {
+			usdtUSD, err := fetchCoinGeckoUSDTUSD(ctx)
+			if err != nil {
+				return currencyExchangeRateQuote{}, err
+			}
+			// Convert RUB per USDT to RUB per USD using the market USDT/USD quote.
+			rate /= usdtUSD
+		}
+		return currencyExchangeRateQuote{BaseCurrency: baseCurrency, QuoteCurrency: quoteCurrency, Rate: rate}, nil
 	case currencyExchangeRateProviderCoinGecko:
 		if baseCurrency == "USDT" && quoteCurrency == "USD" {
 			rate, err := fetchCoinGeckoUSDTUSD(ctx)

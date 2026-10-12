@@ -17,13 +17,16 @@ describe('platform currency synchronization interval', () => {
   })
 
   test('preserves an unknown backend interval for a recoverable UI', () => {
-    assert.equal(getSyncIntervalLabel('week', (key) => key), 'week')
+    assert.equal(
+      getSyncIntervalLabel('week', (key) => key),
+      'week'
+    )
   })
 })
 
 describe('platform currency synchronization providers', () => {
   test('only exposes USD-compatible sources for each currency', () => {
-    assert.deepEqual(getSupportedSyncProviders('RUB'), ['cbr'])
+    assert.deepEqual(getSupportedSyncProviders('RUB'), ['cbr', 'bybit_p2p'])
     assert.deepEqual(getSupportedSyncProviders('USDT'), ['coingecko'])
     assert.deepEqual(getSupportedSyncProviders('XYZ'), [])
   })
