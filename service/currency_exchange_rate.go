@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -29,9 +30,9 @@ const (
 	currencyExchangeRateBybitP2PURL       = "https://api2.bybit.com/fiat/otc/item/online"
 	currencyExchangeRateCoinGeckoURL      = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd"
 	currencyExchangeRateTimeout           = 15 * time.Second
-	// Bybit P2P API side 0 returns USDT sell ads: the price paid when buying
-	// USDT for RUB. This product decision is fixed for now.
-	currencyExchangeRateBybitP2PSideBuyUSDTForRUB = "0"
+	// Bybit P2P API side is the advertiser side: 1 returns USDT sell ads.
+	// These quote the price paid when buying USDT for RUB.
+	currencyExchangeRateBybitP2PSideBuyUSDTForRUB = "1"
 	currencyExchangeRateBybitP2PRequestSize       = "20"
 	currencyExchangeRateScheduleCheckInterval     = time.Second
 )
@@ -75,7 +76,8 @@ type bybitP2PResponse struct {
 	RetMsg  string `json:"ret_msg"`
 	Result  struct {
 		Items []struct {
-			Price string `json:"price"`
+			Price      string `json:"price"`
+			AuthStatus int    `json:"authStatus"`
 		} `json:"items"`
 	} `json:"result"`
 }
@@ -198,13 +200,16 @@ func parseBybitP2PUSDTRUB(body []byte) (float64, error) {
 	}
 	rates := make([]float64, 0, len(payload.Result.Items))
 	for _, item := range payload.Result.Items {
+		if item.AuthStatus != 1 {
+			continue
+		}
 		rate, err := strconv.ParseFloat(item.Price, 64)
-		if err == nil && rate > 0 {
+		if err == nil && rate > 0 && !math.IsInf(rate, 0) {
 			rates = append(rates, rate)
 		}
 	}
 	if len(rates) == 0 {
-		return 0, fmt.Errorf("Bybit P2P returned no valid USDT/RUB prices")
+		return 0, fmt.Errorf("Bybit P2P returned no valid verified-merchant USDT/RUB prices")
 	}
 	// The endpoint returns the most relevant ads first. The median of their
 	// valid prices is robust against an individual stale or outlier ad.
@@ -226,7 +231,7 @@ func fetchBybitP2PUSDTRUB(ctx context.Context) (float64, error) {
 		Size:       currencyExchangeRateBybitP2PRequestSize,
 		Page:       "1",
 		Amount:     "",
-		AuthMaker:  false,
+		AuthMaker:  true,
 		CanTrade:   false,
 	})
 	if err != nil {

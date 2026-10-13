@@ -353,11 +353,15 @@ func TestParseBybitP2PUSDTRUBUsesMedianOfValidPrices(t *testing.T) {
 		"ret_code": 0,
 		"ret_msg": "SUCCESS",
 		"result": {"items": [
-			{"price": "95.00"},
-			{"price": "91.21"},
-			{"price": "not-a-price"},
-			{"price": "90.50"},
-			{"price": "92.00"}
+			{"price": "80.00", "authStatus": 0},
+			{"price": "79.00"},
+			{"price": "NaN", "authStatus": 1},
+			{"price": "+Inf", "authStatus": 1},
+			{"price": "95.00", "authStatus": 1},
+			{"price": "91.21", "authStatus": 1},
+			{"price": "not-a-price", "authStatus": 1},
+			{"price": "90.50", "authStatus": 1},
+			{"price": "92.00", "authStatus": 1}
 		]}
 	}`))
 	require.NoError(t, err)
@@ -373,11 +377,12 @@ func TestFetchCurrencyExchangeRateFromBybitP2P(t *testing.T) {
 		require.NoError(t, common.DecodeJson(request.Body, &payload))
 		assert.Equal(t, "USDT", payload.TokenID)
 		assert.Equal(t, "RUB", payload.CurrencyID)
-		assert.Equal(t, currencyExchangeRateBybitP2PSideBuyUSDTForRUB, payload.Side)
+		assert.Equal(t, "1", payload.Side)
+		assert.True(t, payload.AuthMaker)
 		assert.Equal(t, currencyExchangeRateBybitP2PRequestSize, payload.Size)
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"ret_code":0,"result":{"items":[{"price":"91.00"},{"price":"92.00"},{"price":"93.00"}]}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"ret_code":0,"result":{"items":[{"price":"91.00","authStatus":1},{"price":"92.00","authStatus":1},{"price":"93.00","authStatus":1}]}}`)),
 			Header:     make(http.Header),
 		}, nil
 	})}

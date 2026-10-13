@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.191 — 2026-10-13
+
+- Corrected Bybit P2P RUB synchronization to use USDT sell advertisements instead of buy advertisements.
+- Restricted quotes to verified merchants using both the request filter and response status; invalid or non-finite prices are excluded, and failed synchronization preserves the last successful rate.
+
 ## v1.1.190 — 2026-10-12
 
 - Added Bybit P2P as a RUB synchronization source, using the median USDT/RUB buying price and CoinGecko USDT/USD quotes to calculate the USD-based platform rate without CBR.
