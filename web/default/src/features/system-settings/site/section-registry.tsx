@@ -37,6 +37,7 @@ const SITE_SECTIONS = [
       <SystemInfoSection
         defaultValues={{
           SystemName: settings.SystemName,
+          HomePageFlowLabel: settings.HomePageFlowLabel,
           Logo: settings.Logo,
           Footer: settings.Footer,
           About: settings.About,

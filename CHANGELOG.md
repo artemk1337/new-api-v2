@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.194 — 2026-10-14
+
+- Replaced the homepage ribbon with animated flows from an application through the platform to seven labeled AI providers, with responsive layouts and reduced-motion support.
+- Added a prominent documentation link and shortened the first-screen entrance animation to 0.4 seconds.
+- Added a separate homepage diagram name in site settings, falling back to the platform name when empty, with translations for all six locales.
+
 ## v1.1.193 — 2026-10-14
 
 - Replaced the receiving-wallet JSON field with a searchable compact list matching the payment-method editor, with network, address, status, edit, and delete actions.

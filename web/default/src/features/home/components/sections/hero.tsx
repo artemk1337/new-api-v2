@@ -31,11 +31,9 @@ export function Hero(props: { isAuthenticated?: boolean }) {
     <section className='studio-hero'>
       <div className='studio-intro'>
         <motion.h1
-          initial={
-            reducedMotion ? false : { opacity: 0, y: 18, filter: 'blur(8px)' }
-          }
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: reducedMotion ? 0 : 0.9 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: reducedMotion ? 0 : 0.4, ease: 'easeOut' }}
         >
           <Trans
             i18nKey='Many models - <em>one API.</em>'
@@ -44,11 +42,11 @@ export function Hero(props: { isAuthenticated?: boolean }) {
         </motion.h1>
         <motion.div
           className='studio-actions'
-          initial={reducedMotion ? false : { opacity: 0, y: 12 }}
+          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{
-            duration: reducedMotion ? 0 : 0.7,
-            delay: reducedMotion ? 0 : 0.2,
+            duration: reducedMotion ? 0 : 0.4,
+            ease: 'easeOut',
           }}
         >
           <Link
@@ -58,10 +56,15 @@ export function Hero(props: { isAuthenticated?: boolean }) {
             {t('Start building')}
             <ArrowUpRight size={17} aria-hidden='true' />
           </Link>
-          <Link className='studio-text-link' to='/pricing'>
-            {t('Explore models')}
+          <a
+            className='studio-text-link'
+            href='https://docs.newapi.pro/getting-started/'
+            target='_blank'
+            rel='noopener noreferrer'
+          >
+            {t('Documentation')}
             <ArrowUpRight size={16} aria-hidden='true' />
-          </Link>
+          </a>
         </motion.div>
       </div>
       <HeroStudio />

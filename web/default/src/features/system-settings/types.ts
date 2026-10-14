@@ -176,6 +176,7 @@ export type SystemTaskListResponse = {
 export type SiteSettings = {
   Notice: string
   SystemName: string
+  HomePageFlowLabel: string
   Logo: string
   Footer: string
   About: string

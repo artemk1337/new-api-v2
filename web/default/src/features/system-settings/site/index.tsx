@@ -27,6 +27,7 @@ import {
 const defaultSiteSettings: SiteSettings = {
   Notice: '',
   SystemName: 'New API',
+  HomePageFlowLabel: '',
   Logo: '',
   Footer: '',
   About: '',

@@ -91,6 +91,7 @@ export interface SystemStatus {
   data?: {
     version?: string
     system_name?: string
+    home_page_flow_label?: string
     logo?: string
     github_oauth?: boolean
     github_client_id?: string
@@ -138,6 +139,7 @@ export interface SystemStatus {
   // Allow direct access to common properties
   version?: string
   system_name?: string
+  home_page_flow_label?: string
   logo?: string
   github_oauth?: boolean
   github_client_id?: string
