@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.193 — 2026-10-14
+
+- Replaced the receiving-wallet JSON field with a searchable compact list matching the payment-method editor, with network, address, status, edit, and delete actions.
+- Added wallet dialogs with address validation, cancellable drafts, and network-specific TON/Solana fields; retained JSON editing and legacy network-address fallback for an empty pool.
+- Updated all six frontend locales and verified desktop and mobile layouts.
+
 ## v1.1.192 — 2026-10-14
 
 - Persist the automatically generated session signing key in `/data/.session-secret` for Docker deployments so subsequent container replacements preserve user login sessions.
