@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.197 — 2026-10-15
+
+- Replace the default website logo and browser favicon with the ceramic VibeCode VC mark and turquoise accent.
+- Add an iOS home-screen icon, a transparent 512×512 PNG logo, and a square PNG profile avatar on a graphite background.
+
 ## v1.1.196
 
 Release date: 2026-10-15
