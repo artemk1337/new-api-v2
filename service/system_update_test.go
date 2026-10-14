@@ -55,6 +55,9 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 					{"ref":"refs/tags/v1.0.1"},
 					{"ref":"refs/tags/v1.1.0"}
 				]`), nil
+			case "/repos/artemk1337/new-api-v2/releases/tags/v1.0.1",
+				"/repos/artemk1337/new-api-v2/releases/tags/v1.1.0":
+				return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 			case "/repos/artemk1337/new-api-v2/actions/workflows/docker-build.yml/runs":
 				return jsonResponse(http.StatusOK, `{"workflow_runs":[
 					{"status":"completed","conclusion":"failure","head_branch":"v1.0.1","created_at":"2026-01-01T00:00:00Z"},
@@ -80,6 +83,9 @@ func TestCheckSystemUpdateUsesConfiguredRepository(t *testing.T) {
 	assert.Equal(t, "artemk1337/new-api-v2", result.Repository)
 	assert.Equal(t, "v1.0.0", result.CurrentVersion)
 	assert.Equal(t, "v1.1.0", result.LatestVersion)
+	assert.Equal(t, 1, result.Page)
+	assert.Equal(t, 5, result.PageSize)
+	assert.Equal(t, 2, result.Total)
 	assert.True(t, result.UpdateAvailable)
 	require.NotNil(t, result.Release)
 	assert.Equal(t, "v1.1.0", result.Release.TagName)
@@ -113,6 +119,8 @@ func TestCheckSystemUpdateIgnoresPrereleaseTags(t *testing.T) {
 					{"ref":"refs/tags/v2.0.0-rc.1"},
 					{"ref":"refs/tags/v1.9.0"}
 				]`), nil
+			case "/repos/artemk1337/new-api-v2/releases/tags/v1.9.0":
+				return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 			case "/repos/artemk1337/new-api-v2/actions/workflows/docker-build.yml/runs":
 				return jsonResponse(http.StatusOK, `{"workflow_runs":[{"status":"completed","conclusion":"success","head_branch":"v1.9.0"}]}`), nil
 			}
@@ -144,6 +152,8 @@ func TestCheckSystemUpdateMarksActiveManualDockerBuildAsBuilding(t *testing.T) {
 			switch req.URL.Path {
 			case "/repos/artemk1337/new-api-v2/git/matching-refs/tags/":
 				return jsonResponse(http.StatusOK, `[{"ref":"refs/tags/v1.0.1"}]`), nil
+			case "/repos/artemk1337/new-api-v2/releases/tags/v1.0.1":
+				return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 			case "/repos/artemk1337/new-api-v2/actions/workflows/docker-build.yml/runs":
 				assert.Empty(t, req.URL.Query().Get("event"))
 				assert.Equal(t, "100", req.URL.Query().Get("per_page"))
@@ -245,6 +255,8 @@ func TestCheckSystemUpdateUsesWorkflowStatusWithoutCallingSidecar(t *testing.T) 
 			switch req.URL.Path {
 			case "/repos/artemk1337/new-api-v2/git/matching-refs/tags/":
 				return jsonResponse(http.StatusOK, `[{"ref":"refs/tags/v1.0.1"}]`), nil
+			case "/repos/artemk1337/new-api-v2/releases/tags/v1.0.1":
+				return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 			case "/repos/artemk1337/new-api-v2/actions/workflows/docker-build.yml/runs":
 				return jsonResponse(http.StatusOK, `{"workflow_runs":[{"status":"completed","conclusion":"success","head_branch":"v1.0.1"}]}`), nil
 			}
@@ -277,6 +289,8 @@ func TestCheckSystemUpdateListsReadyRollbackVersions(t *testing.T) {
 			switch req.URL.Path {
 			case "/repos/artemk1337/new-api-v2/git/matching-refs/tags/":
 				return jsonResponse(http.StatusOK, `[{"ref":"refs/tags/v1.0.1"},{"ref":"refs/tags/v1.1.0"}]`), nil
+			case "/repos/artemk1337/new-api-v2/releases/tags/v1.0.1":
+				return jsonResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 			case "/repos/artemk1337/new-api-v2/actions/workflows/docker-build.yml/runs":
 				return jsonResponse(http.StatusOK, `{"workflow_runs":[{"status":"completed","conclusion":"success","head_branch":"v1.0.1"}]}`), nil
 			}

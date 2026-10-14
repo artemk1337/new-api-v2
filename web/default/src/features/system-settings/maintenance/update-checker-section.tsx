@@ -17,8 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-import { DownloadIcon, ExternalLinkIcon, RefreshCcwIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  RefreshCcwIcon,
+} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -26,7 +32,7 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/ui/markdown'
 import { getStatus } from '@/lib/api'
-import { formatTimestamp, formatTimestampToDate } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
@@ -38,7 +44,11 @@ import {
   startSystemUpdate,
 } from '../api'
 import { SettingsSection } from '../components/settings-section'
-import type { SystemUpdateRelease, SystemUpdateTask } from '../types'
+import type {
+  SystemUpdateCheck,
+  SystemUpdateRelease,
+  SystemUpdateTask,
+} from '../types'
 import {
   canDeploySystemUpdateRelease,
   getSystemUpdateReleaseBuildStatus,
@@ -226,9 +236,9 @@ export function UpdateCheckerSection({
   const [checking, setChecking] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [release, setRelease] = useState<SystemUpdateRelease | null>(null)
-  const [releases, setReleases] = useState<SystemUpdateRelease[]>([])
-  const [canUpdate, setCanUpdate] = useState(false)
+  const [updateCheck, setUpdateCheck] = useState<SystemUpdateCheck | null>(null)
+  const checkInFlight = useRef(false)
+  const releaseContent = useRef<HTMLDivElement>(null)
   const [updateTask, setUpdateTask] = useState<SystemUpdateTask | null>(null)
   const [expectedUpdateVersion, setExpectedUpdateVersion] = useState<
     string | null
@@ -243,6 +253,14 @@ export function UpdateCheckerSection({
   const version = currentVersion || t('Unknown')
   const updateActive = isActiveSystemUpdateTask(updateTask)
   const showUpdateTask = Boolean(updateTask && expectedUpdateVersion)
+  const release = updateCheck?.release
+  const releases = updateCheck?.releases ?? (release ? [release] : [])
+  const canUpdate = updateCheck?.can_update ?? false
+  const page = updateCheck?.page ?? 1
+  const totalPages = Math.max(
+    1,
+    Math.ceil((updateCheck?.total ?? 0) / (updateCheck?.page_size || 5))
+  )
   const orderedReleases = [...releases].reverse()
   const availableReleases = orderedReleases.filter((item) => {
     const comparison = compareStableSystemUpdateVersions(
@@ -258,38 +276,38 @@ export function UpdateCheckerSection({
     )
     return comparison !== null && comparison <= 0
   })
-  const newestAvailableVersion = availableReleases[0]?.tag_name
+  const latestVersionComparison = updateCheck?.latest_version
+    ? compareStableSystemUpdateVersions(
+        updateCheck.latest_version,
+        currentVersion
+      )
+    : 0
+  const newestAvailableVersion =
+    latestVersionComparison === null || latestVersionComparison > 0
+      ? updateCheck?.latest_version
+      : undefined
 
-  const handleCheckUpdates = async () => {
+  const loadReleasePage = async (requestedPage: number, openDialog = false) => {
+    if (checkInFlight.current) return
+    checkInFlight.current = true
     setChecking(true)
     try {
-      const res = await checkSystemUpdate()
+      const res = await checkSystemUpdate(requestedPage, 5)
       if (!res.success || !res.data) {
         throw new Error(res.message || t('Failed to check for updates'))
       }
-      const data = res.data.release
-      if (!data?.tag_name) {
+      const data = res.data
+      if (!data.release?.tag_name && !data.releases?.length) {
         toast.success(
           t('You are running the latest version ({{version}}).', {
-            version: res.data.current_version,
+            version: data.current_version,
           })
         )
         return
       }
 
-      if (!res.data.update_available) {
-        toast.success(
-          t('You are running the latest version ({{version}}).', {
-            version: data.tag_name,
-          })
-        )
-        return
-      }
-
-      setRelease(data)
-      setReleases(res.data.releases ?? [data])
-      setCanUpdate(res.data.can_update)
-      setDialogOpen(true)
+      setUpdateCheck(data)
+      if (openDialog) setDialogOpen(true)
     } catch (error) {
       const message =
         error instanceof Error
@@ -297,9 +315,19 @@ export function UpdateCheckerSection({
           : t('Failed to check for updates')
       toast.error(message)
     } finally {
+      checkInFlight.current = false
       setChecking(false)
     }
   }
+
+  useEffect(() => {
+    let container = releaseContent.current?.parentElement
+    while (container) {
+      container.scrollTop = 0
+      if (container.dataset.slot === 'dialog-content') break
+      container = container.parentElement
+    }
+  }, [page])
 
   const startUpdateForVersion = async (version: string) => {
     const requestedVersion = version.trim()
@@ -519,7 +547,7 @@ export function UpdateCheckerSection({
             </div>
           </div>
 
-          <Button onClick={handleCheckUpdates} disabled={checking}>
+          <Button onClick={() => loadReleasePage(1, true)} disabled={checking}>
             {checking ? (
               t('Checking updates...')
             ) : (
@@ -581,28 +609,56 @@ export function UpdateCheckerSection({
               })
             : t('Release details')
         }
-        description={
-          release?.published_at
-            ? `${t('Published')} ${formatTimestampToDate(
-                new Date(release.published_at).getTime(),
-                'milliseconds'
-              )}`
-            : undefined
-        }
+        description={`${t('Current version')}: ${version}`}
         contentClassName='max-h-[80vh] overflow-y-auto'
         contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
-          <Button
-            type='button'
-            variant='secondary'
-            onClick={() => setDialogOpen(false)}
-          >
-            {t('Close')}
-          </Button>
+          <div className='flex w-full flex-wrap items-center justify-between gap-3'>
+            <div className='flex items-center gap-2' aria-busy={checking}>
+              <Button
+                type='button'
+                variant='outline'
+                size='icon'
+                disabled={checking || page <= 1 || updating}
+                aria-label={t('Previous page')}
+                onClick={() => loadReleasePage(page - 1)}
+              >
+                <ChevronLeftIcon className='h-4 w-4' />
+              </Button>
+              <span
+                className='text-muted-foreground text-sm'
+                aria-live='polite'
+              >
+                {checking
+                  ? t('Checking updates...')
+                  : t('Page {{current}} of {{total}}', {
+                      current: page,
+                      total: totalPages,
+                    })}
+              </span>
+              <Button
+                type='button'
+                variant='outline'
+                size='icon'
+                disabled={checking || page >= totalPages || updating}
+                aria-label={t('Next page')}
+                onClick={() => loadReleasePage(page + 1)}
+              >
+                <ChevronRightIcon className='h-4 w-4' />
+              </Button>
+            </div>
+            <Button
+              type='button'
+              variant='secondary'
+              onClick={() => setDialogOpen(false)}
+            >
+              {t('Close')}
+            </Button>
+          </div>
         }
       >
-        <div className='space-y-4'>
+        <div ref={releaseContent} className='space-y-4' aria-busy={checking}>
           {releases.length > 0 ? (
             <>
               {availableReleases.length > 0 && (
@@ -619,7 +675,9 @@ export function UpdateCheckerSection({
                         key={item.tag_name}
                         canUpdate={canUpdate}
                         disabled={
-                          updateActive || Boolean(expectedUpdateVersion)
+                          checking ||
+                          updateActive ||
+                          Boolean(expectedUpdateVersion)
                         }
                         isAvailableUpdate
                         onUpdate={startUpdateForVersion}
@@ -650,7 +708,9 @@ export function UpdateCheckerSection({
                         key={item.tag_name}
                         canUpdate={canUpdate}
                         disabled={
-                          updateActive || Boolean(expectedUpdateVersion)
+                          checking ||
+                          updateActive ||
+                          Boolean(expectedUpdateVersion)
                         }
                         isAvailableUpdate={false}
                         onUpdate={startUpdateForVersion}

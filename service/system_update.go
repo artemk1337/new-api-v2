@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +45,9 @@ type SystemUpdateCheckResult struct {
 	UpdateAvailable bool                  `json:"update_available"`
 	Release         *SystemUpdateRelease  `json:"release,omitempty"`
 	Releases        []SystemUpdateRelease `json:"releases,omitempty"`
+	Page            int                   `json:"page"`
+	PageSize        int                   `json:"page_size"`
+	Total           int                   `json:"total"`
 }
 
 type SystemUpdatePayload struct {
@@ -124,17 +126,26 @@ var (
 )
 
 func CheckSystemUpdate(ctx context.Context) (*SystemUpdateCheckResult, error) {
+	return CheckSystemUpdatePage(ctx, 1, 5)
+}
+
+func CheckSystemUpdatePage(ctx context.Context, page, pageSize int) (*SystemUpdateCheckResult, error) {
 	result := &SystemUpdateCheckResult{
 		Enabled:        true,
 		CanUpdate:      systemUpdateCanApplyFn(),
 		Repository:     systemUpdateRepository(),
 		CurrentVersion: common.Version,
 	}
-	latestTag, releases, err := fetchSystemUpdateReleases(ctx, common.Version)
+	releasePage, err := fetchSystemUpdateReleasePage(ctx, common.Version, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
-	result.LatestVersion = latestTag
+	result.LatestVersion = releasePage.latestTag
+	result.Page = releasePage.page
+	result.PageSize = releasePage.pageSize
+	result.Total = releasePage.total
+	result.UpdateAvailable = releasePage.total > 0
+	releases := releasePage.releases
 	if len(releases) == 0 {
 		return result, nil
 	}
@@ -248,50 +259,8 @@ func fetchLatestSystemUpdateTag(ctx context.Context) (*SystemUpdateRelease, erro
 }
 
 func fetchSystemUpdateReleases(ctx context.Context, currentVersion string) (string, []SystemUpdateRelease, error) {
-	refs, err := fetchSystemUpdateTagRefs(ctx)
-	if err != nil {
-		return "", nil, err
-	}
-	tags := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		tag := strings.TrimPrefix(ref.Ref, "refs/tags/")
-		if !isStableVersionTag(tag) {
-			continue
-		}
-		tags = append(tags, tag)
-	}
-	if len(tags) == 0 {
-		return "", nil, nil
-	}
-	slices.SortFunc(tags, compareStableVersionTags)
-	latestTag := tags[len(tags)-1]
-
-	updateTags := tags
-	if currentVersion != "" && isStableVersionTag(currentVersion) {
-		updateTags = updateTags[:0]
-		for _, tag := range tags {
-			if compareStableVersionTags(tag, currentVersion) != 0 {
-				updateTags = append(updateTags, tag)
-			}
-		}
-	}
-	if len(updateTags) == 0 {
-		return latestTag, nil, nil
-	}
-	changelogSections := map[string]string{}
-	if latestUpdate := updateTags[len(updateTags)-1]; latestUpdate != "" {
-		if sections, err := fetchSystemUpdateChangelogSections(ctx, latestUpdate); err == nil {
-			changelogSections = sections
-		}
-	}
-
-	releases := make([]SystemUpdateRelease, 0, len(updateTags))
-	for _, tag := range updateTags {
-		release := buildSystemUpdateTagRelease(tag)
-		release.Body = changelogSections[tag]
-		releases = append(releases, *release)
-	}
-	return latestTag, releases, nil
+	releasePage, err := fetchSystemUpdateReleasePage(ctx, currentVersion, 1, 5)
+	return releasePage.latestTag, releasePage.releases, err
 }
 
 func validateSystemUpdateVersion(ctx context.Context, version string) error {
@@ -565,7 +534,11 @@ func parseChangelogSections(changelog string) map[string]string {
 	for _, line := range lines {
 		if strings.HasPrefix(line, "## ") {
 			flush()
-			currentTag = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			heading := strings.Fields(strings.TrimPrefix(line, "## "))
+			currentTag = ""
+			if len(heading) > 0 && isStableVersionTag(heading[0]) {
+				currentTag = heading[0]
+			}
 			currentLines = currentLines[:0]
 			continue
 		}

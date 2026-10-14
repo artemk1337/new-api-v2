@@ -100,9 +100,10 @@ export async function listSystemTasks(limit = 20) {
   return res.data
 }
 
-export async function checkSystemUpdate() {
+export async function checkSystemUpdate(page = 1, pageSize = 5) {
   const res = await api.get<SystemUpdateCheckResponse>(
-    '/api/system-update/check'
+    '/api/system-update/check',
+    { params: { page, page_size: pageSize } }
   )
   return res.data
 }

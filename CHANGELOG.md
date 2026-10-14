@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.196
+
+Release date: 2026-10-15
+
+- Read update descriptions, publication dates, and release links from GitHub Releases, with CHANGELOG.md as a fallback for missing or empty descriptions.
+- Recognize dated version headings in the changelog fallback.
+- Paginate available updates and rollback versions on the server, showing five versions per page and fetching descriptions only for the selected page.
+- Keep pagination controls visible on mobile, prevent conflicting actions while loading, and retain the global latest-version heading while browsing older releases.
+
 ## v1.1.195 — 2026-10-15
 
 - Keep the shared floating navigation on the sign-in page, with space above the form on desktop and mobile.

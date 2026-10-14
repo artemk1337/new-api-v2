@@ -114,6 +114,9 @@ export type SystemUpdateCheck = {
   update_available: boolean
   release?: SystemUpdateRelease
   releases?: SystemUpdateRelease[]
+  page: number
+  page_size: number
+  total: number
 }
 
 export type SystemUpdateTaskPayload = {
