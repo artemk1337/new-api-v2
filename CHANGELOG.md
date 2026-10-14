@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.195 — 2026-10-15
+
+- Keep the shared floating navigation on the sign-in page, with space above the form on desktop and mobile.
+- Always open the built-in Markdown documentation at `/docs` from the navigation menu, regardless of the configured external documentation URL.
+- Scroll Markdown section links to their headings in the current tab instead of opening a new tab.
+- Keep the Russian “О проекте” label together with a non-breaking space.
+
 ## v1.1.194 — 2026-10-14
 
 - Replaced the homepage ribbon with animated flows from an application through the platform to seven labeled AI providers, with responsive layouts and reduced-motion support.

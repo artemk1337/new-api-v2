@@ -20,7 +20,6 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
-import { resolveDocumentationLink } from '@/lib/documentation-link'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -57,10 +56,6 @@ export function useTopNavLinks(): TopNavLink[] {
     )
   }, [status])
 
-  const docsLink = resolveDocumentationLink(
-    status?.docs_link as string | undefined
-  )
-
   const isAuthed = !!auth?.user
 
   const links: TopNavLink[] = []
@@ -95,7 +90,7 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Documentation
   if (modules?.docs !== false) {
-    links.push({ title: t('Documentation'), ...docsLink })
+    links.push({ title: t('Documentation'), href: '/docs' })
   }
 
   // About
