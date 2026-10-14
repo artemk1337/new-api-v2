@@ -71,6 +71,7 @@ import { PaymentCurrencyField } from './payment-currency-field'
 import type { TopupGroupOption } from './payment-method-dialog'
 import { parseAvailablePaymentIcons } from './payment-method-icons'
 import { PaymentMethodsVisualEditor } from './payment-methods-visual-editor'
+import { ReceivingWalletsEditor } from './receiving-wallets-editor'
 import {
   formatJsonForEditor,
   getJsonError,
@@ -108,7 +109,7 @@ const tronAddressPattern = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
 const tonRawAddressPattern = /^0:[0-9a-f]{64}$/i
 // TON friendly addresses may use either the URL-safe or standard base64
 // alphabet. The backend accepts both encodings before canonicalizing to raw.
-const tonFriendlyAddressPattern = /^[A-Za-z0-9_+\/-]{48}={0,2}$/
+const tonFriendlyAddressPattern = /^[A-Za-z0-9_+/-]{48}={0,2}$/
 
 function isLikelySolanaAddress(value: string): boolean {
   return (
@@ -133,7 +134,7 @@ function createUSDTReceivingWalletSchema(t: Translate = (key) => key) {
         .trim()
         .toUpperCase()
         .pipe(z.enum(['TRON', 'TON', 'SOLANA'])),
-      address: z.string().trim().min(1),
+      address: z.string().trim().min(1, t('Required')),
       owner: z.string().trim().optional(),
       destination: z.string().trim().optional(),
       enabled: z.boolean().nullable().optional(),
@@ -213,10 +214,12 @@ function createUSDTReceivingWalletSchema(t: Translate = (key) => key) {
     })
 }
 
+// eslint-disable-next-line react/only-export-components -- Public validation contract used by existing callers.
 export const usdtReceivingWalletsSchema = z.array(
   createUSDTReceivingWalletSchema()
 )
 
+// eslint-disable-next-line react/only-export-components -- Public normalization contract used by existing callers.
 export function normalizeUSDTReceivingWalletsValue(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) return ''
@@ -318,16 +321,26 @@ const createPaymentSchema = (t: (key: string) => string) =>
     }, 'Provide a valid URL starting with http:// or https://'),
     USDTTRC20Enabled: z.boolean(),
     USDTTRC20RoundToCents: z.boolean(),
-    USDTReceivingWallets: z.string().refine((value) => {
-      if (!value.trim()) return true
+    USDTReceivingWallets: z.string().superRefine((value, ctx) => {
+      if (!value.trim()) return
       try {
-        return z
+        const result = z
           .array(createUSDTReceivingWalletSchema(t))
-          .safeParse(JSON.parse(value)).success
+          .safeParse(JSON.parse(value))
+        if (result.success) return
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            result.error.issues[0]?.message ??
+            t('Enter a JSON array of receiving wallets'),
+        })
       } catch {
-        return false
+        ctx.addIssue({
+          code: 'custom',
+          message: t('Enter a JSON array of receiving wallets'),
+        })
       }
-    }, t('Enter a JSON array of receiving wallets')),
+    }),
     USDTTRC20ReceivingAddress: z.string(),
     USDTTRC20APIKey: z.string(),
     USDTTONReceivingAddress: z.string(),
@@ -1815,18 +1828,12 @@ export function PaymentSettingsSection({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>{t('USDT receiving wallet pool')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={5}
-                          placeholder='[{"key":"tron-1","network":"TRON","address":"..."}]'
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t(
-                          'Optional JSON array. Add one object per wallet; empty keeps the legacy network addresses.'
-                        )}
-                      </FormDescription>
+                      <ReceivingWalletsEditor
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        schema={z.array(createUSDTReceivingWalletSchema(t))}
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
