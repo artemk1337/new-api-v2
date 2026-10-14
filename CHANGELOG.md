@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.192 — 2026-10-14
+
+- Persist the automatically generated session signing key in `/data/.session-secret` for Docker deployments so subsequent container replacements preserve user login sessions.
+- Preserve explicit `SESSION_SECRET` precedence, create the key file atomically with owner-only permissions, and fail startup if it cannot be read or persisted. Existing sessions signed with a previous ephemeral key require one final login after migration.
+
 ## v1.1.191 — 2026-10-13
 
 - Corrected Bybit P2P RUB synchronization to use USDT sell advertisements instead of buy advertisements.

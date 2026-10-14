@@ -12,6 +12,8 @@ web/default/dist
 web/node_modules
 web/dist
 .env
+.session-secret
+.session-secret-*
 one-api
 new-api
 /__debug_bin*

@@ -38,6 +38,7 @@ services:
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}  # Comma-separated nginx/load-balancer source IPs or CIDRs; empty trusts no forwarded headers
       - UPDATE_CHECK_REPOSITORY=${UPDATE_CHECK_REPOSITORY:-artemk1337/new-api-v2}
       - UPDATE_SIDECAR_URL=http://new-api-updater:18090
+      - SESSION_SECRET_FILE=/data/.session-secret # Persist cookie signatures across container replacements
 #      - STREAMING_TIMEOUT=300  # 流模式无响应超时时间，单位秒，默认120秒，如果出现空补全可以尝试改为更大值 （Streaming timeout in seconds, default is 120s. Increase if experiencing empty completions）
 #      - RELAY_IDLE_CONN_TIMEOUT=90  # Relay HTTP 客户端空闲连接超时时间，单位秒，默认跟随 Go 标准库，设置为0表示不限制 (Relay HTTP client idle keep-alive timeout in seconds, defaults to Go standard library; set 0 to disable)
 #      - SESSION_SECRET=random_string  # 多机部署时设置，必须修改这个随机字符串！！ （multi-node deployment, set this to a random string!!!!!!!）

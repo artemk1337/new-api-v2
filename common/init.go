@@ -55,6 +55,12 @@ func InitEnv() {
 		} else {
 			SessionSecret = ss
 		}
+	} else {
+		secret, err := loadSessionSecret(GetEnvOrDefaultString("SESSION_SECRET_FILE", ".session-secret"))
+		if err != nil {
+			log.Fatalf("Failed to initialize persistent session secret: %v", err)
+		}
+		SessionSecret = secret
 	}
 	if os.Getenv("CRYPTO_SECRET") != "" {
 		CryptoSecret = os.Getenv("CRYPTO_SECRET")
