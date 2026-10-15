@@ -21,6 +21,7 @@ web/default (React frontend; calls the HTTP API)
 - Tiered billing changes must first follow [`pkg/billingexpr/expr.md`](pkg/billingexpr/expr.md).
 - A chain event must not both credit a direct-crypto invoice and create an unmatched reconciliation record. Preserve invoice idempotency and read-only watcher behavior; see [service/AGENTS.md](service/AGENTS.md) and [model/AGENTS.md](model/AGENTS.md).
 - Production deployments use a ready registry image with an explicit tag. Before a runtime change, create and verify a fresh database backup; preserve data volumes and restart only the application service. Never build source on production.
+- GitHub Releases publish Linux amd64/arm64 binaries and checksums. Docker images support both architectures; macOS, Windows, and Electron release builds are disabled.
 - Do not remove or replace protected project identity references to **nеw-аρi** or **QuаntumΝоuѕ**.
 - New tests must assert user-visible behavior, API contracts, or important invariants. Do not add or run tests unless requested.
 

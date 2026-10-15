@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.198
+
+Release date: 2026-10-15
+
+- Publish GitHub Release binaries only for Linux amd64 and arm64, with Linux checksums; remove macOS and Windows release jobs and the Electron release workflow.
+- Preserve multi-architecture Docker publishing and the existing local runner configuration.
+
 ## v1.1.197 — 2026-10-15
 
 - Replace the default website logo and browser favicon with the ceramic VibeCode VC mark and turquoise accent.
