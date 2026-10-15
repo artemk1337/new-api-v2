@@ -238,10 +238,11 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId := 0
 	cleanUser := model.User{
-		Username:    user.Username,
-		Password:    user.Password,
-		DisplayName: user.Username,
-		Role:        common.RoleCommonUser,
+		RegistrationIP: model.ParseRegistrationIP(c.ClientIP()),
+		Username:       user.Username,
+		Password:       user.Password,
+		DisplayName:    user.Username,
+		Role:           common.RoleCommonUser,
 	}
 	if emailVerificationRequired {
 		cleanUser.Email = user.Email

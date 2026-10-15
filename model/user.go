@@ -484,6 +484,7 @@ func EnforceAccountVerification(now int64) (VerificationLifecycleSummary, error)
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
+	RegistrationIP             RegistrationIP             `json:"registration_ip" gorm:"column:registration_ip;<-:create"`
 	Id                         int                        `json:"id"`
 	Username                   string                     `json:"username" gorm:"unique;index" validate:"max=20"`
 	Password                   string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
@@ -710,6 +711,10 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 			likeArgs = append([]interface{}{keywordInt}, likeArgs...)
 		}
 
+		if ip := ParseRegistrationIP(keyword); ip != nil {
+			likeCondition += " OR registration_ip = ?"
+			likeArgs = append(likeArgs, ip)
+		}
 		query = query.Where("("+likeCondition+")", likeArgs...)
 	}
 	if group != "" {
