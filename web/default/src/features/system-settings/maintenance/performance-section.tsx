@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import * as z from 'zod'
+
+import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -49,7 +50,8 @@ import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
-import { StatusBadge } from '@/components/status-badge'
+import { api } from '@/lib/api'
+
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -59,6 +61,7 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import { DockerCachePanel } from './docker-cache-panel'
 
 /**
  * IMPORTANT: react-hook-form 7 interprets dotted `name` strings as nested
@@ -531,7 +534,7 @@ export function PerformanceSection(props: Props) {
 
       {/* Performance Stats Dashboard */}
       <div className='space-y-4'>
-        <div className='flex items-center gap-2'>
+        <div className='flex flex-wrap items-center gap-2'>
           <h4 className='font-medium'>{t('Performance Monitor')}</h4>
           <Button variant='outline' size='sm' onClick={fetchStats}>
             {t('Refresh Stats')}
@@ -639,7 +642,13 @@ export function PerformanceSection(props: Props) {
                 </div>
               </div>
             )}
+          </>
+        )}
 
+        <DockerCachePanel onCleanup={fetchStats} />
+
+        {stats && (
+          <>
             {stats.memory_stats && (
               <div className='rounded-lg border p-4'>
                 <p className='mb-2 text-sm font-medium'>

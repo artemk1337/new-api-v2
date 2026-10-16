@@ -34,6 +34,10 @@ export const STATIC_I18N_KEYS = [
   'Channel health checks',
   'Request retry',
 
+  // System maintenance responses and audit labels
+  'Cleared Docker build cache',
+  'Docker cache management is unavailable. Update and start the updater sidecar.',
+
   // System settings sidebar
   'System Administration',
   'General',

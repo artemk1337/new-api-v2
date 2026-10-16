@@ -23,6 +23,7 @@ import {
   parseTiersFromExpr,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
+
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
 
@@ -335,6 +336,7 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'custom_oauth.delete': 'Deleted a custom OAuth provider',
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
+  'performance.clear_docker_cache': 'Cleared Docker build cache',
   'performance.gc': 'Triggered garbage collection',
   'performance.clear_logs': 'Cleared log files',
   // Channel

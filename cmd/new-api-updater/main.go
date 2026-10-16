@@ -98,6 +98,7 @@ func main() {
 	http.HandleFunc("/jobs/", handleJobStatus)
 	http.HandleFunc("/versions/readiness", handleVersionReadiness)
 	http.HandleFunc("/telemetry-agent", handleTelemetryAgent)
+	http.HandleFunc("/docker/build-cache", handleDockerBuildCache)
 	log.Printf("new-api updater listening on %s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal(err)
@@ -197,6 +198,10 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 	defer updateMu.Unlock()
 	if updating {
 		writeJSON(w, http.StatusConflict, updateResponse{Message: "update is already running"})
+		return
+	}
+	if dockerCachePruning {
+		writeJSON(w, http.StatusConflict, updateResponse{Message: "Docker build cache cleanup is already running"})
 		return
 	}
 	updating = true

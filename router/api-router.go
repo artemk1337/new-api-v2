@@ -246,6 +246,8 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			performanceRoute.GET("/stats", controller.GetPerformanceStats)
 			performanceRoute.DELETE("/disk_cache", controller.ClearDiskCache)
+			performanceRoute.GET("/docker_cache", controller.GetDockerBuildCache)
+			performanceRoute.DELETE("/docker_cache", controller.ClearDockerBuildCache)
 			performanceRoute.POST("/reset_stats", controller.ResetPerformanceStats)
 			performanceRoute.POST("/gc", controller.ForceGC)
 			performanceRoute.GET("/logs", controller.GetLogFiles)

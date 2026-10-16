@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.202 — 2026-10-16
+
+- Show Docker Engine build cache usage, estimated reclaimable space, and cache record count separately from application cache and filesystem usage in performance settings.
+- Let root administrators clear unused build cache older than 24 hours through the updater container, with confirmation, audit logging, and mutual exclusion with application updates; preserve images, containers, and volumes.
+- Support both legacy and Docker 29 cache usage responses, show unavailable updater states explicitly, and translate the new controls into all six interface languages.
+
 ## v1.1.201 — 2026-10-16
 
 - Add API-key-authenticated `/v1/credits` and `/v1/key`, with `/api/v1` aliases, for dashboard account balance, lifetime usage, request count, and current key limits in USD.

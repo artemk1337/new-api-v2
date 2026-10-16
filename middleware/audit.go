@@ -57,9 +57,10 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/custom-oauth-provider/:id": "custom_oauth.delete",
 
 	// 性能/缓存（root）
-	"DELETE /api/performance/disk_cache": "performance.clear_disk_cache",
-	"POST /api/performance/gc":           "performance.gc",
-	"DELETE /api/performance/logs":       "performance.clear_logs",
+	"DELETE /api/performance/disk_cache":   "performance.clear_disk_cache",
+	"DELETE /api/performance/docker_cache": "performance.clear_docker_cache",
+	"POST /api/performance/gc":             "performance.gc",
+	"DELETE /api/performance/logs":         "performance.clear_logs",
 
 	// 兑换码
 	"PUT /api/redemption/":           "redemption.update",
