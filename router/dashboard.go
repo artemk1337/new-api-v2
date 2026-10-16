@@ -8,6 +8,13 @@ import (
 )
 
 func SetDashboardRouter(router *gin.Engine) {
+	for _, prefix := range []string{"/v1", "/api/v1"} {
+		billing := router.Group(prefix)
+		billing.Use(middleware.RouteTag("api"), middleware.CORS(), middleware.GlobalAPIRateLimit(), middleware.BillingTokenAuth())
+		billing.GET("/credits", controller.GetAccountCredits)
+		billing.GET("/key", controller.GetCurrentKeyCredits)
+	}
+
 	apiRouter := router.Group("/")
 	apiRouter.Use(middleware.RouteTag("old_api"))
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))

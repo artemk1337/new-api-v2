@@ -68,6 +68,9 @@
     },
     {
       "name": "未实现/Files"
+    },
+    {
+      "name": "Billing statistics"
     }
   ],
   "paths": {
@@ -2305,6 +2308,223 @@
           }
         ]
       }
+    },
+    "/v1/credits": {
+      "get": {
+        "tags": [
+          "Billing statistics"
+        ],
+        "summary": "Get account balance and lifetime usage",
+        "description": "Read-only statistics in USD, independent of dashboard display currency and DisplayTokenStatEnabled. Accepts enabled or exhausted keys with a valid expiration and allowed client IP. Disabled, expired, deleted keys and blocked owners are rejected. No model request or charge is made. Statistics may lag until pending accounting updates are flushed. Responses use Cache-Control: no-store.",
+        "operationId": "getAccountCredits",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Billing statistics",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "total_credits",
+                        "total_usage",
+                        "balance",
+                        "currency",
+                        "request_count"
+                      ],
+                      "properties": {
+                        "total_credits": {
+                          "type": "number",
+                          "format": "double",
+                          "description": "Accounting total: current wallet balance plus lifetime usage; not a sum of paid deposits."
+                        },
+                        "total_usage": {
+                          "type": "number",
+                          "format": "double",
+                          "description": "Lifetime account usage across wallet and subscription funding, as shown in the dashboard."
+                        },
+                        "balance": {
+                          "type": "number",
+                          "format": "double",
+                          "description": "Current wallet balance. Subscription allowances are separate."
+                        },
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "USD"
+                          ]
+                        },
+                        "request_count": {
+                          "type": "integer",
+                          "description": "Number of accounted requests shown in the dashboard."
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "total_credits": 100,
+                    "total_usage": 25,
+                    "balance": 75,
+                    "currency": "USD",
+                    "request_count": 42
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, expired or deleted API key"
+          },
+          "403": {
+            "description": "Blocked account or client IP is not allowed"
+          },
+          "429": {
+            "description": "API rate limit exceeded"
+          },
+          "500": {
+            "description": "Database or quota conversion configuration error"
+          }
+        }
+      }
+    },
+    "/api/v1/credits": {
+      "$ref": "#/paths/~1v1~1credits"
+    },
+    "/v1/key": {
+      "get": {
+        "tags": [
+          "Billing statistics"
+        ],
+        "summary": "Get current API key limits and lifetime usage",
+        "description": "Read-only statistics in USD, independent of dashboard display currency and DisplayTokenStatEnabled. Accepts enabled or exhausted keys with a valid expiration and allowed client IP. Disabled, expired, deleted keys and blocked owners are rejected. No model request or charge is made. Statistics may lag until pending accounting updates are flushed. Responses use Cache-Control: no-store.",
+        "operationId": "getCurrentKeyCredits",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Billing statistics",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "label",
+                        "limit",
+                        "limit_remaining",
+                        "usage",
+                        "unlimited_quota",
+                        "expires_at",
+                        "currency"
+                      ],
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "description": "API key name; the secret is never returned."
+                        },
+                        "limit": {
+                          "type": "number",
+                          "format": "double",
+                          "nullable": true,
+                          "description": "Current key allowance plus lifetime key usage; null for unlimited keys."
+                        },
+                        "limit_remaining": {
+                          "type": "number",
+                          "format": "double",
+                          "nullable": true,
+                          "description": "Remaining key allowance; null for unlimited keys. The wallet may have a smaller balance."
+                        },
+                        "usage": {
+                          "type": "number",
+                          "format": "double",
+                          "description": "Lifetime usage of this API key in USD."
+                        },
+                        "unlimited_quota": {
+                          "type": "boolean"
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "description": "UTC expiration time, or null if the key never expires."
+                        },
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "USD"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "label": "My app",
+                    "limit": 50,
+                    "limit_remaining": 40,
+                    "usage": 10,
+                    "unlimited_quota": false,
+                    "expires_at": null,
+                    "currency": "USD"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, expired or deleted API key"
+          },
+          "403": {
+            "description": "Blocked account or client IP is not allowed"
+          },
+          "429": {
+            "description": "API rate limit exceeded"
+          },
+          "500": {
+            "description": "Database or quota conversion configuration error"
+          }
+        }
+      }
+    },
+    "/api/v1/key": {
+      "$ref": "#/paths/~1v1~1key"
     }
   },
   "components": {

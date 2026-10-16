@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.201 — 2026-10-16
+
+- Add API-key-authenticated `/v1/credits` and `/v1/key`, with `/api/v1` aliases, for dashboard account balance, lifetime usage, request count, and current key limits in USD.
+- Allow balance queries with exhausted keys while enforcing key expiration, disable status, owner status and IP restrictions; keep financial responses uncached and existing billing endpoints unchanged.
+- Document account versus key accounting, unlimited limits, subscription semantics and OpenRouter-style responses in the billing guide and OpenAPI specification.
+
 ## v1.1.200 — 2026-10-16
 
 - Publish a built-in Russian user agreement with API usage, advance payments, statutory refund rights, and support links to the About page; preserve administrator-provided documents and use the default for blank settings.
