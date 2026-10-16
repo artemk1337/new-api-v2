@@ -67,43 +67,42 @@ export function getQuotaTypeLabels(
   }
 }
 
-/** Endpoint type options */
-export const ENDPOINT_TYPES = {
+/** Model task categories used by the catalog filter. */
+export const MODEL_TYPES = {
   ALL: 'all',
-  OPENAI: 'openai',
-  OPENAI_RESPONSE: 'openai-response',
-  ANTHROPIC: 'anthropic',
-  GEMINI: 'gemini',
-  JINA_RERANK: 'jina-rerank',
-  IMAGE_GENERATION: 'image-generation',
-  EMBEDDINGS: 'embeddings',
-  OPENAI_VIDEO: 'openai-video',
+  TEXT: 'text',
+  IMAGE: 'image',
+  AUDIO: 'audio',
+  VIDEO: 'video',
+  EMBEDDING: 'embedding',
+  RERANK: 'rerank',
+  OTHER: 'other',
 } as const
 
-export type EndpointTypeOption =
-  (typeof ENDPOINT_TYPES)[keyof typeof ENDPOINT_TYPES]
+export type ModelType = Exclude<
+  (typeof MODEL_TYPES)[keyof typeof MODEL_TYPES],
+  'all'
+>
 
-/** Endpoint type labels */
-export function getEndpointTypeLabels(
+export function getModelTypeLabels(
   t: TFunction
-): Record<EndpointTypeOption, string> {
+): Record<ModelType | typeof FILTER_ALL, string> {
   return {
-    [ENDPOINT_TYPES.ALL]: t('All Types'),
-    [ENDPOINT_TYPES.OPENAI]: 'Chat',
-    [ENDPOINT_TYPES.OPENAI_RESPONSE]: 'Response',
-    [ENDPOINT_TYPES.ANTHROPIC]: 'Anthropic',
-    [ENDPOINT_TYPES.GEMINI]: 'Gemini',
-    [ENDPOINT_TYPES.JINA_RERANK]: 'Rerank',
-    [ENDPOINT_TYPES.IMAGE_GENERATION]: t('Image'),
-    [ENDPOINT_TYPES.EMBEDDINGS]: t('Embeddings'),
-    [ENDPOINT_TYPES.OPENAI_VIDEO]: t('Video'),
+    [MODEL_TYPES.ALL]: t('All Types'),
+    [MODEL_TYPES.TEXT]: t('Text'),
+    [MODEL_TYPES.IMAGE]: t('Images'),
+    [MODEL_TYPES.AUDIO]: t('Audio'),
+    [MODEL_TYPES.VIDEO]: t('Video'),
+    [MODEL_TYPES.EMBEDDING]: t('Embedding models'),
+    [MODEL_TYPES.RERANK]: t('Reranking'),
+    [MODEL_TYPES.OTHER]: t('Other'),
   }
 }
 
 /** Filter section keys */
 export const FILTER_SECTIONS = {
   PRICING_TYPE: 'pricingType',
-  ENDPOINT_TYPE: 'endpointType',
+  MODEL_TYPE: 'modelType',
   VENDOR: 'vendor',
   GROUP: 'group',
   TAG: 'tag',

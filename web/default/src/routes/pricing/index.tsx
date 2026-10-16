@@ -16,11 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import z from 'zod'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { useAuthStore } from '@/stores/auth-store'
-import { getFreshModuleAccess } from '@/lib/nav-modules'
+import z from 'zod'
+
 import { Pricing } from '@/features/pricing'
+import { getFreshModuleAccess } from '@/lib/nav-modules'
+import { useAuthStore } from '@/stores/auth-store'
 
 const pricingSearchSchema = z.object({
   search: z.string().optional(),
@@ -28,7 +29,7 @@ const pricingSearchSchema = z.object({
   vendor: z.string().optional(),
   group: z.string().optional(),
   quotaType: z.string().optional(),
-  endpointType: z.string().optional(),
+  modelType: z.string().optional(),
   tag: z.string().optional(),
   tokenUnit: z.enum(['M', 'K']).optional(),
   view: z.enum(['card', 'table']).optional().catch(undefined),

@@ -34,7 +34,7 @@ const noFilters = {
   vendor: 'all',
   group: 'all',
   quotaType: 'all',
-  endpointType: 'all',
+  modelType: 'all',
   tag: 'all',
 }
 

@@ -21,9 +21,10 @@ import {
   FILTER_ALL,
   QUOTA_TYPES,
   QUOTA_TYPE_VALUES,
-  ENDPOINT_TYPES,
+  MODEL_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import { getModelType } from './model-type'
 import { getDisplayGroupRatio } from './price'
 
 export type PricingFilterValues = {
@@ -31,7 +32,7 @@ export type PricingFilterValues = {
   vendor: string
   group: string
   quotaType: string
-  endpointType: string
+  modelType: string
   tag: string
 }
 
@@ -39,7 +40,7 @@ export type PricingFacet =
   | 'vendor'
   | 'group'
   | 'quotaType'
-  | 'endpointType'
+  | 'modelType'
   | 'tag'
 
 // ----------------------------------------------------------------------------
@@ -103,16 +104,14 @@ export function filterByQuotaType(
 }
 
 /**
- * Filter models by endpoint type
+ * Filter models by task category
  */
-export function filterByEndpointType(
+export function filterByModelType(
   models: PricingModel[],
-  endpointType: string
+  modelType: string
 ): PricingModel[] {
-  if (endpointType === ENDPOINT_TYPES.ALL) return models
-  return models.filter((m) =>
-    m.supported_endpoint_types?.includes(endpointType)
-  )
+  if (modelType === MODEL_TYPES.ALL) return models
+  return models.filter((model) => getModelType(model) === modelType)
 }
 
 /**
@@ -191,8 +190,8 @@ export function filterModelsForFacet(
   if (skipFacet !== 'quotaType') {
     result = filterByQuotaType(result, filters.quotaType)
   }
-  if (skipFacet !== 'endpointType') {
-    result = filterByEndpointType(result, filters.endpointType)
+  if (skipFacet !== 'modelType') {
+    result = filterByModelType(result, filters.modelType)
   }
   if (skipFacet !== 'tag') {
     result = filterByTag(result, filters.tag)

@@ -16,10 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useState } from 'react'
 import { ArrowUpDown, Check, Filter, Grid2X2, Table2 } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
+import {
+  sideDrawerContentClassName,
+  sideDrawerFormClassName,
+  sideDrawerHeaderClassName,
+} from '@/components/drawer-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,11 +45,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  sideDrawerContentClassName,
-  sideDrawerFormClassName,
-  sideDrawerHeaderClassName,
-} from '@/components/drawer-layout'
+import { cn } from '@/lib/utils'
+
 import {
   VIEW_MODES,
   getSortLabels,
@@ -74,12 +76,12 @@ export interface PricingToolbarProps {
   onViewModeChange: (value: ViewMode) => void
   searchInput: string
   quotaTypeFilter: string
-  endpointTypeFilter: string
+  modelTypeFilter: string
   vendorFilter: string
   groupFilter: string
   tagFilter: string
   onQuotaTypeChange: (value: string) => void
-  onEndpointTypeChange: (value: string) => void
+  onModelTypeChange: (value: string) => void
   onVendorChange: (value: string) => void
   onGroupChange: (value: string) => void
   onTagChange: (value: string) => void
@@ -289,12 +291,12 @@ export function PricingToolbar(props: PricingToolbarProps) {
             <PricingSidebar
               searchInput={props.searchInput}
               quotaTypeFilter={props.quotaTypeFilter}
-              endpointTypeFilter={props.endpointTypeFilter}
+              modelTypeFilter={props.modelTypeFilter}
               vendorFilter={props.vendorFilter}
               groupFilter={props.groupFilter}
               tagFilter={props.tagFilter}
               onQuotaTypeChange={props.onQuotaTypeChange}
-              onEndpointTypeChange={props.onEndpointTypeChange}
+              onModelTypeChange={props.onModelTypeChange}
               onVendorChange={props.onVendorChange}
               onGroupChange={props.onGroupChange}
               onTagChange={props.onTagChange}

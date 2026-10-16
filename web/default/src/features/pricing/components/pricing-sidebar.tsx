@@ -16,27 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, type ReactNode } from 'react'
 import { ChevronDown, RotateCcw } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getLobeIcon } from '@/lib/lobe-icon'
-import { cn } from '@/lib/utils'
+
+import { CopyButton } from '@/components/copy-button'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CopyButton } from '@/components/copy-button'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { getLobeIcon } from '@/lib/lobe-icon'
+import { cn } from '@/lib/utils'
+
 import {
-  ENDPOINT_TYPES,
+  MODEL_TYPES,
   FILTER_ALL,
   QUOTA_TYPES,
-  getEndpointTypeLabels,
+  getModelTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
 import { filterModelsForFacet, parseTags } from '../lib/filters'
+import { getModelType } from '../lib/model-type'
 import { sortGroupsByName } from '../lib/pricing-group-order'
 import type { PricingModel, PricingVendor } from '../types'
 
@@ -58,12 +61,12 @@ type FilterSectionProps = {
 export interface PricingSidebarProps {
   searchInput: string
   quotaTypeFilter: string
-  endpointTypeFilter: string
+  modelTypeFilter: string
   vendorFilter: string
   groupFilter: string
   tagFilter: string
   onQuotaTypeChange: (value: string) => void
-  onEndpointTypeChange: (value: string) => void
+  onModelTypeChange: (value: string) => void
   onVendorChange: (value: string) => void
   onGroupChange: (value: string) => void
   onTagChange: (value: string) => void
@@ -162,14 +165,14 @@ function FilterSection(props: FilterSectionProps) {
 export function PricingSidebar(props: PricingSidebarProps) {
   const { t } = useTranslation()
   const quotaTypeLabels = getQuotaTypeLabels(t)
-  const endpointTypeLabels = getEndpointTypeLabels(t)
+  const modelTypeLabels = getModelTypeLabels(t)
   const filters = useMemo(
     () => ({
       search: props.searchInput,
       vendor: props.vendorFilter,
       group: props.groupFilter,
       quotaType: props.quotaTypeFilter,
-      endpointType: props.endpointTypeFilter,
+      modelType: props.modelTypeFilter,
       tag: props.tagFilter,
     }),
     [
@@ -177,7 +180,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
       props.vendorFilter,
       props.groupFilter,
       props.quotaTypeFilter,
-      props.endpointTypeFilter,
+      props.modelTypeFilter,
       props.tagFilter,
     ]
   )
@@ -194,8 +197,8 @@ export function PricingSidebar(props: PricingSidebarProps) {
     () => filterModelsForFacet(props.models, filters, 'quotaType'),
     [props.models, filters]
   )
-  const endpointModels = useMemo(
-    () => filterModelsForFacet(props.models, filters, 'endpointType'),
+  const modelTypeModels = useMemo(
+    () => filterModelsForFacet(props.models, filters, 'modelType'),
     [props.models, filters]
   )
   const tagModels = useMemo(
@@ -290,25 +293,24 @@ export function PricingSidebar(props: PricingSidebarProps) {
       .filter((tag) => tag.count > 0 || tag.value === props.tagFilter),
   ]
 
-  const endpointOptions: FilterOption[] = [
+  const modelTypeOptions: FilterOption[] = [
     {
-      value: ENDPOINT_TYPES.ALL,
-      label: endpointTypeLabels[ENDPOINT_TYPES.ALL],
-      count: endpointModels.length,
+      value: MODEL_TYPES.ALL,
+      label: modelTypeLabels[MODEL_TYPES.ALL],
+      count: modelTypeModels.length,
     },
-    ...Object.entries(endpointTypeLabels)
-      .filter(([value]) => value !== ENDPOINT_TYPES.ALL)
+    ...Object.entries(modelTypeLabels)
+      .filter(([value]) => value !== MODEL_TYPES.ALL)
       .map(([value, label]) => ({
         value,
         label,
         count: countBy(
-          endpointModels,
-          (model) => model.supported_endpoint_types?.includes(value) ?? false
+          modelTypeModels,
+          (model) => getModelType(model) === value
         ),
       }))
       .filter(
-        (endpoint) =>
-          endpoint.count > 0 || endpoint.value === props.endpointTypeFilter
+        (option) => option.count > 0 || option.value === props.modelTypeFilter
       ),
   ]
 
@@ -379,10 +381,10 @@ export function PricingSidebar(props: PricingSidebarProps) {
           onChange={props.onQuotaTypeChange}
         />
         <FilterSection
-          title={t('Endpoint Type')}
-          value={props.endpointTypeFilter}
-          options={endpointOptions}
-          onChange={props.onEndpointTypeChange}
+          title={t('Model type')}
+          value={props.modelTypeFilter}
+          options={modelTypeOptions}
+          onChange={props.onModelTypeChange}
         />
       </div>
     </aside>

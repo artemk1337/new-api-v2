@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.203 — 2026-10-17
+
+- Replace the pricing catalog's API endpoint filter with model task types: text, images, audio, video, embeddings, reranking, and other.
+- Classify each model once using available metadata, specialized endpoints, and known model families so category counts do not overlap; preserve filtering in shared links and the mobile sidebar.
+- Translate the new model-type labels into all six interface languages.
+
 ## v1.1.202 — 2026-10-16
 
 - Show Docker Engine build cache usage, estimated reclaimable space, and cache record count separately from application cache and filesystem usage in performance settings.
