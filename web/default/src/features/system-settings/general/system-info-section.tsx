@@ -309,7 +309,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Leave empty to disable the agreement requirement. Supports Markdown, HTML, or a full URL to redirect users.'
+                        'Leave empty to use the default user agreement. Supports Markdown, HTML, or a full URL.'
                       )}
                     </FormDescription>
                     <FormMessage />

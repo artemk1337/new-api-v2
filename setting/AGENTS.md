@@ -6,4 +6,6 @@ Defines process configuration, runtime option families, provider settings, and s
 
 Persisted options are loaded and refreshed by `model/option.go`; preserve DB-to-runtime synchronization and validation on both startup and admin updates. Do not add a GORM boolean default when code already enforces the business default. Provider credentials and wallet values are sensitive and must not be logged.
 
+`system_setting.GetLegalSettings` returns effective legal documents by value. A missing or blank user agreement uses the embedded default; a nonempty administrator-provided document overrides it. The public status and document endpoints must use the same effective content.
+
 Detailed rules: [ratio_setting/AGENTS.md](ratio_setting/AGENTS.md), [billing_setting/AGENTS.md](billing_setting/AGENTS.md), [operation_setting/AGENTS.md](operation_setting/AGENTS.md).

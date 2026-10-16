@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.200 — 2026-10-16
+
+- Publish a built-in Russian user agreement with API usage, advance payments, statutory refund rights, and support links to the About page; preserve administrator-provided documents and use the default for blank settings.
+- Replace legal checkboxes with agreement notices before registration and sign-in actions, including external authentication; open documents in a separate tab and translate notices into all six interface languages.
+- Keep Linux release assets in a draft until all required binaries and multi-architecture Docker images are ready for publication.
+
 ## v1.1.199 — 2026-10-15
 
 - Store immutable registration IP addresses for password, OAuth, and WeChat signups using 4 bytes for IPv4 and 16 bytes for IPv6; existing and administrator-created accounts keep an unknown address.

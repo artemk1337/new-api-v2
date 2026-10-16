@@ -1,6 +1,14 @@
 package system_setting
 
-import "github.com/QuantumNous/new-api/setting/config"
+import (
+	_ "embed"
+	"strings"
+
+	"github.com/QuantumNous/new-api/setting/config"
+)
+
+//go:embed default_user_agreement.md
+var defaultUserAgreement string
 
 type LegalSettings struct {
 	UserAgreement string `json:"user_agreement"`
@@ -8,7 +16,7 @@ type LegalSettings struct {
 }
 
 var defaultLegalSettings = LegalSettings{
-	UserAgreement: "",
+	UserAgreement: defaultUserAgreement,
 	PrivacyPolicy: "",
 }
 
@@ -16,6 +24,10 @@ func init() {
 	config.GlobalConfig.Register("legal", &defaultLegalSettings)
 }
 
-func GetLegalSettings() *LegalSettings {
-	return &defaultLegalSettings
+func GetLegalSettings() LegalSettings {
+	settings := defaultLegalSettings
+	if strings.TrimSpace(settings.UserAgreement) == "" {
+		settings.UserAgreement = defaultUserAgreement
+	}
+	return settings
 }

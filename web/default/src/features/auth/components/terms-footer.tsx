@@ -16,8 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
+
 import { cn } from '@/lib/utils'
+
 import type { SystemStatus } from '../types'
 
 interface TermsFooterProps {
@@ -26,67 +28,66 @@ interface TermsFooterProps {
   status?: SystemStatus | null
 }
 
-export function TermsFooter({
-  variant = 'sign-in',
-  className,
-  status,
-}: TermsFooterProps) {
+export function TermsFooter(props: TermsFooterProps) {
   const { t } = useTranslation()
-  const text =
-    variant === 'sign-in'
-      ? 'By clicking sign in, you agree to our'
-      : 'By creating an account, you agree to our'
-
-  const hasUserAgreement = Boolean(status?.user_agreement_enabled)
-  const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
+  const hasUserAgreement = Boolean(props.status?.user_agreement_enabled)
+  const hasPrivacyPolicy = Boolean(props.status?.privacy_policy_enabled)
 
   if (!hasUserAgreement && !hasPrivacyPolicy) {
     return null
   }
 
-  const agreementLink = {
-    label: 'User Agreement',
-    href: '/user-agreement',
-  }
-  const privacyLink = {
-    label: 'Privacy Policy',
-    href: '/privacy-policy',
-  }
-
-  const activeLinks =
-    hasUserAgreement || hasPrivacyPolicy
-      ? ([
-          hasUserAgreement ? agreementLink : null,
-          hasPrivacyPolicy ? privacyLink : null,
-        ].filter(Boolean) as Array<{ label: string; href: string }>)
-      : [agreementLink, privacyLink]
-
-  const [firstLink, secondLink] = activeLinks
+  const agreementLink = (
+    <a
+      href='/user-agreement'
+      target='_blank'
+      rel='noopener noreferrer'
+      className='hover:text-primary underline underline-offset-4'
+    />
+  )
 
   return (
-    <p className={cn('text-muted-foreground text-center text-xs', className)}>
-      {text}{' '}
-      {firstLink && (
-        <a
-          href={firstLink.href}
-          className='hover:text-primary underline underline-offset-4'
-        >
-          {firstLink.label}
-        </a>
+    <div
+      className={cn(
+        'text-muted-foreground space-y-1 text-center text-xs leading-5',
+        props.className
       )}
-      {secondLink && (
-        <>
-          {' '}
-          {t('and')}{' '}
-          <a
-            href={secondLink.href}
-            className='hover:text-primary underline underline-offset-4'
-          >
-            {secondLink.label}
-          </a>
-        </>
+    >
+      {hasUserAgreement && (
+        <p>
+          {props.variant === 'sign-up' ? (
+            <Trans
+              t={t}
+              i18nKey='By registering, you accept the <agreement>User Agreement</agreement>.'
+              components={{ agreement: agreementLink }}
+            />
+          ) : (
+            <Trans
+              t={t}
+              i18nKey='By signing in or registering, you accept the <agreement>User Agreement</agreement>.'
+              components={{ agreement: agreementLink }}
+            />
+          )}
+        </p>
       )}
-      .
-    </p>
+      {hasPrivacyPolicy && (
+        <p>
+          <Trans
+            t={t}
+            i18nKey='Information about personal data processing is available in the <privacy>Privacy Policy</privacy>.'
+            components={{
+              privacy: (
+                <a
+                  href='/privacy-policy'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='hover:text-primary underline underline-offset-4'
+                />
+              ),
+            }}
+          />
+        </p>
+      )}
+    </div>
   )
 }
