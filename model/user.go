@@ -817,8 +817,8 @@ func IsReferralCashbackUser(userId int) (bool, error) {
 }
 
 // PaidTopUpUSD returns the lifetime authoritative USD base amount of completed
-// wallet deposits. Bonuses, promo codes, referral income and subscriptions do
-// not satisfy the anti-abuse threshold.
+// wallet deposits, including promo codes. Bonuses, referral income and
+// subscriptions do not satisfy the threshold.
 func PaidTopUpUSD(db *gorm.DB, userId int) (float64, error) {
 	if db == nil {
 		return 0, gorm.ErrInvalidDB
@@ -826,13 +826,13 @@ func PaidTopUpUSD(db *gorm.DB, userId int) (float64, error) {
 	var topUps []*TopUp
 	err := db.Select("payment_base_amount", "requested_amount", "money", "payment_currency", "payment_provider", "payment_method", "source", "quota_to_add").
 		Where("user_id = ? AND status = ? AND quota_to_add > 0", userId, common.TopUpStatusSuccess).
-		Where("source = ? OR source IS NULL", "").Find(&topUps).Error
+		Where("source IN ? OR source IS NULL", []string{"", "payment_method", "promo_code"}).Find(&topUps).Error
 	if err != nil {
 		return 0, err
 	}
 	total := decimal.Zero
 	for _, topUp := range topUps {
-		if topUp == nil || topUp.PaymentProvider == PaymentProviderBalance || topUp.PaymentProvider == "redemption" || topUp.PaymentProvider == "affiliate" {
+		if topUp == nil || topUp.PaymentProvider == PaymentProviderBalance || topUp.PaymentProvider == "affiliate" {
 			continue
 		}
 		amount := topUpAccountingAmountUSD(topUp)

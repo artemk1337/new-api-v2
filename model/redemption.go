@@ -152,8 +152,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 			return err
 		}
 
-		// Record code-based deposits in the same history as payment deposits and
-		// apply the direct-inviter reward from the actual credited amount.
+		// Record code-based deposits in the same history as payment deposits.
 		requestedAmount := 0.0
 		quotaPerUnit := common.GetQuotaPerUnit()
 		if common.IsValidQuotaPerUnitValue(quotaPerUnit) {
@@ -177,7 +176,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if err = tx.Create(promoTopUp).Error; err != nil {
 			return err
 		}
-		return nil
+		return PromoteReferralCashbackEligibility(tx, userId)
 	})
 	if err != nil {
 		common.SysError("redemption failed: " + err.Error())

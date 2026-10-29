@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.204 — 2026-10-29
+
+- Count successful promo-code deposits toward the referral program activation threshold, including existing top-up history.
+- Recalculate referral qualification when a promo code is redeemed; keep referral income and internal balance transfers excluded.
+
 ## v1.1.203 — 2026-10-17
 
 - Replace the pricing catalog's API endpoint filter with model task types: text, images, audio, video, embeddings, reranking, and other.
