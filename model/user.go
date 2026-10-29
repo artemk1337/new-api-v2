@@ -767,6 +767,14 @@ func GetUserIdByAffCode(affCode string) (int, error) {
 	return user.Id, err
 }
 
+func (user *User) UpdateAffCode(code string) error {
+	if err := DB.Model(user).Update("aff_code", code).Error; err != nil {
+		return err
+	}
+	user.AffCode = code
+	return nil
+}
+
 const referralEligibilityBackfillOption = "_migration.referral_cashback_eligibility_v1"
 
 var (
@@ -856,7 +864,8 @@ func PromoteReferralCashbackEligibility(db *gorm.DB, userId int) error {
 	if user.ReferralProgramQualified == qualified {
 		return nil
 	}
-	return db.Model(&User{}).Where("id = ? AND referral_program_qualified = ?", userId, user.ReferralProgramQualified).
+	// Older accounts can have NULL after the nullable column was added.
+	return db.Model(&User{}).Where("id = ? AND COALESCE(referral_program_qualified, ?) = ?", userId, false, user.ReferralProgramQualified).
 		Update("referral_program_qualified", qualified).Error
 }
 

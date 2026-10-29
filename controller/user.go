@@ -464,8 +464,7 @@ func GetAffCode(c *gin.Context) {
 		return
 	}
 	if user.AffCode == "" {
-		user.AffCode = common.GetRandomString(4)
-		if err := user.Update(false); err != nil {
+		if err := user.UpdateAffCode(common.GetRandomString(4)); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": err.Error(),
@@ -493,8 +492,7 @@ func GetAffStatus(c *gin.Context) {
 		return
 	}
 	if user.AffCode == "" {
-		user.AffCode = common.GetRandomString(4)
-		if err := user.Update(false); err != nil {
+		if err := user.UpdateAffCode(common.GetRandomString(4)); err != nil {
 			common.ApiError(c, err)
 			return
 		}

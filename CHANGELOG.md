@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.205 — 2026-10-30
+
+- Activate referral links for older accounts whose qualification flag is NULL once their successful deposits reach the configured threshold.
+- Return the newly generated referral code on the first request and update only the code instead of the entire user record.
+
 ## v1.1.204 — 2026-10-29
 
 - Count successful promo-code deposits toward the referral program activation threshold, including existing top-up history.
