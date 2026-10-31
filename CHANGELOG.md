@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.206 — 2026-11-01
+
+- Advertise `/v1/audio/speech` for the OpenAI `tts-1` and `gpt-4o-mini-tts` model families instead of the chat endpoint.
+- Show cURL, Python, TypeScript, and JavaScript speech examples with text input, voice selection, and binary MP3 output.
+- Embed the release version in Linux binaries using the application's full Go module path.
+
 ## v1.1.205 — 2026-10-30
 
 - Activate referral links for older accounts whose qualification flag is NULL once their successful deposits reach the configured threshold.
