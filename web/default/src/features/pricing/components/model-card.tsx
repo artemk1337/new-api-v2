@@ -24,41 +24,9 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
-import { DEFAULT_TOKEN_UNIT, FILTER_ALL } from '../constants'
-import { getDynamicPricingSummary } from '../lib/dynamic-price'
-import { isTokenBasedModel } from '../lib/model-helpers'
-import {
-  formatRequestPriceAtRatio,
-  formatTokenPriceAtRatio,
-  getDisplayGroupRatio,
-} from '../lib/price'
+import { DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
-
-function normalizeCompactPrice(value: string): string {
-  return value
-    .replaceAll(/([\d])[\s\u00a0\u202f]+([$€£¥₽₩₹])/gu, '$1$2')
-    .replaceAll(/([$€£¥₽₩₹])[\s\u00a0\u202f]+([\d])/gu, '$1$2')
-}
-
-function renderHeroPrice(
-  label: string,
-  current: string,
-  base: string,
-  unit: string
-): React.ReactNode {
-  return (
-    <div className='flex min-w-[125px] flex-col gap-0.5 leading-none'>
-      <span className='flex items-baseline gap-2 whitespace-nowrap'>
-        <span className='text-foreground font-mono text-sm font-bold sm:text-base'>
-          {label} {current}/{unit}
-        </span>
-        <span className='font-mono text-sm text-red-600/70 line-through dark:text-red-400/70'>
-          {base}
-        </span>
-      </span>
-    </div>
-  )
-}
+import { ModelPriceSummary } from './model-price-summary'
 
 export interface ModelCardProps {
   model: PricingModel
@@ -77,157 +45,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const priceRate = props.priceRate ?? 1
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
-  const isTokenBased = isTokenBasedModel(props.model)
-  const hasGroupFilter = Boolean(
-    props.groupFilter && props.groupFilter !== FILTER_ALL
-  )
-  const displayRatio = getDisplayGroupRatio(
-    props.model,
-    hasGroupFilter ? props.groupFilter : undefined
-  )
-  const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
   const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
-  const isDynamicPricing =
-    props.model.billing_mode === 'tiered_expr' &&
-    Boolean(props.model.billing_expr)
-  const dynamicSummary = isDynamicPricing
-    ? getDynamicPricingSummary(props.model, {
-        tokenUnit,
-        showRechargePrice,
-        priceRate,
-        usdExchangeRate,
-        groupRatioMultiplier: displayRatio,
-      })
-    : null
-  const benefitPercent = Math.max(0, Math.round((1 - displayRatio) * 100))
-  const pricingCaption = t('Benefit {{percent}}%', {
-    percent: benefitPercent,
-  })
-  let pricingContent: React.ReactNode
-
-  if (dynamicSummary?.isSpecialExpression) {
-    pricingContent = (
-      <span className='min-w-0'>
-        <span className='text-amber-700 dark:text-amber-300'>
-          {t('Special billing expression')}
-        </span>
-        <code className='text-muted-foreground/70 mt-0.5 line-clamp-1 block font-mono text-[11px] break-all'>
-          {dynamicSummary.rawExpression}
-        </code>
-      </span>
-    )
-  } else if (dynamicSummary?.primaryEntries.length) {
-    pricingContent = (
-      <div className='flex flex-col gap-1'>
-        {dynamicSummary.primaryEntries.map((entry) => {
-          const baseEntry = dynamicSummary.baseEntries.find(
-            (candidate) => candidate.key === entry.key
-          )
-          const hero = renderHeroPrice(
-            t(entry.shortLabel),
-            normalizeCompactPrice(entry.formatted),
-            normalizeCompactPrice(baseEntry?.formatted || entry.formatted),
-            tokenUnitLabel
-          )
-          return <div key={entry.key}>{hero}</div>
-        })}
-      </div>
-    )
-  } else if (dynamicSummary) {
-    pricingContent = (
-      <span className='text-muted-foreground text-xs'>
-        {t('Dynamic Pricing')}
-      </span>
-    )
-  } else if (isTokenBased) {
-    pricingContent = (
-      <div className='flex flex-col gap-1'>
-        {renderHeroPrice(
-          t('Input'),
-          normalizeCompactPrice(
-            formatTokenPriceAtRatio(
-              props.model,
-              'input',
-              displayRatio,
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          ),
-          normalizeCompactPrice(
-            formatTokenPriceAtRatio(
-              props.model,
-              'input',
-              1,
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          ),
-          tokenUnitLabel
-        )}
-        <div>
-          {renderHeroPrice(
-            t('Output'),
-            normalizeCompactPrice(
-              formatTokenPriceAtRatio(
-                props.model,
-                'output',
-                displayRatio,
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate
-              )
-            ),
-            normalizeCompactPrice(
-              formatTokenPriceAtRatio(
-                props.model,
-                'output',
-                1,
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate
-              )
-            ),
-            tokenUnitLabel
-          )}
-        </div>
-      </div>
-    )
-  } else {
-    pricingContent = (
-      <div className='flex flex-col gap-3'>
-        {renderHeroPrice(
-          '',
-          normalizeCompactPrice(
-            formatRequestPriceAtRatio(
-              props.model,
-              displayRatio,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          ),
-          normalizeCompactPrice(
-            formatRequestPriceAtRatio(
-              props.model,
-              1,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate
-            )
-          ),
-          t('request')
-        )}
-      </div>
-    )
-  }
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -256,10 +76,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               {props.model.model_name}
             </h3>
             <div className='mt-1 flex flex-wrap items-start justify-start gap-x-5 gap-y-3 text-xs'>
-              <span className='text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
-                {pricingCaption}
-              </span>
-              {pricingContent}
+              <ModelPriceSummary
+                model={props.model}
+                groupFilter={props.groupFilter}
+                tokenUnit={tokenUnit}
+                showRechargePrice={showRechargePrice}
+                priceRate={priceRate}
+                usdExchangeRate={usdExchangeRate}
+              />
             </div>
           </div>
         </div>

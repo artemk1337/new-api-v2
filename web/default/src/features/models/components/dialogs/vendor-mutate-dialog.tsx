@@ -16,13 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
+import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -35,7 +37,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog } from '@/components/dialog'
+
 import { createVendor, updateVendor } from '../../api'
 import { vendorsQueryKeys, modelsQueryKeys } from '../../lib'
 import { vendorFormSchema, type Vendor } from '../../types'
@@ -91,13 +93,17 @@ export function VendorMutateDialog({
   const onSubmit = async (values: Record<string, unknown>) => {
     setIsSaving(true)
     try {
-      const response = isEdit
-        ? await updateVendor({ ...values, id: currentVendor!.id })
+      const response = currentVendor?.id
+        ? await updateVendor({ ...values, id: currentVendor.id })
         : await createVendor(values)
 
       if (response.success) {
         toast.success(
-          isEdit ? 'Vendor updated successfully' : 'Vendor created successfully'
+          t(
+            isEdit
+              ? 'Model provider updated successfully'
+              : 'Model provider created successfully'
+          )
         )
         queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.lists() })
         queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
@@ -116,13 +122,13 @@ export function VendorMutateDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEdit ? t('Edit Vendor') : t('Create Vendor')}
+      title={isEdit ? t('Edit model provider') : t('Add model provider')}
       description={
         isEdit
-          ? t('Update vendor information for {{name}}', {
+          ? t('Update model provider information for {{name}}', {
               name: currentVendor?.name,
             })
-          : t('Add a new vendor to the system')
+          : t('Add a new model provider to the system')
       }
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -144,7 +150,7 @@ export function VendorMutateDialog({
             {isSaving ? (
               <Loader2 className='mr-2 h-4 w-4 animate-spin' />
             ) : null}
-            {isSaving ? t('Saving...') : isEdit ? t('Update') : t('Create')}
+            {isSaving ? t('Saving...') : t(isEdit ? 'Update' : 'Create')}
           </Button>
         </>
       }
@@ -160,7 +166,7 @@ export function VendorMutateDialog({
             name='name'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Vendor Name *')}</FormLabel>
+                <FormLabel>{t('Model provider name *')}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder={t('OpenAI, Anthropic, etc.')}
@@ -168,7 +174,7 @@ export function VendorMutateDialog({
                   />
                 </FormControl>
                 <FormDescription>
-                  {t('The unique name for this vendor')}
+                  {t('The unique name for this model provider')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -183,7 +189,7 @@ export function VendorMutateDialog({
                 <FormLabel>{t('Description')}</FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder={t('Describe this vendor...')}
+                    placeholder={t('Describe this model provider...')}
                     rows={3}
                     {...field}
                   />

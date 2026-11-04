@@ -117,6 +117,18 @@ tier("base", p * 0.43 + c * 3.06 + img * 0.78 + ai * 3.81 + ao * 15.11)
 
 ### Request Rules (appended after `|||`)
 
+Supplier procurement expressions use only token/context variables and the pure
+`tier`, `max`, `min`, `abs`, `ceil`, and `floor` helpers. Request/header
+functions and clock functions are rejected for supplier tariffs: channel
+overrides or a clock change must not change a frozen procurement price.
+This restriction does not change existing default/global expressions.
+
+Supplier fixed-price image requests are unavailable until the procurement
+contract explicitly represents image variants and quantities. Token-priced
+images require the corresponding input/output image lanes. Supplier async
+tasks currently require a fixed request or per-second tariff; aggregate task
+token usage cannot establish an exact input/output split.
+
 Request-conditional multipliers are appended to the expression after a `|||` separator:
 
 ```

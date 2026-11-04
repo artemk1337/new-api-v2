@@ -104,6 +104,17 @@ func ensureLogRequestId(log *Log) {
 func createLog(log *Log) error {
 	if log != nil {
 		log.Content = common.SanitizeLogText(log.Content)
+		if log.ChannelId > 0 {
+			var channel Channel
+			if err := DB.Select("supplier_id").First(&channel, "id = ?", log.ChannelId).Error; err == nil && channel.SupplierID != nil {
+				other, _ := common.StrToMap(log.Other)
+				if other == nil {
+					other = make(map[string]interface{})
+				}
+				other["supplier_pricing"] = true
+				log.Other = common.MapToJsonStr(other)
+			}
+		}
 	}
 	ensureLogRequestId(log)
 	return LOG_DB.Create(log).Error
@@ -124,6 +135,18 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
+		if supplier, _ := otherMap["supplier_pricing"].(bool); supplier {
+			otherMap = publicSupplierLogFields(otherMap)
+			logs[i].ChannelId = 0
+			logs[i].UpstreamRequestId = ""
+			if name, ok := otherMap["requested_model"].(string); ok {
+				logs[i].ModelName = name
+			}
+			logs[i].Content = ""
+			if logs[i].Type == LogTypeError {
+				logs[i].Content = "Request failed"
+			}
+		}
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
@@ -136,6 +159,31 @@ func formatUserLogs(logs []*Log, startIdx int) {
 	}
 	assignDisplayLogIds(logs, startIdx)
 	fillLogPricingGroupRefs(logs)
+}
+
+// Supplier logs must not reveal procurement ratios, expressions, routing,
+// upstream model names or future internal fields added to Other.
+func publicSupplierLogFields(other map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, key := range []string{
+		"requested_model", "request_path", "frt", "reasoning_effort", "ws", "audio", "claude", "image",
+		"audio_input", "audio_output", "text_input", "text_output", "cache_tokens", "cache_creation_tokens",
+		"cache_creation_tokens_5m", "cache_creation_tokens_1h", "image_output", "web_search_call_count", "file_search_call_count",
+		"audio_input_token_count", "image_generation_call", "billing_source", "billing_preference", "billing_overage_source",
+		"billing_overage_quota", "subscription_id", "subscription_pre_consumed", "subscription_post_delta", "subscription_plan_id",
+		"subscription_plan_title", "subscription_total", "subscription_used", "subscription_remain", "subscription_consumed",
+		"wallet_quota_deducted", "reserved_quota", "released_quota", "charged_on_error",
+	} {
+		switch value := other[key].(type) {
+		case string:
+			result[key] = value
+		case bool:
+			result[key] = value
+		case float64:
+			result[key] = value
+		}
+	}
+	return result
 }
 
 func fillLogPricingGroupRefs(logs []*Log) {

@@ -24,8 +24,12 @@ import {
   MODEL_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import {
+  getDisplayGroupPrice,
+  getGroupPriceAmount,
+  isTokenGroupPrice,
+} from './group-price'
 import { getModelType } from './model-type'
-import { getDisplayGroupRatio } from './price'
 
 export type PricingFilterValues = {
   search: string
@@ -93,14 +97,21 @@ export function filterByGroup(
  */
 export function filterByQuotaType(
   models: PricingModel[],
-  quotaType: string
+  quotaType: string,
+  group = FILTER_ALL
 ): PricingModel[] {
   if (quotaType === QUOTA_TYPES.ALL) return models
   const targetType =
     quotaType === QUOTA_TYPES.TOKEN
       ? QUOTA_TYPE_VALUES.TOKEN
       : QUOTA_TYPE_VALUES.REQUEST
-  return models.filter((m) => m.quota_type === targetType)
+  return models.filter((model) =>
+    (model.group_prices ?? []).some(
+      (price) =>
+        (group === FILTER_ALL || price.group === group) &&
+        Number(!isTokenGroupPrice(price)) === targetType
+    )
+  )
 }
 
 /**
@@ -117,12 +128,25 @@ export function filterByModelType(
 /**
  * Get model price for sorting
  */
-function getModelPrice(model: PricingModel): number {
-  return model.quota_type === 0 ? model.model_ratio : model.model_price || 0
-}
-
-function getModelBenefit(model: PricingModel, groupFilter: string): number {
-  return Math.max(0, (1 - getDisplayGroupRatio(model, groupFilter)) * 100)
+function compareModelPrices(
+  a: PricingModel,
+  b: PricingModel,
+  group: string,
+  descending: boolean
+): number {
+  const aPrice = getDisplayGroupPrice(a, group)
+  const bPrice = getDisplayGroupPrice(b, group)
+  const aAmount = aPrice ? getGroupPriceAmount(aPrice) : null
+  const bAmount = bPrice ? getGroupPriceAmount(bPrice) : null
+  if (aAmount === null && bAmount !== null) return 1
+  if (aAmount !== null && bAmount === null) return -1
+  if (aPrice && bPrice && aPrice.price_unit !== bPrice.price_unit) {
+    return aPrice.price_unit.localeCompare(bPrice.price_unit)
+  }
+  if (aAmount !== null && bAmount !== null && aAmount !== bAmount) {
+    return descending ? bAmount - aAmount : aAmount - bAmount
+  }
+  return a.model_name.localeCompare(b.model_name)
 }
 
 /**
@@ -142,20 +166,11 @@ export function sortModels(
       )
       break
     case SORT_OPTIONS.PRICE_LOW:
-      sorted.sort((a, b) => getModelPrice(a) - getModelPrice(b))
+    case SORT_OPTIONS.BENEFIT:
+      sorted.sort((a, b) => compareModelPrices(a, b, groupFilter, false))
       break
     case SORT_OPTIONS.PRICE_HIGH:
-      sorted.sort((a, b) => getModelPrice(b) - getModelPrice(a))
-      break
-    case SORT_OPTIONS.BENEFIT:
-      sorted.sort((a, b) => {
-        const benefitDifference =
-          getModelBenefit(b, groupFilter) - getModelBenefit(a, groupFilter)
-        return (
-          benefitDifference ||
-          (a.model_name || '').localeCompare(b.model_name || '')
-        )
-      })
+      sorted.sort((a, b) => compareModelPrices(a, b, groupFilter, true))
       break
   }
 
@@ -188,7 +203,7 @@ export function filterModelsForFacet(
     result = filterByGroup(result, filters.group)
   }
   if (skipFacet !== 'quotaType') {
-    result = filterByQuotaType(result, filters.quotaType)
+    result = filterByQuotaType(result, filters.quotaType, filters.group)
   }
   if (skipFacet !== 'modelType') {
     result = filterByModelType(result, filters.modelType)

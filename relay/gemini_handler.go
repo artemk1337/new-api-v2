@@ -199,6 +199,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 }
 
 func applyGeminiNoThinkingModel(info *relaycommon.RelayInfo) {
+	if info.PriceData.SupplierTariff != nil {
+		return
+	}
 	billingModelName := helper.GetBillingModelName(info)
 	if strings.Contains(billingModelName, "-nothinking") {
 		return

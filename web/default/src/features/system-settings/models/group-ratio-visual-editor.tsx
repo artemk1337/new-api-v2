@@ -16,14 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useMemo, useEffect, useCallback, memo } from 'react'
-import { Plus, Trash2, ChevronDown } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
+import { Plus, Trash2, ChevronDown } from 'lucide-react'
+import { useState, useMemo, useEffect, useCallback, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
 import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
-import { getGroups } from '@/features/users/api'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -49,10 +48,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { GroupSupplierBindingEditor } from '@/features/suppliers/group-binding-editor'
+import { getGroups } from '@/features/users/api'
 
 import { safeJsonParse } from '../utils/json-parser'
 
 type GroupRatioVisualEditorProps = {
+  bindingsLocked?: boolean
   groupRatio: string
   pricingGroups: string
   topupGroupRatio: string
@@ -164,7 +166,10 @@ function serializePricingGroupRows(rows: GroupPricingRow[]) {
   return JSON.stringify(normalized, null, 2)
 }
 
-function formatPricingGroupLabel(group: string, groupNames: Map<string, string>) {
+function formatPricingGroupLabel(
+  group: string,
+  groupNames: Map<string, string>
+) {
   const name = groupNames.get(group)
   if (!name) return group
   return `${name} (ID ${group})`
@@ -201,6 +206,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   pricingGroups,
   topupGroupRatio,
   groupGroupRatio,
+  bindingsLocked,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -209,7 +215,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
     'groupRatio' | 'topupGroupRatio' | null
   >(null)
   const [simpleEditData, setSimpleEditData] = useState<SimpleGroup | null>(null)
-
 
   const [groupOverrideDialogOpen, setGroupOverrideDialogOpen] = useState(false)
   const [groupOverrideUserGroup, setGroupOverrideUserGroup] = useState<
@@ -422,6 +427,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       <GroupPricingTable
         pricingGroups={pricingGroups}
         onChange={onChange}
+        bindingsLocked={bindingsLocked}
       />
 
       {/* Topup Group Ratios */}
@@ -661,6 +667,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 })
 
 type GroupPricingTableProps = {
+  bindingsLocked?: boolean
   pricingGroups: string
   onChange: (field: string, value: string) => void
 }
@@ -668,6 +675,7 @@ type GroupPricingTableProps = {
 function GroupPricingTable({
   pricingGroups,
   onChange,
+  bindingsLocked,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const { data: groupsData } = useQuery({
@@ -681,10 +689,7 @@ function GroupPricingTable({
   const channelStatsById = useMemo(
     () =>
       new Map(
-        (groupsData?.data ?? []).map((group) => [
-          group.id,
-          group.channel_stats,
-        ])
+        (groupsData?.data ?? []).map((group) => [group.id, group.channel_stats])
       ),
     [groupsData]
   )
@@ -779,6 +784,11 @@ function GroupPricingTable({
       </CardHeader>
       <CardContent>
         <div className='space-y-3'>
+          {bindingsLocked && (
+            <p className='text-muted-foreground text-sm'>
+              {t('Save group changes before editing supplier bindings.')}
+            </p>
+          )}
           <StaticDataTable
             data={rows}
             getRowKey={(row) => row._id}
@@ -830,6 +840,17 @@ function GroupPricingTable({
                         normalizeRatio(event.target.value)
                       )
                     }
+                  />
+                ),
+              },
+              {
+                id: 'supplier',
+                header: t('Supplier'),
+                className: 'min-w-48',
+                cell: (row) => (
+                  <GroupSupplierBindingEditor
+                    groupId={row.id}
+                    disabled={bindingsLocked}
                   />
                 ),
               },
@@ -1011,7 +1032,7 @@ function SimpleGroupDialog({
             value={value}
             onChange={(e) => {
               const val = e.target.value
-              if (val === '' || !isNaN(Number.parseFloat(val))) {
+              if (val === '' || !Number.isNaN(Number.parseFloat(val))) {
                 setValue(val)
               }
             }}
@@ -1061,7 +1082,7 @@ function GroupOverrideDialog({
   const handleSave = () => {
     if (!targetGroup.trim() || !ratio.trim()) return
     const parsedRatio = Number.parseFloat(ratio)
-    if (isNaN(parsedRatio)) return
+    if (Number.isNaN(parsedRatio)) return
 
     onSave(targetGroup.trim(), parsedRatio, editData?.targetGroup)
     setTargetGroup('')
@@ -1101,9 +1122,7 @@ function GroupOverrideDialog({
           <Label>{t('Target group')}</Label>
           <Select
             value={targetGroup || null}
-            onValueChange={(value) =>
-              value !== null && setTargetGroup(value)
-            }
+            onValueChange={(value) => value !== null && setTargetGroup(value)}
             disabled={!!editData}
           >
             <SelectTrigger className='w-full'>
@@ -1140,7 +1159,7 @@ function GroupOverrideDialog({
             value={ratio}
             onChange={(e) => {
               const val = e.target.value
-              if (val === '' || !isNaN(Number.parseFloat(val))) {
+              if (val === '' || !Number.isNaN(Number.parseFloat(val))) {
                 setRatio(val)
               }
             }}

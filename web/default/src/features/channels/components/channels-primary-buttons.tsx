@@ -71,8 +71,8 @@ export function ChannelsPrimaryButtons() {
   const {
     setOpen,
     setCurrentRow,
-    enableTagMode,
-    setEnableTagMode,
+    enableSupplierMode,
+    setEnableSupplierMode,
     idSort,
     setIdSort,
     batchMode,
@@ -90,9 +90,9 @@ export function ChannelsPrimaryButtons() {
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
 
-  const handleTagModeToggle = (checked: boolean) => {
-    localStorage.setItem('enable-tag-mode', String(checked))
-    setEnableTagMode(checked)
+  const handleSupplierModeToggle = (checked: boolean) => {
+    localStorage.setItem('enable-supplier-mode', String(checked))
+    setEnableSupplierMode(checked)
   }
 
   const handleIdSortToggle = (checked: boolean) => {
@@ -125,13 +125,13 @@ export function ChannelsPrimaryButtons() {
 
         <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
           <Tags className='text-muted-foreground h-4 w-4' />
-          <Label htmlFor='tag-mode' className='cursor-pointer text-sm'>
-            {t('Tag Mode')}
+          <Label htmlFor='supplier-mode' className='cursor-pointer text-sm'>
+            {t('Group by supplier')}
           </Label>
           <Switch
-            id='tag-mode'
-            checked={enableTagMode}
-            onCheckedChange={handleTagModeToggle}
+            id='supplier-mode'
+            checked={enableSupplierMode}
+            onCheckedChange={handleSupplierModeToggle}
           />
         </div>
 
@@ -189,11 +189,11 @@ export function ChannelsPrimaryButtons() {
 
             <DropdownMenuCheckboxItem
               className='sm:hidden'
-              checked={enableTagMode}
-              onCheckedChange={handleTagModeToggle}
+              checked={enableSupplierMode}
+              onCheckedChange={handleSupplierModeToggle}
             >
               <Tags className='mr-2 h-4 w-4' />
-              {t('Tag Mode')}
+              {t('Group by supplier')}
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuCheckboxItem

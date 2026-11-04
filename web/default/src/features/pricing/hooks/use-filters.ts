@@ -67,7 +67,10 @@ export function useFilters(models: PricingModel[]) {
   }))
 
   const searchInput = filterState.search || ''
-  const sortBy = filterState.sort || DEFAULT_SORT_OPTION
+  const sortBy =
+    filterState.sort === 'benefit'
+      ? DEFAULT_SORT_OPTION
+      : filterState.sort || DEFAULT_SORT_OPTION
   const vendorFilter = filterState.vendor || FILTER_ALL
   const groupFilter = filterState.group || FILTER_ALL
   const quotaTypeFilter = filterState.quotaType || QUOTA_TYPES.ALL

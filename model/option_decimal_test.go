@@ -48,11 +48,19 @@ func TestReferralRequiredTopUpUSDOptionValidation(t *testing.T) {
 func TestUpdateOptionPersistsReferralRequiredTopUpUSD(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}))
+	var originalOption Option
+	originalResult := DB.Where("key = ?", "ReferralRequiredTopUpUSD").Find(&originalOption)
+	require.NoError(t, originalResult.Error)
 	originalAmount := common.GetReferralRequiredTopUpUSD()
 	common.OptionMapRWMutex.RLock()
 	originalMapValue, hadOriginalMapValue := common.OptionMap["ReferralRequiredTopUpUSD"]
 	common.OptionMapRWMutex.RUnlock()
 	t.Cleanup(func() {
+		if originalResult.RowsAffected > 0 {
+			require.NoError(t, DB.Save(&originalOption).Error)
+		} else {
+			require.NoError(t, DB.Where("key = ?", "ReferralRequiredTopUpUSD").Delete(&Option{}).Error)
+		}
 		common.SetReferralRequiredTopUpUSD(originalAmount)
 		common.OptionMapRWMutex.Lock()
 		if hadOriginalMapValue {

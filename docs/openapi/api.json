@@ -56,6 +56,18 @@
     },
     {
       "name": "系统设置"
+    },
+    {
+      "name": "Supplier pricing",
+      "description": "Administrative procurement identity, complete tariffs and exact group/channel bindings. Root-only except minimal choices."
+    },
+    {
+      "name": "Official prices",
+      "description": "Root-managed model developer reference rates, independent of procurement and billing."
+    },
+    {
+      "name": "Public pricing",
+      "description": "Final user-available group retail prices without supplier details."
     }
   ],
   "paths": {
@@ -4892,6 +4904,1505 @@
           }
         ]
       }
+    },
+    "/api/suppliers": {
+      "get": {
+        "summary": "List procurement suppliers",
+        "description": "",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Supplier"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "post": {
+        "summary": "Create a procurement supplier",
+        "description": "",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Supplier"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suppliers/{id}": {
+      "put": {
+        "summary": "Update a procurement supplier",
+        "description": "Supplier adapter is immutable. Disabling a supplier prevents new bound requests without falling back to default pricing.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Supplier"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an unused supplier",
+        "description": "Deletion is rejected while profiles, pricing group bindings, or channels still use this supplier.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Supplier ID for /suppliers/{id} paths; profile ID for /suppliers/profiles/{id} paths."
+        }
+      ]
+    },
+    "/api/suppliers/{id}/profiles": {
+      "get": {
+        "summary": "List profiles belonging to a supplier",
+        "description": "",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierProfile"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "post": {
+        "summary": "Create a supplier pricing profile",
+        "description": "URL id is the supplier parent. An optional body supplier_id must match it. Source factors and funding conversion belong to the profile procurement basis.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SupplierProfile"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierProfileInput"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Supplier ID for /suppliers/{id} paths; profile ID for /suppliers/profiles/{id} paths."
+        }
+      ]
+    },
+    "/api/suppliers/profiles/{id}": {
+      "put": {
+        "summary": "Update a supplier pricing profile",
+        "description": "Compare config_revision before saving. Config changes invalidate the previous active catalogue until the new configuration is published.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SupplierProfile"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierProfileUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an unused supplier profile",
+        "description": "Deletion is rejected while channels or group bindings use the profile.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Supplier ID for /suppliers/{id} paths; profile ID for /suppliers/profiles/{id} paths."
+        }
+      ]
+    },
+    "/api/suppliers/profiles/{id}/tariffs": {
+      "get": {
+        "summary": "Read a complete profile tariff catalogue and revisions",
+        "description": "",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SupplierTariffView"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid profile, request, catalogue, or unsupported tariff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Configuration or active tariff revision changed; reread before retrying",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "post": {
+        "summary": "Publish an explicitly reviewed complete tariff catalogue",
+        "description": "Publishes a complete immutable revision atomically. [] removes all models. No cross-profile aggregation or global price writes. Requests already reserved retain their frozen tariff.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revision": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "revision"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid profile, request, catalogue, or unsupported tariff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Configuration or active tariff revision changed; reread before retrying",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierTariffPublishRequest"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Supplier ID for /suppliers/{id} paths; profile ID for /suppliers/profiles/{id} paths."
+        }
+      ]
+    },
+    "/api/suppliers/profiles/{id}/sync": {
+      "post": {
+        "summary": "Fetch and confirm a complete supplier catalogue",
+        "description": "Requires two identical complete fetches under the same profile configuration before automatic publication. Invalid/unsupported catalogues retain the last good revision. HTTPS source fetching validates public addresses, origin redirects, response size and duration.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revision": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 0
+                        },
+                        "pending_confirmation": {
+                          "type": "boolean"
+                        },
+                        "models": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "revision",
+                        "pending_confirmation",
+                        "models"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid profile, request, catalogue, or unsupported tariff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Configuration or active tariff revision changed; reread before retrying",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierRevisionRequest"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "Supplier ID for /suppliers/{id} paths; profile ID for /suppliers/profiles/{id} paths."
+        }
+      ]
+    },
+    "/api/suppliers/group-bindings": {
+      "get": {
+        "summary": "List stable pricing group supplier/profile bindings",
+        "description": "",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierGroupBinding"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "put": {
+        "summary": "Apply group and channel supplier bindings atomically",
+        "description": "Bound group/channel pairs must match exactly; both unbound use legacy defaults. Used suppliers/profiles cannot be silently detached. Group IDs remain stable. Legacy tag values are retained for rollback, not used for pricing.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupplierBindingRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/suppliers/migration-preview": {
+      "get": {
+        "summary": "Preview legacy tag/source classifications without migration",
+        "description": "Read-only. Existing tags, groups, tariffs and bindings are unchanged. automatic_migration_allowed is false; explicit tariff and credential review is required.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SupplierMigrationPreview"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      }
+    },
+    "/api/suppliers/choices": {
+      "get": {
+        "summary": "Read minimal supplier/profile choices for channel editors",
+        "description": "AdminAuth plus ChannelSensitiveWrite permission. Procurement configuration, tariffs, conversion, errors and credentials are excluded.",
+        "tags": [
+          "Supplier pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SupplierChoice"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "admin",
+        "x-required-permissions": [
+          "ChannelSensitiveWrite"
+        ],
+        "x-required-permission": {
+          "resource": "channel",
+          "action": "sensitive_write"
+        }
+      }
+    },
+    "/api/official-prices": {
+      "get": {
+        "summary": "List official developer reference prices",
+        "description": "Independent reference dataset. Does not reveal supplier cost or affect billing.",
+        "tags": [
+          "Official prices"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OfficialModelPrice"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root"
+      },
+      "put": {
+        "summary": "Upsert complete official reference records atomically",
+        "description": "All records require both finite nonnegative rates, public HTTPS source and verified quote timestamp. Existing models omitted from the batch are preserved. This is not procurement synchronization.",
+        "tags": [
+          "Official prices"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OfficialModelPrice"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prices": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OfficialModelPrice"
+                    },
+                    "minItems": 1,
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "prices"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove an official developer reference price",
+        "description": "Idempotent exact-name removal. Model names, including slashes, are passed in JSON rather than a path parameter.",
+        "tags": [
+          "Official prices"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success, or success=false for a business validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OfficialModelPrice"
+                      }
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication or New-Api-User header missing/invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-required-role": "root",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "model_name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pricing/v2": {
+      "get": {
+        "summary": "Read final retail prices by accessible pricing group",
+        "description": "HeaderNavModuleAuth(pricing) applies: site settings may require login. An authenticated user receives their available groups and final applicable prices. No ungrouped common model price, procurement identity, margin, raw expression or funding information is returned. Legacy /api/pricing represents unbound/default pricing only.",
+        "tags": [
+          "Public pricing"
+        ],
+        "responses": {
+          "200": {
+            "description": "Final retail catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicPricingResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Pricing is temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-access-policy": "HeaderNavModuleAuth(pricing)"
+      }
     }
   },
   "components": {
@@ -5070,6 +6581,1105 @@
             "type": "integer"
           }
         }
+      },
+      "SupplierInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "adapter": {
+            "type": "string",
+            "enum": [
+              "new-api",
+              "openlux",
+              "bblabu",
+              "relay-fast",
+              "manual"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "adapter"
+        ],
+        "description": "Administrative procurement identity. This is separate from the model developer Vendor. Adapter cannot change after creation."
+      },
+      "Supplier": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "adapter": {
+            "type": "string",
+            "enum": [
+              "new-api",
+              "openlux",
+              "bblabu",
+              "relay-fast",
+              "manual"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "adapter",
+          "enabled"
+        ]
+      },
+      "SupplierProfileInput": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Public HTTPS origin without credentials, query, or fragment. Empty is valid for a manually published profile."
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Relative absolute path, not another origin. Defaults to /api/pricing for OpenLux/BBLABU and /pricing.json for relay.fast on creation."
+          },
+          "upstream_group": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Exact selected source group; relay.fast uses family:tier, for example gpt:gpt-special-2."
+          },
+          "usd_per_credit": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Explicit verified real USD per native credit. Source group factors and this conversion are incorporated once into normalized tariffs."
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800,
+            "description": "0 disables automatic checks; otherwise 60 through 604800 seconds."
+          },
+          "config_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required current revision on updates; creation initializes it to 1."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "usd_per_credit"
+        ]
+      },
+      "SupplierProfileUpdate": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Public HTTPS origin without credentials, query, or fragment. Empty is valid for a manually published profile."
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Relative absolute path, not another origin. Defaults to /api/pricing for OpenLux/BBLABU and /pricing.json for relay.fast on creation."
+          },
+          "upstream_group": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Exact selected source group; relay.fast uses family:tier, for example gpt:gpt-special-2."
+          },
+          "usd_per_credit": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Explicit verified real USD per native credit. Source group factors and this conversion are incorporated once into normalized tariffs."
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800,
+            "description": "0 disables automatic checks; otherwise 60 through 604800 seconds."
+          },
+          "config_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required current revision on updates; creation initializes it to 1."
+          }
+        },
+        "required": [
+          "supplier_id",
+          "code",
+          "name",
+          "usd_per_credit",
+          "config_revision"
+        ],
+        "description": "Complete profile update. supplier_id is immutable. Changes increment config_revision and invalidate old active pricing until republished."
+      },
+      "SupplierProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Public HTTPS origin without credentials, query, or fragment. Empty is valid for a manually published profile."
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Relative absolute path, not another origin. Defaults to /api/pricing for OpenLux/BBLABU and /pricing.json for relay.fast on creation."
+          },
+          "upstream_group": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Exact selected source group; relay.fast uses family:tier, for example gpt:gpt-special-2."
+          },
+          "usd_per_credit": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Explicit verified real USD per native credit. Source group factors and this conversion are incorporated once into normalized tariffs."
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800,
+            "description": "0 disables automatic checks; otherwise 60 through 604800 seconds."
+          },
+          "config_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required current revision on updates; creation initializes it to 1."
+          },
+          "last_attempt_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_success_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "supplier_id",
+          "code",
+          "name",
+          "enabled",
+          "usd_per_credit",
+          "config_revision"
+        ]
+      },
+      "SupplierTariff": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "billing_mode": {
+            "type": "string",
+            "enum": [
+              "token",
+              "tiered_expr",
+              "fixed"
+            ]
+          },
+          "expression": {
+            "type": "string",
+            "maxLength": 65536,
+            "description": "Administrative procurement expression in real USD per million tokens. Only token/context variables and supported pure arithmetic are accepted; request/header/time rules are rejected."
+          },
+          "input_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "output_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "cache_read_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "cache_write_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "cache_write_1h_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "image_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "image_output_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "audio_input_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "audio_output_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "reasoning_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "price_usd": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Fixed USD charge per declared request or second."
+          },
+          "price_unit": {
+            "type": "string",
+            "enum": [
+              "million_tokens",
+              "request",
+              "per_second"
+            ]
+          },
+          "tools": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0
+            },
+            "description": "Real USD per invocation. Supported keys: web_search, web_search_preview, file_search, image_generation, or image_generation:quality:size."
+          }
+        },
+        "required": [
+          "model_name",
+          "billing_mode",
+          "price_unit"
+        ],
+        "description": "Complete procurement contract, admin only. Token mode requires input_usd/output_usd and million_tokens. tiered_expr requires expression and million_tokens. Fixed mode requires price_usd with request or per_second. Omitted/null optional lanes are unspecified; zero is an explicitly quoted free lane. No global fallback."
+      },
+      "SupplierTariffView": {
+        "type": "object",
+        "properties": {
+          "tariffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierTariff"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64"
+          },
+          "config_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "format": "int64"
+          }
+        },
+        "required": [
+          "tariffs",
+          "revision",
+          "config_revision"
+        ]
+      },
+      "SupplierRevisionRequest": {
+        "type": "object",
+        "properties": {
+          "expected_config_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64"
+          }
+        },
+        "required": [
+          "expected_config_revision",
+          "expected_revision"
+        ]
+      },
+      "SupplierTariffPublishRequest": {
+        "type": "object",
+        "properties": {
+          "expected_config_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "format": "int64"
+          },
+          "tariffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierTariff"
+            },
+            "maxItems": 10000
+          }
+        },
+        "required": [
+          "expected_config_revision",
+          "expected_revision",
+          "tariffs"
+        ],
+        "description": "Explicitly reviewed replacement catalogue. [] deliberately removes every model. Manual publication does not require repeat fetch confirmation."
+      },
+      "SupplierGroupBinding": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "profile_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "group_id",
+          "supplier_id",
+          "profile_id"
+        ]
+      },
+      "SupplierGroupBindingPatch": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "profile_id": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          }
+        },
+        "required": [
+          "group_id",
+          "supplier_id",
+          "profile_id"
+        ],
+        "description": "Both IDs are required together. Both null removes the binding; otherwise both must be positive and the profile must belong to the supplier."
+      },
+      "SupplierChannelBindingPatch": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "profile_id": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "group": {
+            "type": "string",
+            "description": "Optional comma-separated stable pricing group keys. When omitted, preserve current channel groups."
+          }
+        },
+        "required": [
+          "channel_id",
+          "supplier_id",
+          "profile_id"
+        ]
+      },
+      "SupplierBindingRequest": {
+        "type": "object",
+        "properties": {
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierGroupBindingPatch"
+            },
+            "maxItems": 10000
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SupplierChannelBindingPatch"
+            },
+            "maxItems": 10000
+          }
+        },
+        "description": "Atomically validates and applies the final channel/group membership and exact supplier/profile pairs. Omitted collections are unchanged. In-use groups and their affected channels must be reassigned coherently."
+      },
+      "SupplierChoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "enabled"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "profiles"
+        ],
+        "description": "Admin-only minimal choices. Includes no adapter, URLs, conversion, tariff, errors, or credentials."
+      },
+      "SupplierMigrationPreview": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "channel_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tag": {
+                  "type": "string"
+                },
+                "group_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "supplier_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "nullable": true
+                },
+                "profile_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "nullable": true
+                },
+                "proposed_supplier_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "nullable": true
+                },
+                "proposed_profile_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "nullable": true
+                },
+                "source_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "group_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "channel_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "default_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "automatic_migration_allowed": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        },
+        "required": [
+          "channels",
+          "groups",
+          "default_source_ids",
+          "warnings",
+          "automatic_migration_allowed"
+        ],
+        "description": "Read-only classification from preserved tags and source records. Proposed matches do not verify tariff equivalence, credentials, or funding and do not authorize migration."
+      },
+      "OfficialAPIPrice": {
+        "type": "object",
+        "properties": {
+          "input_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "Public HTTPS developer reference without credentials; link only, never fetched by this API."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "Verified quote timestamp in Unix seconds, not in the future."
+          },
+          "price_unit": {
+            "type": "string",
+            "enum": [
+              "million_tokens"
+            ]
+          }
+        },
+        "required": [
+          "input_usd",
+          "output_usd",
+          "source",
+          "updated_at",
+          "price_unit"
+        ],
+        "description": "Flat official developer reference only. Independent of suppliers, never a billing fallback or an automatic savings claim."
+      },
+      "OfficialModelPrice": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "input_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "Public HTTPS developer reference without credentials; link only, never fetched by this API."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "Verified quote timestamp in Unix seconds, not in the future."
+          },
+          "price_unit": {
+            "type": "string",
+            "enum": [
+              "million_tokens"
+            ]
+          }
+        },
+        "required": [
+          "model_name",
+          "input_usd",
+          "output_usd",
+          "source",
+          "updated_at",
+          "price_unit"
+        ]
+      },
+      "PublicPricingTier": {
+        "type": "object",
+        "properties": {
+          "min_input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "input_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cache_read_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cache_write_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cache_write_1h_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "image_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "image_output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "audio_input_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "audio_output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reasoning_output_usd": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "description": "Final retail USD per million tokens. Context bounds are inclusive; omitted bounds mean zero/no upper bound. Omitted lanes are not separately quoted. No raw expression or procurement data."
+      },
+      "PublicGroupPrice": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PublicPricingTier"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "group_id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "group": {
+                "type": "string",
+                "description": "Stable pricing group key, encoded as a string."
+              },
+              "group_name": {
+                "type": "string"
+              },
+              "billing_mode": {
+                "type": "string",
+                "enum": [
+                  "token",
+                  "tiered_expr",
+                  "fixed"
+                ]
+              },
+              "price_unit": {
+                "type": "string",
+                "enum": [
+                  "million_tokens",
+                  "request",
+                  "per_second"
+                ]
+              },
+              "price_usd": {
+                "type": "number",
+                "minimum": 0
+              },
+              "tools": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "description": "Final retail USD per invocation."
+              },
+              "tiers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PublicPricingTier"
+                }
+              },
+              "unavailable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "group_id",
+              "group",
+              "group_name",
+              "billing_mode",
+              "price_unit"
+            ]
+          }
+        ],
+        "description": "A single group retail contract. Never combine input from one group with output from another. Rates already include all applicable user/group multipliers."
+      },
+      "PublicPricingModel": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string",
+            "description": "Model capability tags, not procurement supplier tags."
+          },
+          "vendor_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "enable_groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enable_group_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "supported_endpoint_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group_prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicGroupPrice"
+            }
+          },
+          "official_price": {
+            "$ref": "#/components/schemas/OfficialAPIPrice"
+          }
+        },
+        "required": [
+          "model_name",
+          "enable_groups",
+          "supported_endpoint_types",
+          "group_prices"
+        ],
+        "description": "User-available model metadata and final group tariffs only. No supplier/profile identity, source errors, margin, funding, raw expression, or procurement revisions."
+      },
+      "PublicPricingResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPricingModel"
+            }
+          },
+          "vendors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "group_ratio": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "number",
+              "enum": [
+                1
+              ]
+            },
+            "description": "Compatibility field: neutral 1 for each accessible group. Do not multiply final group prices again."
+          },
+          "usable_group": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "pricing_groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "name": {
+                  "type": "string"
+                },
+                "selectable": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "selectable"
+              ]
+            }
+          },
+          "supported_endpoint": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "method"
+              ]
+            }
+          },
+          "auto_groups": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pricing_version": {
+            "type": "string",
+            "enum": [
+              "2"
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "data",
+          "group_ratio",
+          "usable_group",
+          "pricing_groups",
+          "pricing_version"
+        ]
       }
     },
     "responses": {},

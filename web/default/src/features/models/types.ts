@@ -253,7 +253,7 @@ export type ModelFormValues = z.infer<typeof modelFormSchema>
  */
 export const vendorFormSchema = z.object({
   id: z.number().optional(),
-  name: z.string().min(1, 'Vendor name is required'),
+  name: z.string().min(1, 'Model provider name is required'),
   description: z.string().default(''),
   icon: z.string().default(''),
   status: z.number().default(1),

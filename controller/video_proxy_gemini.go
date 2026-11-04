@@ -16,6 +16,9 @@ func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) 
 	if channel == nil || task == nil {
 		return "", fmt.Errorf("invalid channel or task")
 	}
+	if err := model.ValidateTaskChannelTransport(task, channel); err != nil {
+		return "", err
+	}
 
 	if url := extractGeminiVideoURLFromTaskData(task); url != "" {
 		return ensureAPIKey(url, apiKey), nil
@@ -148,6 +151,9 @@ func extractGeminiVideoURLFromGeneratedSamples(gvr map[string]any) string {
 func getVertexVideoURL(channel *model.Channel, task *model.Task) (string, error) {
 	if channel == nil || task == nil {
 		return "", fmt.Errorf("invalid channel or task")
+	}
+	if err := model.ValidateTaskChannelTransport(task, channel); err != nil {
+		return "", err
 	}
 	if url := strings.TrimSpace(task.GetResultURL()); url != "" && !isTaskProxyContentURL(url, task.TaskID) {
 		return url, nil

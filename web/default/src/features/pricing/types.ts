@@ -38,6 +38,37 @@ export type PricingGroupRecord = PricingGroupRef & {
   description: string
 }
 
+/** Final retail USD rates. Token components are priced per million tokens. */
+export type PricingRates = {
+  input_usd?: number | null
+  output_usd?: number | null
+  cache_read_usd?: number | null
+  cache_write_usd?: number | null
+  cache_write_1h_usd?: number | null
+  image_usd?: number | null
+  image_output_usd?: number | null
+  audio_input_usd?: number | null
+  audio_output_usd?: number | null
+  reasoning_output_usd?: number | null
+  price_usd?: number | null
+}
+
+export type PricingTier = PricingRates & {
+  label?: string
+  min_input_tokens?: number
+  max_input_tokens?: number | null
+}
+
+export type PricingGroupPrice = PricingRates & {
+  group_id: number
+  group: string
+  group_name: string
+  billing_mode: string
+  price_unit: string
+  tiers?: PricingTier[]
+  unavailable?: boolean
+}
+
 export type PricingModel = {
   id: number
   model_name: string
@@ -47,6 +78,15 @@ export type PricingModel = {
   vendor_name?: string
   vendor_icon?: string
   vendor_description?: string
+  group_prices?: PricingGroupPrice[]
+  official_price?: {
+    input_usd?: number | null
+    output_usd?: number | null
+    source: string
+    updated_at: number
+    price_unit: string
+    comparison_enabled?: boolean
+  }
   quota_type: number
   model_ratio: number
   completion_ratio: number

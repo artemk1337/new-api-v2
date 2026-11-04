@@ -31,7 +31,6 @@ import { useState, useMemo, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { ProviderBadge } from '@/components/provider-badge'
@@ -68,22 +67,22 @@ import {
   parseGroupsList,
   parseChannelSettings,
   handleUpdateChannelField,
-  handleUpdateTagField,
   handleUpdateChannelBalance,
-  isTagAggregateRow,
-  type TagRow,
+  isSupplierAggregateRow,
+  type SupplierRow,
 } from '../lib'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
+import { ChannelSupplierCell } from './channel-supplier-cell'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
-import { DataTableTagRowActions } from './data-table-tag-row-actions'
 import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
+import { SupplierRowActions } from './supplier-row-actions'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
   source?: string
@@ -171,114 +170,33 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
  * Priority cell component with inline editing
  */
 function PriorityCell({ channel }: { channel: Channel }) {
-  const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const isTagRow = isTagAggregateRow(channel)
-  const priority = channel.priority
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingValue, setPendingValue] = useState<number | null>(null)
-
-  // Tag row - editable with confirmation for all tag channels
-  if (isTagRow) {
-    const tag = channel.tag || ''
-    const channelCount = channel.children?.length || 0
-
-    return (
-      <>
-        <NumericSpinnerInput
-          value={priority ?? 0}
-          onChange={(value) => {
-            setPendingValue(value)
-            setConfirmOpen(true)
-          }}
-          min={-999}
-        />
-        <ConfirmDialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t('Confirm Batch Update')}
-          desc={t(
-            'This will update the priority to {{value}} for all {{count}} channel(s) with tag "{{tag}}". Continue?',
-            { value: pendingValue, count: channelCount, tag }
-          )}
-          confirmText={t('Update')}
-          handleConfirm={() => {
-            if (pendingValue !== null) {
-              handleUpdateTagField(tag, 'priority', pendingValue, queryClient)
-            }
-            setConfirmOpen(false)
-          }}
-        />
-      </>
-    )
+  if (isSupplierAggregateRow(channel)) {
+    return <span>{channel.priority ?? '—'}</span>
   }
-
-  // Regular channel row - editable
   return (
     <NumericSpinnerInput
-      value={priority ?? 0}
-      onChange={(value) => {
-        handleUpdateChannelField(channel.id, 'priority', value, queryClient)
-      }}
+      value={channel.priority ?? 0}
       min={-999}
+      onChange={(value) =>
+        handleUpdateChannelField(channel.id, 'priority', value, queryClient)
+      }
     />
   )
 }
 
-/**
- * Weight cell component with inline editing
- */
 function WeightCell({ channel }: { channel: Channel }) {
-  const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const isTagRow = isTagAggregateRow(channel)
-  const weight = channel.weight
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingValue, setPendingValue] = useState<number | null>(null)
-
-  // Tag row - editable with confirmation for all tag channels
-  if (isTagRow) {
-    const tag = channel.tag || ''
-    const channelCount = channel.children?.length || 0
-
-    return (
-      <>
-        <NumericSpinnerInput
-          value={weight ?? 0}
-          onChange={(value) => {
-            setPendingValue(value)
-            setConfirmOpen(true)
-          }}
-          min={0}
-        />
-        <ConfirmDialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t('Confirm Batch Update')}
-          desc={t(
-            'This will update the weight to {{value}} for all {{count}} channel(s) with tag "{{tag}}". Continue?',
-            { value: pendingValue, count: channelCount, tag }
-          )}
-          confirmText={t('Update')}
-          handleConfirm={() => {
-            if (pendingValue !== null) {
-              handleUpdateTagField(tag, 'weight', pendingValue, queryClient)
-            }
-            setConfirmOpen(false)
-          }}
-        />
-      </>
-    )
+  if (isSupplierAggregateRow(channel)) {
+    return <span>{channel.weight ?? '—'}</span>
   }
-
-  // Regular channel row - editable
   return (
     <NumericSpinnerInput
-      value={weight ?? 0}
-      onChange={(value) => {
-        handleUpdateChannelField(channel.id, 'weight', value, queryClient)
-      }}
+      value={channel.weight ?? 0}
       min={0}
+      onChange={(value) =>
+        handleUpdateChannelField(channel.id, 'weight', value, queryClient)
+      }
     />
   )
 }
@@ -298,7 +216,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
   const queryClient = useQueryClient()
   const layout = useContext(ChannelRowActionsLayoutContext)
   const { sensitiveVisible } = useChannels()
-  const isTagRow = isTagAggregateRow(channel)
+  const isSupplierRow = isSupplierAggregateRow(channel)
   const balance = channel.balance || 0
   const usedQuota = channel.used_quota || 0
   const [isUpdating, setIsUpdating] = useState(false)
@@ -355,7 +273,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
   const maskedRemainingLabel = `${t('Remaining:')} ${SENSITIVE_MASK}`
 
   // Tag row: only show cumulative used quota
-  if (isTagRow) {
+  if (isSupplierRow) {
     return (
       <TooltipProvider>
         <Tooltip>
@@ -542,10 +460,10 @@ export function useChannelsColumns(
                 />
               ),
               cell: ({ row }) => {
-                const isTagRow = isTagAggregateRow(row.original)
+                const isSupplierRow = isSupplierAggregateRow(row.original)
 
                 // Don't show checkbox for tag rows
-                if (isTagRow) {
+                if (isSupplierRow) {
                   return null
                 }
 
@@ -581,14 +499,15 @@ export function useChannelsColumns(
         header: t('Name'),
         meta: { mobileTitle: true },
         cell: ({ row }) => {
-          const isTagRow = isTagAggregateRow(row.original)
+          const isSupplierRow = isSupplierAggregateRow(row.original)
           const name = row.getValue('name') as string
           const channel = row.original
 
           // Tag row with expand/collapse
-          if (isTagRow) {
-            const tag = (row.original as TagRow).tag || name
-            const childrenCount = (row.original as TagRow).children?.length || 0
+          if (isSupplierRow) {
+            const supplierName = name || t('Default pricing')
+            const childrenCount =
+              (row.original as SupplierRow).children?.length || 0
 
             return (
               <div className='flex items-center gap-2'>
@@ -605,9 +524,13 @@ export function useChannelsColumns(
                   )}
                 </Button>
                 <div className='flex items-center gap-1.5'>
-                  <span className='font-semibold'>Tag：{tag}</span>
+                  <span className='font-semibold'>
+                    {sensitiveVisible ? supplierName : SENSITIVE_MASK}
+                  </span>
                   <StatusBadge
-                    label={`${childrenCount} channels`}
+                    label={t('{{count}} channels on this page', {
+                      count: childrenCount,
+                    })}
                     variant='blue'
                     size='sm'
                     copyable={false}
@@ -691,12 +614,12 @@ export function useChannelsColumns(
         accessorKey: 'type',
         header: t('Type'),
         cell: ({ row }) => {
-          const isTagRow = isTagAggregateRow(row.original)
+          const isSupplierRow = isSupplierAggregateRow(row.original)
 
-          if (isTagRow) {
+          if (isSupplierRow) {
             return (
               <StatusBadge
-                label={t('Tag Aggregate')}
+                label={t('Supplier')}
                 variant='blue'
                 size='sm'
                 copyable={false}
@@ -827,13 +750,14 @@ export function useChannelsColumns(
         header: t('Status'),
         meta: { mobileBadge: true },
         cell: ({ row }) => {
-          const isTagRow = isTagAggregateRow(row.original)
+          const isSupplierRow = isSupplierAggregateRow(row.original)
           const status = row.getValue('status') as number
           const channel = row.original as Channel
 
           // Tag row: show aggregated status
-          if (isTagRow) {
-            const childrenCount = (row.original as TagRow).children?.length || 0
+          if (isSupplierRow) {
+            const childrenCount =
+              (row.original as SupplierRow).children?.length || 0
             const hasEnabled = status === 1
 
             if (hasEnabled) {
@@ -1017,27 +941,17 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
-      // Tag column
       {
-        accessorKey: 'tag',
-        header: t('Tag'),
+        accessorKey: 'supplier_id',
+        header: t('Supplier'),
         meta: { mobileHidden: true },
-        cell: ({ row }) => {
-          const tag = row.getValue('tag') as string | null
-          if (!tag) {
-            return <span className='text-muted-foreground text-xs'>-</span>
-          }
-
-          return (
-            <StatusBadge
-              label={tag}
-              autoColor={tag}
-              size='sm'
-              className='-ml-1.5'
-            />
-          )
-        },
-        size: 120,
+        cell: ({ row }) => (
+          <ChannelSupplierCell
+            channel={row.original}
+            visible={sensitiveVisible}
+          />
+        ),
+        size: 160,
         enableSorting: false,
       },
 
@@ -1138,15 +1052,10 @@ export function useChannelsColumns(
         header: () => t('Actions'),
         cell: ({ row }) => {
           // Check if this is a tag row (has children)
-          const isTagRow = isTagAggregateRow(row.original)
+          const isSupplierRow = isSupplierAggregateRow(row.original)
 
-          if (isTagRow) {
-            return (
-              <DataTableTagRowActions
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                row={row as any}
-              />
-            )
+          if (isSupplierRow) {
+            return <SupplierRowActions channel={row.original as SupplierRow} />
           }
 
           return <DataTableRowActions row={row} />

@@ -16,13 +16,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import * as React from 'react'
 import { Add01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
-import { cn } from '@/lib/utils'
+
 import {
   Combobox,
   ComboboxChip,
@@ -36,6 +35,8 @@ import {
   ComboboxValue,
   useComboboxAnchor,
 } from '@/components/ui/combobox'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import { cn } from '@/lib/utils'
 
 export type Option = {
   label: string
@@ -164,7 +165,7 @@ export function MultiSelect(props: MultiSelectProps) {
     if (canCreate) {
       set.add(trimmedInput)
     }
-    return Array.from(set)
+    return [...set]
   }, [props.options, props.selected, canCreate, trimmedInput])
 
   // The underlying values can be opaque identifiers while users search by
@@ -241,8 +242,11 @@ export function MultiSelect(props: MultiSelectProps) {
   )
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+    // Enter operates the combobox; it must never submit the surrounding form.
+    event.preventDefault()
     // Enter without a highlighted option commits the typed value.
-    if (event.key === 'Enter' && props.allowCreate && canCreate) {
+    if (props.allowCreate && canCreate) {
       // Only fire when Base UI has no highlighted item to select. We rely on
       // the highlighted item's data attribute on the popup. If the popup is
       // closed or empty, manually commit the typed value.
@@ -251,11 +255,12 @@ export function MultiSelect(props: MultiSelectProps) {
       )
       const hasHighlight = popup?.querySelector('[data-highlighted]') != null
       if (!hasHighlight) {
-        event.preventDefault()
         addValues([trimmedInput])
         setInputValue('')
+        return
       }
     }
+    if (!open) setOpen(true)
   }
 
   return (

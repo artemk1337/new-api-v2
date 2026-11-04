@@ -23,6 +23,17 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	if data == "" {
 		return nil
 	}
+	if supplierResponseBound(c, info) {
+		publicData, err := projectSupplierChatResponse(c, info, []byte(data), true, nil)
+		if err != nil {
+			_ = supplierStreamErrorData(c)
+			return err
+		}
+		data = string(publicData)
+		if !thinkToContent {
+			return helper.StringData(c, data)
+		}
+	}
 
 	if !forceFormat && !thinkToContent {
 		return helper.StringData(c, data)
@@ -34,7 +45,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	}
 
 	if !thinkToContent {
-		return helper.ObjectData(c, lastStreamResponse)
+		return writeChatStreamResponse(c, info, &lastStreamResponse)
 	}
 
 	hasThinkingContent := false
@@ -62,12 +73,12 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 			}
 			info.ThinkingContentInfo.IsFirstThinkingContent = false
 			info.ThinkingContentInfo.HasSentThinkingContent = true
-			return helper.ObjectData(c, response)
+			return writeChatStreamResponse(c, info, response)
 		}
 	}
 
 	if lastStreamResponse.Choices == nil || len(lastStreamResponse.Choices) == 0 {
-		return helper.ObjectData(c, lastStreamResponse)
+		return writeChatStreamResponse(c, info, &lastStreamResponse)
 	}
 
 	// Process each choice
@@ -82,7 +93,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 				response.Choices[j].Delta.Reasoning = nil
 			}
 			info.ThinkingContentInfo.SendLastThinkingContent = true
-			helper.ObjectData(c, response)
+			_ = writeChatStreamResponse(c, info, response)
 		}
 
 		// Convert reasoning content to regular content if any
@@ -97,7 +108,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 		}
 	}
 
-	return helper.ObjectData(c, lastStreamResponse)
+	return writeChatStreamResponse(c, info, &lastStreamResponse)
 }
 
 func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -118,6 +129,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var usage = &dto.Usage{}
 	var lastStreamData string
 	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
+	var supplierStreamError error
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
@@ -126,6 +138,11 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
+				if supplierResponseBound(c, info) {
+					supplierStreamError = err
+					sr.Stop(err)
+					return
+				}
 				sr.Error(err)
 			}
 		}
@@ -142,6 +159,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 		}
 	})
+	if supplierStreamError != nil {
+		return usage, types.NewErrorWithStatusCode(supplierStreamError, types.ErrorCodeBadResponse, http.StatusBadGateway)
+	}
 
 	// 对音频模型，从倒数第二个stream data中提取usage信息
 	if isAudioModel && secondLastStreamData != "" {
@@ -173,7 +193,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	if info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+			if err := sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil && supplierResponseBound(c, info) {
+				return usage, types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
 		}
 	}
 
@@ -191,6 +213,10 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
+	bound := supplierResponseBound(c, info)
+	if bound {
+		c.Set("supplier_pricing", true)
+	}
 
 	var simpleResponse dto.OpenAITextResponse
 	responseBody, err := io.ReadAll(resp.Body)
@@ -256,9 +282,24 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+	publicResponse := simpleResponse
+	if bound {
+		publicResponse.Id = helper.GetResponseID(c)
+		publicResponse.Model = supplierPublicModel(c, info)
+		publicResponse.Usage = supplierPublicUsage(simpleResponse.Usage)
+		if info.RelayFormat != types.RelayFormatClaude && info.RelayFormat != types.RelayFormatGemini {
+			responseBody, err = projectSupplierOpenAIResponse(c, info, responseBody, &simpleResponse.Usage)
+			if err != nil {
+				return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			}
+		}
+	}
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
+		if bound {
+			break
+		}
 		if usageModified {
 			var bodyMap map[string]interface{}
 			err = common.Unmarshal(responseBody, &bodyMap)
@@ -277,14 +318,14 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			break
 		}
 	case types.RelayFormatClaude:
-		claudeResp := service.ResponseOpenAI2Claude(&simpleResponse, info)
+		claudeResp := service.ResponseOpenAI2Claude(&publicResponse, info)
 		claudeRespStr, err := common.Marshal(claudeResp)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 		responseBody = claudeRespStr
 	case types.RelayFormatGemini:
-		geminiResp := service.ResponseOpenAI2Gemini(&simpleResponse, info)
+		geminiResp := service.ResponseOpenAI2Gemini(&publicResponse, info)
 		geminiRespStr, err := common.Marshal(geminiResp)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)

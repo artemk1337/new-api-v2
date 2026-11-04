@@ -602,112 +602,61 @@ export function getAttentionReason(channel: Channel): string | null {
 // Tag Aggregation Utilities
 // ============================================================================
 
-/**
- * Tag row type (extends Channel with children)
- */
-export type TagRow = Channel & {
+export type SupplierRow = Channel & {
   children: Channel[]
 }
 
-/**
- * Type guard to check whether a row is a tag aggregate row
- */
-export function isTagAggregateRow(row: Channel | TagRow): row is TagRow {
-  return Array.isArray((row as TagRow).children)
+export function isSupplierAggregateRow(row: Channel): row is SupplierRow {
+  return Array.isArray((row as SupplierRow).children)
 }
 
-/**
- * Aggregate channels by tag for tag mode display
- * Converts flat array into tree structure grouped by tag
- */
-export function aggregateChannelsByTag(
-  channels: Channel[]
-): (Channel | TagRow)[] {
-  const tagMap = new Map<string, TagRow>()
-  const result: (Channel | TagRow)[] = []
-
+export function aggregateChannelsBySupplier(
+  channels: Channel[],
+  names: Map<number, string>
+): SupplierRow[] {
+  const groups = new Map<number, SupplierRow>()
   for (const channel of channels) {
-    const tag = channel.tag || ''
-
-    if (!tagMap.has(tag)) {
-      // Create tag aggregate row
-      const tagRow = {
+    const supplierId = channel.supplier_id ?? 0
+    let group = groups.get(supplierId)
+    if (!group) {
+      group = {
         ...channel,
-        key: tag,
-        id: tag as unknown as number,
-        tag,
-        name: tag,
+        id: -(supplierId + 1),
+        name: names.get(supplierId) ?? (supplierId ? `#${supplierId}` : ''),
+        tag: null,
+        supplier_profile_id: null,
         type: 0,
-        status: undefined as unknown as number,
         group: '',
         used_quota: 0,
-        response_time: 0,
-        priority: -1 as unknown as number | null,
-        weight: -1 as unknown as number | null,
-        balance: 0,
-        test_time: 0,
-        created_time: 0,
-        balance_updated_time: 0,
-        models: '',
         children: [],
-      } as TagRow
-      tagMap.set(tag, tagRow)
-      result.push(tagRow)
+      }
+      groups.set(supplierId, group)
     }
-
-    const tagRow = tagMap.get(tag)
-    if (!tagRow) {
-      continue
-    }
-
-    // Add to children
-    tagRow.children.push(channel)
-    const childCount = tagRow.children.length
-
-    // Aggregate used_quota (sum)
-    tagRow.used_quota += channel.used_quota
-
-    // Aggregate response_time (average)
-    tagRow.response_time =
-      (tagRow.response_time * (childCount - 1) + channel.response_time) /
-      childCount
-
-    // Aggregate priority (same value or null if different)
-    if (tagRow.priority === -1) {
-      tagRow.priority = channel.priority
-    } else if (tagRow.priority !== channel.priority) {
-      tagRow.priority = null
-    }
-
-    // Aggregate weight (same value or null if different)
-    if (tagRow.weight === -1) {
-      tagRow.weight = channel.weight
-    } else if (tagRow.weight !== channel.weight) {
-      tagRow.weight = null
-    }
-
-    // Aggregate group (concatenate and deduplicate)
-    if (tagRow.group === '') {
-      tagRow.group = channel.group
-    } else {
-      const existingGroups = new Set(tagRow.group.split(',').filter(Boolean))
-      const newGroups = channel.group.split(',').filter(Boolean)
-      newGroups.forEach((g) => {
-        if (!existingGroups.has(g)) {
-          tagRow.group += `,${g}`
-        }
-      })
-    }
-
-    // Aggregate status (enabled if any child is enabled)
-    if (channel.status === 1) {
-      tagRow.status = 1
-    } else if (tagRow.status === undefined) {
-      tagRow.status = channel.status
-    }
+    group.children.push(channel)
+    group.used_quota += channel.used_quota
+    group.group = [
+      ...new Set(
+        group.children.flatMap((item) => item.group.split(',').filter(Boolean))
+      ),
+    ].join(',')
+    group.priority = group.children.every(
+      (item) => item.priority === channel.priority
+    )
+      ? channel.priority
+      : null
+    group.weight = group.children.every(
+      (item) => item.weight === channel.weight
+    )
+      ? channel.weight
+      : null
+    group.status = group.children.some((item) => item.status === 1)
+      ? 1
+      : channel.status
+    group.response_time =
+      group.children.reduce((sum, item) => sum + item.response_time, 0) /
+      group.children.length
   }
-
-  return result
+  return [...groups.values()]
 }
 
 // ============================================================================

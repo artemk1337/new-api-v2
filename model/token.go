@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -54,7 +55,7 @@ const tokenModelMappingColumnRefreshInterval = 5 * time.Second
 
 var tokenModelMappingColumnCache struct {
 	sync.RWMutex
-	db        *gorm.DB
+	db        *sql.DB
 	checkedAt time.Time
 	available bool
 }
@@ -64,10 +65,17 @@ var tokenModelMappingColumnCache struct {
 // migration begins using it without a restart. A successful master migration
 // calls refreshTokenModelMappingColumnCache immediately.
 func hasTokenModelMappingColumn() bool {
-	db := DB
+	return hasTokenModelMappingColumnWithDB(DB)
+}
+
+func hasTokenModelMappingColumnWithDB(db *gorm.DB) bool {
+	connection, err := db.DB()
+	if err != nil {
+		return db.Migrator().HasColumn(&Token{}, "model_mapping")
+	}
 	now := time.Now()
 	tokenModelMappingColumnCache.RLock()
-	cacheFresh := tokenModelMappingColumnCache.db == db &&
+	cacheFresh := tokenModelMappingColumnCache.db == connection &&
 		(tokenModelMappingColumnCache.available || now.Sub(tokenModelMappingColumnCache.checkedAt) < tokenModelMappingColumnRefreshInterval)
 	available := tokenModelMappingColumnCache.available
 	tokenModelMappingColumnCache.RUnlock()
@@ -75,23 +83,24 @@ func hasTokenModelMappingColumn() bool {
 		return available
 	}
 
+	// Use the caller's connection, including its transaction. Never hold the
+	// cache mutex while waiting for a database connection held by another reader.
+	available = db.Migrator().HasColumn(&Token{}, "model_mapping")
 	tokenModelMappingColumnCache.Lock()
-	defer tokenModelMappingColumnCache.Unlock()
-	if tokenModelMappingColumnCache.db == db &&
-		(tokenModelMappingColumnCache.available || now.Sub(tokenModelMappingColumnCache.checkedAt) < tokenModelMappingColumnRefreshInterval) {
-		return tokenModelMappingColumnCache.available
-	}
-	tokenModelMappingColumnCache.db = db
+	tokenModelMappingColumnCache.db = connection
 	tokenModelMappingColumnCache.checkedAt = now
-	tokenModelMappingColumnCache.available = db.Migrator().HasColumn(&Token{}, "model_mapping")
-	return tokenModelMappingColumnCache.available
+	tokenModelMappingColumnCache.available = available
+	tokenModelMappingColumnCache.Unlock()
+	return available
 }
 
 func refreshTokenModelMappingColumnCache() {
+	connection, _ := DB.DB()
+	available := DB.Migrator().HasColumn(&Token{}, "model_mapping")
 	tokenModelMappingColumnCache.Lock()
-	tokenModelMappingColumnCache.db = DB
+	tokenModelMappingColumnCache.db = connection
 	tokenModelMappingColumnCache.checkedAt = time.Now()
-	tokenModelMappingColumnCache.available = DB.Migrator().HasColumn(&Token{}, "model_mapping")
+	tokenModelMappingColumnCache.available = available
 	tokenModelMappingColumnCache.Unlock()
 }
 
@@ -224,7 +233,7 @@ func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
 }
 
 func tokenReadDB(db *gorm.DB) *gorm.DB {
-	if hasTokenModelMappingColumn() {
+	if hasTokenModelMappingColumnWithDB(db) {
 		return db
 	}
 	return db.Omit("model_mapping")

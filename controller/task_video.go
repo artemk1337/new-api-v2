@@ -32,7 +32,7 @@ func updateVideoTaskAll(ctx context.Context, platform constant.TaskPlatform, cha
 	if len(taskIds) == 0 {
 		return nil
 	}
-	cacheGetChannel, err := model.CacheGetChannel(channelId)
+	cacheGetChannel, err := model.GetChannelById(channelId, true)
 	if err != nil {
 		errUpdate := model.TaskBulkUpdate(taskIds, map[string]any{
 			"fail_reason": fmt.Sprintf("Failed to get channel info, channel ID: %d", channelId),
@@ -73,6 +73,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor channel.TaskAdaptor, cha
 	if task == nil {
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
+	}
+	if err := model.ValidateTaskChannelTransport(task, channel); err != nil {
+		return err
 	}
 	key := channel.Key
 

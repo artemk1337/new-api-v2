@@ -30,6 +30,7 @@ const (
 )
 
 var (
+	ErrPricingSyncSupplierBound        = errors.New("supplier-bound channels cannot synchronize global pricing")
 	ErrPricingSyncSourceNotSelected    = errors.New("pricing sync source is not selected")
 	ErrPricingSyncConfigurationChanged = errors.New("pricing sync configuration changed; retry configuration update")
 )
@@ -114,6 +115,44 @@ func GetPricingSyncSources() ([]PricingSyncSource, error) {
 	return sources, nil
 }
 
+// LockLegacyPricingSyncChannels serializes legacy pricing writes with supplier
+// binding changes. Acquire it before pricing-source and config-version locks.
+func LockLegacyPricingSyncChannels(tx *gorm.DB, channelIDs []int) error {
+	if !tx.Migrator().HasTable(&SupplierBindingState{}) {
+		return nil
+	}
+	if err := lockSupplierBindingsTx(tx); err != nil {
+		return err
+	}
+	bound, err := supplierBoundPricingSyncChannels(tx, channelIDs)
+	if err != nil {
+		return err
+	}
+	if len(bound) > 0 {
+		return ErrPricingSyncSupplierBound
+	}
+	return nil
+}
+
+func supplierBoundPricingSyncChannels(tx *gorm.DB, channelIDs []int) (map[int]bool, error) {
+	bound := make(map[int]bool)
+	if len(channelIDs) == 0 || !tx.Migrator().HasTable(&SupplierBindingState{}) {
+		return bound, nil
+	}
+	ids := lo.Filter(channelIDs, func(id int, _ int) bool { return id > 0 })
+	if len(ids) == 0 {
+		return bound, nil
+	}
+	var channels []Channel
+	if err := tx.Select("id").Where("id IN ? AND (supplier_id IS NOT NULL OR supplier_profile_id IS NOT NULL)", ids).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		bound[channel.Id] = true
+	}
+	return bound, nil
+}
+
 func SavePricingSyncSources(sources []PricingSyncSource) error {
 	unique := make(map[int]PricingSyncSource, len(sources))
 	for _, source := range sources {
@@ -127,6 +166,22 @@ func SavePricingSyncSources(sources []PricingSyncSource) error {
 		unique[source.ChannelID] = source
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := LockLegacyPricingSyncChannels(tx, PricingSyncSourceIDs(sources)); err != nil {
+			return err
+		}
+		var existing []PricingSyncSource
+		if err := tx.Find(&existing).Error; err != nil {
+			return err
+		}
+		bound, err := supplierBoundPricingSyncChannels(tx, PricingSyncSourceIDs(existing))
+		if err != nil {
+			return err
+		}
+		for _, source := range existing {
+			if bound[source.ChannelID] {
+				sources = append(sources, source)
+			}
+		}
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&PricingSyncSource{}).Error; err != nil {
 			return err
 		}
@@ -155,6 +210,11 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 	if err != nil {
 		return err
 	}
+	boundExisting, err := supplierBoundPricingSyncChannels(DB, PricingSyncSourceIDs(existing))
+	if err != nil {
+		return err
+	}
+	removedSourceIDs = lo.Filter(removedSourceIDs, func(id int, _ int) bool { return !boundExisting[id] })
 	existingByID := lo.SliceToMap(existing, func(source PricingSyncSource) (int, PricingSyncSource) {
 		return source.ChannelID, source
 	})
@@ -211,6 +271,10 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 		}
 	}
 	err = ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+		checkedIDs := append(PricingSyncSourceIDs(sources), removedSourceIDs...)
+		if err := LockLegacyPricingSyncChannels(tx, checkedIDs); err != nil {
+			return err
+		}
 		if expectedVersion >= 0 {
 			version := Option{}
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
@@ -286,6 +350,15 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 			DoUpdates: clause.AssignmentColumns([]string{"value"}),
 		}).Create(&strategyOption).Error; err != nil {
 			return err
+		}
+		bound, err := supplierBoundPricingSyncChannels(tx, PricingSyncSourceIDs(currentSources))
+		if err != nil {
+			return err
+		}
+		for _, source := range currentSources {
+			if bound[source.ChannelID] {
+				sources = append(sources, source)
+			}
 		}
 		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&PricingSyncSource{}).Error; err != nil {
 			return err
@@ -455,7 +528,14 @@ func SavePricingSyncModelState(state PricingSyncModelState) error {
 	if state.Status == "" {
 		state.Status = PricingSyncModelStatusReady
 	}
-	return DB.Save(&state).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if state.Mode == PricingSyncModelModeChannel {
+			if err := LockLegacyPricingSyncChannels(tx, []int{state.ChannelID}); err != nil {
+				return err
+			}
+		}
+		return tx.Save(&state).Error
+	})
 }
 
 // DisablePricingSyncSources clears prices owned by an explicitly selected
@@ -472,9 +552,24 @@ func disablePricingSyncSourcesWithMutation(channelIDs []int, mutation func(*gorm
 }
 
 func disablePricingSyncSourcesWithMutationChecked(channelIDs []int, check func(*gorm.DB) error, mutation func(*gorm.DB) error) error {
+	bound, err := supplierBoundPricingSyncChannels(DB, channelIDs)
+	if err != nil {
+		return err
+	}
+	channelIDs = lo.Filter(channelIDs, func(id int, _ int) bool { return !bound[id] })
 	if len(channelIDs) == 0 {
 		if mutation != nil {
-			return DB.Transaction(mutation)
+			return DB.Transaction(func(tx *gorm.DB) error {
+				if err := LockLegacyPricingSyncChannels(tx, nil); err != nil {
+					return err
+				}
+				if check != nil {
+					if err := check(tx); err != nil {
+						return err
+					}
+				}
+				return mutation(tx)
+			})
 		}
 		return nil
 	}
@@ -514,6 +609,9 @@ func disablePricingSyncSourcesWithMutationChecked(channelIDs []int, check func(*
 		}
 	}
 	return ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+		if err := LockLegacyPricingSyncChannels(tx, channelIDs); err != nil {
+			return err
+		}
 		if err := bumpPricingSyncConfigVersionTx(tx); err != nil {
 			return err
 		}
@@ -625,6 +723,15 @@ func ApplyPricingSyncUpdateWithPreferences(patches map[string]JSONObjectPatch, p
 func ApplyPricingSyncUpdateWithPreferencesIfVersion(patches map[string]JSONObjectPatch, preferences []PricingSyncModelPreferenceInput, expectedVersion int64) (int64, error) {
 	var appliedVersion int64
 	err := ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+		selected := make([]int, 0, len(preferences))
+		for _, preference := range preferences {
+			if preference.Mode == PricingSyncModelModeChannel {
+				selected = append(selected, preference.ChannelID)
+			}
+		}
+		if err := LockLegacyPricingSyncChannels(tx, selected); err != nil {
+			return err
+		}
 		if expectedVersion >= 0 {
 			initialVersion := Option{Key: "PricingSyncConfigVersion", Value: "0"}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialVersion).Error; err != nil {
@@ -721,7 +828,29 @@ func ApplyPricingSyncUpdateWithPreferencesIfVersion(patches map[string]JSONObjec
 }
 
 func ApplyPricingSyncUpdateIfVersion(patches map[string]JSONObjectPatch, states []PricingSyncModelState, expectedVersion int64) error {
+	return ApplyPricingSyncUpdateFromSourcesIfVersion(patches, states, nil, expectedVersion)
+}
+
+// ApplyPricingSyncUpdateFromSourcesIfVersion also checks absent-model sources,
+// whose provenance can disappear from an unavailable model's resulting state.
+func ApplyPricingSyncUpdateFromSourcesIfVersion(patches map[string]JSONObjectPatch, states []PricingSyncModelState, sourceIDs []int, expectedVersion int64) error {
 	return ApplyJSONOptionPatchesWithTx(patches, func(tx *gorm.DB) error {
+		selected := append([]int(nil), sourceIDs...)
+		for _, state := range states {
+			if state.Mode == PricingSyncModelModeChannel {
+				selected = append(selected, state.ChannelID)
+			}
+			var provenance []int
+			if state.Provenance != "" {
+				if err := common.UnmarshalJsonStr(state.Provenance, &provenance); err != nil {
+					return err
+				}
+			}
+			selected = append(selected, provenance...)
+		}
+		if err := LockLegacyPricingSyncChannels(tx, selected); err != nil {
+			return err
+		}
 		if expectedVersion >= 0 {
 			initialVersion := Option{Key: "PricingSyncConfigVersion", Value: "0"}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initialVersion).Error; err != nil {

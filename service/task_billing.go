@@ -142,6 +142,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["billing_overage_quota"] = task.PrivateData.BillingOverageQuota
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
+		if bc.SupplierID != 0 || bc.PriceSnapshot != nil && bc.PriceSnapshot.SupplierTariff != nil {
+			other["supplier_pricing"] = true
+		}
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
 			other["model_ratio"] = bc.ModelRatio
@@ -206,6 +209,9 @@ func ResolveTaskPricingGroupKey(task *model.Task) string {
 }
 
 func ResolveTaskGroupRatio(task *model.Task) float64 {
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.PriceSnapshot != nil {
+		return bc.PriceSnapshot.GroupRatioInfo.GroupRatio
+	}
 	if bc := task.PrivateData.BillingContext; bc != nil && bc.GroupRatio > 0 {
 		return bc.GroupRatio
 	}
@@ -427,7 +433,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	modelName := taskBillingModelName(task)
 
 	// 获取模型价格和倍率
-	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
+	var modelRatio float64
+	var hasRatioSetting bool
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.PriceSnapshot != nil {
+		modelRatio = bc.PriceSnapshot.ModelRatio
+		hasRatioSetting = !bc.PriceSnapshot.UsePrice
+	} else {
+		modelRatio, hasRatioSetting, _ = ratio_setting.GetModelRatio(modelName)
+	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
 		return

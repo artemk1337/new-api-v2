@@ -229,7 +229,19 @@ func CaptureAttemptUsageQuota(c *gin.Context, info *relaycommon.RelayInfo, usage
 		typedUsage.InputTokens != 0 ||
 		typedUsage.OutputTokens != 0
 	cost, costKnown := numericUsageCost(typedUsage.Cost)
-	if !hasTokenUsage && typedUsage.Cost == nil {
+	hasToolUsage := false
+	if info.PriceData.SupplierTariff != nil {
+		// Procurement APIs may report credit units rather than cash USD.
+		// Only the frozen tariff and token usage are authoritative here.
+		costKnown = false
+		hasToolUsage = c.GetInt("claude_web_search_requests") > 0 || c.GetBool("image_generation_call")
+		if info.ResponsesUsageInfo != nil {
+			for _, tool := range info.ResponsesUsageInfo.BuiltInTools {
+				hasToolUsage = hasToolUsage || tool.CallCount > 0
+			}
+		}
+	}
+	if !hasTokenUsage && typedUsage.Cost == nil && !hasToolUsage {
 		return false
 	}
 
@@ -245,13 +257,23 @@ func CaptureAttemptUsageQuota(c *gin.Context, info *relaycommon.RelayInfo, usage
 			summary.Quota = composeTieredTextQuota(info, summary, quota, result)
 		}
 	}
+	if info.SupplierPricingError != nil {
+		summary.PricingError = info.SupplierPricingError
+	}
+	if summary.PricingError != nil {
+		info.AttemptActualQuota = max(summary.Quota, CurrentAutoEstimate(info))
+		info.AttemptActualQuotaKnown = false
+		info.AttemptUsageBillingEvidence = true
+		info.AttemptFinancialOutcome = types.AttemptFinancialOutcomeAmbiguous
+		return true
+	}
 	if costKnown && cost > 0 && summary.Quota == 0 && summary.TotalTokens == 0 {
 		summary.Quota = int(math.Round(cost * common.GetQuotaPerUnit() * info.PriceData.GroupRatioInfo.GroupRatio))
 		if summary.Quota == 0 && info.PriceData.GroupRatioInfo.GroupRatio > 0 {
 			summary.Quota = 1
 		}
 	}
-	billableUsage := hasTokenUsage || typedUsage.Cost != nil && (!costKnown || cost > 0)
+	billableUsage := hasTokenUsage || hasToolUsage || typedUsage.Cost != nil && (!costKnown || cost > 0)
 	actualQuotaKnown := hasTokenBreakdown || costKnown && cost > 0 || !hasTokenUsage && costKnown
 	info.AttemptActualQuota = summary.Quota
 	info.AttemptActualQuotaKnown = actualQuotaKnown

@@ -151,6 +151,7 @@ export function Pricing() {
     return (
       <PricingTable
         models={filteredModels}
+        groupFilter={groupFilter}
         priceRate={priceRate}
         usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}

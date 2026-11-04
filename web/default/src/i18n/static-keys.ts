@@ -547,6 +547,20 @@ export const STATIC_I18N_KEYS = [
   'The model that was requested',
   'The upstream channel that served the requests',
 
+  // Supplier pricing and model developer terminology.
+  'Image output',
+  'Short context',
+  'Long context',
+  'Pricing unavailable',
+  'Price depends on request conditions',
+  'Model provider name is required',
+  'Model provider created successfully',
+  'Model provider updated successfully',
+  'Add supplier',
+  'Edit supplier',
+  'Add price profile',
+  'Edit price profile',
+
   // Misc
   'Cancel',
   'Status',

@@ -25,6 +25,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -34,6 +35,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
 import { useModels } from './models-provider'
 
 export function ModelsPrimaryButtons() {
@@ -99,7 +101,7 @@ export function ModelsPrimaryButtons() {
           </DropdownMenuItem>
 
           <DropdownMenuItem onClick={handleManageVendors}>
-            {t('Manage Vendors')}
+            {t('Model providers')}
             <DropdownMenuShortcut>
               <Building2 className='h-4 w-4' />
             </DropdownMenuShortcut>

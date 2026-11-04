@@ -948,7 +948,10 @@ func validateOptionValue(key string, value string) error {
 		if err := ratio_setting.ValidatePricingGroupsJSONString(value); err != nil {
 			return err
 		}
-		return ratio_setting.ValidatePricingGroupIDStabilityJSONString(value)
+		if err := ratio_setting.ValidatePricingGroupIDStabilityJSONString(value); err != nil {
+			return err
+		}
+		return ValidateSupplierPricingGroupsJSON(value)
 	case "AutoGroups":
 		return ratio_setting.ValidateAutoGroupsJSONString(value)
 	case "billing_setting.task_price_unit":
@@ -1684,6 +1687,14 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	}
 	var accountVerificationResetUserIDs []int
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if value, included := values["PricingGroups"]; included && tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
+			if err := lockSupplierBindingsTx(tx); err != nil {
+				return err
+			}
+			if err := validateSupplierPricingGroupsJSONTx(tx, value); err != nil {
+				return err
+			}
+		}
 		if values[setting.AccountVerificationEnabledOption] == "false" {
 			accountVerificationResetUserIDs, err = clearAccountVerificationLifecycleTx(tx)
 			if err != nil {

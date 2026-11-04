@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { SupplierSettings } from '@/features/suppliers'
+
 import { ChannelAffinitySection } from '../general/channel-affinity'
 import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
 import type { ModelSettings } from '../types'
@@ -24,6 +26,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { OfficialPricesEditor } from './official-prices-editor'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -37,6 +40,16 @@ function formatJsonForEditor(value: string, fallback: string) {
 }
 
 const MODELS_SECTIONS = [
+  {
+    id: 'official-prices',
+    titleKey: 'Official developer prices',
+    build: () => <OfficialPricesEditor />,
+  },
+  {
+    id: 'suppliers',
+    titleKey: 'Suppliers',
+    build: () => <SupplierSettings />,
+  },
   {
     id: 'global',
     titleKey: 'Global Model Configuration',

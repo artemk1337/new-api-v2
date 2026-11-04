@@ -32,15 +32,17 @@ import {
 } from '@/components/data-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useSupplierChoices } from '@/features/suppliers/use-supplier-choices'
+import type { PricingGroupRecord } from '@/features/users/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import type { PricingGroupRecord } from '@/features/users/api'
 
 import { getChannels, searchChannels, getGroups } from '../api'
 import {
@@ -50,8 +52,8 @@ import {
 } from '../constants'
 import {
   channelsQueryKeys,
-  aggregateChannelsByTag,
-  isTagAggregateRow,
+  aggregateChannelsBySupplier,
+  isSupplierAggregateRow,
   getChannelTypeIcon,
   getChannelTypeLabel,
 } from '../lib'
@@ -76,14 +78,15 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
 
 function isDisabledChannelRow(channel: Channel) {
   return (
-    !isTagAggregateRow(channel) && channel.status !== CHANNEL_STATUS.ENABLED
+    !isSupplierAggregateRow(channel) &&
+    channel.status !== CHANNEL_STATUS.ENABLED
   )
 }
 
 export function ChannelsTable() {
   const { t } = useTranslation()
   const {
-    enableTagMode,
+    enableSupplierMode,
     idSort,
     batchMode,
     sensitiveVisible,
@@ -93,6 +96,8 @@ export function ChannelsTable() {
 
   // Table state
   const [sorting, setSorting] = useState<SortingState>([])
+  const [supplierFilter, setSupplierFilter] = useState<number | undefined>()
+  const supplierChoices = useSupplierChoices()
 
   // URL state management
   const {
@@ -202,7 +207,7 @@ export function ChannelsTable() {
         typeFilter.length > 0 && !typeFilter.includes('all')
           ? Number(typeFilter[0])
           : undefined,
-      tag_mode: enableTagMode,
+      supplier_id: supplierFilter,
       id_sort: idSort,
       ...sortParams,
       p: pagination.pageIndex + 1,
@@ -225,7 +230,7 @@ export function ChannelsTable() {
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
               : undefined,
-          tag_mode: enableTagMode,
+          supplier_id: supplierFilter,
           id_sort: idSort,
           ...sortParams,
           p: pagination.pageIndex + 1,
@@ -245,7 +250,7 @@ export function ChannelsTable() {
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
               : undefined,
-          tag_mode: enableTagMode,
+          supplier_id: supplierFilter,
           id_sort: idSort,
           ...sortParams,
           p: pagination.pageIndex + 1,
@@ -260,12 +265,15 @@ export function ChannelsTable() {
   const channels = useMemo(() => {
     const rawChannels = data?.data?.items || []
 
-    if (enableTagMode && rawChannels.length > 0) {
-      return aggregateChannelsByTag(rawChannels)
+    if (enableSupplierMode && rawChannels.length > 0) {
+      return aggregateChannelsBySupplier(
+        rawChannels,
+        new Map(supplierChoices.data?.map((item) => [item.id, item.name]))
+      )
     }
 
     return rawChannels
-  }, [data, enableTagMode])
+  }, [data, enableSupplierMode, supplierChoices.data])
 
   const totalCount = data?.data?.total || 0
   const typeCounts = data?.data?.type_counts
@@ -281,14 +289,14 @@ export function ChannelsTable() {
     sorting,
     initialColumnVisibility: {
       models: false,
-      tag: false,
+      supplier_id: true,
     },
     columnVisibilityStorageKey: CHANNELS_COLUMN_VISIBILITY_STORAGE_KEY,
     columnFilters,
     pagination,
     globalFilter,
     enableRowSelection: batchMode
-      ? (row: Row<Channel>) => !isTagAggregateRow(row.original)
+      ? (row: Row<Channel>) => !isSupplierAggregateRow(row.original)
       : false,
     onSortingChange: handleSortingChange,
     onColumnFiltersChange,
@@ -391,16 +399,39 @@ export function ChannelsTable() {
         searchDebounceMs: 500,
         onReset: () => {
           resetModelFilterInput()
+          setSupplierFilter(undefined)
         },
         additionalSearch: (
-          <Input
-            placeholder={t('Filter by model...')}
-            value={modelFilterInput}
-            onChange={onModelFilterInputChange}
-            onCompositionStart={onModelFilterCompositionStart}
-            onCompositionEnd={onModelFilterCompositionEnd}
-            className='w-full sm:w-[150px] lg:w-[180px]'
-          />
+          <div className='flex flex-wrap gap-2'>
+            <Input
+              placeholder={t('Filter by model...')}
+              value={modelFilterInput}
+              onChange={onModelFilterInputChange}
+              onCompositionStart={onModelFilterCompositionStart}
+              onCompositionEnd={onModelFilterCompositionEnd}
+              className='w-full sm:w-[150px] lg:w-[180px]'
+            />
+            <NativeSelect
+              aria-label={t('Supplier')}
+              value={supplierFilter ?? 'all'}
+              onChange={(event) => {
+                setSupplierFilter(
+                  event.target.value === 'all'
+                    ? undefined
+                    : Number(event.target.value)
+                )
+                onPaginationChange({ ...pagination, pageIndex: 0 })
+              }}
+            >
+              <option value='all'>{t('All suppliers')}</option>
+              <option value={0}>{t('Default pricing')}</option>
+              {supplierChoices.data?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
         ),
         filters: [
           {

@@ -44,7 +44,7 @@ func TestDistributeAppliesKeyMappingBeforeSpecificChannel(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
-	require.NoError(t, db.AutoMigrate(&model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.PricingGroupSupplierBinding{}))
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)
@@ -63,6 +63,8 @@ func TestDistributeAppliesKeyMappingBeforeSpecificChannel(t *testing.T) {
 
 	router := gin.New()
 	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "1")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "1")
 		common.SetContextKey(c, constant.ContextKeyTokenSpecificChannelId, "42")
 		common.SetContextKey(c, constant.ContextKeyTokenModelMapping, `{"client-alias":"provider-model"}`)
 		common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)
@@ -90,7 +92,7 @@ func TestDistributeAppliesKeyMappingBeforeSpecificChannelForCompactResponses(t *
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
 	require.NoError(t, err)
 	model.DB = db
-	require.NoError(t, db.AutoMigrate(&model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.PricingGroupSupplierBinding{}))
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.SetDatabaseTypes(previousMainDatabaseType, previousLogDatabaseType)
@@ -109,6 +111,8 @@ func TestDistributeAppliesKeyMappingBeforeSpecificChannelForCompactResponses(t *
 
 	router := gin.New()
 	router.POST("/v1/responses/compact", func(c *gin.Context) {
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "1")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "1")
 		common.SetContextKey(c, constant.ContextKeyTokenSpecificChannelId, "42")
 		common.SetContextKey(c, constant.ContextKeyTokenModelMapping, `{"client-alias":"provider-model"}`)
 		common.SetContextKey(c, constant.ContextKeyTokenModelLimitEnabled, true)

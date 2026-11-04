@@ -16,9 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type QueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
+
 import { deleteVendor as deleteVendorAPI } from '../api'
 import { vendorsQueryKeys, modelsQueryKeys } from './query-keys'
 
@@ -37,16 +38,18 @@ export async function handleDeleteVendor(
   try {
     const response = await deleteVendorAPI(id)
     if (response.success) {
-      toast.success(i18next.t('Vendor deleted successfully'))
+      toast.success(i18next.t('Model provider deleted successfully'))
       queryClient?.invalidateQueries({ queryKey: vendorsQueryKeys.lists() })
       queryClient?.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
       onSuccess?.()
     } else {
-      toast.error(response.message || i18next.t('Failed to delete vendor'))
+      toast.error(
+        response.message || i18next.t('Failed to delete model provider')
+      )
     }
   } catch (error: unknown) {
     toast.error(
-      (error as Error)?.message || i18next.t('Failed to delete vendor')
+      (error as Error)?.message || i18next.t('Failed to delete model provider')
     )
   }
 }

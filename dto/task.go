@@ -42,7 +42,7 @@ type TaskDto struct {
 	UserId     int                            `json:"user_id"`
 	Group      string                         `json:"group"`
 	GroupRef   *ratio_setting.PricingGroupRef `json:"group_ref,omitempty"`
-	ChannelId  int                            `json:"channel_id"`
+	ChannelId  int                            `json:"channel_id,omitempty"`
 	Quota      int                            `json:"quota"`
 	Action     string                         `json:"action"`
 	Status     string                         `json:"status"`

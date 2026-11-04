@@ -262,12 +262,52 @@ func Distribute() func(c *gin.Context) {
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		if channel != nil {
+			if ok && shouldSelectChannel {
+				tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+				if tokenGroup == "" || tokenGroup == "auto" {
+					if err := setupSpecificChannelPricingGroup(c, channel, modelRequest.Model, tokenGroup); err != nil {
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "selected route is unavailable", types.ErrorCodeGetChannelFailed)
+						return
+					}
+				}
+			}
+			if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, "selected route is unavailable", types.ErrorCodeGetChannelFailed)
+				return
+			}
+		}
 		c.Next()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
-			service.RecordChannelAffinity(c, channel.Id)
+			service.RecordChannelAffinity(c, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
 		}
 	}
+}
+
+func setupSpecificChannelPricingGroup(c *gin.Context, channel *model.Channel, modelName, tokenGroup string) error {
+	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+	groups := make([]string, 0)
+	if tokenGroup == "auto" {
+		var err error
+		groups, err = service.BuildAutoGroupSnapshot(&service.RetryParam{
+			Ctx: c, TokenGroup: tokenGroup, ModelName: modelName, RequestPath: c.Request.URL.Path,
+		}, userGroup)
+		if err != nil {
+			return err
+		}
+	} else {
+		for group := range service.GetUserUsableGroups(userGroup) {
+			groups = append(groups, group)
+		}
+		slices.Sort(groups)
+	}
+	for _, group := range groups {
+		if model.IsChannelEnabledForGroupModel(group, modelName, channel.Id) && model.ValidateChannelPricingGroup(channel, group) == nil {
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
+			return nil
+		}
+	}
+	return errors.New("selected route is unavailable")
 }
 
 func distributorGetChannelFailedMessage(group, model string) string {
@@ -572,6 +612,23 @@ func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName st
 	}
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	c.Set("supplier_pricing", channel.SupplierID != nil || channel.SupplierProfileID != nil)
+	c.Set("task_channel_transport_fingerprint", channel.TaskTransportFingerprint())
+	if c.Request != nil && !channelSupportsRequestPath(channel, c.Request.URL.Path) {
+		return types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	}
+	group := common.GetContextKeyString(c, constant.ContextKeyAutoGroup)
+	if group == "" {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	}
+	// Auto's provisional channel is repriced and checked against a concrete
+	// group in the controller before dispatch. Fixed groups are checked here
+	// as well, including forced channels and affinity hits.
+	if group != "" && group != "auto" {
+		if err := model.ValidateChannelPricingGroup(channel, group); err != nil {
+			return types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)

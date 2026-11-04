@@ -143,11 +143,45 @@ func getLocalPricingSyncData() map[string]any {
 	return data
 }
 
+func supplierBoundPricingSyncChannel(channel *model.Channel) bool {
+	return channel.SupplierID != nil || channel.SupplierProfileID != nil
+}
+
+func rejectSupplierPricingSyncChannels(c *gin.Context, channelIDs []int) bool {
+	positive := lo.Filter(channelIDs, func(id int, _ int) bool { return id > 0 })
+	if len(positive) == 0 {
+		return false
+	}
+	channels, err := model.GetChannelsByIds(positive)
+	if err != nil {
+		common.ApiError(c, err)
+		return true
+	}
+	for _, channel := range channels {
+		if supplierBoundPricingSyncChannel(channel) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": model.ErrPricingSyncSupplierBound.Error()})
+			return true
+		}
+	}
+	return false
+}
+
 func FetchUpstreamRatios(c *gin.Context) {
 	var req dto.UpstreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.SysError("failed to bind upstream request: " + err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数格式错误"})
+		return
+	}
+
+	selectedIDs := make([]int, 0, len(req.ChannelIDs)+len(req.Upstreams))
+	for _, id := range req.ChannelIDs {
+		selectedIDs = append(selectedIDs, int(id))
+	}
+	for _, upstream := range req.Upstreams {
+		selectedIDs = append(selectedIDs, upstream.ID)
+	}
+	if rejectSupplierPricingSyncChannels(c, selectedIDs) {
 		return
 	}
 
@@ -950,7 +984,7 @@ func GetSyncableChannels(c *gin.Context) {
 
 	var syncableChannels []dto.SyncableChannel
 	for _, channel := range channels {
-		if channel.GetBaseURL() != "" {
+		if !supplierBoundPricingSyncChannel(channel) && channel.GetBaseURL() != "" {
 			syncableChannels = append(syncableChannels, dto.SyncableChannel{
 				ID:      channel.Id,
 				Name:    channel.Name,
@@ -996,6 +1030,16 @@ func GetPricingSyncConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	channels, err := model.GetChannelsByIds(model.PricingSyncSourceIDs(sources))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	bound := make(map[int]bool)
+	for _, channel := range channels {
+		bound[channel.Id] = supplierBoundPricingSyncChannel(channel)
+	}
+	sources = lo.Filter(sources, func(source model.PricingSyncSource, _ int) bool { return !bound[source.ChannelID] })
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1031,8 +1075,10 @@ func UpdatePricingSyncConfig(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	bound := make(map[int]bool)
 	known := make(map[int]struct{}, len(channels)+2)
 	for _, channel := range channels {
+		bound[channel.Id] = supplierBoundPricingSyncChannel(channel)
 		known[channel.Id] = struct{}{}
 	}
 	known[officialRatioPresetID] = struct{}{}
@@ -1045,6 +1091,10 @@ func UpdatePricingSyncConfig(c *gin.Context) {
 	}
 	sources := make([]model.PricingSyncSource, 0, len(request.Sources))
 	for _, source := range request.Sources {
+		if bound[source.ChannelID] {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": model.ErrPricingSyncSupplierBound.Error()})
+			return
+		}
 		if _, ok := known[source.ChannelID]; !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "unknown pricing sync channel"})
 			return
@@ -1062,12 +1112,19 @@ func UpdatePricingSyncConfig(c *gin.Context) {
 	}
 	removedSourceIDs := make([]int, 0)
 	for _, source := range previousSources {
+		if bound[source.ChannelID] {
+			continue
+		}
 		next, ok := newSources[source.ChannelID]
 		if !ok || (source.Enabled && !next.Enabled) {
 			removedSourceIDs = append(removedSourceIDs, source.ChannelID)
 		}
 	}
 	if err := model.SavePricingSyncConfigurationIfVersion(sources, strategy, removedSourceIDs, previousSources, *request.ExpectedVersion); err != nil {
+		if errors.Is(err, model.ErrPricingSyncSupplierBound) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 		if errors.Is(err, model.ErrPricingSyncConfigurationChanged) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 			return
@@ -1118,7 +1175,7 @@ func UpdatePricingSyncModelPreference(c *gin.Context) {
 		Mode:      state.Mode,
 		ChannelID: state.ChannelID,
 	}}); err != nil {
-		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) {
+		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) || errors.Is(err, model.ErrPricingSyncSupplierBound) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
 		}
@@ -1199,7 +1256,7 @@ func ApplyPricingSyncPatches(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "message": err.Error()})
 			return
 		}
-		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) {
+		if errors.Is(err, model.ErrPricingSyncSourceNotSelected) || errors.Is(err, model.ErrPricingSyncSupplierBound) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
 			return
 		}

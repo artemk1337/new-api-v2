@@ -20,6 +20,13 @@ import (
 // 辅助函数
 func HandleStreamFormat(c *gin.Context, info *relaycommon.RelayInfo, data string, forceFormat bool, thinkToContent bool) error {
 	info.SendResponseCount++
+	if supplierResponseBound(c, info) && info.RelayFormat != types.RelayFormatOpenAI {
+		publicData, err := projectSupplierChatResponse(c, info, []byte(data), true, nil)
+		if err != nil {
+			return err
+		}
+		data = string(publicData)
+	}
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
@@ -146,13 +153,27 @@ func handleLastResponse(lastStreamData string, responseId *string, createAt *int
 func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStreamData string,
 	responseId string, createAt int64, model string, systemFingerprint string,
 	usage *dto.Usage, containStreamUsage bool) {
+	if supplierResponseBound(c, info) {
+		if lastStreamData != "" {
+			publicData, err := projectSupplierChatResponse(c, info, []byte(lastStreamData), true, nil)
+			if err != nil {
+				return
+			}
+			lastStreamData = string(publicData)
+		}
+		publicUsage := supplierPublicUsage(*usage)
+		usage = &publicUsage
+		model = supplierPublicModel(c, info)
+		responseId = helper.GetResponseID(c)
+		systemFingerprint = ""
+	}
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
 		if info.ShouldIncludeUsage && !containStreamUsage {
 			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)
 			response.SetSystemFingerprint(systemFingerprint)
-			helper.ObjectData(c, response)
+			_ = writeChatStreamResponse(c, info, response)
 		}
 		helper.Done(c)
 

@@ -16,13 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { useMediaQuery } from '@/hooks'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTableUrlState } from '@/hooks/use-table-url-state'
+
 import { DataTablePage, useDataTable } from '@/components/data-table'
+import { useMediaQuery } from '@/hooks'
+import { useTableUrlState } from '@/hooks/use-table-url-state'
+
 import { getModels, searchModels, getVendors } from '../api'
 import {
   DEFAULT_PAGE_SIZE,
@@ -186,7 +188,7 @@ export function ModelsTable() {
   // Prepare filter options
   const vendorFilterOptions = [
     {
-      label: `${t('All Vendors')}${vendorCounts?.all ? ` (${vendorCounts.all})` : ''}`,
+      label: `${t('All model providers')}${vendorCounts?.all ? ` (${vendorCounts.all})` : ''}`,
       value: 'all',
     },
     ...vendorOptions.map((option) => ({
@@ -218,7 +220,7 @@ export function ModelsTable() {
           },
           {
             columnId: 'vendor_id',
-            title: t('Vendor'),
+            title: t('Model provider'),
             options: vendorFilterOptions,
             singleSelect: true,
           },

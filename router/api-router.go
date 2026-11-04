@@ -31,6 +31,7 @@ func SetApiRouter(router *gin.Engine) {
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+		apiRouter.GET("/pricing/v2", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricingV2)
 		perfMetricsRoute := apiRouter.Group("/perf-metrics")
 		perfMetricsRoute.Use(middleware.HeaderNavModulePublicOrUserAuth("pricing"))
 		{
@@ -266,6 +267,7 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.PUT("/model-preference", controller.UpdatePricingSyncModelPreference)
 		}
 		registerChannelRoutes(apiRouter)
+		registerSupplierRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")
 		tokenRoute.Use(middleware.UserAuth())

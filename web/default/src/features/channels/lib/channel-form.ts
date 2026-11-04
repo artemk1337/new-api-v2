@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
+
 import {
   CHANNEL_STATUS,
   ERROR_MESSAGES,
@@ -156,6 +157,8 @@ export const channelFormSchema = z
         'Status code mapping must use valid HTTP status codes'
       ),
     tag: z.string().optional(),
+    supplier_id: z.number().int().positive().nullable().optional(),
+    supplier_profile_id: z.number().int().positive().nullable().optional(),
     remark: z
       .string()
       .max(255, 'Remark must be less than 255 characters')
@@ -210,6 +213,13 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
   })
   .superRefine((data, ctx) => {
+    if (Boolean(data.supplier_id) !== Boolean(data.supplier_profile_id)) {
+      addRequiredIssue(
+        ctx,
+        'supplier_profile_id',
+        'Select a supplier and price profile together'
+      )
+    }
     if ([3, 8, 36, 45].includes(data.type) && !data.base_url?.trim()) {
       addRequiredIssue(
         ctx,
@@ -313,6 +323,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
+  supplier_id: null,
+  supplier_profile_id: null,
   remark: '',
   setting: '',
   param_override: '',
@@ -454,6 +466,8 @@ export function transformChannelToFormDefaults(
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
+    supplier_id: channel.supplier_id ?? null,
+    supplier_profile_id: channel.supplier_profile_id ?? null,
     remark: channel.remark || '',
     setting: channel.setting || '',
     param_override: channel.param_override || '',
@@ -563,12 +577,15 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.allow_inference_geo = formData.allow_inference_geo === true
   } else {
     if ('disable_store' in settingsObj) delete settingsObj.disable_store
-    if ('allow_safety_identifier' in settingsObj)
+    if ('allow_safety_identifier' in settingsObj) {
       delete settingsObj.allow_safety_identifier
-    if ('allow_include_obfuscation' in settingsObj)
+    }
+    if ('allow_include_obfuscation' in settingsObj) {
       delete settingsObj.allow_include_obfuscation
-    if (formData.type !== 14 && 'allow_inference_geo' in settingsObj)
+    }
+    if (formData.type !== 14 && 'allow_inference_geo' in settingsObj) {
       delete settingsObj.allow_inference_geo
+    }
   }
 
   // Anthropic (type 14): claude_beta_query, allow_inference_geo, allow_speed
@@ -591,14 +608,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.upstream_model_update_auto_sync_enabled =
       settingsObj.upstream_model_update_check_enabled === true &&
       formData.upstream_model_update_auto_sync_enabled === true
-    settingsObj.upstream_model_update_ignored_models = Array.from(
-      new Set(
+    settingsObj.upstream_model_update_ignored_models = [
+      ...new Set(
         String(formData.upstream_model_update_ignored_models || '')
           .split(',')
           .map((model) => model.trim())
           .filter(Boolean)
-      )
-    )
+      ),
+    ]
     if (
       !Array.isArray(settingsObj.upstream_model_update_last_detected_models) ||
       settingsObj.upstream_model_update_check_enabled !== true
@@ -657,6 +674,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     status: formData.status,
     status_code_mapping: formData.status_code_mapping || null,
     tag: formData.tag || null,
+    supplier_id: formData.supplier_id ?? null,
+    supplier_profile_id: formData.supplier_profile_id ?? null,
     remark: formData.remark || '',
     setting: buildSettingJSON(formData),
     param_override: formData.param_override || null,
@@ -704,6 +723,8 @@ export function transformFormDataToUpdatePayload(
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,
     tag: formData.tag || null,
+    supplier_id: formData.supplier_id ?? null,
+    supplier_profile_id: formData.supplier_profile_id ?? null,
     remark: formData.remark || '',
     setting: buildSettingJSON(formData),
     param_override: formData.param_override || null,
