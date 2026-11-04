@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.221 — 2026-11-04
+
+- Combine base prices and dynamic tiers into one compact catalogue table with input, output, cache, and other configured rates on the same row.
+- Show readable tier conditions instead of generated step names, preserve pricing units and currency conversion, and translate the new labels into all six interface languages.
+- Move the automatic group chain below group prices and simplify fixed-price cards and additional-rate details.
+
 ## v1.1.220 — 2026-11-04
 
 - Show pricing card benefits as “Save up to X%” in all six interface languages.
