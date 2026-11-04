@@ -4,6 +4,7 @@ import "github.com/QuantumNous/new-api/setting/config"
 
 type ConsoleSetting struct {
 	ApiInfo              string `json:"api_info"`              // 控制台 API 信息 (JSON 数组字符串)
+	TelegramChannel      string `json:"telegram_channel"`      // Public channel used for new Telegram posts.
 	Announcements        string `json:"announcements"`         // 系统公告 (JSON 数组字符串)
 	FAQ                  string `json:"faq"`                   // 常见问题 (JSON 数组字符串)
 	ApiInfoEnabled       bool   `json:"api_info_enabled"`      // 是否启用 API 信息面板

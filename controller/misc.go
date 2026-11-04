@@ -128,7 +128,12 @@ func GetStatus(c *gin.Context) {
 		data["api_info"] = console_setting.GetApiInfo()
 	}
 	if cs.AnnouncementsEnabled {
-		data["announcements"] = console_setting.GetAnnouncements()
+		announcements, err := model.PublicAnnouncements()
+		if err != nil {
+			common.SysError("Failed to load public announcements")
+			announcements = []model.Announcement{}
+		}
+		data["announcements"] = announcements
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()

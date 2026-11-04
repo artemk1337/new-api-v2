@@ -17,10 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-import { RichContent } from '@/components/rich-content'
-import { formatDateTimeObject } from '@/lib/time'
-import { ScrollArea } from '@/components/ui/scroll-area'
+
+import { AnnouncementTelegramLink } from '@/components/announcement-telegram-link'
 import { Dialog } from '@/components/dialog'
+import { RichContent } from '@/components/rich-content'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { formatDateTimeObject } from '@/lib/time'
 
 interface AnnouncementDetailModalProps {
   open: boolean
@@ -31,6 +33,7 @@ interface AnnouncementDetailModalProps {
     tag?: string
     publishDate?: string
     extra?: string
+    telegramUrl?: string
   } | null
 }
 
@@ -74,6 +77,7 @@ export function AnnouncementDetailModal({
               />
             </div>
           )}
+          <AnnouncementTelegramLink url={announcement?.telegramUrl} />
         </div>
       </ScrollArea>
     </Dialog>

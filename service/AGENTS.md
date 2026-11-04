@@ -10,5 +10,6 @@ Coordinates business use cases between controllers/middleware and models, includ
 - Payment callbacks must validate provider identity/status and remain idempotent. Direct-crypto watchers observe chains read-only, stop cleanly, and delegate settlement/reconciliation to model transactions.
 - System task handlers must finish task state and honor cancellation. Register handlers before starting the runner, which snapshots registered work at startup.
 - Background loops need bounded lifecycle and must not leak across shutdown or tests.
+- Announcement Telegram delivery uses durable model intentions and the `announcement_telegram` system task. Never automatically retry an unconfirmed `sendMessage`: Telegram has no idempotency key. Preserve the original chat/message on edits and keep bot tokens out of errors.
 
 `billing.go`, `tiered_settle.go`, `system_task.go`, and `direct_usdt_*_watcher.go` are useful references. Subareas have local instructions in [authz/AGENTS.md](authz/AGENTS.md), [passkey/AGENTS.md](passkey/AGENTS.md), and [relayconvert/AGENTS.md](relayconvert/AGENTS.md).

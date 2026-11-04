@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.217 — 2026-11-04
+
+- Publish news to a public Telegram channel through the existing bot, with a separate full post text or a link to an existing post and a "More in Telegram" action in platform announcements.
+- Track delivery status, update bot-managed posts, preserve channel posts when news is deleted, and require explicit confirmation before retrying an uncertain publication.
+- Preserve legacy announcements and protect concurrent edits; remove the legacy type selector from the news editor and translate the new interface into all six languages.
+
 ## v1.1.216 — 2026-11-04
 
 - Add a ready-to-use Russian About page HTML template with a short service description and a prominent, fully clickable Telegram contact row.

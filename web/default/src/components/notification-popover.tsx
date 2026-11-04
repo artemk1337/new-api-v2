@@ -20,6 +20,7 @@ import { Bell, Megaphone, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnnouncementContent } from '@/components/announcement-content'
+import { AnnouncementTelegramLink } from '@/components/announcement-telegram-link'
 import { RichContent } from '@/components/rich-content'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -44,6 +45,7 @@ interface AnnouncementItem {
   content?: string
   extra?: string
   publishDate?: string | Date
+  telegramUrl?: string
 }
 
 interface NotificationPopoverProps {
@@ -182,6 +184,7 @@ export function NotificationPopover(props: NotificationPopoverProps) {
                         ) : null}
                       </div>
                       <AnnouncementContent content={item.content || ''} />
+                      <AnnouncementTelegramLink url={item.telegramUrl} />
                       {item.extra ? (
                         <RichContent
                           breaks

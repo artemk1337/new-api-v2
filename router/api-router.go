@@ -239,6 +239,14 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/payment-settings/save", controller.SavePaymentSettings)
 		}
 
+		announcementRoute := apiRouter.Group("/announcements")
+		announcementRoute.Use(middleware.RootAuth())
+		{
+			announcementRoute.GET("/", controller.GetAnnouncements)
+			announcementRoute.PUT("/", controller.SaveAnnouncements)
+			announcementRoute.POST("/:id/retry", controller.RetryAnnouncementTelegram)
+		}
+
 		// Custom OAuth provider management (root only)
 		customOAuthRoute := apiRouter.Group("/custom-oauth-provider")
 		customOAuthRoute.Use(middleware.RootAuth())

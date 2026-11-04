@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -787,6 +788,11 @@ func normalizePricingGroupOptionReferencesBeforeRename() error {
 
 func validateOptionValue(key string, value string) error {
 	switch key {
+	case telegramChannelOption:
+		if value == "" {
+			return nil
+		}
+		return console_setting.ValidateTelegramChannel(value)
 	case "PayMethods":
 		methods, err := operation_setting.ParsePayMethodsJSON(value)
 		if err != nil {
@@ -1687,6 +1693,13 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	}
 	var accountVerificationResetUserIDs []int
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if value, included := values[announcementsOption]; included {
+			normalized, err := normalizeLegacyAnnouncementsTx(tx, value)
+			if err != nil {
+				return err
+			}
+			values[announcementsOption] = normalized
+		}
 		if value, included := values["PricingGroups"]; included && tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
 			if err := lockSupplierBindingsTx(tx); err != nil {
 				return err

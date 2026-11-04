@@ -1,3 +1,5 @@
+import { isAxiosError } from 'axios'
+import { Plus, Save, Trash2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,14 +18,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useMemo, useState } from 'react'
-import * as z from 'zod'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, Save } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import dayjs from '@/lib/dayjs'
+
+import { StaticDataTable } from '@/components/data-table/static/static-data-table'
+import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,338 +37,265 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { StaticDataTable } from '@/components/data-table/static/static-data-table'
-import { StaticRowActions } from '@/components/data-table/static/static-row-actions'
-import { DateTimePicker } from '@/components/datetime-picker'
-import { Dialog } from '@/components/dialog'
-import { StatusBadge } from '@/components/status-badge'
+import { Label } from '@/components/ui/label'
+import dayjs from '@/lib/dayjs'
+
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { AnnouncementDelivery } from './announcement-delivery'
+import { AnnouncementEditor } from './announcement-editor'
+import {
+  useRetryAnnouncement,
+  useSaveAnnouncements,
+  type Announcement,
+  type AnnouncementSettings,
+} from './announcements-api'
 
-type Announcement = {
-  id: number
-  content: string
-  publishDate: string
-  type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
-  extra?: string
-}
-
-type AnnouncementsSectionProps = {
+export function AnnouncementsSection(props: {
   enabled: boolean
-  data: string
-}
-
-const announcementSchema = z.object({
-  content: z
-    .string()
-    .min(1, 'Content is required')
-    .max(500, 'Content must be less than 500 characters'),
-  publishDate: z.string().min(1, 'Publish date is required'),
-  type: z.enum(['default', 'ongoing', 'success', 'warning', 'error']),
-  extra: z
-    .string()
-    .max(100, 'Extra must be less than 100 characters')
-    .optional(),
-})
-
-type AnnouncementFormValues = z.infer<typeof announcementSchema>
-
-const ANNOUNCEMENT_FORM_ID = 'announcement-form'
-
-const typeOptions = [
-  {
-    value: 'default',
-    label: 'Default',
-    color: 'bg-gray-500',
-    badgeVariant: 'neutral' as const,
-  },
-  {
-    value: 'ongoing',
-    label: 'Ongoing',
-    color: 'bg-blue-500',
-    badgeVariant: 'info' as const,
-  },
-  {
-    value: 'success',
-    label: 'Success',
-    color: 'bg-green-500',
-    badgeVariant: 'success' as const,
-  },
-  {
-    value: 'warning',
-    label: 'Warning',
-    color: 'bg-orange-500',
-    badgeVariant: 'warning' as const,
-  },
-  {
-    value: 'error',
-    label: 'Error',
-    color: 'bg-red-500',
-    badgeVariant: 'danger' as const,
-  },
-]
-
-export function AnnouncementsSection({
-  enabled,
-  data,
-}: AnnouncementsSectionProps) {
+  settings: AnnouncementSettings
+  onRefresh: () => Promise<void>
+}) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const [announcements, setAnnouncements] = useState<Announcement[]>([])
-  const [isEnabled, setIsEnabled] = useState(enabled)
-  const [hasChanges, setHasChanges] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
-  const [showDialog, setShowDialog] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [editingAnnouncement, setEditingAnnouncement] =
-    useState<Announcement | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<'single' | 'batch'>('single')
+  const save = useSaveAnnouncements()
+  const retry = useRetryAnnouncement()
+  const [draft, setDraft] = useState<AnnouncementSettings | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [editor, setEditor] = useState<{
+    announcement: Announcement | null
+    snapshot: AnnouncementSettings
+  } | null>(null)
+  const [deleteIds, setDeleteIds] = useState<string[]>([])
+  const [unknownRetry, setUnknownRetry] = useState<Announcement | null>(null)
+  const [conflict, setConflict] = useState(false)
+  const settings = draft || props.settings
+  const busy = save.isPending || retry.isPending
+  const sortedAnnouncements = useMemo(
+    () =>
+      [...settings.announcements].sort(
+        (a, b) => Date.parse(b.publishDate) - Date.parse(a.publishDate)
+      ),
+    [settings.announcements]
+  )
 
-  const form = useForm<AnnouncementFormValues>({
-    resolver: zodResolver(announcementSchema),
-    defaultValues: {
-      content: '',
-      publishDate: new Date().toISOString(),
-      type: 'default',
-      extra: '',
-    },
-  })
-
-  useEffect(() => {
-    try {
-      const parsed = JSON.parse(data || '[]')
-      if (Array.isArray(parsed)) {
-        setAnnouncements(
-          parsed.map((item, idx) => ({
-            ...item,
-            id: item.id || idx + 1,
-          }))
-        )
-      }
-    } catch {
-      setAnnouncements([])
-    }
-  }, [data])
-
-  useEffect(() => {
-    setIsEnabled(enabled)
-  }, [enabled])
-
-  const handleToggleEnabled = async (checked: boolean) => {
-    try {
-      await updateOption.mutateAsync({
-        key: 'console_setting.announcements_enabled',
-        value: checked,
-      })
-      setIsEnabled(checked)
-      toast.success(t('Setting saved'))
-    } catch {
-      toast.error(t('Failed to update setting'))
-    }
-  }
-
-  const handleAdd = () => {
-    setEditingAnnouncement(null)
-    form.reset({
-      content: '',
-      publishDate: new Date().toISOString(),
-      type: 'default',
-      extra: '',
-    })
-    setShowDialog(true)
-  }
-
-  const handleEdit = (announcement: Announcement) => {
-    setEditingAnnouncement(announcement)
-    form.reset({
-      content: announcement.content,
-      publishDate: announcement.publishDate,
-      type: announcement.type,
-      extra: announcement.extra || '',
-    })
-    setShowDialog(true)
-  }
-
-  const handleDelete = (announcement: Announcement) => {
-    setEditingAnnouncement(announcement)
-    setDeleteTarget('single')
-    setShowDeleteDialog(true)
-  }
-
-  const handleBatchDelete = () => {
-    if (selectedIds.length === 0) {
-      toast.error(t('Please select items to delete'))
+  async function saveAll() {
+    if (
+      settings.channel &&
+      !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(settings.channel)
+    ) {
+      toast.error(t('Enter a public Telegram channel username'))
       return
     }
-    setDeleteTarget('batch')
-    setShowDeleteDialog(true)
-  }
-
-  const confirmDelete = () => {
-    if (deleteTarget === 'single' && editingAnnouncement) {
-      setAnnouncements((prev) =>
-        prev.filter((item) => item.id !== editingAnnouncement.id)
-      )
-      setHasChanges(true)
-      toast.success(t('Announcement deleted. Click "Save Settings" to apply.'))
-    } else if (deleteTarget === 'batch') {
-      setAnnouncements((prev) =>
-        prev.filter((item) => !selectedIds.includes(item.id))
-      )
-      setSelectedIds([])
-      setHasChanges(true)
-      toast.success(
-        t('{{count}} announcements deleted. Click "Save Settings" to apply.', {
-          count: selectedIds.length,
-        })
-      )
+    try {
+      await save.mutateAsync(settings)
+      setDraft(null)
+      setConflict(false)
+      toast.success(t('Announcements saved successfully'))
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 409) {
+        setConflict(true)
+      } else {
+        toast.error(
+          t(
+            error instanceof Error
+              ? error.message
+              : 'Failed to save announcements'
+          )
+        )
+      }
     }
-    setShowDeleteDialog(false)
-    setEditingAnnouncement(null)
   }
 
-  const handleSubmitForm = (values: AnnouncementFormValues) => {
-    if (editingAnnouncement) {
-      setAnnouncements((prev) =>
-        prev.map((item) =>
-          item.id === editingAnnouncement.id ? { ...item, ...values } : item
+  async function retryPublication(item: Announcement, confirmUnknown = false) {
+    if (item.telegramStatus === 'unknown' && !confirmUnknown) {
+      setUnknownRetry(item)
+      return
+    }
+    try {
+      await retry.mutateAsync({ id: item.id, confirmUnknown })
+      setUnknownRetry(null)
+      toast.success(t('Telegram publication queued'))
+    } catch (error) {
+      toast.error(
+        t(
+          error instanceof Error
+            ? error.message
+            : 'Failed to retry Telegram publication'
         )
       )
-      toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
-    } else {
-      const newId = Math.max(...announcements.map((item) => item.id), 0) + 1
-      setAnnouncements((prev) => [...prev, { id: newId, ...values }])
-      toast.success(t('Announcement added. Click "Save Settings" to apply.'))
-    }
-    setHasChanges(true)
-    setShowDialog(false)
-  }
-
-  const handleSaveAll = async () => {
-    try {
-      await updateOption.mutateAsync({
-        key: 'console_setting.announcements',
-        value: JSON.stringify(announcements),
-      })
-      setHasChanges(false)
-      toast.success(t('Announcements saved successfully'))
-    } catch {
-      toast.error(t('Failed to save announcements'))
     }
   }
 
-  const toggleSelectAll = (checked: boolean) => {
-    setSelectedIds(checked ? announcements.map((item) => item.id) : [])
+  function submitAnnouncement(item: Announcement) {
+    const snapshot = editor?.snapshot || settings
+    const announcements = [...snapshot.announcements]
+    const index = announcements.findIndex((existing) => existing.id === item.id)
+    if (index < 0) announcements.push(item)
+    else announcements[index] = item
+    setDraft({ ...snapshot, announcements })
+    setEditor(null)
+    toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
   }
 
-  const toggleSelectOne = (id: number, checked: boolean) => {
-    setSelectedIds((prev) =>
-      checked ? [...prev, id] : prev.filter((item) => item !== id)
-    )
-  }
-
-  const sortedAnnouncements = useMemo(() => {
-    return [...announcements].sort((a, b) => {
-      return (
-        new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime()
-      )
+  function confirmDelete() {
+    setDraft({
+      ...settings,
+      announcements: settings.announcements.filter(
+        (item) => !deleteIds.includes(item.id)
+      ),
     })
-  }, [announcements])
-
-  const getRelativeTime = (date: string) => {
-    const now = new Date()
-    const past = new Date(date)
-    const diffMs = now.getTime() - past.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
-
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
+    setSelectedIds((previous) =>
+      previous.filter((id) => !deleteIds.includes(id))
+    )
+    setDeleteIds([])
   }
 
   return (
     <SettingsSection title={t('Announcements')}>
-      <div className='space-y-4'>
-        <div className='flex flex-wrap items-center justify-between gap-2'>
+      <div className='space-y-5'>
+        <div className='space-y-2'>
+          <Label htmlFor='announcement-telegram-channel'>
+            {t('Telegram channel')}
+          </Label>
+          <Input
+            id='announcement-telegram-channel'
+            value={settings.channel}
+            placeholder='@channel'
+            className='max-w-sm'
+            disabled={busy}
+            onChange={(event) =>
+              setDraft({ ...settings, channel: event.target.value.trim() })
+            }
+          />
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Add the main bot as a channel administrator with permission to publish and edit posts.'
+            )}
+          </p>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'The existing bot token is used. Telegram sign-in can remain disabled.'
+            )}
+          </p>
+        </div>
+        {conflict && (
+          <Alert variant='destructive'>
+            <AlertTitle>{t('Announcements changed on the server')}</AlertTitle>
+            <AlertDescription>
+              <p>
+                {t(
+                  'Your changes are preserved. Reload the latest news before editing again.'
+                )}
+              </p>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={async () => {
+                  try {
+                    await props.onRefresh()
+                    setDraft(null)
+                    setConflict(false)
+                    setSelectedIds([])
+                  } catch {
+                    toast.error(t('Failed to load announcements'))
+                  }
+                }}
+              >
+                {t('Discard changes and reload')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+        <div className='flex flex-wrap items-center justify-between gap-3'>
           <div className='flex flex-wrap items-center gap-2'>
-            <Button onClick={handleAdd} size='sm'>
-              <Plus className='mr-2 h-4 w-4' />
+            <Button
+              size='sm'
+              disabled={busy}
+              onClick={() =>
+                setEditor({ announcement: null, snapshot: settings })
+              }
+            >
+              <Plus className='mr-2 size-4' />
               {t('Add Announcement')}
             </Button>
             <Button
-              onClick={handleBatchDelete}
               size='sm'
               variant='destructive'
-              disabled={selectedIds.length === 0}
+              disabled={!selectedIds.length || busy}
+              onClick={() => setDeleteIds(selectedIds)}
             >
-              <Trash2 className='mr-2 h-4 w-4' />
+              <Trash2 className='mr-2 size-4' />
               {t('Delete (')}
               {selectedIds.length})
             </Button>
             <Button
-              onClick={handleSaveAll}
               size='sm'
               variant='secondary'
-              disabled={!hasChanges || updateOption.isPending}
+              disabled={!draft || busy || !!editor || conflict}
+              onClick={() => void saveAll()}
             >
-              <Save className='mr-2 h-4 w-4' />
-              {updateOption.isPending ? t('Saving...') : t('Save Settings')}
+              <Save className='mr-2 size-4' />
+              {save.isPending ? t('Saving...') : t('Save Settings')}
             </Button>
           </div>
           <SettingsSwitchField
-            checked={isEnabled}
-            onCheckedChange={handleToggleEnabled}
+            checked={props.enabled}
+            onCheckedChange={(checked) =>
+              updateOption.mutate({
+                key: 'console_setting.announcements_enabled',
+                value: checked,
+              })
+            }
             label={t('Enabled')}
             className='py-0'
           />
         </div>
-
+        {draft && (
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Save settings to publish changes. Existing Telegram posts are kept when news is deleted.'
+            )}
+          </p>
+        )}
         <StaticDataTable
           data={sortedAnnouncements}
-          getRowKey={(announcement) => announcement.id}
+          getRowKey={(item) => item.id}
           emptyContent={t(
             'No announcements yet. Click "Add Announcement" to create one.'
           )}
           columns={[
             {
               id: 'select',
+              className: 'w-12',
               header: (
                 <Checkbox
+                  aria-label={t('Select all')}
                   checked={
-                    selectedIds.length === announcements.length &&
-                    announcements.length > 0
+                    settings.announcements.length > 0 &&
+                    selectedIds.length === settings.announcements.length
                   }
-                  onCheckedChange={toggleSelectAll}
+                  onCheckedChange={(checked) =>
+                    setSelectedIds(
+                      checked
+                        ? settings.announcements.map((item) => item.id)
+                        : []
+                    )
+                  }
                 />
               ),
-              className: 'w-12',
-              cell: (announcement) => (
+              cell: (item) => (
                 <Checkbox
-                  checked={selectedIds.includes(announcement.id)}
+                  aria-label={t('Select announcement')}
+                  checked={selectedIds.includes(item.id)}
                   onCheckedChange={(checked) =>
-                    toggleSelectOne(announcement.id, checked as boolean)
+                    setSelectedIds((previous) =>
+                      checked
+                        ? [...previous, item.id]
+                        : previous.filter((id) => id !== item.id)
+                    )
                   }
                 />
               ),
@@ -376,232 +304,109 @@ export function AnnouncementsSection({
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
-              cell: (announcement) => announcement.content,
+              cell: (item) => item.content,
             },
             {
               id: 'publish-date',
               header: t('Publish Date'),
-              cell: (announcement) => (
-                <div className='flex flex-col gap-1'>
-                  <span className='text-sm font-medium'>
-                    {getRelativeTime(announcement.publishDate)}
-                  </span>
-                  <span className='text-muted-foreground text-xs'>
-                    {dayjs(announcement.publishDate).format(
-                      'YYYY-MM-DD HH:mm:ss'
-                    )}
-                  </span>
-                </div>
+              cell: (item) => (
+                <span className='text-sm whitespace-nowrap'>
+                  {dayjs(item.publishDate).format('YYYY-MM-DD HH:mm')}
+                </span>
               ),
             },
             {
-              id: 'type',
-              header: t('Type'),
-              cell: (announcement) => (
-                <StatusBadge
-                  label={
-                    typeOptions.find((opt) => opt.value === announcement.type)
-                      ?.label
+              id: 'telegram',
+              header: t('Telegram publication'),
+              cell: (item) => (
+                <AnnouncementDelivery
+                  announcement={item}
+                  disabled={!!draft || busy}
+                  onRetry={(announcement) =>
+                    void retryPublication(announcement)
                   }
-                  variant={
-                    typeOptions.find((opt) => opt.value === announcement.type)
-                      ?.badgeVariant ?? 'neutral'
-                  }
-                  copyable={false}
                 />
               ),
             },
             {
-              id: 'extra',
-              header: t('Extra'),
-              cellClassName: 'text-muted-foreground max-w-xs truncate',
-              cell: (announcement) => announcement.extra || '-',
-            },
-            {
               id: 'actions',
               header: t('Actions'),
-              cell: (announcement) => (
+              cell: (item) => (
                 <StaticRowActions
                   editLabel={t('Edit')}
                   deleteLabel={t('Delete')}
                   menuLabel={t('Open menu')}
-                  onEdit={() => handleEdit(announcement)}
-                  onDelete={() => handleDelete(announcement)}
+                  editDisabled={busy}
+                  deleteDisabled={busy}
+                  onEdit={() =>
+                    setEditor({ announcement: item, snapshot: settings })
+                  }
+                  onDelete={() => setDeleteIds([item.id])}
                 />
               ),
             },
           ]}
         />
       </div>
-
-      <Dialog
-        open={showDialog}
-        onOpenChange={setShowDialog}
-        title={
-          editingAnnouncement ? t('Edit Announcement') : t('Add Announcement')
-        }
-        description={t(
-          'Create or update system announcements for the dashboard'
-        )}
-        contentClassName='max-w-2xl'
-        contentHeight='auto'
-        bodyClassName='space-y-4'
-        footer={
-          <>
-            <Button
-              type='button'
-              variant='outline'
-              onClick={() => setShowDialog(false)}
-            >
-              {t('Cancel')}
-            </Button>
-            <Button type='submit' form={ANNOUNCEMENT_FORM_ID}>
-              {editingAnnouncement ? t('Update') : t('Add')}
-            </Button>
-          </>
-        }
+      {editor && (
+        <AnnouncementEditor
+          announcement={editor.announcement}
+          onClose={() => setEditor(null)}
+          onSubmit={submitAnnouncement}
+        />
+      )}
+      <AlertDialog
+        open={deleteIds.length > 0}
+        onOpenChange={(open) => {
+          if (!open) setDeleteIds([])
+        }}
       >
-        <Form {...form}>
-          <form
-            id={ANNOUNCEMENT_FORM_ID}
-            onSubmit={form.handleSubmit(handleSubmitForm)}
-            className='space-y-4'
-          >
-            <FormField
-              control={form.control}
-              name='content'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Content')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder={t(
-                        'Enter announcement content (supports Markdown/HTML)'
-                      )}
-                      rows={4}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name='publishDate'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Publish Date')}</FormLabel>
-                  <FormControl>
-                    <DateTimePicker
-                      value={field.value ? new Date(field.value) : undefined}
-                      onChange={(date) =>
-                        field.onChange(date ? date.toISOString() : '')
-                      }
-                      placeholder={t('Select publish date')}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'Date and time when this announcement should be displayed'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name='type'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Type')}</FormLabel>
-                  <Select
-                    items={typeOptions.map((option) => ({
-                        value: option.value,
-                        label: (
-                          <div className='flex items-center gap-2'>
-                            <div
-                              className={`h-3 w-3 rounded-full ${option.color}`}
-                            />
-                            {option.label}
-                          </div>
-                        ),
-                      }))}
-                    onValueChange={field.onChange}
-                    value={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={t('Select announcement type')}
-                        />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent alignItemWithTrigger={false}>
-                      <SelectGroup>
-                        {typeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            <div className='flex items-center gap-2'>
-                              <div
-                                className={`h-3 w-3 rounded-full ${option.color}`}
-                              />
-                              {option.label}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name='extra'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Extra Notes (Optional)')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t('Additional information')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'Optional supplementary information (max 100 characters)'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </form>
-        </Form>
-      </Dialog>
-
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('Are you sure?')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget === 'single'
-                ? t('This announcement will be removed from the list.')
-                : t(
-                    '{{count}} announcements will be removed from the list.',
-                    { count: selectedIds.length }
-                  )}
+              {t(
+                'Selected news will be removed after saving. Published Telegram posts will remain in the channel.'
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
             <AlertDialogAction variant='destructive' onClick={confirmDelete}>
               {t('Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={!!unknownRetry}
+        onOpenChange={(open) => {
+          if (!open && !retry.isPending) setUnknownRetry(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('Check the Telegram channel before retrying')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'The previous post may already exist. Retrying can create a duplicate. Link the existing post using Edit, or confirm another attempt.'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={retry.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={retry.isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                if (unknownRetry) void retryPublication(unknownRetry, true)
+              }}
+            >
+              {t('Confirm Telegram retry')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

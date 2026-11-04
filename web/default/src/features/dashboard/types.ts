@@ -241,11 +241,12 @@ export interface ProcessedUserChartData {
 // ============================================================================
 
 export interface AnnouncementItem {
-  id?: number
+  id?: number | string
   content: string
   publishDate?: string
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
+  telegramUrl?: string
 }
 
 // ============================================================================
