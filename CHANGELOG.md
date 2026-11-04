@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.216 — 2026-11-04
+
+- Add a ready-to-use Russian About page HTML template with a short service description and a prominent, fully clickable Telegram contact row.
+- Keep the existing home page and support editing the About content through administrator settings without changing application behavior.
+
 ## v1.1.215 — 2026-11-04
 
 - Add optional proxy suppliers and pricing profiles for channels and pricing groups, with isolated real-USD model tariffs, immutable billing snapshots, and synchronization of supported OpenLux, relay.fast, and BBLABU catalogues.
