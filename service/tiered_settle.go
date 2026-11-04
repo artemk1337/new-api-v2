@@ -24,6 +24,8 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cr := float64(usage.PromptTokensDetails.CachedTokens)
 	cc5m := float64(usage.PromptTokensDetails.CachedCreationTokens)
 	cc1h := float64(0)
+	cc12h := float64(0)
+	unknownCacheWrites := 0.0
 
 	hasSplitCacheCreation := usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
 	if hasSplitCacheCreation &&
@@ -35,6 +37,15 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		)
 		cc5m = float64(cacheCreation5m)
 		cc1h = float64(cacheCreation1h)
+	}
+
+	if details := usage.PromptTokensDetails; details.CacheWriteTokens > 0 || details.CacheWriteTokensDetails != nil {
+		short, long, unknown := cacheWriteTokenCounts(details)
+		cc5m = float64(short + unknown)
+		cc12h = float64(long)
+		if usedVars["cc12h"] {
+			unknownCacheWrites = float64(unknown)
+		}
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)
@@ -50,7 +61,7 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	// Claude: input_tokens is text-only, so add cache read + cache creation.
 	inputLen := p
 	if isClaudeUsageSemantic {
-		inputLen = p + cr + cc5m + cc1h
+		inputLen = p + cr + cc5m + cc1h + cc12h
 	}
 
 	if !isClaudeUsageSemantic {
@@ -62,6 +73,9 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		}
 		if usedVars["cc1h"] {
 			p -= cc1h
+		}
+		if usedVars["cc12h"] {
+			p -= cc12h
 		}
 		if usedVars["img"] {
 			p -= img
@@ -96,7 +110,11 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		c = 0
 	}
 
-	return buildTieredTokenParams(p, c, inputLen, cr, cc5m, cc1h, img, imgO, ai, ao, rt, unknown, fallback)
+	params := buildTieredTokenParams(p, c, inputLen, cr, cc5m, cc1h, img, imgO, ai, ao, rt, unknown, fallback)
+	params.CC12h = cc12h
+	params.CacheCreationTokensUnknown = unknownCacheWrites
+	params.CacheCreationTokensFallback = unknownCacheWrites > 0
+	return params
 }
 
 func buildTieredTokenParams(p, c, inputLen, cr, cc5m, cc1h, img, imgO, ai, ao, rt, unknown float64, fallback bool) billingexpr.TokenParams {
@@ -178,6 +196,34 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 	snap := relayInfo.TieredBillingSnapshot
 	if snap == nil || snap.BillingMode != "tiered_expr" {
 		return false, 0, nil
+	}
+
+	if params.CacheCreationTokensFallback {
+		// Keep known TTL counts fixed and evaluate only the unclassified writes.
+		// A missing lifetime must not silently select the cheaper cache rate.
+		unknown := params.CacheCreationTokensUnknown
+		known := params
+		known.CC -= unknown
+		known.CacheCreationTokensUnknown = 0
+		known.CacheCreationTokensFallback = false
+		usedVars := billingexpr.UsedVars(snap.ExprString)
+		if !usedVars["cc"] {
+			known.P = max(known.P-unknown, 0)
+		}
+		short := known
+		if usedVars["cc"] {
+			short.CC += unknown
+		} else {
+			short.P += unknown
+		}
+		long := known
+		long.CC12h += unknown
+		_, shortQuota, shortResult := TryTieredSettle(relayInfo, short)
+		_, longQuota, longResult := TryTieredSettle(relayInfo, long)
+		if longQuota > shortQuota {
+			return true, longQuota, longResult
+		}
+		return true, shortQuota, shortResult
 	}
 
 	requestInput := billingexpr.RequestInput{}

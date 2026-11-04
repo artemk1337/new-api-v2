@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.224 — 2026-11-05
+
+- Bill 12-hour prompt-cache writes separately from short-lived and one-hour writes, preserving usage counts across Chat Completions and Responses conversions without double charging input tokens.
+- Preserve upstream cache TTL settings and price unknown write lifetimes conservatively when the usage response omits the split.
+- Import explicit cache-write lifetime prices from upstream catalogues and accept BaseLLM expressions containing `cc12h`, including context-dependent tiers and zero-priced lanes.
+- Show 12-hour cache rates in the pricing editor, previews, catalogue, and usage details in all six interface languages.
+
 ## v1.1.223 — 2026-11-04
 
 - Save announcements immediately when adding or updating them, and apply deletions after confirmation without a separate Save Settings step.

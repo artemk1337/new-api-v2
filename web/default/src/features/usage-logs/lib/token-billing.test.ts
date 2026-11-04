@@ -51,3 +51,33 @@ describe('usage log token billing parts', () => {
     assert.equal(parts.baseInput, 5)
   })
 })
+
+it('keeps 12-hour writes separate from short writes without double counting', () => {
+  const parts = getTokenBillingParts(
+    { ...log, prompt_tokens: 1000 },
+    {
+      cache_tokens: 100,
+      cache_creation_tokens: 400,
+      cache_creation_tokens_5m: 50,
+      cache_creation_tokens_1h: 100,
+      cache_creation_tokens_12h: 200,
+    }
+  )
+
+  assert.equal(parts.cacheWrite12h, 200)
+  assert.equal(parts.cacheWrite1h, 100)
+  assert.equal(parts.cacheWriteResidual, 50)
+  assert.equal(parts.cacheWriteShort, 100)
+  assert.equal(parts.baseInput, 500)
+})
+
+it('does not show a phantom short-write charge for 12-hour-only usage', () => {
+  const parts = getTokenBillingParts(
+    { ...log, prompt_tokens: 1000 },
+    { cache_creation_tokens: 200, cache_creation_tokens_12h: 200 }
+  )
+
+  assert.equal(parts.cacheWriteShort, 0)
+  assert.equal(parts.cacheWrite12h, 200)
+  assert.equal(parts.baseInput, 800)
+})

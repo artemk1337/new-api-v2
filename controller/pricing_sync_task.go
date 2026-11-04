@@ -43,19 +43,23 @@ type fetchedUpstreamPricing struct {
 }
 
 type upstreamPricingItem struct {
-	ModelName            string                `json:"model_name"`
-	QuotaType            int                   `json:"quota_type"`
-	ModelRatio           float64               `json:"model_ratio"`
-	ModelPrice           float64               `json:"model_price"`
-	CompletionRatio      float64               `json:"completion_ratio"`
-	CacheRatio           *float64              `json:"cache_ratio"`
-	CreateCacheRatio     *float64              `json:"create_cache_ratio"`
-	ImageRatio           *float64              `json:"image_ratio"`
-	AudioRatio           *float64              `json:"audio_ratio"`
-	AudioCompletionRatio *float64              `json:"audio_completion_ratio"`
-	BillingMode          string                `json:"billing_mode"`
-	BillingExpr          string                `json:"billing_expr"`
-	StepRatios           []upstreamPricingStep `json:"step_ratios"`
+	ModelName             string                `json:"model_name"`
+	QuotaType             int                   `json:"quota_type"`
+	ModelRatio            float64               `json:"model_ratio"`
+	ModelPrice            float64               `json:"model_price"`
+	CompletionRatio       float64               `json:"completion_ratio"`
+	CacheRatio            *float64              `json:"cache_ratio"`
+	CreateCacheRatio      *float64              `json:"create_cache_ratio"`
+	CacheCreationRatio    *float64              `json:"cache_creation_ratio"`
+	CacheCreation5mRatio  *float64              `json:"cache_creation_5m_ratio"`
+	CacheCreation1hRatio  *float64              `json:"cache_creation_1h_ratio"`
+	CacheCreation12hRatio *float64              `json:"cache_creation_12h_ratio"`
+	ImageRatio            *float64              `json:"image_ratio"`
+	AudioRatio            *float64              `json:"audio_ratio"`
+	AudioCompletionRatio  *float64              `json:"audio_completion_ratio"`
+	BillingMode           string                `json:"billing_mode"`
+	BillingExpr           string                `json:"billing_expr"`
+	StepRatios            []upstreamPricingStep `json:"step_ratios"`
 }
 
 type upstreamPricingStep struct {
@@ -209,7 +213,7 @@ func upstreamPricingItemsToSyncData(items []upstreamPricingItem) (map[string]any
 			put(billing_setting.BillingModeField, modelName, billing_setting.BillingModeTieredExpr)
 			put(billing_setting.BillingExprField, modelName, explicitExpr)
 			tiered = true
-		} else if len(item.StepRatios) > 0 {
+		} else if len(item.StepRatios) > 0 || (item.QuotaType != 1 && hasExplicitCacheCreationRatios(item)) {
 			expr, ok := pricingStepRatiosExpr(item)
 			if !ok || billing_setting.SmokeTestExpr(expr) != nil {
 				block(modelName)
@@ -241,7 +245,9 @@ func upstreamPricingItemsToSyncData(items []upstreamPricingItem) (map[string]any
 		if item.CacheRatio != nil {
 			put("cache_ratio", modelName, *item.CacheRatio)
 		}
-		if item.CreateCacheRatio != nil {
+		if item.CacheCreationRatio != nil {
+			put("create_cache_ratio", modelName, *item.CacheCreationRatio)
+		} else if item.CreateCacheRatio != nil {
 			put("create_cache_ratio", modelName, *item.CreateCacheRatio)
 		}
 		if item.ImageRatio != nil {
@@ -268,6 +274,10 @@ func validOptionalPricingRatios(item upstreamPricingItem) bool {
 	for _, value := range []*float64{
 		item.CacheRatio,
 		item.CreateCacheRatio,
+		item.CacheCreationRatio,
+		item.CacheCreation5mRatio,
+		item.CacheCreation1hRatio,
+		item.CacheCreation12hRatio,
 		item.ImageRatio,
 		item.AudioRatio,
 		item.AudioCompletionRatio,
@@ -285,28 +295,16 @@ func validOptionalPricingRatios(item upstreamPricingItem) bool {
 // Thinking output is represented by the rt billing variable when the upstream
 // contract provides a separate completion-thinking ratio.
 func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
-	if item.QuotaType == 1 || len(item.StepRatios) == 0 ||
+	if item.QuotaType == 1 || (len(item.StepRatios) == 0 && !hasExplicitCacheCreationRatios(item)) ||
 		!nonNegativeFinite(item.ModelRatio) || !nonNegativeFinite(item.CompletionRatio) ||
 		!validOptionalPricingRatios(item) {
 		return "", false
 	}
-	cacheRatio := 1.0
-	if item.CacheRatio != nil {
-		cacheRatio = *item.CacheRatio
-	}
-	createCacheRatio := 1.25
-	if item.CreateCacheRatio != nil {
-		createCacheRatio = *item.CreateCacheRatio
-	}
-	audioRatio := 1.0
-	if item.AudioRatio != nil {
-		audioRatio = *item.AudioRatio
-	}
-	audioCompletionRatio := 1.0
-	if item.AudioCompletionRatio != nil {
-		audioCompletionRatio = *item.AudioCompletionRatio
-	}
 	steps := item.StepRatios
+	if len(steps) == 0 {
+		step := upstreamPricingStep{PromptStepRatio: 1, CompletionStepRatio: 1, CacheStepRatio: 1}
+		return "tier(\"base\", " + upstreamTokenCostExpr(item, step) + ")", true
+	}
 	parts := make([]string, 0, len(steps))
 	for index, step := range steps {
 		if step.StepSize <= 0 || !nonNegativeFinite(step.PromptStepRatio) || !nonNegativeFinite(step.CompletionStepRatio) ||
@@ -322,26 +320,7 @@ func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 				return "", false
 			}
 		}
-		inputPrice := item.ModelRatio * 2 * step.PromptStepRatio
-		outputPrice := item.ModelRatio * item.CompletionRatio * 2 * step.CompletionStepRatio
-		cost := "p * " + strconv.FormatFloat(inputPrice, 'f', -1, 64) + " + c * " + strconv.FormatFloat(outputPrice, 'f', -1, 64)
-		cachePrice := item.ModelRatio * cacheRatio * 2 * step.CacheStepRatio
-		cost += " + cr * " + strconv.FormatFloat(cachePrice, 'f', -1, 64)
-		cacheCreationPrice := item.ModelRatio * createCacheRatio * 2 * step.CacheStepRatio
-		cost += " + cc * " + strconv.FormatFloat(cacheCreationPrice, 'f', -1, 64)
-		cost += " + cc1h * " + strconv.FormatFloat(cacheCreationPrice*upstreamCacheCreation1hMultiplier, 'f', -1, 64)
-		if item.ImageRatio != nil {
-			imagePrice := item.ModelRatio * *item.ImageRatio * 2 * step.PromptStepRatio
-			cost += " + img * " + strconv.FormatFloat(imagePrice, 'f', -1, 64)
-		}
-		audioInputPrice := item.ModelRatio * audioRatio * 2 * step.PromptStepRatio
-		cost += " + ai * " + strconv.FormatFloat(audioInputPrice, 'f', -1, 64)
-		audioOutputPrice := item.ModelRatio * audioRatio * audioCompletionRatio * 2 * step.CompletionStepRatio
-		cost += " + ao * " + strconv.FormatFloat(audioOutputPrice, 'f', -1, 64)
-		if step.CompletionThinkingStepRatio != 0 {
-			reasoningPrice := item.ModelRatio * item.CompletionRatio * 2 * step.CompletionThinkingStepRatio
-			cost += " + rt * " + strconv.FormatFloat(reasoningPrice, 'f', -1, 64)
-		}
+		cost := upstreamTokenCostExpr(item, step)
 		tier := "tier(\"step_" + strconv.Itoa(index+1) + "\", " + cost + ")"
 		if index == len(steps)-1 {
 			parts = append(parts, tier)
@@ -355,6 +334,65 @@ func pricingStepRatiosExpr(item upstreamPricingItem) (string, bool) {
 		parts = append(parts, condition+" ? "+tier+" : ")
 	}
 	return strings.Join(parts, ""), true
+}
+
+func hasExplicitCacheCreationRatios(item upstreamPricingItem) bool {
+	return item.CacheCreation5mRatio != nil || item.CacheCreation1hRatio != nil || item.CacheCreation12hRatio != nil
+}
+
+func upstreamTokenCostExpr(item upstreamPricingItem, step upstreamPricingStep) string {
+	cacheRatio := 1.0
+	if item.CacheRatio != nil {
+		cacheRatio = *item.CacheRatio
+	}
+	createCacheRatio := 1.25
+	if item.CreateCacheRatio != nil {
+		createCacheRatio = *item.CreateCacheRatio
+	}
+	if item.CacheCreationRatio != nil {
+		createCacheRatio = *item.CacheCreationRatio
+	}
+	if item.CacheCreation5mRatio != nil {
+		createCacheRatio = *item.CacheCreation5mRatio
+	}
+
+	audioRatio := 1.0
+	if item.AudioRatio != nil {
+		audioRatio = *item.AudioRatio
+	}
+	audioCompletionRatio := 1.0
+	if item.AudioCompletionRatio != nil {
+		audioCompletionRatio = *item.AudioCompletionRatio
+	}
+	inputPrice := item.ModelRatio * 2 * step.PromptStepRatio
+	outputPrice := item.ModelRatio * item.CompletionRatio * 2 * step.CompletionStepRatio
+	cost := "p * " + strconv.FormatFloat(inputPrice, 'f', -1, 64) + " + c * " + strconv.FormatFloat(outputPrice, 'f', -1, 64)
+	cachePrice := item.ModelRatio * cacheRatio * 2 * step.CacheStepRatio
+	cost += " + cr * " + strconv.FormatFloat(cachePrice, 'f', -1, 64)
+	cacheCreationPrice := item.ModelRatio * createCacheRatio * 2 * step.CacheStepRatio
+	cost += " + cc * " + strconv.FormatFloat(cacheCreationPrice, 'f', -1, 64)
+	cacheCreation1hPrice := cacheCreationPrice * upstreamCacheCreation1hMultiplier
+	if item.CacheCreation1hRatio != nil {
+		cacheCreation1hPrice = item.ModelRatio * *item.CacheCreation1hRatio * 2 * step.CacheStepRatio
+	}
+	cost += " + cc1h * " + strconv.FormatFloat(cacheCreation1hPrice, 'f', -1, 64)
+	if item.CacheCreation12hRatio != nil {
+		price := item.ModelRatio * *item.CacheCreation12hRatio * 2 * step.CacheStepRatio
+		cost += " + cc12h * " + strconv.FormatFloat(price, 'f', -1, 64)
+	}
+	if item.ImageRatio != nil {
+		imagePrice := item.ModelRatio * *item.ImageRatio * 2 * step.PromptStepRatio
+		cost += " + img * " + strconv.FormatFloat(imagePrice, 'f', -1, 64)
+	}
+	audioInputPrice := item.ModelRatio * audioRatio * 2 * step.PromptStepRatio
+	cost += " + ai * " + strconv.FormatFloat(audioInputPrice, 'f', -1, 64)
+	audioOutputPrice := item.ModelRatio * audioRatio * audioCompletionRatio * 2 * step.CompletionStepRatio
+	cost += " + ao * " + strconv.FormatFloat(audioOutputPrice, 'f', -1, 64)
+	if step.CompletionThinkingStepRatio != 0 {
+		reasoningPrice := item.ModelRatio * item.CompletionRatio * 2 * step.CompletionThinkingStepRatio
+		cost += " + rt * " + strconv.FormatFloat(reasoningPrice, 'f', -1, 64)
+	}
+	return cost
 }
 
 func completionStepAfter(previous, current int) bool {

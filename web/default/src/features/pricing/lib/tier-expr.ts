@@ -37,6 +37,7 @@ export type VisualTier = {
   cache_read_unit_cost?: number
   cache_create_unit_cost?: number
   cache_create_1h_unit_cost?: number
+  cache_create_12h_unit_cost?: number
   image_unit_cost?: number
   image_output_unit_cost?: number
   audio_input_unit_cost?: number
@@ -55,9 +56,14 @@ export function getTierCacheMode(
 ): CacheMode {
   if (tier?.cache_mode === CACHE_MODE_TIMED) return CACHE_MODE_TIMED
   if (tier?.cache_mode === CACHE_MODE_GENERIC) return CACHE_MODE_GENERIC
-  return Number(tier?.cache_create_1h_unit_cost) > 0
-    ? CACHE_MODE_TIMED
-    : CACHE_MODE_GENERIC
+  const hasTimedCache = [
+    'cache_create_1h_unit_cost',
+    'cache_create_12h_unit_cost',
+  ].some(
+    (field) =>
+      Number(tier?.[field]) > 0 || tier?.explicitExtraFields?.includes(field)
+  )
+  return hasTimedCache ? CACHE_MODE_TIMED : CACHE_MODE_GENERIC
 }
 
 export function normalizeVisualTier(
@@ -73,6 +79,7 @@ export function normalizeVisualTier(
     cache_read_unit_cost: Number(tier.cache_read_unit_cost) || 0,
     cache_create_unit_cost: Number(tier.cache_create_unit_cost) || 0,
     cache_create_1h_unit_cost: Number(tier.cache_create_1h_unit_cost) || 0,
+    cache_create_12h_unit_cost: Number(tier.cache_create_12h_unit_cost) || 0,
     image_unit_cost: Number(tier.image_unit_cost) || 0,
     image_output_unit_cost: Number(tier.image_output_unit_cost) || 0,
     audio_input_unit_cost: Number(tier.audio_input_unit_cost) || 0,
@@ -274,6 +281,7 @@ const ESTIMATOR_VARS = [
   { var: 'cr', stateKey: 'cacheReadTokens' },
   { var: 'cc', stateKey: 'cacheCreateTokens' },
   { var: 'cc1h', stateKey: 'cacheCreate1hTokens' },
+  { var: 'cc12h', stateKey: 'cacheCreate12hTokens' },
   { var: 'img', stateKey: 'imageTokens' },
   { var: 'img_o', stateKey: 'imageOutputTokens' },
   { var: 'ai', stateKey: 'audioInputTokens' },
@@ -310,9 +318,14 @@ export function evalExprLocally(
     const cacheReadTokens = extraTokenValues.cacheReadTokens || 0
     const cacheCreateTokens = extraTokenValues.cacheCreateTokens || 0
     const cacheCreate1hTokens = extraTokenValues.cacheCreate1hTokens || 0
+    const cacheCreate12hTokens = extraTokenValues.cacheCreate12hTokens || 0
     const reasoningOutputTokens = extraTokenValues.reasoningOutputTokens || 0
     const len =
-      promptTokens + cacheReadTokens + cacheCreateTokens + cacheCreate1hTokens
+      promptTokens +
+      cacheReadTokens +
+      cacheCreateTokens +
+      cacheCreate1hTokens +
+      cacheCreate12hTokens
     const outputTokens = /\brt\b/.test(exprStr)
       ? Math.max(0, completionTokens - reasoningOutputTokens)
       : completionTokens

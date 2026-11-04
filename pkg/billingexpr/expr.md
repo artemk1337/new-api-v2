@@ -10,7 +10,7 @@ The expression is the billing contract between the administrator and the system.
 
 1. **Expression is self-contained** — The expression string alone determines billing. No external ratio tables, no implicit completion multipliers, no hidden conversion factors. Given the same token counts and request context, the same expression always produces the same cost.
 
-2. **Variables are opt-in** — `p` (prompt) and `c` (completion) are the base. Cache (`cr`, `cc`, `cc1h`), image (`img`), and audio (`ai`, `ao`) variables are optional. If omitted, those tokens are included in `p`/`c` and priced at their rate. The system automatically detects which variables the expression uses (via AST introspection) and adjusts token normalization accordingly.
+2. **Variables are opt-in** — `p` (prompt) and `c` (completion) are the base. Cache (`cr`, `cc`, `cc1h`, `cc12h`), image (`img`), and audio (`ai`, `ao`) variables are optional. If omitted, those tokens are included in `p`/`c` and priced at their rate. The system automatically detects which variables the expression uses (via AST introspection) and adjusts token normalization accordingly.
 
 3. **Prices are real prices** — Expression coefficients are actual $/1M tokens prices as published by providers. No ratio conversion, no `/2` convention. `p * 2.5` means $2.50 per 1M prompt tokens.
 
@@ -35,6 +35,7 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `cr` | 缓存命中（读取）token 数 |
 | `cc` | 缓存创建 token 数（Claude 5分钟 TTL / 通用） |
 | `cc1h` | 缓存创建 token 数 — 1小时 TTL（Claude 专用） |
+| `cc12h` | Cache creation tokens with explicit 12-hour retention (OpenAI Responses) |
 | `img` | 图片输入 token 数 |
 | `ai` | 音频输入 token 数 |
 
@@ -255,3 +256,29 @@ This enables future evolution without breaking existing expressions.
 | Frontend display | `web/src/helpers/render.jsx`, `web/src/helpers/utils.jsx` |
 | Model detail | `web/src/components/table/model-pricing/modal/components/DynamicPricingBreakdown.jsx` |
 | Log display | `web/src/hooks/usage-logs/useUsageLogsData.jsx`, `web/src/components/table/usage-logs/UsageLogsColumnDefs.jsx` |
+
+## OpenAI cache write lifetimes
+
+OpenAI-compatible usage reports `cache_write_tokens` separately from reads.
+`cache_write_tokens_details.ttl_30m_tokens` and `ttl_12h_tokens` are disjoint
+components of that aggregate. They map to `cc` and `cc12h`, respectively;
+`cc1h` retains its existing Claude-only meaning. The request field
+`prompt_cache_options` is forwarded unchanged, including explicit breakpoint
+TTLs. A request preference never substitutes for reported usage.
+
+For example, 12,000 input tokens with 4,000 reads, 3,000 short writes, and
+4,000 twelve-hour writes leave 1,000 ordinary input tokens when all three
+cache variables are referenced. `len` remains 12,000. The aggregate write
+count is not charged again. Expressions that omit `cc12h` keep these tokens
+in ordinary input according to the existing opt-in rule.
+
+When an upstream reports only an aggregate write count, or a split leaves
+an unclassified remainder, expressions referencing `cc12h` evaluate that
+remainder at both the generic write/input lane and the twelve-hour write
+lane, and settle the higher applicable cost. Explicit zero lifetime
+counters are preserved. Known lifetime counts are never reassigned.
+
+Expressions that price `cc12h` must be linear in the two possible write
+allocation lanes and use total-input conditions such as `len` for tiers.
+Validation rejects allocation-dependent nonlinear peaks, so comparing the
+two endpoints is a safe conservative settlement for unknown lifetimes.

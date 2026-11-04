@@ -149,9 +149,7 @@ func UsageFromResponsesUsage(src *dto.Usage) *dto.Usage {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 	if src.InputTokensDetails != nil {
-		usage.PromptTokensDetails.CachedTokens = src.InputTokensDetails.CachedTokens
-		usage.PromptTokensDetails.ImageTokens = src.InputTokensDetails.ImageTokens
-		usage.PromptTokensDetails.AudioTokens = src.InputTokensDetails.AudioTokens
+		usage.PromptTokensDetails = *src.InputTokensDetails
 	}
 	if src.CompletionTokenDetails.ReasoningTokensPresent || src.CompletionTokenDetails.ReasoningTokens != 0 {
 		usage.CompletionTokenDetails.ReasoningTokens = src.CompletionTokenDetails.ReasoningTokens

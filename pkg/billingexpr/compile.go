@@ -45,6 +45,7 @@ var compileEnvPrototypeV1 = map[string]interface{}{
 	"cr":      float64(0),
 	"cc":      float64(0),
 	"cc1h":    float64(0),
+	"cc12h":   float64(0),
 	"img":     float64(0),
 	"img_o":   float64(0),
 	"ai":      float64(0),
@@ -218,13 +219,13 @@ func reasoningScale(form reasoningSplitForm, factor float64) reasoningSplitForm 
 	return form
 }
 
-func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
+func tokenSplitFormFor(node ast.Node, first, second string) reasoningSplitForm {
 	switch node := node.(type) {
 	case *ast.IdentifierNode:
 		switch node.Value {
-		case "c":
+		case first:
 			return reasoningSplitForm{safe: true, known: true, cCoeff: 1}
-		case "rt":
+		case second:
 			return reasoningSplitForm{safe: true, known: true, rtCoeff: 1}
 		default:
 			return reasoningConstant()
@@ -236,7 +237,7 @@ func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
 	case *ast.NilNode, *ast.BoolNode, *ast.StringNode, *ast.BytesNode, *ast.ConstantNode:
 		return reasoningConstant()
 	case *ast.UnaryNode:
-		form := reasoningSplitFormFor(node.Node)
+		form := tokenSplitFormFor(node.Node, first, second)
 		if node.Operator == "-" {
 			return reasoningScale(form, -1)
 		}
@@ -245,8 +246,8 @@ func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
 		}
 		return reasoningInvalid()
 	case *ast.BinaryNode:
-		left := reasoningSplitFormFor(node.Left)
-		right := reasoningSplitFormFor(node.Right)
+		left := tokenSplitFormFor(node.Left, first, second)
+		right := tokenSplitFormFor(node.Right, first, second)
 		switch node.Operator {
 		case "+":
 			return reasoningAdd(left, right, 1)
@@ -279,9 +280,9 @@ func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
 		}
 		return reasoningInvalid()
 	case *ast.ConditionalNode:
-		cond := reasoningSplitFormFor(node.Cond)
-		left := reasoningSplitFormFor(node.Exp1)
-		right := reasoningSplitFormFor(node.Exp2)
+		cond := tokenSplitFormFor(node.Cond, first, second)
+		left := tokenSplitFormFor(node.Exp1, first, second)
+		right := tokenSplitFormFor(node.Exp2, first, second)
 		if !cond.safe || !cond.invariant || !left.safe || !right.safe {
 			return reasoningInvalid()
 		}
@@ -295,10 +296,10 @@ func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
 		return form
 	case *ast.CallNode:
 		if callee, ok := node.Callee.(*ast.IdentifierNode); ok && callee.Value == "tier" && len(node.Arguments) == 2 {
-			return reasoningSplitFormFor(node.Arguments[1])
+			return tokenSplitFormFor(node.Arguments[1], first, second)
 		}
 		for _, argument := range node.Arguments {
-			form := reasoningSplitFormFor(argument)
+			form := tokenSplitFormFor(argument, first, second)
 			if !form.safe || !form.invariant {
 				return reasoningInvalid()
 			}
@@ -306,14 +307,14 @@ func reasoningSplitFormFor(node ast.Node) reasoningSplitForm {
 		return reasoningConstant()
 	case *ast.BuiltinNode:
 		for _, argument := range node.Arguments {
-			form := reasoningSplitFormFor(argument)
+			form := tokenSplitFormFor(argument, first, second)
 			if !form.safe || !form.invariant {
 				return reasoningInvalid()
 			}
 		}
 		return reasoningConstant()
 	case *ast.ChainNode:
-		return reasoningSplitFormFor(node.Node)
+		return tokenSplitFormFor(node.Node, first, second)
 	default:
 		return reasoningInvalid()
 	}
@@ -328,7 +329,25 @@ func ReasoningSplitIsSafe(exprStr string) bool {
 	if err != nil {
 		return false
 	}
-	return reasoningSplitFormFor(prog.Node()).safe
+	return tokenSplitFormFor(prog.Node(), "c", "rt").safe
+}
+
+// CacheCreationSplitIsSafe reports whether endpoint-only lifetime fallback is safe.
+// Unknown writes stay in the input lane when no generic write lane is priced.
+func CacheCreationSplitIsSafe(exprStr string) bool {
+	vars := UsedVars(exprStr)
+	if !vars["cc12h"] {
+		return true
+	}
+	prog, err := CompileFromCache(exprStr)
+	if err != nil {
+		return false
+	}
+	first := "p"
+	if vars["cc"] {
+		first = "cc"
+	}
+	return tokenSplitFormFor(prog.Node(), first, "cc12h").safe
 }
 
 // InvalidateCache clears the compiled-expression cache.

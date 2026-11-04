@@ -2586,6 +2586,14 @@
               },
               "image_tokens": {
                 "type": "integer"
+              },
+              "cache_write_tokens": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total billed cache-write tokens; distinct from cached_tokens reads."
+              },
+              "cache_write_tokens_details": {
+                "$ref": "#/components/schemas/CacheWriteTokensDetails"
               }
             }
           },
@@ -2600,6 +2608,23 @@
               },
               "reasoning_tokens": {
                 "type": "integer"
+              }
+            }
+          },
+          "input_tokens_details": {
+            "type": "object",
+            "description": "Responses API input-token details, including separate cache reads and writes.",
+            "properties": {
+              "cached_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cache_write_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cache_write_tokens_details": {
+                "$ref": "#/components/schemas/CacheWriteTokensDetails"
               }
             }
           }
@@ -3323,6 +3348,21 @@
               "auto",
               "disabled"
             ]
+          },
+          "prompt_cache_options": {
+            "type": "object",
+            "description": "Prompt-cache settings forwarded to compatible upstream Responses APIs. Individual breakpoints may override the request TTL.",
+            "properties": {
+              "ttl": {
+                "type": "string",
+                "enum": [
+                  "30m",
+                  "12h"
+                ],
+                "description": "Minimum cache lifetime; does not set a deletion deadline."
+              }
+            },
+            "additionalProperties": true
           }
         }
       },
@@ -4812,6 +4852,20 @@
           },
           "created_at": {
             "type": "integer"
+          }
+        }
+      },
+      "CacheWriteTokensDetails": {
+        "type": "object",
+        "description": "Disjoint cache-write token counts by minimum lifetime. When provided, both fields are present, including zero, and their sum equals cache_write_tokens.",
+        "properties": {
+          "ttl_30m_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ttl_12h_tokens": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

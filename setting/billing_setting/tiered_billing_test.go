@@ -7,7 +7,7 @@ import (
 )
 
 func TestSmokeTestExprRejectsNegativeOptionalTokenDimensions(t *testing.T) {
-	for _, variable := range []string{"cr", "cc", "cc1h", "img", "img_o", "ai", "ao", "rt"} {
+	for _, variable := range []string{"cr", "cc", "cc1h", "cc12h", "img", "img_o", "ai", "ao", "rt"} {
 		t.Run(variable, func(t *testing.T) {
 			err := SmokeTestExpr(`tier("base", ` + variable + ` > 0 ? -` + variable + ` : p)`)
 			require.Error(t, err)
@@ -24,4 +24,8 @@ func TestSmokeTestExprRejectsDirectCompletionTierWithReasoning(t *testing.T) {
 	require.NoError(t, SmokeTestExpr(`tier("base", max(p, cr) + c * 2 + rt * 8)`))
 	require.NoError(t, SmokeTestExpr(`len <= 500 ? tier("short", c + rt) : tier("long", c + rt)`))
 	require.NoError(t, SmokeTestExpr(`len <= 500 ? tier("short", c * 2 + rt * 8) : tier("long", c * 4 + rt * 12)`))
+}
+
+func TestSmokeTestExprAcceptsDistinctCacheCreationTTLs(t *testing.T) {
+	require.NoError(t, SmokeTestExpr(`tier("base", p * 2 + cc * 2.5 + cc1h * 4 + cc12h * 5)`))
 }

@@ -875,3 +875,77 @@ func TestPricingCandidateHashCanonicalizesDeleteOrder(t *testing.T) {
 }
 
 func ptr(value string) *string { return &value }
+
+func TestUpstreamPricingItemsPreserveDistinctCacheCreationTTLs(t *testing.T) {
+	var items []upstreamPricingItem
+	require.NoError(t, common.Unmarshal([]byte(`[{"model_name":"ttl-model","model_ratio":1,"completion_ratio":5,"cache_creation_ratio":1.4,"cache_creation_1h_ratio":1.8,"cache_creation_12h_ratio":2.7,"step_ratios":[{"step_size":272000,"completion_step_size":-1,"prompt_step_ratio":1,"completion_step_ratio":1,"cache_step_ratio":1},{"step_size":1000000,"completion_step_size":-1,"prompt_step_ratio":2,"completion_step_ratio":1.5,"cache_step_ratio":2}]}]`), &items))
+	data, unsupported := upstreamPricingItemsToSyncData(items)
+	require.Empty(t, unsupported)
+	require.Equal(t, billing_setting.BillingModeTieredExpr, valueMap(data[billing_setting.BillingModeField])["ttl-model"])
+	expr := valueMap(data[billing_setting.BillingExprField])["ttl-model"].(string)
+	for _, context := range []float64{272000, 272001} {
+		multiplier := 1.0
+		if context > 272000 {
+			multiplier = 2
+		}
+		for _, test := range []struct {
+			params billingexpr.TokenParams
+			want   float64
+		}{
+			{billingexpr.TokenParams{CC: 1, Len: context}, 2.8},
+			{billingexpr.TokenParams{CC1h: 1, Len: context}, 3.6},
+			{billingexpr.TokenParams{CC12h: 1, Len: context}, 5.4},
+		} {
+			cost, _, err := billingexpr.RunExpr(expr, test.params)
+			require.NoError(t, err)
+			require.InDelta(t, test.want*multiplier, cost, 1e-12)
+		}
+	}
+}
+
+func TestUpstreamPricingItemsPreserveFlatExplicitCacheTTLs(t *testing.T) {
+	var items []upstreamPricingItem
+	require.NoError(t, common.Unmarshal([]byte(`[{"model_name":"flat-ttl-model","model_ratio":2,"completion_ratio":3,"cache_creation_5m_ratio":0,"cache_creation_1h_ratio":1.75,"cache_creation_12h_ratio":0}]`), &items))
+	data, unsupported := upstreamPricingItemsToSyncData(items)
+	require.Empty(t, unsupported)
+	require.NotContains(t, valueMap(data["model_ratio"]), "flat-ttl-model")
+	expr := valueMap(data[billing_setting.BillingExprField])["flat-ttl-model"].(string)
+	cost, _, err := billingexpr.RunExpr(expr, billingexpr.TokenParams{P: 1, C: 1, CC: 100, CC1h: 1, CC12h: 100, Len: 1000000})
+	require.NoError(t, err)
+	require.Equal(t, 4.0+12.0+7.0, cost)
+	require.Contains(t, expr, "cc * 0")
+	require.Contains(t, expr, "cc12h * 0")
+}
+
+func TestUpstreamPricingItemsRejectInvalidCacheTTLPrices(t *testing.T) {
+	negative := -1.0
+	infinite := math.Inf(1)
+	nan := math.NaN()
+	data, unsupported := upstreamPricingItemsToSyncData([]upstreamPricingItem{
+		{ModelName: "negative-short", ModelRatio: 1, CompletionRatio: 1, CacheCreation5mRatio: &negative},
+		{ModelName: "infinite-1h", ModelRatio: 1, CompletionRatio: 1, CacheCreation1hRatio: &infinite},
+		{ModelName: "nan-12h", ModelRatio: 1, CompletionRatio: 1, CacheCreation12hRatio: &nan},
+	})
+	require.ElementsMatch(t, []string{"negative-short", "infinite-1h", "nan-12h"}, unsupported)
+	for _, field := range pricingSyncFields {
+		require.Empty(t, valueMap(data[field]))
+	}
+}
+
+func TestUpstreamPricingItemsAcceptExplicit12hExpression(t *testing.T) {
+	const expr = `len <= 272000 ? tier("short", p * 2 + c * 10 + cc * 2.5 + cc12h * 5) : tier("long", p * 4 + c * 15 + cc * 5 + cc12h * 10)`
+	data, unsupported := upstreamPricingItemsToSyncData([]upstreamPricingItem{{
+		ModelName: "basellm-model", BillingMode: billing_setting.BillingModeTieredExpr, BillingExpr: expr,
+	}})
+	require.Empty(t, unsupported)
+	require.Equal(t, expr, valueMap(data[billing_setting.BillingExprField])["basellm-model"])
+}
+
+func TestUpstreamPricingItemsPreserveGenericCacheCreationAlias(t *testing.T) {
+	zero := 0.0
+	data, unsupported := upstreamPricingItemsToSyncData([]upstreamPricingItem{{
+		ModelName: "free-cache", ModelRatio: 1, CompletionRatio: 1, CacheCreationRatio: &zero,
+	}})
+	require.Empty(t, unsupported)
+	require.Equal(t, 0.0, valueMap(data["create_cache_ratio"])["free-cache"])
+}

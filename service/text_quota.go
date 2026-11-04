@@ -31,6 +31,9 @@ type textQuotaSummary struct {
 	CacheCreationTokens      int
 	CacheCreationTokens5m    int
 	CacheCreationTokens1h    int
+	CacheCreationTokens30m   int
+	CacheCreationTokens12h   int
+	OpenAICacheWriteTokens   int
 	ImageTokens              int
 	AudioTokens              int
 	ModelName                string
@@ -61,6 +64,9 @@ type textQuotaSummary struct {
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
+	if summary.OpenAICacheWriteTokens > 0 {
+		return summary.OpenAICacheWriteTokens
+	}
 	if summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0 {
 		splitCacheWriteTokens := summary.CacheCreationTokens5m + summary.CacheCreationTokens1h
 		if summary.CacheCreationTokens > splitCacheWriteTokens {
@@ -193,6 +199,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
+	shortWrites, longWrites, unknownWrites := cacheWriteTokenCounts(usage.PromptTokensDetails)
+	summary.CacheCreationTokens30m = shortWrites
+	summary.CacheCreationTokens12h = longWrites
+	summary.OpenAICacheWriteTokens = shortWrites + longWrites + unknownWrites
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
@@ -477,6 +487,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if summary.CacheCreationTokens1h > 0 {
 		other["cache_creation_tokens_1h"] = summary.CacheCreationTokens1h
 		other["cache_creation_ratio_1h"] = summary.CacheCreationRatio1h
+	}
+	if summary.CacheCreationTokens30m > 0 {
+		other["cache_creation_tokens_30m"] = summary.CacheCreationTokens30m
+	}
+	if summary.CacheCreationTokens12h > 0 {
+		other["cache_creation_tokens_12h"] = summary.CacheCreationTokens12h
+	}
+	if summary.OpenAICacheWriteTokens > 0 {
+		other["cache_creation_tokens"] = summary.OpenAICacheWriteTokens
 	}
 	cacheWriteTokens := cacheWriteTokensTotal(summary)
 	if cacheWriteTokens > 0 {

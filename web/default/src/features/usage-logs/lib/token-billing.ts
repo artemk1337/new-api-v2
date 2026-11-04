@@ -24,7 +24,9 @@ export interface TokenBillingParts {
   cacheWrite: number
   cacheWrite5m: number
   cacheWrite1h: number
+  cacheWrite12h: number
   cacheWriteResidual: number
+  cacheWriteShort: number
   baseInput: number
 }
 
@@ -38,15 +40,21 @@ export function getTokenBillingParts(
   const cacheWrite = Math.max(0, other.cache_creation_tokens || 0)
   const cacheWrite5m = Math.max(0, other.cache_creation_tokens_5m || 0)
   const cacheWrite1h = Math.max(0, other.cache_creation_tokens_1h || 0)
+  const cacheWrite12h = Math.max(0, other.cache_creation_tokens_12h || 0)
   const cacheWriteResidual = Math.max(
     0,
-    cacheWrite - cacheWrite5m - cacheWrite1h
+    cacheWrite - cacheWrite5m - cacheWrite1h - cacheWrite12h
   )
   const baseInput = other.claude
     ? input
     : Math.max(
         0,
-        input - cacheRead - cacheWrite5m - cacheWrite1h - cacheWriteResidual
+        input -
+          cacheRead -
+          cacheWrite5m -
+          cacheWrite1h -
+          cacheWrite12h -
+          cacheWriteResidual
       )
 
   return {
@@ -56,7 +64,9 @@ export function getTokenBillingParts(
     cacheWrite,
     cacheWrite5m,
     cacheWrite1h,
+    cacheWrite12h,
     cacheWriteResidual,
+    cacheWriteShort: cacheWrite5m + cacheWriteResidual,
     baseInput,
   }
 }

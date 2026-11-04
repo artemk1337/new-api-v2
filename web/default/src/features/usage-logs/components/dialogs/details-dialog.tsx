@@ -35,9 +35,9 @@ import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
@@ -56,12 +56,12 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
+import { getTokenBillingParts } from '../../lib/token-billing'
 import {
   getLogTypeConfig,
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import { getTokenBillingParts } from '../../lib/token-billing'
 import type { LogOtherData } from '../../types'
 import { useUsageLogsContext } from '../usage-logs-provider'
 
@@ -164,44 +164,56 @@ function getDynamicTokenBillingParts(
           (separatelyPriced('Cache Read') ? parts.cacheRead : 0) -
           (separatelyPriced('Cache Write') ? parts.cacheWriteResidual : 0) -
           (separatelyPriced('Cache Write (5m)') ? parts.cacheWrite5m : 0) -
-          (separatelyPriced('Cache Write (1h)') ? parts.cacheWrite1h : 0)
+          (separatelyPriced('Cache Write (1h)') ? parts.cacheWrite1h : 0) -
+          (/\bcc12h\b/.test(decodeBillingExprB64(other.expr_b64) ?? '')
+            ? parts.cacheWrite12h
+            : 0)
       )
 
   return { ...parts, baseInput }
 }
 
-function billingFormula(
-  log: UsageLog,
-  other: LogOtherData
-): string | null {
+function billingFormula(log: UsageLog, other: LogOtherData): string | null {
   const isDynamic = other.billing_mode === 'tiered_expr'
-  if (!isDynamic && (other.model_ratio == null || !Number.isFinite(other.model_ratio))) {
+  if (
+    !isDynamic &&
+    (other.model_ratio == null || !Number.isFinite(other.model_ratio))
+  ) {
     return null
   }
   const group =
     other.user_group_ratio != null && other.user_group_ratio !== -1
       ? other.user_group_ratio
       : other.group_ratio
-  const effectiveGroup = isDynamic ? (group != null && Number.isFinite(group) ? group : 1) : group
+  let effectiveGroup = group
+  if (isDynamic && (group == null || !Number.isFinite(group))) {
+    effectiveGroup = 1
+  }
   if (effectiveGroup == null || !Number.isFinite(effectiveGroup)) {
     return null
   }
   if (isDynamic) {
     if (!other.expr_b64 || !other.matched_tier) return null
     const prices = Object.fromEntries(
-      (getTieredBillingSummary(other)?.priceEntries ?? []).map((entry) => [entry.shortLabel, entry.price])
+      (getTieredBillingSummary(other)?.priceEntries ?? []).map((entry) => [
+        entry.shortLabel,
+        entry.price,
+      ])
     )
     const parts = getDynamicTokenBillingParts(log, other, prices)
     const terms: string[] = []
     const add = (label: string, count: number) => {
       const price = prices[label]
-      if (count > 0 && price != null && price > 0) terms.push(`${count}×${price}/1M`)
+      if (count > 0 && price != null && price > 0) {
+        terms.push(`${count}×${price}/1M`)
+      }
     }
     add('Input', parts.baseInput)
     add('Cache Read', parts.cacheRead)
     add('Cache Write', parts.cacheWriteResidual)
     add('Cache Write (5m)', parts.cacheWrite5m)
     add('Cache Write (1h)', parts.cacheWrite1h)
+    add('Cache Write (12h)', parts.cacheWrite12h)
     add('Output', parts.output)
     add('Audio In', other.audio_input || 0)
     add('Audio Out', other.audio_output || 0)
@@ -210,6 +222,7 @@ function billingFormula(
     return `(${terms.join(' + ')})×${effectiveGroup} = ${formatLogQuota(log.quota)}`
   }
   const parts = getTokenBillingParts(log, other)
+  if (parts.cacheWrite12h > 0) return null
   if (parts.cacheRead > 0 && other.cache_ratio == null) {
     return null
   }
@@ -228,9 +241,7 @@ function billingFormula(
   const base = (other.model_ratio ?? 0) * 2
   const terms = [`${parts.baseInput}×${base}/1M`]
   if (parts.cacheRead > 0 && other.cache_ratio != null) {
-    terms.push(
-      `${parts.cacheRead}×${base * other.cache_ratio}/1M`
-    )
+    terms.push(`${parts.cacheRead}×${base * other.cache_ratio}/1M`)
   }
   if (parts.cacheWriteResidual > 0 && other.cache_creation_ratio != null) {
     terms.push(
@@ -248,20 +259,34 @@ function billingFormula(
     )
   }
   if (parts.output > 0 && other.completion_ratio != null) {
-    terms.push(
-      `${parts.output}×${base * other.completion_ratio}/1M`
-    )
+    terms.push(`${parts.output}×${base * other.completion_ratio}/1M`)
   }
-  if (other.web_search_call_count && other.web_search_price && other.web_search_price > 0) {
+  if (
+    other.web_search_call_count &&
+    other.web_search_price &&
+    other.web_search_price > 0
+  ) {
     terms.push(`${other.web_search_call_count}×${other.web_search_price}/1K`)
   }
-  if (other.file_search_call_count && other.file_search_price && other.file_search_price > 0) {
+  if (
+    other.file_search_call_count &&
+    other.file_search_price &&
+    other.file_search_price > 0
+  ) {
     terms.push(`${other.file_search_call_count}×${other.file_search_price}/1K`)
   }
-  if (other.image_generation_call && other.image_generation_call_price && other.image_generation_call_price > 0) {
+  if (
+    other.image_generation_call &&
+    other.image_generation_call_price &&
+    other.image_generation_call_price > 0
+  ) {
     terms.push(`1×${other.image_generation_call_price}`)
   }
-  if (other.audio_input_token_count && other.audio_input_price && other.audio_input_price > 0) {
+  if (
+    other.audio_input_token_count &&
+    other.audio_input_price &&
+    other.audio_input_price > 0
+  ) {
     terms.push(`${other.audio_input_token_count}×${other.audio_input_price}/1M`)
   }
   if (terms.length === 1 && parts.baseInput === 0 && parts.output === 0) {
@@ -357,15 +382,22 @@ function BillingBreakdown(props: {
   }
 
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
-    if (other.cache_tokens && other.cache_tokens > 0 && other.cache_ratio != null && other.cache_ratio > 0) {
+    if (
+      other.cache_tokens &&
+      other.cache_tokens > 0 &&
+      other.cache_ratio != null &&
+      other.cache_ratio > 0
+    ) {
       rows.push({
         label: t('Cache Read'),
         value: `${fmtPrice(baseInputUSD * other.cache_ratio)}/M`,
       })
     }
     if (
-      other.cache_creation_tokens && other.cache_creation_tokens > 0 &&
-      other.cache_creation_ratio != null && other.cache_creation_ratio > 0
+      other.cache_creation_tokens &&
+      other.cache_creation_tokens > 0 &&
+      other.cache_creation_ratio != null &&
+      other.cache_creation_ratio > 0
     ) {
       rows.push({
         label: t('Cache Creation'),
@@ -373,8 +405,10 @@ function BillingBreakdown(props: {
       })
     }
     if (
-      other.cache_creation_tokens_5m && other.cache_creation_tokens_5m > 0 &&
-      other.cache_creation_ratio_5m != null && other.cache_creation_ratio_5m > 0
+      other.cache_creation_tokens_5m &&
+      other.cache_creation_tokens_5m > 0 &&
+      other.cache_creation_ratio_5m != null &&
+      other.cache_creation_ratio_5m > 0
     ) {
       rows.push({
         label: t('Cache Creation (5m)'),
@@ -382,8 +416,10 @@ function BillingBreakdown(props: {
       })
     }
     if (
-      other.cache_creation_tokens_1h && other.cache_creation_tokens_1h > 0 &&
-      other.cache_creation_ratio_1h != null && other.cache_creation_ratio_1h > 0
+      other.cache_creation_tokens_1h &&
+      other.cache_creation_tokens_1h > 0 &&
+      other.cache_creation_ratio_1h != null &&
+      other.cache_creation_ratio_1h > 0
     ) {
       rows.push({
         label: t('Cache Creation (1h)'),
@@ -393,7 +429,12 @@ function BillingBreakdown(props: {
   }
 
   if (!isTieredExpr) {
-    if (other.audio_input && other.audio_input > 0 && other.audio_ratio != null && other.audio_ratio > 0) {
+    if (
+      other.audio_input &&
+      other.audio_input > 0 &&
+      other.audio_ratio != null &&
+      other.audio_ratio > 0
+    ) {
       rows.push({
         label: t('Audio input'),
         value: `${fmtPrice(baseInputUSD * other.audio_ratio)}/M`,
@@ -401,8 +442,10 @@ function BillingBreakdown(props: {
     }
 
     if (
-      other.audio_output && other.audio_output > 0 &&
-      other.audio_completion_ratio != null && other.audio_completion_ratio > 0
+      other.audio_output &&
+      other.audio_output > 0 &&
+      other.audio_completion_ratio != null &&
+      other.audio_completion_ratio > 0
     ) {
       rows.push({
         label: t('Audio output'),
@@ -410,7 +453,12 @@ function BillingBreakdown(props: {
       })
     }
 
-    if (other.image_output && other.image_output > 0 && other.image_ratio != null && other.image_ratio > 0) {
+    if (
+      other.image_output &&
+      other.image_output > 0 &&
+      other.image_ratio != null &&
+      other.image_ratio > 0
+    ) {
       rows.push({
         label: t('Image input'),
         value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
@@ -418,28 +466,48 @@ function BillingBreakdown(props: {
     }
   }
 
-  if (other.web_search && other.web_search_call_count && other.web_search_price && other.web_search_price > 0) {
+  if (
+    other.web_search &&
+    other.web_search_call_count &&
+    other.web_search_price &&
+    other.web_search_price > 0
+  ) {
     rows.push({
       label: t('Web Search'),
       value: `${other.web_search_call_count}x${other.web_search_price ? ` (${fmtPrice(other.web_search_price)})` : ''}`,
     })
   }
 
-  if (other.file_search && other.file_search_call_count && other.file_search_price && other.file_search_price > 0) {
+  if (
+    other.file_search &&
+    other.file_search_call_count &&
+    other.file_search_price &&
+    other.file_search_price > 0
+  ) {
     rows.push({
       label: t('File Search'),
       value: `${other.file_search_call_count}x${other.file_search_price ? ` (${fmtPrice(other.file_search_price)})` : ''}`,
     })
   }
 
-  if (other.image_generation_call && other.image_generation_call_price && other.image_generation_call_price > 0) {
+  if (
+    other.image_generation_call &&
+    other.image_generation_call_price &&
+    other.image_generation_call_price > 0
+  ) {
     rows.push({
       label: t('Image Generation'),
       value: fmtPrice(other.image_generation_call_price),
     })
   }
 
-  if (other.audio_input_seperate_price && other.audio_input_token_count && other.audio_input_token_count > 0 && other.audio_input_price && other.audio_input_price > 0) {
+  if (
+    other.audio_input_seperate_price &&
+    other.audio_input_token_count &&
+    other.audio_input_token_count > 0 &&
+    other.audio_input_price &&
+    other.audio_input_price > 0
+  ) {
     rows.push({
       label: t('Audio Input Price'),
       value: fmtPrice(other.audio_input_price),
@@ -455,18 +523,15 @@ function BillingBreakdown(props: {
     })
   }
 
-  const formula =
-    !isPerCall
-      ? billingFormula(log, other)
-      : null
+  const formula = !isPerCall ? billingFormula(log, other) : null
   if (formula) rows.push({ label: t('Calculation'), value: formula })
 
   if (rows.length === 0) return null
 
   return (
     <DetailSection label={t('Billing Details')}>
-      {rows.map((row, idx) => (
-        <DetailRow key={idx} label={row.label} value={row.value} mono />
+      {rows.map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
   )
@@ -501,7 +566,10 @@ function TokenBreakdown(props: {
     value: parts.baseInput.toLocaleString(),
   })
 
-  if (parts.cacheRead > 0 && (!props.isTiered || tieredPrices?.['Cache Read'])) {
+  if (
+    parts.cacheRead > 0 &&
+    (!props.isTiered || tieredPrices?.['Cache Read'])
+  ) {
     rows.push({
       label: t('Cache Read'),
       value: parts.cacheRead.toLocaleString(),
@@ -518,17 +586,30 @@ function TokenBreakdown(props: {
     })
   }
 
-  if (parts.cacheWrite5m > 0 && (!props.isTiered || tieredPrices?.['Cache Write (5m)'])) {
+  if (
+    parts.cacheWrite5m > 0 &&
+    (!props.isTiered || tieredPrices?.['Cache Write (5m)'])
+  ) {
     rows.push({
       label: t('Cache Write (5m)'),
       value: parts.cacheWrite5m.toLocaleString(),
     })
   }
 
-  if (parts.cacheWrite1h > 0 && (!props.isTiered || tieredPrices?.['Cache Write (1h)'])) {
+  if (
+    parts.cacheWrite1h > 0 &&
+    (!props.isTiered || tieredPrices?.['Cache Write (1h)'])
+  ) {
     rows.push({
       label: t('Cache Write (1h)'),
       value: parts.cacheWrite1h.toLocaleString(),
+    })
+  }
+
+  if (parts.cacheWrite12h > 0) {
+    rows.push({
+      label: t('Cache Write (12h)'),
+      value: parts.cacheWrite12h.toLocaleString(),
     })
   }
 
@@ -546,8 +627,8 @@ function TokenBreakdown(props: {
 
   return (
     <DetailSection label={t('Token Breakdown')}>
-      {rows.map((row, idx) => (
-        <DetailRow key={idx} label={row.label} value={row.value} mono />
+      {rows.map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
   )
@@ -567,6 +648,19 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
+  const cacheParts = other ? getTokenBillingParts(props.log, other) : null
+  let billingModeLabel = t('Per-token')
+  if (other?.billing_mode === 'tiered_expr') {
+    billingModeLabel = t('Dynamic Pricing')
+  } else if (isPerCallBilling(other?.model_price)) {
+    billingModeLabel = t('Per-call')
+  }
+  let reasoningEffortVariant: StatusBadgeProps['variant'] = 'green'
+  if (other?.reasoning_effort === 'high') {
+    reasoningEffortVariant = 'orange'
+  } else if (other?.reasoning_effort === 'medium') {
+    reasoningEffortVariant = 'yellow'
+  }
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -782,16 +876,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           )}
 
           {isConsume && other && (
-            <DetailRow
-              label={t('Billing Mode')}
-              value={
-                other.billing_mode === 'tiered_expr'
-                  ? t('Dynamic Pricing')
-                  : isPerCallBilling(other.model_price)
-                    ? t('Per-call')
-                    : t('Per-token')
-              }
-            />
+            <DetailRow label={t('Billing Mode')} value={billingModeLabel} />
           )}
           {isConsume && other?.billing_mode === 'tiered_expr' && (
             <DetailRow
@@ -1022,9 +1107,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
             label={t('Top-up Audit Info')}
           >
-            {topupAuditFields.map((field, idx) => (
+            {topupAuditFields.map((field) => (
               <DetailRow
-                key={idx}
+                key={field.label}
                 label={field.label}
                 value={field.value}
                 mono
@@ -1111,9 +1196,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
             {operationText != null && (
               <DetailRow label={t('Operation')} value={operationText} />
             )}
-            {loginAuditFields.map((field, idx) => (
+            {loginAuditFields.map((field) => (
               <DetailRow
-                key={idx}
+                key={field.label}
                 label={field.label}
                 value={field.value}
                 mono
@@ -1166,13 +1251,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
             value={
               <StatusBadge
                 label={other.reasoning_effort}
-                variant={
-                  other.reasoning_effort === 'high'
-                    ? 'orange'
-                    : other.reasoning_effort === 'medium'
-                      ? 'yellow'
-                      : 'green'
-                }
+                variant={reasoningEffortVariant}
                 size='sm'
                 copyable={false}
               />
@@ -1212,9 +1291,15 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Token breakdown (for consume/error types with token data) */}
-        {isDisplayableType(props.log.type) && other && !isPerCallBilling(other.model_price) && (
-          <TokenBreakdown log={props.log} other={other} isTiered={isTieredBilling} />
-        )}
+        {isDisplayableType(props.log.type) &&
+          other &&
+          !isPerCallBilling(other.model_price) && (
+            <TokenBreakdown
+              log={props.log}
+              other={other}
+              isTiered={isTieredBilling}
+            />
+          )}
 
         {isTieredBilling && other?.expr_b64 && (
           <div className='bg-muted/30 min-w-0 overflow-hidden rounded-md border px-3 max-sm:px-2'>
@@ -1227,8 +1312,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 p: Math.max(0, props.log.prompt_tokens || 0),
                 c: Math.max(0, props.log.completion_tokens || 0),
                 cr: Math.max(0, other.cache_tokens || 0),
-                cc: Math.max(0, other.cache_creation_tokens || 0),
+                cc: cacheParts?.cacheWriteShort ?? 0,
                 cc1h: Math.max(0, other.cache_creation_tokens_1h || 0),
+                cc12h: Math.max(0, other.cache_creation_tokens_12h || 0),
                 ai: Math.max(0, other.audio_input || 0),
                 ao: Math.max(0, other.audio_output || 0),
               }}
@@ -1371,6 +1457,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
               if (!parsed) return null
               return (
                 <div
+                  // Audit records are immutable ordered lines without identifiers.
+                  // eslint-disable-next-line react/no-array-index-key
                   key={idx}
                   className='bg-background/60 flex min-w-0 flex-col gap-1.5 rounded border p-2 sm:flex-row sm:items-start sm:gap-2'
                 >
