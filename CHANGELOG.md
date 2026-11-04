@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.212 — 2026-11-04
+
+- Clarify referral rewards and activation requirements using the configured program rates and top-up threshold.
+- Add a dashboard action and replace four rule cards with two step-by-step guides for invited users and inviters, without repeated footnotes.
+- Translate the updated page into all six interface languages and preserve desktop and mobile layouts.
+
 ## v1.1.211 — 2026-11-04
 
 - Rename the Russian About navigation and page title to «О нас».
