@@ -49,7 +49,7 @@ import type { Announcement } from './announcements-api'
 export function AnnouncementEditor(props: {
   announcement: Announcement | null
   onClose: () => void
-  onSubmit: (announcement: Announcement) => void
+  onSubmit: (announcement: Announcement) => Promise<void>
 }) {
   const { t } = useTranslation()
   const schema = z
@@ -109,8 +109,8 @@ export function AnnouncementEditor(props: {
     { value: 'bot', label: t('Publish with Telegram bot') },
   ]
 
-  function submit(values: Values) {
-    props.onSubmit({
+  async function submit(values: Values) {
+    await props.onSubmit({
       ...props.announcement,
       ...values,
       id: props.announcement?.id || crypto.randomUUID(),
@@ -123,7 +123,7 @@ export function AnnouncementEditor(props: {
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) props.onClose()
+        if (!open && !form.formState.isSubmitting) props.onClose()
       }}
       title={
         props.announcement ? t('Edit Announcement') : t('Add Announcement')
@@ -133,142 +133,154 @@ export function AnnouncementEditor(props: {
       bodyClassName='space-y-4'
       footer={
         <>
-          <Button variant='outline' onClick={props.onClose}>
+          <Button
+            variant='outline'
+            disabled={form.formState.isSubmitting}
+            onClick={props.onClose}
+          >
             {t('Cancel')}
           </Button>
-          <Button type='submit' form='announcement-form'>
+          <Button
+            type='submit'
+            form='announcement-form'
+            disabled={form.formState.isSubmitting}
+          >
             {props.announcement ? t('Update') : t('Add')}
           </Button>
         </>
       }
     >
       <Form {...form}>
-        <form
-          id='announcement-form'
-          onSubmit={form.handleSubmit(submit)}
-          className='space-y-4'
-        >
-          <FormField
-            control={form.control}
-            name='content'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Platform announcement')}</FormLabel>
-                <FormControl>
-                  <Textarea rows={4} {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t('Maximum 500 characters. Supports Markdown and HTML.')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name='publishDate'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Publish Date')}</FormLabel>
-                <FormControl>
-                  <DateTimePicker
-                    value={field.value ? new Date(field.value) : undefined}
-                    onChange={(date) =>
-                      field.onChange(date?.toISOString() || '')
-                    }
-                    placeholder={t('Select publish date')}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Publication starts when settings are saved. This date is a label.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name='extra'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Extra Notes (Optional)')}</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name='telegramMode'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Telegram publication')}</FormLabel>
-                <Select
-                  items={modes}
-                  value={field.value}
-                  onValueChange={field.onChange}
-                >
-                  <FormControl>
-                    <SelectTrigger className='w-full'>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {modes.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {mode === 'link' && (
+        <form id='announcement-form' onSubmit={form.handleSubmit(submit)}>
+          <fieldset
+            disabled={form.formState.isSubmitting}
+            className='space-y-4'
+          >
             <FormField
               control={form.control}
-              name='telegramUrl'
+              name='content'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Telegram post link')}</FormLabel>
+                  <FormLabel>{t('Platform announcement')}</FormLabel>
                   <FormControl>
-                    <Input placeholder='https://t.me/channel/123' {...field} />
+                    <Textarea rows={4} {...field} />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
-          {mode === 'bot' && (
-            <FormField
-              control={form.control}
-              name='telegramText'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('Telegram post text')}</FormLabel>
-                  <FormControl>
-                    <Textarea rows={7} {...field} />
-                  </FormControl>
-                  <FormDescription className='flex flex-wrap justify-between gap-2'>
-                    <span>
-                      {t('Plain text, links and emoji. No attachments.')}
-                    </span>
-                    <span
-                      className={text.length > 4096 ? 'text-destructive' : ''}
-                    >
-                      {text.length} / 4096
-                    </span>
+                  <FormDescription>
+                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-          )}
+            <FormField
+              control={form.control}
+              name='publishDate'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Publish Date')}</FormLabel>
+                  <FormControl>
+                    <DateTimePicker
+                      value={field.value ? new Date(field.value) : undefined}
+                      onChange={(date) =>
+                        field.onChange(date?.toISOString() || '')
+                      }
+                      placeholder={t('Select publish date')}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Publication starts when the announcement is saved. This date is a label.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='extra'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Extra Notes (Optional)')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name='telegramMode'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Telegram publication')}</FormLabel>
+                  <Select
+                    items={modes}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger className='w-full'>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {modes.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {mode === 'link' && (
+              <FormField
+                control={form.control}
+                name='telegramUrl'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Telegram post link')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder='https://t.me/channel/123'
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+            {mode === 'bot' && (
+              <FormField
+                control={form.control}
+                name='telegramText'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Telegram post text')}</FormLabel>
+                    <FormControl>
+                      <Textarea rows={7} {...field} />
+                    </FormControl>
+                    <FormDescription className='flex flex-wrap justify-between gap-2'>
+                      <span>
+                        {t('Plain text, links and emoji. No attachments.')}
+                      </span>
+                      <span
+                        className={text.length > 4096 ? 'text-destructive' : ''}
+                      >
+                        {text.length} / 4096
+                      </span>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </fieldset>
         </form>
       </Form>
     </Dialog>

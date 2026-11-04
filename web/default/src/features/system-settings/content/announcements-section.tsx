@@ -1,5 +1,5 @@
 import { isAxiosError } from 'axios'
-import { Plus, Save, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -62,7 +62,7 @@ export function AnnouncementsSection(props: {
   const updateOption = useUpdateOption()
   const save = useSaveAnnouncements()
   const retry = useRetryAnnouncement()
-  const [draft, setDraft] = useState<AnnouncementSettings | null>(null)
+  const [channelDraft, setChannelDraft] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [editor, setEditor] = useState<{
     announcement: Announcement | null
@@ -71,7 +71,8 @@ export function AnnouncementsSection(props: {
   const [deleteIds, setDeleteIds] = useState<string[]>([])
   const [unknownRetry, setUnknownRetry] = useState<Announcement | null>(null)
   const [conflict, setConflict] = useState(false)
-  const settings = draft || props.settings
+  const settings = props.settings
+  const channel = channelDraft ?? settings.channel
   const busy = save.isPending || retry.isPending
   const sortedAnnouncements = useMemo(
     () =>
@@ -81,19 +82,17 @@ export function AnnouncementsSection(props: {
     [settings.announcements]
   )
 
-  async function saveAll() {
-    if (
-      settings.channel &&
-      !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(settings.channel)
-    ) {
+  async function saveSettings(next: AnnouncementSettings) {
+    if (next.channel && !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(next.channel)) {
       toast.error(t('Enter a public Telegram channel username'))
-      return
+      return false
     }
     try {
-      await save.mutateAsync(settings)
-      setDraft(null)
+      await save.mutateAsync(next)
+      setChannelDraft(null)
       setConflict(false)
       toast.success(t('Announcements saved successfully'))
+      return true
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 409) {
         setConflict(true)
@@ -107,6 +106,7 @@ export function AnnouncementsSection(props: {
         )
       }
     }
+    return false
   }
 
   async function retryPublication(item: Announcement, confirmUnknown = false) {
@@ -129,24 +129,25 @@ export function AnnouncementsSection(props: {
     }
   }
 
-  function submitAnnouncement(item: Announcement) {
+  async function submitAnnouncement(item: Announcement) {
     const snapshot = editor?.snapshot || settings
     const announcements = [...snapshot.announcements]
     const index = announcements.findIndex((existing) => existing.id === item.id)
     if (index < 0) announcements.push(item)
     else announcements[index] = item
-    setDraft({ ...snapshot, announcements })
-    setEditor(null)
-    toast.success(t('Announcement updated. Click "Save Settings" to apply.'))
+    if (await saveSettings({ ...snapshot, announcements })) {
+      setEditor(null)
+    }
   }
 
-  function confirmDelete() {
-    setDraft({
+  async function confirmDelete() {
+    const saved = await saveSettings({
       ...settings,
       announcements: settings.announcements.filter(
         (item) => !deleteIds.includes(item.id)
       ),
     })
+    if (!saved) return
     setSelectedIds((previous) =>
       previous.filter((id) => !deleteIds.includes(id))
     )
@@ -162,13 +163,16 @@ export function AnnouncementsSection(props: {
           </Label>
           <Input
             id='announcement-telegram-channel'
-            value={settings.channel}
+            value={channel}
             placeholder='@channel'
             className='max-w-sm'
             disabled={busy}
-            onChange={(event) =>
-              setDraft({ ...settings, channel: event.target.value.trim() })
-            }
+            onChange={(event) => setChannelDraft(event.target.value.trim())}
+            onBlur={() => {
+              if (channel !== settings.channel && !busy && !conflict) {
+                void saveSettings({ ...settings, channel })
+              }
+            }}
           />
           <p className='text-muted-foreground text-sm'>
             {t(
@@ -196,7 +200,7 @@ export function AnnouncementsSection(props: {
                 onClick={async () => {
                   try {
                     await props.onRefresh()
-                    setDraft(null)
+                    setChannelDraft(null)
                     setConflict(false)
                     setSelectedIds([])
                   } catch {
@@ -213,7 +217,7 @@ export function AnnouncementsSection(props: {
           <div className='flex flex-wrap items-center gap-2'>
             <Button
               size='sm'
-              disabled={busy}
+              disabled={busy || conflict || channel !== settings.channel}
               onClick={() =>
                 setEditor({ announcement: null, snapshot: settings })
               }
@@ -224,21 +228,17 @@ export function AnnouncementsSection(props: {
             <Button
               size='sm'
               variant='destructive'
-              disabled={!selectedIds.length || busy}
+              disabled={
+                !selectedIds.length ||
+                busy ||
+                conflict ||
+                channel !== settings.channel
+              }
               onClick={() => setDeleteIds(selectedIds)}
             >
               <Trash2 className='mr-2 size-4' />
               {t('Delete (')}
               {selectedIds.length})
-            </Button>
-            <Button
-              size='sm'
-              variant='secondary'
-              disabled={!draft || busy || !!editor || conflict}
-              onClick={() => void saveAll()}
-            >
-              <Save className='mr-2 size-4' />
-              {save.isPending ? t('Saving...') : t('Save Settings')}
             </Button>
           </div>
           <SettingsSwitchField
@@ -253,13 +253,6 @@ export function AnnouncementsSection(props: {
             className='py-0'
           />
         </div>
-        {draft && (
-          <p className='text-muted-foreground text-sm'>
-            {t(
-              'Save settings to publish changes. Existing Telegram posts are kept when news is deleted.'
-            )}
-          </p>
-        )}
         <StaticDataTable
           data={sortedAnnouncements}
           getRowKey={(item) => item.id}
@@ -321,7 +314,7 @@ export function AnnouncementsSection(props: {
               cell: (item) => (
                 <AnnouncementDelivery
                   announcement={item}
-                  disabled={!!draft || busy}
+                  disabled={channel !== settings.channel || busy || conflict}
                   onRetry={(announcement) =>
                     void retryPublication(announcement)
                   }
@@ -336,8 +329,12 @@ export function AnnouncementsSection(props: {
                   editLabel={t('Edit')}
                   deleteLabel={t('Delete')}
                   menuLabel={t('Open menu')}
-                  editDisabled={busy}
-                  deleteDisabled={busy}
+                  editDisabled={
+                    busy || conflict || channel !== settings.channel
+                  }
+                  deleteDisabled={
+                    busy || conflict || channel !== settings.channel
+                  }
                   onEdit={() =>
                     setEditor({ announcement: item, snapshot: settings })
                   }
@@ -358,7 +355,7 @@ export function AnnouncementsSection(props: {
       <AlertDialog
         open={deleteIds.length > 0}
         onOpenChange={(open) => {
-          if (!open) setDeleteIds([])
+          if (!open && !save.isPending) setDeleteIds([])
         }}
       >
         <AlertDialogContent>
@@ -366,13 +363,22 @@ export function AnnouncementsSection(props: {
             <AlertDialogTitle>{t('Are you sure?')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                'Selected news will be removed after saving. Published Telegram posts will remain in the channel.'
+                'Selected news will be deleted. Published Telegram posts will remain in the channel.'
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
-            <AlertDialogAction variant='destructive' onClick={confirmDelete}>
+            <AlertDialogCancel disabled={save.isPending}>
+              {t('Cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant='destructive'
+              disabled={save.isPending}
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDelete()
+              }}
+            >
               {t('Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

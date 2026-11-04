@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.223 — 2026-11-04
+
+- Save announcements immediately when adding or updating them, and apply deletions after confirmation without a separate Save Settings step.
+- Keep the editor and delete confirmation open on failed requests, prevent duplicate submissions while saving, and save Telegram channel changes when leaving the field.
+- Update publication and deletion guidance in all six interface languages.
+
 ## v1.1.222 — 2026-11-04
 
 - Compare one upstream pricing source at a time using base USD token rates, projected prices after import, and percentage changes; keep raw coefficients in expandable details.
