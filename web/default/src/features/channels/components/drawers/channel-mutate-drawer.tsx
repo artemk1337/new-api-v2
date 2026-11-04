@@ -69,6 +69,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { getTags } from '@/lib/tags'
 import {
   Form,
   FormControl,
@@ -126,7 +127,6 @@ import {
   getAllModels,
   getChannel,
   getChannelKey,
-  getChannelTags,
   getGroups,
   getPrefillGroups,
   refreshCodexCredential,
@@ -653,8 +653,8 @@ export function ChannelMutateDrawer({
   })
 
   const { data: channelTagsData } = useQuery({
-    queryKey: ['channel-tags'],
-    queryFn: getChannelTags,
+    queryKey: ['platform-tags'],
+    queryFn: getTags,
     enabled: open,
   })
 
@@ -1497,7 +1497,7 @@ export function ChannelMutateDrawer({
   // Handle successful submission
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-    queryClient.invalidateQueries({ queryKey: ['channel-tags'] })
+    queryClient.invalidateQueries({ queryKey: ['platform-tags'] })
     if (channelId) {
       queryClient.invalidateQueries({
         queryKey: channelsQueryKeys.detail(channelId),

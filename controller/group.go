@@ -17,12 +17,15 @@ type pricingGroupResponse struct {
 	Ratio        float64                 `json:"ratio"`
 	Selectable   bool                    `json:"selectable"`
 	Description  string                  `json:"description,omitempty"`
+	Note         string                  `json:"note,omitempty"`
+	Tag          string                  `json:"tag,omitempty"`
 	ChannelStats model.ChannelGroupStats `json:"channel_stats"`
+	Channels     []model.GroupChannel    `json:"channels"`
 }
 
 func GetGroups(c *gin.Context) {
 	groups := ratio_setting.GetPricingGroupsCopy()
-	channelStats, err := model.GetChannelGroupStats()
+	channelStats, groupChannels, err := model.GetChannelGroupStats()
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -36,7 +39,10 @@ func GetGroups(c *gin.Context) {
 			Ratio:        group.Ratio,
 			Selectable:   group.Selectable,
 			Description:  group.Description,
+			Note:         group.Note,
+			Tag:          group.Tag,
 			ChannelStats: stats,
+			Channels:     groupChannels[ratio_setting.PricingGroupKey(group.Name)],
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{

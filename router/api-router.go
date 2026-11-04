@@ -356,6 +356,12 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
 		}
+		tagRoute := apiRouter.Group("/tags")
+		tagRoute.Use(middleware.AdminAuth())
+		{
+			tagRoute.GET("/", controller.GetPlatformTags)
+			tagRoute.POST("/", controller.CreatePlatformTag)
+		}
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
 		{

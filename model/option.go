@@ -1684,6 +1684,11 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 	}
 	var accountVerificationResetUserIDs []int
 	err = DB.Transaction(func(tx *gorm.DB) error {
+		if value, ok := values["PricingGroups"]; ok {
+			if err := registerPricingGroupTagsTx(tx, value); err != nil {
+				return err
+			}
+		}
 		if values[setting.AccountVerificationEnabledOption] == "false" {
 			accountVerificationResetUserIDs, err = clearAccountVerificationLifecycleTx(tx)
 			if err != nil {

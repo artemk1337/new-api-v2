@@ -17,6 +17,8 @@ type PricingGroup struct {
 	Ratio       float64 `json:"ratio"`
 	Selectable  bool    `json:"selectable"`
 	Description string  `json:"description,omitempty"`
+	Note        string  `json:"note,omitempty"`
+	Tag         string  `json:"tag,omitempty"`
 }
 
 type PricingGroupRef struct {
@@ -42,6 +44,8 @@ func clonePricingGroups(groups []*PricingGroup) []*PricingGroup {
 		item := *group
 		item.Name = strings.TrimSpace(item.Name)
 		item.Description = strings.TrimSpace(item.Description)
+		item.Note = strings.TrimSpace(item.Note)
+		item.Tag = strings.TrimSpace(item.Tag)
 		cloned = append(cloned, &item)
 	}
 	return cloned
@@ -90,6 +94,8 @@ func normalizePricingGroups(groups []*PricingGroup) ([]*PricingGroup, error) {
 			Ratio:       group.Ratio,
 			Selectable:  group.Selectable,
 			Description: strings.TrimSpace(group.Description),
+			Note:        strings.TrimSpace(group.Note),
+			Tag:         strings.TrimSpace(group.Tag),
 		}
 		if item.Id > 0 {
 			if _, exists := seenIDs[item.Id]; exists {
@@ -196,6 +202,8 @@ func buildPricingGroupsFromLegacyRatioWithIDs(legacyRatios map[string]float64, e
 		}
 		group.Selectable = existing.Selectable
 		group.Description = existing.Description
+		group.Note = existing.Note
+		group.Tag = existing.Tag
 	}
 	return groups
 }

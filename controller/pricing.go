@@ -64,13 +64,18 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
+	groups := ratio_setting.GetPricingGroupsCopy()
+	for _, group := range groups {
+		group.Note = ""
+		group.Tag = ""
+	}
 	c.JSON(200, gin.H{
 		"success":            true,
 		"data":               pricing,
 		"vendors":            model.GetVendors(),
 		"group_ratio":        groupRatio,
 		"usable_group":       usableGroup,
-		"pricing_groups":     ratio_setting.GetPricingGroupsCopy(),
+		"pricing_groups":     groups,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",

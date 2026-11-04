@@ -1,3 +1,4 @@
+import type { PermissionCatalog } from '@/lib/admin-permissions'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,7 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { PermissionCatalog } from '@/lib/admin-permissions'
+
 import type {
   User,
   GetUsersParams,
@@ -215,6 +216,7 @@ export type PricingGroupRecord = {
   ratio: number
   selectable: boolean
   description: string
+  channels?: { id: number; name: string; status: number }[]
   channel_stats?: {
     total: number
     active: number

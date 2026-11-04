@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.209 — 2026-11-04
+
+- Show pricing group channel usage and channel details, with administrator-only notes and a compact group name field.
+- Share a persistent tag catalog between channels and pricing groups, preserving existing tags and allowing tags to be cleared.
+
 ## v1.1.208 — 2026-11-04
 
 - Allow API key holders to sign in to a restricted view of their key’s spending, remaining quota, and recent usage logs without access to account settings or top-ups.
