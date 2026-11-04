@@ -1040,7 +1040,6 @@ function GroupPricingTable({
                           updateRow(row._id, 'tag', value ?? '')
                         }
                         allowCustomValue
-                        clearOnReselect
                       />
                     </PopoverContent>
                   </Popover>

@@ -164,3 +164,25 @@ The follow-up on `codex/supplier-pricing`, based on `c7bfaa70`, corrects partial
 | API contract | The new owned-task media operation and inference-token security declaration pass OpenAPI validation. Completed-task transport/key rotation, sanitized Suno results and supplier media headers have HTTP regressions. |
 
 Owned local servers and temporary database containers were stopped after verification. These checks do not recover missing historical credentials for old tasks without a saved result destination; their local status remains readable.
+
+### Compatibility with the running release — 2026-11-04
+
+A read-only production `/api/status` check reported **v1.1.214**, newer than this worktree's original v1.1.206 base. Merge `f0edaa4d` includes the v1.1.214 release commit `d31df151`; it preserves shared platform tags, limited API-key sessions, sign-in methods, referral changes and the home page. Never deploy the earlier supplier-only branch without these intervening production changes.
+
+Comparison with v1.1.214 found and fixed two additional unbound regressions. Auto quotes now normalize global `per_call` candidates before applying duration multipliers while retaining duration for supplier `per_second` candidates. Explicit forced unbound channels retain their previous ability-list bypass, subject to a configured global billing contract; supplier routes retain binding and model checks. New HTTP regressions cover both cases. Limited key-session tests confirm that root-owned inference keys still receive only limited access and cannot expose procurement logs or manage suppliers.
+
+The following rehearsal used immutable source archives, Go 1.25.6 Darwin/arm64 server binaries, a synthetic SQLite database with 29 rows across 10 business tables, and one persistent `SESSION_SECRET_FILE`:
+
+```text
+v1.1.214 → f0edaa4d → repeated new-version startup → v1.1.214 rollback
+```
+
+Actual startup migrations and HTTP probes passed at every step. Every previous column in users, tokens, channels, abilities, tasks, midjourneys, models, options, setups and platform tags stayed unchanged. Balances, credentials, task JSON, group/model/cache coefficients and tag values were preserved. A session cookie issued once on v1.1.214 remained valid throughout. Token authentication, model discovery, self/group endpoints and both pricing APIs passed; no suppliers, profiles or bindings were automatically created. A separate live SQLite/PostgreSQL 15/MySQL 8.4 dialect fixture passed on this same source, including repeatable tag migrations and supplier isolation.
+
+The full populated startup/rollback rehearsal was **SQLite only**. PostgreSQL/MySQL verification covers the dialect fixture, not the full startup sequence on existing production data. The rehearsal uses synthetic data and minimal embedded frontend assets; frontend/browser checks are separate. Task polling and paid inference were disabled, and unrelated log, telemetry, currency and system-task metadata were not asserted unchanged. Old-version rollback with active supplier bindings remains unsupported: disable bound channels before reverting application nodes.
+
+Final validation after integration passed: **2,121 Go tests across 90 packages**, **347 frontend tests**, frontend type checking/production build, and static Linux amd64/arm64 builds with Go 1.25.6. Build frontend assets before Go tests/builds: both embed `web/default/dist`, so concurrent frontend cleanup can make the Go embed step fail. The global model-test fixture now includes the existing platform-tag table. Separate pricing fixtures were made independent of earlier tests; the former standalone hang was a nil-map panic while holding a test mutex, not an application deadlock.
+
+Desktop/mobile browser checks cover supplier/profile selection alongside shared tags, group tiers/cache/tool prices, custom-tag Enter/save/reload and clearing, and nested Escape behavior. Group tags retain a newly entered selection; the first Escape closes the combobox list and the second closes the drawer. Backend runtime code is unchanged after the immutable migration rehearsal; subsequent changes affect these UI controls, test setup and this record. Temporary servers, rehearsal archives/secrets/databases and owned PostgreSQL/MySQL containers were removed or stopped; a sanitized local rehearsal report was retained.
+
+First deploy the supplier-aware release with existing bindings unchanged. Verify legacy traffic and authentication before enabling new supplier bindings. The production release image, current image/version and a fresh verified backup still need the normal deployment preflight; local rehearsals do not replace a production backup. Production was not changed by this verification.
