@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.210 — 2026-11-04
+
+- Rename the Russian footer link from «О проекте» to «О нас».
+
 ## v1.1.209 — 2026-11-04
 
 - Show pricing group channel usage and channel details, with administrator-only notes and a compact group name field.
