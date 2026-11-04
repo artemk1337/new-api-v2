@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.218 — 2026-11-04
+
+- Add administrator-only proxy supplier filters and delayed, paginated text suggestions to common usage logs, with server-side access checks and isolated suggestion caches.
+- Freeze supplier attribution when recording usage, preserve it through outbox delivery and channel changes, and keep historical records without attribution explicitly unknown across supported log databases.
+- Restore public model-provider grouping, crossed-out reference prices, and savings calculated from one group's input/output pair under the selected filters.
+- Sort the catalogue by benefit by default and order comparable Auto token routes by their frozen input-plus-output price, retaining context tiers, fallback routes, and sufficient quota reservation.
+- Allow tests as part of the normal development workflow and document the updated pricing and log-filter contracts.
+
 ## v1.1.217 — 2026-11-04
 
 - Publish news to a public Telegram channel through the existing bot, with a separate full post text or a link to an existing post and a "More in Telegram" action in platform announcements.
