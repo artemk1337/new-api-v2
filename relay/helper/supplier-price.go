@@ -14,7 +14,7 @@ import (
 )
 
 func supplierPriceError(info *relaycommon.RelayInfo) error {
-	return fmt.Errorf("model %s price is unavailable for the selected group", info.OriginModelName)
+	return newRoutePriceUnavailable(fmt.Sprintf("model %s price is unavailable for the selected group", info.OriginModelName))
 }
 
 func modelPriceHelperSupplier(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatio types.GroupRatioInfo, tariff types.SupplierModelTariff) (types.PriceData, error) {
@@ -171,7 +171,7 @@ func supplierLanePriced(tariff types.SupplierModelTariff, variable string, price
 }
 
 func unsupportedSupplierFeature(feature string) error {
-	return fmt.Errorf("the selected group has no price for %s", feature)
+	return newRoutePriceUnavailable(fmt.Sprintf("the selected group has no price for %s", feature))
 }
 
 func SupplierImageToolPrice(tariff types.SupplierModelTariff, quality, size string) (float64, bool) {
@@ -210,123 +210,9 @@ func ValidateSupplierRequest(c *gin.Context, info *relaycommon.RelayInfo, tariff
 		}
 	}
 	if request, ok := body.(map[string]any); ok {
-		if tools, ok := request["tools"].([]any); ok {
-			for _, raw := range tools {
-				tool, ok := raw.(map[string]any)
-				if !ok {
-					return unsupportedSupplierFeature("this tool")
-				}
-				kind, _ := tool["type"].(string)
-				switch {
-				case kind == "function":
-				case kind == "" && (tool["input_schema"] != nil || tool["functionDeclarations"] != nil || tool["function_declarations"] != nil):
-				case kind == "file_search", strings.HasPrefix(kind, "web_search"):
-					// Exact per-call prices and usage counters are checked below.
-				default:
-					// Other server tools do not have complete per-invocation usage
-					// contracts here. In particular image generation reports one
-					// legacy boolean, which cannot price multiple generated items.
-					return unsupportedSupplierFeature("this tool")
-				}
-			}
+		if err := validateSupplierProtocolRequest(request, tariff); err != nil {
+			return err
 		}
-	}
-	var visit func(any) error
-	visit = func(value any) error {
-		switch item := value.(type) {
-		case []any:
-			for _, child := range item {
-				if err := visit(child); err != nil {
-					return err
-				}
-			}
-		case map[string]any:
-			kind, _ := item["type"].(string)
-			switch kind {
-			case "code_interpreter":
-				return unsupportedSupplierFeature("code interpreter")
-			case "image_url", "input_image", "image":
-				if !supplierLanePriced(tariff, "img", tariff.ImageUSD) {
-					return unsupportedSupplierFeature("image input")
-				}
-			case "input_audio", "audio":
-				if !supplierLanePriced(tariff, "ai", tariff.AudioInputUSD) {
-					return unsupportedSupplierFeature("audio input")
-				}
-			case "file_search":
-				if _, ok := tariff.Tools["file_search"]; !ok {
-					return unsupportedSupplierFeature("file search")
-				}
-			case "image_generation":
-				quality, _ := item["quality"].(string)
-				size, _ := item["size"].(string)
-				if _, ok := SupplierImageToolPrice(tariff, quality, size); !ok {
-					return unsupportedSupplierFeature("image generation")
-				}
-			}
-			if strings.HasPrefix(kind, "web_search") {
-				key := "web_search_preview"
-				if strings.HasPrefix(kind, "web_search_") && kind != "web_search_preview" {
-					key = "web_search"
-				}
-				if _, ok := tariff.Tools[key]; !ok {
-					return unsupportedSupplierFeature("web search")
-				}
-			}
-			if cache, ok := item["cache_control"].(map[string]any); ok {
-				lane, price := "cc", tariff.CacheWriteUSD
-				if scope, ok := cache["scope"]; ok && scope != nil && scope != "" {
-					return unsupportedSupplierFeature("cache scope")
-				}
-				if ttl, ok := cache["ttl"]; ok && ttl != "" && ttl != "5m" && ttl != "1h" {
-					return unsupportedSupplierFeature("cache retention")
-				}
-				if cache["ttl"] == "1h" {
-					lane, price = "cc1h", tariff.CacheWrite1hUSD
-				}
-				if !supplierLanePriced(tariff, lane, price) {
-					return unsupportedSupplierFeature("cache creation")
-				}
-			}
-			if retention, ok := item["prompt_cache_retention"]; ok && retention != nil && retention != "in-memory" {
-				return unsupportedSupplierFeature("cache retention")
-			}
-			for _, key := range []string{"inlineData", "inline_data", "fileData", "file_data"} {
-				if part, ok := item[key].(map[string]any); ok {
-					mime, _ := part["mimeType"].(string)
-					if mime == "" {
-						mime, _ = part["mime_type"].(string)
-					}
-					if strings.HasPrefix(mime, "image/") && !supplierLanePriced(tariff, "img", tariff.ImageUSD) {
-						return unsupportedSupplierFeature("image input")
-					}
-					if strings.HasPrefix(mime, "audio/") && !supplierLanePriced(tariff, "ai", tariff.AudioInputUSD) {
-						return unsupportedSupplierFeature("audio input")
-					}
-				}
-			}
-			if item["cachedContent"] != nil || item["cached_content"] != nil {
-				if !supplierLanePriced(tariff, "cr", tariff.CacheReadUSD) {
-					return unsupportedSupplierFeature("cache read")
-				}
-			}
-			if modalities, ok := item["modalities"].([]any); ok {
-				for _, modality := range modalities {
-					if modality == "audio" && !supplierLanePriced(tariff, "ao", tariff.AudioOutputUSD) {
-						return unsupportedSupplierFeature("audio output")
-					}
-				}
-			}
-			for _, child := range item {
-				if err := visit(child); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	if err := visit(body); err != nil {
-		return err
 	}
 	if strings.Contains(path, "/realtime") && (!supplierLanePriced(tariff, "ai", tariff.AudioInputUSD) || !supplierLanePriced(tariff, "ao", tariff.AudioOutputUSD)) {
 		return unsupportedSupplierFeature("realtime audio")
@@ -354,37 +240,11 @@ func ValidateSupplierRealtimeMessage(info *relaycommon.RelayInfo, body []byte) e
 	if err := ValidateSupplierRequest(nil, &candidate, *tariff); err != nil {
 		return err
 	}
-	var message any
+	var message map[string]any
 	if err := common.Unmarshal(body, &message); err != nil {
 		return fmt.Errorf("invalid realtime pricing request")
 	}
-	var visit func(any) error
-	visit = func(value any) error {
-		switch item := value.(type) {
-		case []any:
-			for _, child := range item {
-				if err := visit(child); err != nil {
-					return err
-				}
-			}
-		case map[string]any:
-			if tools, ok := item["tools"].([]any); ok {
-				for _, raw := range tools {
-					tool, ok := raw.(map[string]any)
-					if !ok || tool["type"] != "function" {
-						return unsupportedSupplierFeature("realtime server tools")
-					}
-				}
-			}
-			for _, child := range item {
-				if err := visit(child); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	return visit(message)
+	return validateSupplierRealtimeToolDefinitions(message)
 }
 
 func ValidateSupplierUsage(info *relaycommon.RelayInfo, usage *dto.Usage) error {

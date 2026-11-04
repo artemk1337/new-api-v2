@@ -122,57 +122,35 @@ func defaultModelTariff(modelName string) (types.SupplierModelTariff, bool) {
 // GetPublicPricingCatalog resolves mappings independently for each group. It
 // does not require a global tariff for models served through a supplier profile.
 func GetPublicPricingCatalog(usable map[string]string, multipliers map[string]float64) ([]PublicPricingModel, error) {
-	abilities, err := GetAllEnableAbilityWithChannels()
+	data, err := loadPublicPricingData(usable)
 	if err != nil {
 		return nil, err
 	}
-	var channels []Channel
-	if err := DB.Select("id", "status", "supplier_id", "supplier_profile_id").Find(&channels).Error; err != nil {
-		return nil, err
+	names := make([]string, 0, len(data.abilities))
+	for _, ability := range data.abilities {
+		names = append(names, ability.Model)
 	}
-	channelByID := make(map[int]*Channel, len(channels))
-	for i := range channels {
-		channelByID[channels[i].Id] = &channels[i]
-	}
-	var metas []Model
-	if err := DB.Find(&metas).Error; err != nil {
-		return nil, err
-	}
-	names := make([]string, 0)
-	seenNames := make(map[string]bool)
-	for _, ability := range abilities {
-		if !seenNames[ability.Model] {
-			names = append(names, ability.Model)
-			seenNames[ability.Model] = true
-		}
-	}
-	metadata := buildPricingModelMap(metas, names)
-	officialPrices, err := GetOfficialAPIPrices(names)
-	if err != nil {
-		return nil, err
-	}
+	metadata := buildPricingModelMap(data.metadata, names)
 	type groupTarget struct {
 		target   string
 		conflict bool
 	}
 	targets := make(map[string]map[string]groupTarget)
 	endpoints := make(map[string][]constant.EndpointType)
-	for _, ability := range abilities {
+	for index, ability := range data.abilities {
 		group := ratio_setting.PricingGroupKey(ability.Group)
 		if _, ok := usable[group]; !ok {
 			continue
 		}
-		channel := channelByID[ability.ChannelId]
-		if channel == nil || channel.Status != common.ChannelStatusEnabled {
+		channel, exists := data.channels[ability.ChannelId]
+		if !exists {
 			continue
 		}
-		if ValidateChannelPricingGroup(channel, group) != nil {
+		ref, ok := ratio_setting.PricingGroupRefByKey(group)
+		if !ok || !data.channelMatches(channel, data.bindings[ref.Id]) {
 			continue
 		}
-		target, mapped := resolveChannelModelPricingTarget(ability.Model, ability.ChannelModelMapping)
-		if !mapped {
-			target = ability.Model
-		}
+		target := data.targets[index]
 		if targets[ability.Model] == nil {
 			targets[ability.Model] = make(map[string]groupTarget)
 		}
@@ -198,7 +176,7 @@ func GetPublicPricingCatalog(usable map[string]string, multipliers map[string]fl
 		if customEndpoints := GetModelSupportEndpointTypes(name); len(customEndpoints) > 0 {
 			item.SupportedEndpointTypes = customEndpoints
 		}
-		if price, ok := officialPrices[name]; ok {
+		if price, ok := data.official[name]; ok {
 			item.OfficialPrice = &price
 		}
 		if meta, ok := metadata[name]; ok {
@@ -220,17 +198,16 @@ func GetPublicPricingCatalog(usable map[string]string, multipliers map[string]fl
 			price := PublicGroupPrice{Unavailable: true, PriceUnit: "million_tokens"}
 			target := groups[group]
 			if !target.conflict {
-				tariff, bound, resolveErr := ResolveSupplierModelTariff(group, target.target)
-				if resolveErr == nil {
-					available := bound
-					if !bound {
-						tariff, available = defaultModelTariff(target.target)
-					}
-					if available {
-						price = publicGroupPrice(tariff, multipliers[group])
-						if bound && tariff.BillingMode == types.SupplierBillingModeFixed && slices.Contains(item.SupportedEndpointTypes, constant.EndpointTypeImageGeneration) {
-							price = PublicGroupPrice{Unavailable: true, PriceUnit: tariff.PriceUnit}
-						}
+				binding := data.bindings[ref.Id]
+				bound := binding.SupplierID != 0 || binding.ProfileID != 0
+				tariff, available := data.profiles[binding.ProfileID].tariffs[target.target]
+				if !bound {
+					tariff, available = defaultModelTariff(target.target)
+				}
+				if available {
+					price = publicGroupPrice(tariff, multipliers[group])
+					if bound && tariff.BillingMode == types.SupplierBillingModeFixed && slices.Contains(item.SupportedEndpointTypes, constant.EndpointTypeImageGeneration) {
+						price = PublicGroupPrice{Unavailable: true, PriceUnit: tariff.PriceUnit}
 					}
 				}
 			}

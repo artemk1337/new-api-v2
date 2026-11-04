@@ -88,3 +88,75 @@ func TestLegacySourceCleanupPreservesBoundGlobalPrices(t *testing.T) {
 	require.NoError(t, db.First(&source, "channel_id = ?", 10).Error)
 	require.Equal(t, int64(42), source.LastAttemptAt)
 }
+
+func prepareLegacySourceUnbind(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&Ability{}, &PricingGroupSupplierBinding{}, &Supplier{}, &SupplierPricingProfile{}))
+}
+
+func requireLegacySourcePreserved(t *testing.T, db *gorm.DB, source PricingSyncSource) {
+	t.Helper()
+	var current PricingSyncSource
+	require.NoError(t, db.First(&current, "channel_id = ?", source.ChannelID).Error)
+	require.Equal(t, source, current)
+	requireLegacyGlobalPricePreserved(t, db)
+	var state PricingSyncModelState
+	require.NoError(t, db.First(&state, "model_name = ?", "keep-model").Error)
+	require.Equal(t, "[10]", state.Provenance)
+}
+
+func TestLegacyConfigReadBeforeUnbindCannotRemoveReturnedSource(t *testing.T) {
+	db := setupLegacySupplierPricingTestDB(t)
+	prepareLegacySourceUnbind(t, db)
+	previous, err := GetPricingSyncSources()
+	require.NoError(t, err)
+	version, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+
+	// The old configuration UI omitted the supplier-bound source. Returning
+	// its channel to default pricing must invalidate that UI's version.
+	require.NoError(t, ApplySupplierBindings(nil, []SupplierChannelBindingPatch{{ChannelID: 10}}))
+	currentVersion, err := GetPricingSyncConfigVersion()
+	require.NoError(t, err)
+	require.Greater(t, currentVersion, version)
+	err = SavePricingSyncConfigurationIfVersion(nil, PricingSyncStrategyHighest, []int{10}, previous, version)
+	require.ErrorIs(t, err, ErrPricingSyncConfigurationChanged)
+	requireLegacySourcePreserved(t, db, previous[0])
+}
+
+func TestLegacyConfigConcurrentUnbindRetainsSourceAndDefaultTariff(t *testing.T) {
+	for _, versioned := range []bool{false, true} {
+		name := "internal"
+		if versioned {
+			name = "versioned"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := setupLegacySupplierPricingTestDB(t)
+			prepareLegacySourceUnbind(t, db)
+			previous, err := GetPricingSyncSources()
+			require.NoError(t, err)
+			version, err := GetPricingSyncConfigVersion()
+			require.NoError(t, err)
+			changed := false
+			var unbindErr error
+			const callback = "test:unbind-before-legacy-config-transaction"
+			require.NoError(t, db.Callback().Query().After("gorm:query").Register(callback, func(query *gorm.DB) {
+				if changed || query.Statement.Table != "pricing_sync_model_states" {
+					return
+				}
+				changed = true
+				unbindErr = ApplySupplierBindings(nil, []SupplierChannelBindingPatch{{ChannelID: 10}})
+			}))
+			t.Cleanup(func() { require.NoError(t, db.Callback().Query().Remove(callback)) })
+			if versioned {
+				err = SavePricingSyncConfigurationIfVersion(nil, PricingSyncStrategyHighest, nil, previous, version)
+			} else {
+				err = SavePricingSyncConfiguration(nil, PricingSyncStrategyHighest, nil)
+			}
+			require.True(t, changed)
+			require.NoError(t, unbindErr)
+			require.ErrorIs(t, err, ErrPricingSyncConfigurationChanged)
+			requireLegacySourcePreserved(t, db, previous[0])
+		})
+	}
+}

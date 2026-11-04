@@ -44,6 +44,11 @@ func publicSupplierRelayError(err *types.NewAPIError) *types.NewAPIError {
 func resolveGroupBillingModels(c *gin.Context, info *relaycommon.RelayInfo, groups []string) ([]string, error) {
 	info.GroupBillingModelNames = make(map[string]string, len(groups))
 	available := make([]string, 0, len(groups))
+	keyMapping := common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping)
+	if err := helper.ValidateModelMappingComposition(keyMapping, "", info.RequestedModelName, info.RelayMode); err != nil {
+		return nil, err
+	}
+	autoRouting := info.TokenGroup == "" || info.TokenGroup == "auto"
 	var forced *model.Channel
 	if rawID := common.GetContextKeyString(c, constant.ContextKeyTokenSpecificChannelId); rawID != "" {
 		id, err := strconv.Atoi(rawID)
@@ -74,13 +79,19 @@ func resolveGroupBillingModels(c *gin.Context, info *relaycommon.RelayInfo, grou
 			continue
 		}
 		if err := helper.ValidateModelMappingCandidates(
-			common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+			keyMapping,
 			info.RequestedModelName, info.RelayMode, mappings,
 		); err != nil {
+			if autoRouting {
+				continue
+			}
 			return nil, err
 		}
 		target, _, err := helper.ResolveCandidateModelMapping(mappings, info.OriginModelName, info.RelayMode)
 		if err != nil {
+			if autoRouting {
+				continue
+			}
 			return nil, err
 		}
 		info.GroupBillingModelNames[group] = target
@@ -100,6 +111,8 @@ func channelSupportsCandidateModels(channelID int, group string, info *relaycomm
 
 func previewTaskRoutes(c *gin.Context, info *relaycommon.RelayInfo, groups []string) error {
 	info.AutoRoute = relaycommon.AutoRouteState{}
+	originalGroup := info.UsingGroup
+	var unavailableErr error
 	for _, group := range groups {
 		candidate := *info
 		candidate.UsingGroup = group
@@ -107,12 +120,36 @@ func previewTaskRoutes(c *gin.Context, info *relaycommon.RelayInfo, groups []str
 		common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
 		price, err := helper.ModelPriceHelperPerCall(c, &candidate)
 		if err != nil {
+			if helper.IsRoutePriceUnavailable(err) {
+				unavailableErr = err
+				continue
+			}
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
 			return err
 		}
 		info.AutoRoute.Candidates = append(info.AutoRoute.Candidates, relaycommon.AutoRouteCandidate{
 			Group: group, BillingModelName: candidate.BillingModelName,
 			EstimatedQuota: price.Quota, PriceData: price,
 		})
+	}
+	if len(info.AutoRoute.Candidates) == 0 {
+		common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
+		if unavailableErr != nil {
+			return unavailableErr
+		}
+		return errors.New("no available priced route for this model")
+	}
+	if info.TokenGroup == "auto" {
+		// Validate only routes that survived mapping and tariff checks. An
+		// unavailable supplier must not invalidate another group's contract.
+		quotedGroups := make([]string, 0, len(info.AutoRoute.Candidates))
+		for _, candidate := range info.AutoRoute.Candidates {
+			quotedGroups = append(quotedGroups, candidate.Group)
+		}
+		if err := validateAutoTaskPricingContract(quotedGroups, info.OriginModelName, constant.TaskPlatform(c.GetString("platform"))); err != nil {
+			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
+			return err
+		}
 	}
 	return nil
 }

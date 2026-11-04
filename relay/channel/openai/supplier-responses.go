@@ -50,7 +50,7 @@ type supplierResponsesEnvelope struct {
 	Status             string                    `json:"status,omitempty"`
 	Model              string                    `json:"model,omitempty"`
 	Output             []supplierResponsesOutput `json:"output"`
-	Usage              *dto.Usage                `json:"usage,omitempty"`
+	Usage              *supplierResponsesUsage   `json:"usage,omitempty"`
 	Error              json.RawMessage           `json:"error,omitempty"`
 	IncompleteDetails  *dto.IncompleteDetails    `json:"incomplete_details,omitempty"`
 	MaxOutputTokens    *int                      `json:"max_output_tokens,omitempty"`
@@ -69,24 +69,52 @@ type supplierResponsesEnvelope struct {
 	User         json.RawMessage `json:"user,omitempty"`
 }
 
+// Responses uses a different token-detail wire shape from Chat Completions.
+// Keep its canonical counters without echoing procurement/service extensions.
+type supplierResponsesUsage struct {
+	InputTokens         int                           `json:"input_tokens"`
+	InputTokensDetails  *supplierResponsesInputUsage  `json:"input_tokens_details,omitempty"`
+	OutputTokens        int                           `json:"output_tokens"`
+	OutputTokensDetails *supplierResponsesOutputUsage `json:"output_tokens_details,omitempty"`
+	TotalTokens         int                           `json:"total_tokens"`
+}
+
+type supplierResponsesInputUsage struct {
+	CachedTokens         int  `json:"cached_tokens"`
+	CachedCreationTokens *int `json:"cached_creation_tokens,omitempty"`
+	TextTokens           *int `json:"text_tokens,omitempty"`
+	AudioTokens          *int `json:"audio_tokens,omitempty"`
+	ImageTokens          *int `json:"image_tokens,omitempty"`
+}
+
+type supplierResponsesOutputUsage struct {
+	ReasoningTokens int  `json:"reasoning_tokens"`
+	TextTokens      *int `json:"text_tokens,omitempty"`
+	AudioTokens     *int `json:"audio_tokens,omitempty"`
+	ImageTokens     *int `json:"image_tokens,omitempty"`
+}
+
 type supplierResponsesEvent struct {
-	Type           string                   `json:"type"`
-	SequenceNumber *int                     `json:"sequence_number,omitempty"`
-	Response       json.RawMessage          `json:"response,omitempty"`
-	ResponseID     string                   `json:"response_id,omitempty"`
-	OutputIndex    *int                     `json:"output_index,omitempty"`
-	ContentIndex   *int                     `json:"content_index,omitempty"`
-	SummaryIndex   *int                     `json:"summary_index,omitempty"`
-	ItemID         string                   `json:"item_id,omitempty"`
-	Item           *supplierResponsesOutput `json:"item,omitempty"`
-	Part           json.RawMessage          `json:"part,omitempty"`
-	Delta          json.RawMessage          `json:"delta,omitempty"`
-	Text           *string                  `json:"text,omitempty"`
-	Arguments      json.RawMessage          `json:"arguments,omitempty"`
-	Name           string                   `json:"name,omitempty"`
-	CallID         string                   `json:"call_id,omitempty"`
-	Logprobs       json.RawMessage          `json:"logprobs,omitempty"`
-	Error          json.RawMessage          `json:"error,omitempty"`
+	Type            string                   `json:"type"`
+	SequenceNumber  *int                     `json:"sequence_number,omitempty"`
+	Response        json.RawMessage          `json:"response,omitempty"`
+	ResponseID      string                   `json:"response_id,omitempty"`
+	OutputIndex     *int                     `json:"output_index,omitempty"`
+	ContentIndex    *int                     `json:"content_index,omitempty"`
+	AnnotationIndex *int                     `json:"annotation_index,omitempty"`
+	SummaryIndex    *int                     `json:"summary_index,omitempty"`
+	ItemID          string                   `json:"item_id,omitempty"`
+	Item            *supplierResponsesOutput `json:"item,omitempty"`
+	Part            json.RawMessage          `json:"part,omitempty"`
+	Delta           json.RawMessage          `json:"delta,omitempty"`
+	Text            *string                  `json:"text,omitempty"`
+	Refusal         *string                  `json:"refusal,omitempty"`
+	Annotation      json.RawMessage          `json:"annotation,omitempty"`
+	Arguments       json.RawMessage          `json:"arguments,omitempty"`
+	Name            string                   `json:"name,omitempty"`
+	CallID          string                   `json:"call_id,omitempty"`
+	Logprobs        json.RawMessage          `json:"logprobs,omitempty"`
+	Error           json.RawMessage          `json:"error,omitempty"`
 }
 
 func supplierHasError(raw json.RawMessage) bool {
@@ -111,10 +139,6 @@ func projectSupplierResponses(c *gin.Context, info *relaycommon.RelayInfo, data 
 		response.Metadata = request.Metadata
 		response.Tools = request.Tools
 		response.User = request.User
-	}
-	if response.Usage != nil {
-		usage := supplierPublicUsage(*response.Usage)
-		response.Usage = &usage
 	}
 	return common.Marshal(response)
 }

@@ -206,6 +206,15 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 	default:
 		return errors.New("unsupported pricing sync strategy")
 	}
+	// Internal callers without a supplied version still reconcile one snapshot.
+	// Binding changes can otherwise turn a hidden source into a removed source.
+	if expectedVersion < 0 {
+		version, err := GetPricingSyncConfigVersion()
+		if err != nil {
+			return err
+		}
+		expectedVersion = version
+	}
 	existing, err := GetPricingSyncSources()
 	if err != nil {
 		return err
@@ -277,7 +286,7 @@ func savePricingSyncConfiguration(sources []PricingSyncSource, strategy string, 
 		}
 		if expectedVersion >= 0 {
 			version := Option{}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, map[string]any{"key": "PricingSyncConfigVersion"}).Error; err != nil {
 				return err
 			}
 			if version.Value != strconv.FormatInt(expectedVersion, 10) {
@@ -392,7 +401,7 @@ func bumpPricingSyncConfigVersionTx(tx *gorm.DB) error {
 	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&version).Error; err != nil {
 		return err
 	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", version.Key).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, map[string]any{"key": version.Key}).Error; err != nil {
 		return err
 	}
 	currentVersion, err := strconv.ParseInt(version.Value, 10, 64)
@@ -409,7 +418,7 @@ func GetPricingSyncConfigVersion() (int64, error) {
 		return 0, err
 	}
 	option := Option{}
-	if err := DB.First(&option, "key = ?", initialVersion.Key).Error; err != nil {
+	if err := DB.First(&option, map[string]any{"key": initialVersion.Key}).Error; err != nil {
 		return 0, err
 	}
 	version, err := strconv.ParseInt(option.Value, 10, 64)
@@ -738,7 +747,7 @@ func ApplyPricingSyncUpdateWithPreferencesIfVersion(patches map[string]JSONObjec
 				return err
 			}
 			version := Option{}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", initialVersion.Key).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, map[string]any{"key": initialVersion.Key}).Error; err != nil {
 				return err
 			}
 			if version.Value != strconv.FormatInt(expectedVersion, 10) {
@@ -749,7 +758,7 @@ func ApplyPricingSyncUpdateWithPreferencesIfVersion(patches map[string]JSONObjec
 			return err
 		}
 		version := Option{}
-		if err := tx.First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
+		if err := tx.First(&version, map[string]any{"key": "PricingSyncConfigVersion"}).Error; err != nil {
 			return err
 		}
 		var err error
@@ -857,7 +866,7 @@ func ApplyPricingSyncUpdateFromSourcesIfVersion(patches map[string]JSONObjectPat
 				return err
 			}
 			version := Option{}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, "key = ?", initialVersion.Key).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&version, map[string]any{"key": initialVersion.Key}).Error; err != nil {
 				return err
 			}
 			if version.Value != strconv.FormatInt(expectedVersion, 10) {
@@ -889,7 +898,7 @@ func PricingOptionChangedModels(key, next string) ([]string, error) {
 		return nil, nil
 	}
 	current := Option{Key: key, Value: "{}"}
-	err := DB.First(&current, "key = ?", key).Error
+	err := DB.First(&current, map[string]any{"key": key}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}

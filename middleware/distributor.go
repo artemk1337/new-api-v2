@@ -613,8 +613,13 @@ func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName st
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	fingerprint := channel.TaskTransportFingerprint()
+	if !selectKey {
+		if selected := c.GetString("task_channel_transport_fingerprint"); selected != "" && selected != fingerprint {
+			return types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+	}
 	c.Set("supplier_pricing", channel.SupplierID != nil || channel.SupplierProfileID != nil)
-	c.Set("task_channel_transport_fingerprint", channel.TaskTransportFingerprint())
 	if c.Request != nil && !channelSupportsRequestPath(channel, c.Request.URL.Path) {
 		return types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
@@ -668,6 +673,7 @@ func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName st
 	// c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key))
 	common.SetContextKey(c, constant.ContextKeyChannelKey, key)
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
+	c.Set("task_channel_transport_fingerprint", fingerprint)
 
 	common.SetContextKey(c, constant.ContextKeySystemPromptOverride, false)
 

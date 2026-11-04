@@ -137,3 +137,55 @@ func TestLegacyConfigurationHidesDormantSupplierSources(t *testing.T) {
 	require.NoError(t, db.First(&source, "channel_id = ?", 1).Error)
 	require.True(t, source.Enabled)
 }
+
+func TestLegacyConfigurationRejectsNegativeVersion(t *testing.T) {
+	db := setupLegacySupplierControllerDB(t)
+	require.NoError(t, db.Create(&model.PricingSyncSource{ChannelID: 2, Enabled: true, Endpoint: "/api/pricing", IntervalSeconds: 60}).Error)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"expected_version":-1,"sources":[]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	UpdatePricingSyncConfig(ctx)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	var count int64
+	require.NoError(t, db.Model(&model.PricingSyncSource{}).Where("channel_id = ?", 2).Count(&count).Error)
+	require.EqualValues(t, 1, count)
+}
+
+func TestLegacyConfigurationOpenedBeforeUnbindReturnsConflict(t *testing.T) {
+	db := setupLegacySupplierControllerDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Ability{}, &model.PricingGroupSupplierBinding{}, &model.Supplier{}, &model.SupplierPricingProfile{}))
+	source := model.PricingSyncSource{ChannelID: 1, Enabled: true, Endpoint: "/api/pricing", IntervalSeconds: 60}
+	require.NoError(t, db.Create(&source).Error)
+	require.NoError(t, db.Create(&model.Option{Key: "ModelRatio", Value: `{"keep-model":2}`}).Error)
+	require.NoError(t, db.Create(&model.PricingSyncModelState{ModelName: "keep-model", Mode: model.PricingSyncModelModeGeneral, Provenance: "[1]"}).Error)
+	readRecorder := httptest.NewRecorder()
+	readContext, _ := gin.CreateTestContext(readRecorder)
+	readContext.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	GetPricingSyncConfig(readContext)
+	var config struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Version int64                     `json:"version"`
+			Sources []model.PricingSyncSource `json:"sources"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(readRecorder.Body.Bytes(), &config))
+	require.True(t, config.Success)
+	require.Empty(t, config.Data.Sources)
+	require.NoError(t, model.ApplySupplierBindings(nil, []model.SupplierChannelBindingPatch{{ChannelID: 1}}))
+	body, err := common.Marshal(gin.H{"expected_version": config.Data.Version, "strategy": model.PricingSyncStrategyHighest, "sources": config.Data.Sources})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/", strings.NewReader(string(body)))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	UpdatePricingSyncConfig(ctx)
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	var current model.PricingSyncSource
+	require.NoError(t, db.First(&current, "channel_id = ?", source.ChannelID).Error)
+	require.Equal(t, source, current)
+	var price model.Option
+	require.NoError(t, db.First(&price, "key = ?", "ModelRatio").Error)
+	require.Equal(t, `{"keep-model":2}`, price.Value)
+}

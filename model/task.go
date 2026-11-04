@@ -102,10 +102,11 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	TransportFingerprint string `json:"transport_fingerprint,omitempty"`
-	Key                  string `json:"key,omitempty"`
-	UpstreamTaskID       string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL            string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	TransportFingerprint string               `json:"transport_fingerprint,omitempty"`
+	ResultTransport      *TaskResultTransport `json:"result_transport,omitempty"`
+	Key                  string               `json:"key,omitempty"`
+	UpstreamTaskID       string               `json:"upstream_task_id,omitempty"` // 上游真实 task ID
+	ResultURL            string               `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource        string              `json:"billing_source,omitempty"`         // "wallet" 或 "subscription"
 	BillingOverageSource string              `json:"billing_overage_source,omitempty"` // 订阅超额部分的实际资金来源
@@ -162,6 +163,12 @@ func (t *Task) GetResultURL() string {
 	return t.FailReason
 }
 
+func (t *Task) SunoSongs() ([]dto.SunoSong, error) {
+	var songs []dto.SunoSong
+	err := common.Unmarshal(t.Data, &songs)
+	return songs, err
+}
+
 // GenerateTaskID 生成对外暴露的 task_xxxx 格式 ID
 func GenerateTaskID() string {
 	key, _ := common.GenerateRandomCharsKey(32)
@@ -204,8 +211,15 @@ func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) 
 	}
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
 		privateData.TransportFingerprint = relayInfo.ChannelTransportFingerprint
+		baseURL := relayInfo.ChannelBaseUrl
+		if baseURL == "" && relayInfo.ChannelType >= 0 && relayInfo.ChannelType < len(constant.ChannelBaseURLs) {
+			baseURL = constant.ChannelBaseURLs[relayInfo.ChannelType]
+		}
+		privateData.ResultTransport = &TaskResultTransport{Type: relayInfo.ChannelType, BaseURL: baseURL, Proxy: relayInfo.ChannelSetting.Proxy}
 		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi {
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi ||
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeOpenAI ||
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeSora {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		if relayInfo.UpstreamModelName != "" {

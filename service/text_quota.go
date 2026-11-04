@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -62,14 +63,22 @@ type textQuotaSummary struct {
 }
 
 func textToolPrice(info *relaycommon.RelayInfo, summary *textQuotaSummary, tool string, legacy func() float64) float64 {
+	var price float64
 	if tariff := info.PriceData.SupplierTariff; tariff != nil {
-		price, ok := tariff.Tools[tool]
+		var ok bool
+		price, ok = tariff.Tools[tool]
 		if !ok {
 			summary.PricingError = fmt.Errorf("the selected group has no price for %s", tool)
 		}
-		return price * 1000
+		price *= 1000
+	} else {
+		price = legacy()
 	}
-	return legacy()
+	if price < 0 || math.IsNaN(price) || math.IsInf(price, 0) {
+		summary.PricingError = fmt.Errorf("tool price exceeds the supported settlement range")
+		return 0
+	}
+	return price
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -165,22 +174,28 @@ func calculateTextToolCallSurcharge(ctx *gin.Context, relayInfo *relaycommon.Rel
 	return surcharge
 }
 
-func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary, tieredQuota int, tieredResult *billingexpr.TieredResult) int {
-	if summary.ToolCallSurchargeQuota.IsZero() {
-		return tieredQuota
+func checkedTextQuota(value decimal.Decimal) (int, error) {
+	quota := value.Round(0)
+	if quota.IsNegative() || quota.GreaterThan(decimal.NewFromInt(int64(math.MaxInt))) {
+		return 0, fmt.Errorf("billing exceeds the supported settlement range")
 	}
+	return int(quota.IntPart()), nil
+}
 
-	if tieredResult != nil {
-		if snap := relayInfo.TieredBillingSnapshot; snap != nil {
-			return int(decimal.NewFromFloat(tieredResult.ActualQuotaBeforeGroup).
-				Mul(decimal.NewFromFloat(snap.GroupRatio)).
-				Add(summary.ToolCallSurchargeQuota).
-				Round(0).
-				IntPart())
+func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary, tieredQuota int, tieredResult *billingexpr.TieredResult) (int, error) {
+	base := decimal.NewFromInt(int64(tieredQuota))
+	if !summary.ToolCallSurchargeQuota.IsZero() && tieredResult != nil && relayInfo.TieredBillingSnapshot != nil {
+		beforeGroup := tieredResult.ActualQuotaBeforeGroup
+		if math.IsNaN(beforeGroup) || math.IsInf(beforeGroup, 0) {
+			return max(0, tieredQuota, CurrentAutoEstimate(relayInfo)), fmt.Errorf("billing exceeds the supported settlement range")
 		}
+		base = decimal.NewFromFloat(beforeGroup).Mul(decimal.NewFromFloat(relayInfo.TieredBillingSnapshot.GroupRatio))
 	}
-
-	return tieredQuota + int(summary.ToolCallSurchargeQuota.Round(0).IntPart())
+	quota, err := checkedTextQuota(base.Add(summary.ToolCallSurchargeQuota))
+	if err != nil {
+		return max(0, tieredQuota, CurrentAutoEstimate(relayInfo)), err
+	}
+	return quota, nil
 }
 
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
@@ -262,6 +277,20 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	ratio := dModelRatio.Mul(dGroupRatio)
 	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
+	_, surchargeErr := checkedTextQuota(summary.ToolCallSurchargeQuota)
+	summary.PricingError = errors.Join(summary.PricingError, surchargeErr)
+	setQuota := func(value decimal.Decimal) {
+		quota, err := checkedTextQuota(value)
+		if err != nil {
+			// Supplier token settlement uses the frozen USD expression below,
+			// not these legacy ratios, whose quota scale can differ.
+			if relayInfo.PriceData.SupplierTariff == nil || relayInfo.TieredBillingSnapshot == nil {
+				summary.PricingError = errors.Join(summary.PricingError, err)
+			}
+			quota = max(0, CurrentAutoEstimate(relayInfo))
+		}
+		summary.Quota = quota
+	}
 
 	var audioInputQuota decimal.Decimal
 	if !relayInfo.PriceData.UsePrice {
@@ -332,7 +361,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		setQuota(quotaCalculateDecimal)
 	} else {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
@@ -342,13 +371,13 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
-		summary.Quota = int(quotaCalculateDecimal.Round(0).IntPart())
+		setQuota(quotaCalculateDecimal)
 	}
 
 	if summary.TotalTokens == 0 {
 		summary.Quota = 0
 		if relayInfo.PriceData.SupplierTariff != nil {
-			summary.Quota = int(summary.ToolCallSurchargeQuota.Round(0).IntPart())
+			setQuota(summary.ToolCallSurchargeQuota)
 		}
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
@@ -391,7 +420,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		if tieredOk {
 			tieredBillingApplied = true
 			tieredResult = tieredRes
-			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
+			var quotaErr error
+			summary.Quota, quotaErr = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
+			summary.PricingError = errors.Join(summary.PricingError, quotaErr)
 		}
 	}
 	if originUsage == nil || summary.TotalTokens == 0 {
@@ -420,7 +451,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		missingUsageEstimated = true
 		relayInfo.AttemptFinancialOutcome = types.AttemptFinancialOutcomeAmbiguous
 		extraContent = append(extraContent, "Incomplete billing usage; retained the known charge or reserve")
-		logger.LogError(ctx, fmt.Sprintf("supplier billing contract mismatch: channel=%d model=%s error=%s", relayInfo.ChannelId, summary.ModelName, summary.PricingError))
+		logger.LogError(ctx, fmt.Sprintf("billing contract mismatch: channel=%d model=%s error=%s", relayInfo.ChannelId, summary.ModelName, summary.PricingError))
 	}
 
 	if summary.WebSearchCallCount > 0 {

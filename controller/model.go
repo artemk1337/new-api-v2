@@ -251,6 +251,11 @@ func ListModels(c *gin.Context, modelType int) {
 	}
 	ownerGroups := groups.ownerGroups
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
+	pricing, err := getModelListPricing(ownerGroups)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "model pricing is unavailable"})
+		return
+	}
 	if modelLimitEnable {
 		autoGroupModels := make(map[string]struct{})
 		if groups.tokenGroup == "auto" {
@@ -273,7 +278,7 @@ func ListModels(c *gin.Context, modelType int) {
 					continue
 				}
 			}
-			if !helper.HasModelBillingConfig(allowModel) {
+			if !pricing.available(allowModel, groups.tokenGroup != "auto") {
 				continue
 			}
 			userModelNames = append(userModelNames, allowModel)
@@ -289,7 +294,7 @@ func ListModels(c *gin.Context, modelType int) {
 			}
 		}
 		for _, modelName := range models {
-			if !helper.HasModelBillingConfig(modelName) {
+			if !pricing.available(modelName, false) {
 				continue
 			}
 			userModelNames = append(userModelNames, modelName)
@@ -318,7 +323,7 @@ func ListModels(c *gin.Context, modelType int) {
 				if err != nil || !mapped {
 					continue
 				}
-				if _, available := availableModels[targetModel]; !available || !helper.HasModelBillingConfig(targetModel) {
+				if _, available := availableModels[targetModel]; !available || !pricing.available(targetModel, false) {
 					continue
 				}
 				if !common.StringsContains(userModelNames, sourceModel) {

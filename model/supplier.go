@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -335,17 +336,49 @@ func GetPricingGroupSupplierBinding(group string) (PricingGroupSupplierBinding, 
 	return getPricingGroupSupplierBindingTx(DB, group)
 }
 
+func channelSupplierColumnsReadyTx(tx *gorm.DB) bool {
+	return tx.Migrator().HasColumn(&Channel{}, "supplier_id") && tx.Migrator().HasColumn(&Channel{}, "supplier_profile_id")
+}
+
+func channelSupplierWriteDB(tx *gorm.DB, omit ...string) *gorm.DB {
+	if !channelSupplierColumnsReadyTx(tx) {
+		omit = append(omit, "supplier_id", "supplier_profile_id")
+	}
+	if len(omit) > 0 {
+		return tx.Omit(omit...)
+	}
+	return tx
+}
+
+func bumpSupplierBindingPricingSyncVersionTx(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&Option{}) {
+		return nil
+	}
+	return bumpPricingSyncConfigVersionTx(tx)
+}
+
 func validateChannelPricingGroupTx(tx *gorm.DB, channel *Channel, group string) error {
 	if err := validateSupplierPairTx(tx, channel.SupplierID, channel.SupplierProfileID); err != nil {
 		return err
 	}
-	if _, ok := ratio_setting.ResolvePricingGroupKey(group); !ok && channel.SupplierID == nil {
-		// Legacy unbound groups keep their existing routing semantics.
-		return nil
-	}
-	binding, err := getPricingGroupSupplierBindingTx(tx, group)
+	groups, persisted, err := supplierPricingGroupsTx(tx)
 	if err != nil {
 		return err
+	}
+	groupID, ok := resolveSupplierPricingGroupID(groups, group)
+	if !ok {
+		if !persisted && channel.SupplierID == nil {
+			// Only installations without canonical persisted groups retain the
+			// legacy arbitrary unbound-group behavior.
+			return nil
+		}
+		return errors.New("pricing group is unavailable")
+	}
+	var binding PricingGroupSupplierBinding
+	if tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
+		if err := tx.Where("group_id = ?", groupID).Limit(1).Find(&binding).Error; err != nil {
+			return err
+		}
 	}
 	if binding.SupplierID == 0 && channel.SupplierID == nil {
 		return nil
@@ -365,7 +398,14 @@ func ValidateChannelPricingGroup(channel *Channel, group string) error {
 }
 
 func validateChannelSupplierGroupsTx(tx *gorm.DB, channel *Channel) error {
-	groups := channel.GetGroups()
+	normalized, err := supplierPricingGroupKeysTx(tx, channel.Group)
+	if err != nil {
+		return err
+	}
+	groups := strings.Split(normalized, ",")
+	if normalized == "" {
+		groups = nil
+	}
 	if len(groups) == 0 && (channel.SupplierID != nil || channel.SupplierProfileID != nil) {
 		return errors.New("supplier channel must belong to a pricing group")
 	}
@@ -374,29 +414,52 @@ func validateChannelSupplierGroupsTx(tx *gorm.DB, channel *Channel) error {
 			return err
 		}
 	}
+	channel.Group = normalized
 	return nil
 }
 
 func lockChannelSupplierMutationTx(tx *gorm.DB) error {
 	// Existing installations and isolated model tests may precede this migration.
-	if !tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
+	if !tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) || !channelSupplierColumnsReadyTx(tx) {
 		return nil
 	}
 	return lockSupplierBindingsTx(tx)
 }
 
 func validateChannelSupplierMutationTx(tx *gorm.DB, channel *Channel) error {
-	if !tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
-		if channel.SupplierID != nil || channel.SupplierProfileID != nil {
-			return errors.New("supplier bindings are not available before database migration")
-		}
+	if err := normalizeChannelSupplierGroupsTx(tx, channel); err != nil {
+		return err
+	}
+	if !tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) || !channelSupplierColumnsReadyTx(tx) {
 		return nil
 	}
 	return validateChannelSupplierGroupsTx(tx, channel)
 }
 
+func normalizeChannelSupplierGroupsTx(tx *gorm.DB, channel *Channel) error {
+	if !tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) || !channelSupplierColumnsReadyTx(tx) {
+		if channel.SupplierID != nil || channel.SupplierProfileID != nil {
+			return errors.New("supplier bindings are not available before database migration")
+		}
+		channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
+	} else {
+		group, err := supplierPricingGroupKeysTx(tx, channel.Group)
+		if err != nil {
+			return err
+		}
+		channel.Group = group
+	}
+	if channel.Group == "" {
+		channel.Group = "1"
+	}
+	return nil
+}
+
 func prepareChannelSupplierMutationTx(tx *gorm.DB, channel *Channel, allowSupplierBindingChange bool) error {
 	if err := lockChannelSupplierMutationTx(tx); err != nil {
+		return err
+	}
+	if err := normalizeChannelSupplierGroupsTx(tx, channel); err != nil {
 		return err
 	}
 	if channel.Id > 0 {
@@ -416,6 +479,11 @@ func prepareChannelSupplierMutationTx(tx *gorm.DB, channel *Channel, allowSuppli
 			}
 			if pairChanged || transportChanged {
 				if err := ensureSupplierChannelIdleTx(tx, channel.Id); err != nil {
+					return err
+				}
+			}
+			if pairChanged {
+				if err := bumpSupplierBindingPricingSyncVersionTx(tx); err != nil {
 					return err
 				}
 			}
@@ -466,10 +534,15 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 		if err := lockSupplierBindingsTx(tx); err != nil {
 			return err
 		}
-		groupIDs, err := supplierPricingGroupIDsTx(tx)
+		pricingGroups, _, err := supplierPricingGroupsTx(tx)
 		if err != nil {
 			return err
 		}
+		groupIDs := make(map[int]bool, len(pricingGroups))
+		for _, group := range pricingGroups {
+			groupIDs[group.Id] = true
+		}
+		scopeChanged := false
 		seenGroups, seenChannels := make(map[int]bool), make(map[int]bool)
 		for _, patch := range bindings {
 			if !groupIDs[patch.GroupID] || seenGroups[patch.GroupID] {
@@ -479,6 +552,15 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 			if err := validateSupplierPairTx(tx, patch.SupplierID, patch.ProfileID); err != nil {
 				return err
 			}
+			var previous PricingGroupSupplierBinding
+			if err := tx.Where("group_id = ?", patch.GroupID).Limit(1).Find(&previous).Error; err != nil {
+				return err
+			}
+			nextSupplier, nextProfile := 0, 0
+			if patch.SupplierID != nil {
+				nextSupplier, nextProfile = *patch.SupplierID, *patch.ProfileID
+			}
+			scopeChanged = scopeChanged || previous.SupplierID != nextSupplier || previous.ProfileID != nextProfile
 			if patch.SupplierID == nil {
 				if err := tx.Delete(&PricingGroupSupplierBinding{}, "group_id = ?", patch.GroupID).Error; err != nil {
 					return err
@@ -506,10 +588,14 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 				if err := ensureSupplierChannelIdleTx(tx, patch.ChannelID); err != nil {
 					return err
 				}
+				scopeChanged = true
 			}
 			updates := map[string]any{"supplier_id": patch.SupplierID, "supplier_profile_id": patch.ProfileID}
 			if patch.Group != nil {
-				group := ratio_setting.PricingGroupKeysCSV(*patch.Group)
+				group, err := supplierPricingGroupKeysTx(tx, *patch.Group)
+				if err != nil {
+					return err
+				}
 				if group == "" {
 					return errors.New("channel must belong to a pricing group")
 				}
@@ -532,8 +618,8 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 		}
 		for i := range allChannels {
 			affected := seenChannels[allChannels[i].Id]
-			for _, group := range allChannels[i].GetGroups() {
-				if resolved, ok := ratio_setting.ResolvePricingGroupKey(group); ok && seenGroups[resolved.Id] {
+			for _, group := range strings.Split(allChannels[i].Group, ",") {
+				if id, ok := resolveSupplierPricingGroupID(pricingGroups, group); ok && seenGroups[id] {
 					affected = true
 				}
 			}
@@ -548,6 +634,9 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 				}
 			}
 		}
+		if scopeChanged {
+			return bumpSupplierBindingPricingSyncVersionTx(tx)
+		}
 		return nil
 	})
 	if err == nil {
@@ -556,27 +645,66 @@ func ApplySupplierBindings(bindings []SupplierGroupBindingPatch, channels []Supp
 	return err
 }
 
-func supplierPricingGroupIDsTx(tx *gorm.DB) (map[int]bool, error) {
+func supplierPricingGroupsTx(tx *gorm.DB) ([]*ratio_setting.PricingGroup, bool, error) {
 	groups := ratio_setting.GetPricingGroupsCopy()
-	var option Option
-	err := tx.Where(map[string]any{"key": "PricingGroups"}).First(&option).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	if !tx.Migrator().HasTable(&Option{}) {
+		return groups, false, nil
 	}
-	if err == nil && option.Value != "" {
+	var option Option
+	result := tx.Where(map[string]any{"key": "PricingGroups"}).Limit(1).Find(&option)
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected > 0 && strings.TrimSpace(option.Value) != "" {
 		normalized, err := ratio_setting.NormalizePricingGroupsJSONString(option.Value)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if err := common.Unmarshal([]byte(normalized), &groups); err != nil {
-			return nil, err
+			return nil, false, err
+		}
+		return groups, true, nil
+	}
+	return groups, false, nil
+}
+
+func resolveSupplierPricingGroupID(groups []*ratio_setting.PricingGroup, key string) (int, bool) {
+	key = strings.TrimSpace(key)
+	if key == "default" {
+		key = "1"
+	}
+	id, err := strconv.Atoi(key)
+	for _, group := range groups {
+		if err == nil && group.Id == id || err != nil && group.Name == key {
+			return group.Id, true
 		}
 	}
-	ids := make(map[int]bool, len(groups))
-	for _, group := range groups {
-		ids[group.Id] = true
+	return 0, false
+}
+
+func supplierPricingGroupKeysTx(tx *gorm.DB, value string) (string, error) {
+	groups, persisted, err := supplierPricingGroupsTx(tx)
+	if err != nil {
+		return "", err
 	}
-	return ids, nil
+	keys := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, key := range strings.Split(strings.Trim(value, ","), ",") {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if id, ok := resolveSupplierPricingGroupID(groups, key); ok {
+			key = strconv.Itoa(id)
+		} else if persisted {
+			return "", errors.New("pricing group is unavailable")
+		}
+		if !seen[key] {
+			keys = append(keys, key)
+			seen[key] = true
+		}
+	}
+	return strings.Join(keys, ","), nil
 }
 
 func ValidateSupplierPricingGroupsJSON(value string) error {

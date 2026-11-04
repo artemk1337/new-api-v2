@@ -6403,6 +6403,108 @@
         ],
         "x-access-policy": "HeaderNavModuleAuth(pricing)"
       }
+    },
+    "/v1/tasks/{task_id}/content": {
+      "get": {
+        "summary": "Read a media asset from an owned Suno task",
+        "description": "Serves only audio, video or image URLs saved in the authenticated user's Suno task result. No URL parameter or channel credential is forwarded to the asset host. Supplier data is not returned. Responses use Cache-Control: private, no-store and an allowlist of media headers. Supplier Suno submission returns TaskResponse<string> with the public task ID; fetch/batch results preserve typed songs or lyrics and replace asset URLs with this endpoint.",
+        "tags": [
+          "Task media"
+        ],
+        "security": [
+          {
+            "SessionAuth1": []
+          },
+          {
+            "InferenceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Public task ID belonging to the authenticated user."
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "audio",
+                "video",
+                "image",
+                "image-large"
+              ]
+            }
+          },
+          {
+            "name": "index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Zero-based song index in the saved result."
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional byte range for upstream media that supports partial responses."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Media content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial media content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid asset index"
+          },
+          "401": {
+            "description": "Authentication required or invalid inference token"
+          },
+          "403": {
+            "description": "Asset URL denied by fetch policy or inference-token policy"
+          },
+          "404": {
+            "description": "Task or asset not found, or task belongs to a different user"
+          },
+          "500": {
+            "description": "Task lookup or proxy client creation failed"
+          },
+          "502": {
+            "description": "Asset fetch failed"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -10363,6 +10465,11 @@
           }
         ],
         "type": "combination"
+      },
+      "InferenceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Inference API token, subject to TokenAuth validation. This is not an administrative access token."
       }
     }
   },

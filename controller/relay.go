@@ -767,12 +767,6 @@ func RelayTask(c *gin.Context) {
 				"get_channel_failed",
 				http.StatusServiceUnavailable,
 			)
-		} else if contractErr := validateAutoTaskPricingContract(
-			groups,
-			relayInfo.OriginModelName,
-			constant.TaskPlatform(c.GetString("platform")),
-		); contractErr != nil {
-			taskErr = service.TaskErrorWrapperLocal(contractErr, "auto_task_pricing_contract_mismatch", http.StatusBadRequest)
 		} else {
 			candidateGroups = groups
 			maxRetry = len(groups) - 1

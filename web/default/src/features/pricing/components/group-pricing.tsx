@@ -29,6 +29,7 @@ import {
   type RetailPriceOptions,
 } from '../lib/group-price'
 import type { PricingGroupPrice, PricingModel, PricingTier } from '../types'
+import { GroupToolPricing } from './group-tool-pricing'
 import { InputContext } from './input-context'
 
 function GroupTariff(
@@ -154,6 +155,7 @@ function GroupTariff(
           />
         </>
       )}
+      <GroupToolPricing {...props} />
     </div>
   )
 }

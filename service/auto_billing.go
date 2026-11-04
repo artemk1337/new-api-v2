@@ -254,7 +254,9 @@ func CaptureAttemptUsageQuota(c *gin.Context, info *relaycommon.RelayInfo, usage
 	if snap := info.TieredBillingSnapshot; snap != nil {
 		usedVars := billingexpr.UsedVars(snap.ExprString)
 		if ok, quota, result := TryTieredSettle(info, BuildTieredTokenParams(&normalizedUsage, summary.IsClaudeUsageSemantic, usedVars)); ok {
-			summary.Quota = composeTieredTextQuota(info, summary, quota, result)
+			var quotaErr error
+			summary.Quota, quotaErr = composeTieredTextQuota(info, summary, quota, result)
+			summary.PricingError = errors.Join(summary.PricingError, quotaErr)
 		}
 	}
 	if info.SupplierPricingError != nil {
@@ -402,6 +404,9 @@ func chargedAttemptQuota(info *relaycommon.RelayInfo) int {
 	if info.AttemptUsageBillingEvidence {
 		if info.AttemptActualQuotaKnown {
 			return info.AttemptActualQuota
+		}
+		if info.PriceData.SupplierTariff != nil {
+			return max(info.AttemptActualQuota, CurrentAutoEstimate(info))
 		}
 		return CurrentAutoEstimate(info)
 	}

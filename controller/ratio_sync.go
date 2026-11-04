@@ -1061,6 +1061,10 @@ func UpdatePricingSyncConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing sync configuration version is required"})
 		return
 	}
+	if *request.ExpectedVersion < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "pricing sync configuration version must not be negative"})
+		return
+	}
 	strategy := strings.TrimSpace(request.Strategy)
 	if strategy == "" {
 		strategy = model.PricingSyncStrategyHighest

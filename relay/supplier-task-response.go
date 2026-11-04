@@ -1,14 +1,18 @@
 package relay
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -49,6 +53,10 @@ func (w *supplierTaskResponseWriter) Written() bool { return w.size >= 0 }
 func (w *supplierTaskResponseWriter) Flush()        { w.WriteHeaderNow() }
 
 func writeSupplierTaskAccepted(c *gin.Context, info *relaycommon.RelayInfo) {
+	if strings.HasPrefix(c.Request.URL.Path, "/suno/") {
+		c.JSON(http.StatusOK, dto.TaskResponse[string]{Code: dto.TaskSuccessCode, Data: info.PublicTaskID})
+		return
+	}
 	modelName := info.RequestedModelName
 	if modelName == "" {
 		modelName = info.OriginModelName
@@ -62,6 +70,60 @@ func writeSupplierTaskAccepted(c *gin.Context, info *relaycommon.RelayInfo) {
 	c.JSON(http.StatusOK, dto.TaskResponse[any]{Code: dto.TaskSuccessCode, Data: map[string]any{
 		"task_id": info.PublicTaskID, "status": "queued", "model": modelName,
 	}})
+}
+
+func supplierSunoData(task *model.Task) []byte {
+	if len(task.Data) == 0 {
+		return nil
+	}
+	if task.Action == constant.SunoActionLyrics {
+		var lyrics dto.SunoLyrics
+		if common.Unmarshal(task.Data, &lyrics) == nil {
+			data, _ := common.Marshal(lyrics)
+			return data
+		}
+		var lines []dto.SunoLyrics
+		if common.Unmarshal(task.Data, &lines) == nil {
+			data, _ := common.Marshal(lines)
+			return data
+		}
+		return nil
+	}
+	songs, err := task.SunoSongs()
+	if err != nil {
+		return nil
+	}
+	for index := range songs {
+		song := &songs[index]
+		song.ModelName = task.PublicModelName()
+		if _, ok := song.Metadata.GPTDescriptionPrompt.(string); !ok {
+			song.Metadata.GPTDescriptionPrompt = nil
+		}
+		if _, ok := song.Metadata.AudioPromptID.(string); !ok {
+			song.Metadata.AudioPromptID = nil
+		}
+		if _, ok := song.Metadata.Duration.(float64); !ok {
+			song.Metadata.Duration = nil
+		}
+		for _, asset := range []struct {
+			kind  string
+			value *string
+		}{
+			{"audio", &song.AudioURL}, {"video", &song.VideoURL}, {"image", &song.ImageURL}, {"image-large", &song.ImageLargeURL},
+		} {
+			if *asset.value != "" {
+				*asset.value = fmt.Sprintf("%s/v1/tasks/%s/content?kind=%s&index=%d", system_setting.ServerAddress, url.PathEscape(task.TaskID), asset.kind, index)
+			}
+		}
+		if song.Metadata.ErrorMessage != nil {
+			song.Metadata.ErrorMessage = "Generation failed"
+		}
+		if song.Metadata.ErrorType != nil {
+			song.Metadata.ErrorType = "generation_failed"
+		}
+	}
+	data, _ := common.Marshal(songs)
+	return data
 }
 
 func supplierTaskVideo(task *model.Task) *dto.OpenAIVideo {

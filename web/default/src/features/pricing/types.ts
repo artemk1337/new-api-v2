@@ -65,6 +65,8 @@ export type PricingGroupPrice = PricingRates & {
   group_name: string
   billing_mode: string
   price_unit: string
+  /** Final retail USD per tool invocation, independent of token units. */
+  tools?: Record<string, number | null>
   tiers?: PricingTier[]
   unavailable?: boolean
 }

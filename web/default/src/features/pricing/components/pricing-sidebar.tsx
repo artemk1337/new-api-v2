@@ -323,7 +323,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
         <div>
           <h2 className='text-foreground text-sm font-bold'>{t('Filter')}</h2>
           <p className='text-muted-foreground mt-1 text-xs'>
-            {t('Refine models by provider, group, type, and tags.')}
+            {t('Refine models by model provider, group, type, and tags.')}
           </p>
         </div>
         <div className='flex shrink-0 flex-col items-end gap-1'>

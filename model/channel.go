@@ -552,7 +552,7 @@ func (channel *Channel) Save() error {
 		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
 			return err
 		}
-		return tx.Save(channel).Error
+		return channelSupplierWriteDB(tx).Save(channel).Error
 	})
 }
 
@@ -564,7 +564,7 @@ func (channel *Channel) SaveWithoutKey() error {
 		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
 			return err
 		}
-		return tx.Omit("key").Save(channel).Error
+		return channelSupplierWriteDB(tx, "key").Save(channel).Error
 	})
 }
 
@@ -652,12 +652,6 @@ func BatchInsertChannels(channels []Channel) error {
 		}
 	}()
 
-	for i := range channels {
-		channels[i].Group = ratio_setting.PricingGroupKeysCSV(channels[i].Group)
-		if channels[i].Group == "" {
-			channels[i].Group = ratio_setting.PricingGroupKey("default")
-		}
-	}
 	if err := lockChannelSupplierMutationTx(tx); err != nil {
 		tx.Rollback()
 		return err
@@ -670,7 +664,7 @@ func BatchInsertChannels(channels []Channel) error {
 	}
 
 	for _, chunk := range lo.Chunk(channels, 50) {
-		if err := tx.Create(&chunk).Error; err != nil {
+		if err := channelSupplierWriteDB(tx).Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -750,15 +744,11 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
-	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
-	if channel.Group == "" {
-		channel.Group = ratio_setting.PricingGroupKey("default")
-	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
 			return err
 		}
-		if err := tx.Create(channel).Error; err != nil {
+		if err := channelSupplierWriteDB(tx).Create(channel).Error; err != nil {
 			return err
 		}
 		return channel.AddAbilities(tx)
@@ -775,10 +765,6 @@ func (channel *Channel) Update() error {
 }
 
 func (channel *Channel) UpdateWithSupplierPermission(allowSupplierBindingChange bool) error {
-	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
-	if channel.Group == "" {
-		channel.Group = ratio_setting.PricingGroupKey("default")
-	}
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -821,11 +807,14 @@ func (channel *Channel) UpdateWithSupplierPermission(allowSupplierBindingChange 
 		if err := prepareChannelSupplierMutationTx(tx, channel, allowSupplierBindingChange); err != nil {
 			return err
 		}
-		if err := tx.Model(channel).Updates(channel).Error; err != nil {
+		writeDB := channelSupplierWriteDB(tx)
+		if err := writeDB.Model(channel).Updates(channel).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(channel).UpdateColumns(map[string]any{"supplier_id": channel.SupplierID, "supplier_profile_id": channel.SupplierProfileID}).Error; err != nil {
-			return err
+		if channelSupplierColumnsReadyTx(tx) {
+			if err := tx.Model(channel).UpdateColumns(map[string]any{"supplier_id": channel.SupplierID, "supplier_profile_id": channel.SupplierProfileID}).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Model(channel).First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
@@ -1115,7 +1104,14 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		if err := lockChannelSupplierMutationTx(tx); err != nil {
 			return err
 		}
-		if updateData.Group != "" && (len(allowSupplierGroupChange) == 0 || !allowSupplierGroupChange[0]) {
+		if group != nil {
+			keys, err := supplierPricingGroupKeysTx(tx, *group)
+			if err != nil {
+				return err
+			}
+			updateData.Group = keys
+		}
+		if updateData.Group != "" && channelSupplierColumnsReadyTx(tx) && (len(allowSupplierGroupChange) == 0 || !allowSupplierGroupChange[0]) {
 			var count int64
 			if err := tx.Model(&Channel{}).Where("tag = ? AND supplier_id IS NOT NULL AND "+commonGroupCol+" != ?", tag, updateData.Group).Count(&count).Error; err != nil {
 				return err

@@ -450,7 +450,7 @@ func pricingSyncSourceCurrentTx(tx *gorm.DB, source model.PricingSyncSource, exp
 	}
 	version := model.Option{}
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
+		First(&version, map[string]any{"key": "PricingSyncConfigVersion"}).Error; err != nil {
 		return err
 	}
 	if version.Value != strconv.FormatInt(expectedVersion, 10) {

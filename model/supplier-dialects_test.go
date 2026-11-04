@@ -74,6 +74,10 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			previousDB := DB
 			previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
 			previousGroups := ratio_setting.PricingGroups2JSONString()
+			previousModelPrices := ratio_setting.ModelPrice2JSONString()
+			common.OptionMapRWMutex.RLock()
+			previousModelPriceOption, hadModelPriceOption := common.OptionMap["ModelPrice"]
+			common.OptionMapRWMutex.RUnlock()
 			previousMemoryCache := common.MemoryCacheEnabled
 			DB = db
 			common.SetMainDatabaseType(dialect.kind)
@@ -85,13 +89,21 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 				common.MemoryCacheEnabled = previousMemoryCache
 				initCol()
 				require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(previousGroups))
+				require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(previousModelPrices))
+				common.OptionMapRWMutex.Lock()
+				if hadModelPriceOption {
+					common.OptionMap["ModelPrice"] = previousModelPriceOption
+				} else {
+					delete(common.OptionMap, "ModelPrice")
+				}
+				common.OptionMapRWMutex.Unlock()
 			})
 
-			allTables := []any{&SupplierModelPrice{}, &SupplierPricingRevision{}, &SupplierPricingState{}, &PricingGroupSupplierBinding{}, &SupplierPricingProfile{}, &Supplier{}, &SupplierBindingState{}, &PricingSyncSource{}, &Midjourney{}, &Ability{}, &Channel{}, &Option{}}
+			allTables := []any{&OfficialModelPrice{}, &Model{}, &SupplierModelPrice{}, &SupplierPricingRevision{}, &SupplierPricingState{}, &PricingGroupSupplierBinding{}, &SupplierPricingProfile{}, &Supplier{}, &SupplierBindingState{}, &PricingSyncModelState{}, &PricingSyncSource{}, &Midjourney{}, &Ability{}, &Channel{}, &Option{}}
 			// The database was verified empty; these are exclusively this test's
 			// tables. Cleanup makes repeated validation possible after failures.
 			t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(allTables...)) })
-			require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":2,"name":"coding","ratio":2,"selectable":true},{"id":3,"name":"other","ratio":2,"selectable":true}]`))
+			require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":2,"name":"coding","ratio":2,"selectable":true},{"id":3,"name":"other","ratio":3,"selectable":true}]`))
 			require.NoError(t, DB.AutoMigrate(&supplierDialectLegacyChannel{}, &Ability{}, &Option{}))
 			require.NoError(t, DB.Create(&Option{Key: "PricingGroups", Value: ratio_setting.PricingGroups2JSONString()}).Error)
 			tag := "legacy-provider"
@@ -103,12 +115,13 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			var stableGroup string
 			require.NoError(t, DB.Model(&supplierDialectLegacyChannel{}).Where("id = ?", legacy.ID).Pluck("group", &stableGroup).Error)
 			require.Equal(t, "2", stableGroup)
+			require.NoError(t, (&Channel{Id: legacy.ID, Name: "legacy-updated", Group: stableGroup}).Update(), "unbound channel edits must work before supplier columns are migrated")
 			_, bound, err := ResolveSupplierModelTariff("2", "model-a")
 			require.NoError(t, err, "a legacy database still uses its default pricing scope")
 			require.False(t, bound)
 
 			for pass := 0; pass < 2; pass++ {
-				require.NoError(t, DB.AutoMigrate(&Channel{}, &Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &SupplierModelPrice{}, &Midjourney{}, &PricingSyncSource{}), "supplier migrations must be additive and repeatable")
+				require.NoError(t, DB.AutoMigrate(&Channel{}, &Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &SupplierModelPrice{}, &Midjourney{}, &PricingSyncSource{}, &PricingSyncModelState{}, &Model{}, &OfficialModelPrice{}), "supplier migrations must be additive and repeatable")
 			}
 			loaded, err := GetChannelById(legacy.ID, true)
 			require.NoError(t, err)
@@ -157,12 +170,34 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 
 			groupPatch := SupplierGroupBindingPatch{GroupID: 2, SupplierID: &supplier.ID, ProfileID: &first.ID}
 			channelPatch := SupplierChannelBindingPatch{ChannelID: legacy.ID, SupplierID: &supplier.ID, ProfileID: &first.ID}
+			syncSources := []PricingSyncSource{{ChannelID: legacy.ID, Enabled: true, Endpoint: "/api/pricing"}, {ChannelID: -100, Enabled: true, Endpoint: "https://basellm.github.io/llm-metadata/api/newapi/ratio_config-v1-base.json"}}
+			require.NoError(t, SavePricingSyncSources(syncSources))
+			require.NoError(t, ApplyJSONOptionPatches(map[string]JSONObjectPatch{"ModelPrice": {Set: map[string]any{"dialect-owned-price": 0.25}}}))
+			require.NoError(t, DB.Create(&PricingSyncModelState{ModelName: "dialect-owned-price", Mode: PricingSyncModelModeChannel, ChannelID: -100, Provenance: "[-100]", Status: PricingSyncModelStatusReady}).Error)
+			versionBefore, err := GetPricingSyncConfigVersion()
+			require.NoError(t, err)
 			require.Error(t, ApplySupplierBindings([]SupplierGroupBindingPatch{groupPatch}, nil), "binding only the group must roll back against an unbound member channel")
+			versionAfterFailure, err := GetPricingSyncConfigVersion()
+			require.NoError(t, err)
+			require.Equal(t, versionBefore, versionAfterFailure)
 			binding, err := GetPricingGroupSupplierBinding("2")
 			require.NoError(t, err)
 			require.Zero(t, binding.SupplierID)
 			require.NoError(t, ApplySupplierBindings([]SupplierGroupBindingPatch{groupPatch}, []SupplierChannelBindingPatch{channelPatch}))
+			versionAfterBinding, err := GetPricingSyncConfigVersion()
+			require.NoError(t, err)
+			require.Equal(t, versionBefore+1, versionAfterBinding)
 			require.NoError(t, ApplySupplierBindings([]SupplierGroupBindingPatch{groupPatch}, []SupplierChannelBindingPatch{channelPatch}), "idempotent same-value writes must work on MySQL")
+			versionAfterRepeat, err := GetPricingSyncConfigVersion()
+			require.NoError(t, err)
+			require.Equal(t, versionAfterBinding, versionAfterRepeat)
+			require.ErrorIs(t, SavePricingSyncConfigurationIfVersion(nil, PricingSyncStrategyHighest, []int{-100}, syncSources, versionBefore), ErrPricingSyncConfigurationChanged)
+			preservedSources, err := GetPricingSyncSources()
+			require.NoError(t, err)
+			require.ElementsMatch(t, syncSources, preservedSources, "a stale save must preserve supplier-bound and global sources")
+			var preservedPrice Option
+			require.NoError(t, DB.First(&preservedPrice, map[string]any{"key": "ModelPrice"}).Error)
+			require.JSONEq(t, `{"dialect-owned-price":0.25}`, preservedPrice.Value, "a rejected configuration save must roll back its JSON price removal")
 			loaded, err = GetChannelById(legacy.ID, true)
 			require.NoError(t, err)
 			require.Equal(t, &supplier.ID, loaded.SupplierID)
@@ -176,6 +211,43 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.EqualValues(t, 2, resolved.Revision)
 			require.Equal(t, newInput, *resolved.InputUSD)
 			require.Equal(t, cache, *resolved.CacheReadUSD)
+
+			// The public loader uses a read-only coherent snapshot and batched
+			// joins. Exercise that query shape on each real database dialect.
+			mapping := `{"public-alias":"model-a"}`
+			loaded.Type, loaded.Models, loaded.ModelMapping = 1, "public-alias", &mapping
+			require.NoError(t, loaded.UpdateWithSupplierPermission(true))
+			require.NoError(t, ApplySupplierBindings([]SupplierGroupBindingPatch{{GroupID: 3, SupplierID: &supplier.ID, ProfileID: &first.ID}}, nil))
+			peer := Channel{Name: "public-peer", Key: "second-private-key", Type: 1, Models: "public-alias", Group: "3", ModelMapping: &mapping, SupplierID: &supplier.ID, SupplierProfileID: &first.ID, Status: common.ChannelStatusEnabled}
+			require.NoError(t, peer.Insert())
+			require.NoError(t, DB.Create(&Model{ModelName: "public-alias", Status: 1}).Error)
+			inputReference, outputReference := 2.0, 10.0
+			require.NoError(t, SaveOfficialModelPrices([]OfficialModelPrice{{ModelName: "public-alias", InputUSD: &inputReference, OutputUSD: &outputReference, Source: "https://platform.openai.com/docs/pricing", UpdatedAt: 1_700_000_000, PriceUnit: "million_tokens"}}))
+			publicCatalog := func() []PublicPricingModel {
+				t.Helper()
+				catalog, err := GetPublicPricingCatalog(map[string]string{"2": "coding", "3": "other"}, map[string]float64{"2": 2, "3": 3})
+				require.NoError(t, err)
+				return catalog
+			}
+			catalog := publicCatalog()
+			require.Len(t, catalog, 1)
+			require.Equal(t, "public-alias", catalog[0].ModelName)
+			require.Len(t, catalog[0].GroupPrices, 2)
+			for index, multiplier := range []float64{2, 3} {
+				price := catalog[0].GroupPrices[index]
+				require.False(t, price.Unavailable)
+				require.Equal(t, index+2, price.GroupID)
+				require.InDelta(t, newInput*multiplier, *price.InputUSD, 1e-12)
+				require.InDelta(t, output*multiplier, *price.OutputUSD, 1e-12)
+				require.InDelta(t, cache*multiplier, *price.CacheReadUSD, 1e-12)
+			}
+			require.NotNil(t, catalog[0].OfficialPrice)
+			require.Equal(t, inputReference, catalog[0].OfficialPrice.InputUSD)
+			publicJSON, err := common.Marshal(catalog)
+			require.NoError(t, err)
+			for _, private := range []string{"supplier_id", "profile_id", "model-a", "isolated-fixture-key", "second-private-key"} {
+				require.NotContains(t, string(publicJSON), private)
+			}
 
 			wrongGroup := SupplierGroupBindingPatch{GroupID: 2, SupplierID: &supplier.ID, ProfileID: &second.ID}
 			require.Error(t, ApplySupplierBindings([]SupplierGroupBindingPatch{wrongGroup}, []SupplierChannelBindingPatch{channelPatch}), "profiles of the same supplier must stay isolated")
@@ -204,6 +276,11 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.Error(t, ValidateChannelPricingGroup(loaded, "2"))
 			first.Enabled = true
 			require.NoError(t, UpdateSupplierPricingProfile(&first))
+			catalog = publicCatalog()
+			require.Len(t, catalog, 1)
+			for _, price := range catalog[0].GroupPrices {
+				require.True(t, price.Unavailable, "invalidated procurement revisions cannot borrow default prices")
+			}
 			_, bound, err = ResolveSupplierModelTariff("2", "model-a")
 			require.True(t, bound)
 			require.ErrorIs(t, err, ErrSupplierTariffUnavailable, "reenabling a changed profile requires a current price revision")
@@ -214,6 +291,7 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.True(t, bound)
 			supplier.Enabled = false
 			require.NoError(t, UpdateSupplier(&supplier))
+			require.Empty(t, publicCatalog(), "disabled suppliers must not appear as usable default-price routes")
 			_, bound, err = ResolveSupplierModelTariff("2", "model-a")
 			require.True(t, bound)
 			require.ErrorIs(t, err, ErrSupplierTariffUnavailable, "disabled suppliers cannot fall back to default pricing")

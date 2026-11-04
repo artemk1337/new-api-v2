@@ -52,9 +52,20 @@ func VideoProxy(c *gin.Context) {
 			fmt.Sprintf("Task is not completed yet, current status: %s", task.Status))
 		return
 	}
+	c.Set("supplier_pricing", task.UsesSupplierPricing())
 
-	channel, err := model.GetTaskChannel(task)
+	channel, err := model.GetTaskResultChannel(task)
 	if err != nil {
+		if direct := strings.TrimSpace(task.GetResultURL()); direct != "" && !isTaskProxyContentURL(direct, task.TaskID) {
+			if strings.HasPrefix(direct, "data:") {
+				if writeErr := writeVideoDataURL(c, direct); writeErr != nil {
+					videoProxyError(c, http.StatusBadGateway, "server_error", "Failed to fetch video content")
+				}
+				return
+			}
+			proxyTaskPublicAsset(c, direct, "")
+			return
+		}
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Failed to get channel for task %s: %s", taskID, err.Error()))
 		videoProxyError(c, http.StatusInternalServerError, "server_error", "Failed to retrieve channel information")
 		return
@@ -84,6 +95,9 @@ func VideoProxy(c *gin.Context) {
 	switch channel.Type {
 	case constant.ChannelTypeGemini:
 		apiKey := task.PrivateData.Key
+		if task.PrivateData.ResultTransport != nil {
+			apiKey = channel.Key
+		}
 		if apiKey == "" {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("Missing stored API key for Gemini task %s", taskID))
 			videoProxyError(c, http.StatusInternalServerError, "server_error", "API key not stored for task")
@@ -188,11 +202,22 @@ func writeVideoResponse(c *gin.Context, resp *http.Response) error {
 		if _, skip := hopByHop[http.CanonicalHeaderKey(key)]; skip {
 			continue
 		}
+		if c.GetBool("supplier_pricing") && !taskMediaResponseHeader(key) {
+			continue
+		}
 		for _, value := range values {
 			c.Writer.Header().Add(key, value)
 		}
 	}
-	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	if c.GetBool("supplier_pricing") {
+		c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
+		c.Writer.Header().Set("Content-Security-Policy", "sandbox")
+	}
+	if c.GetBool("supplier_pricing") {
+		c.Writer.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	}
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, err := io.Copy(c.Writer, resp.Body)
 	return err
@@ -225,7 +250,13 @@ func writeVideoDataURL(c *gin.Context, dataURL string) error {
 	}
 
 	c.Writer.Header().Set("Content-Type", mimeType)
-	c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	if c.GetBool("supplier_pricing") {
+		c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
+		c.Writer.Header().Set("Content-Security-Policy", "sandbox")
+		c.Writer.Header().Set("Cache-Control", "private, no-store")
+	} else {
+		c.Writer.Header().Set("Cache-Control", "public, max-age=86400")
+	}
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write(videoBytes)
 	return err

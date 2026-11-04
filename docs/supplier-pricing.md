@@ -83,7 +83,11 @@ Official model-developer reference prices are a separate dataset with a source U
 
 Supplier-backed asynchronous tasks currently support **fixed per-request or per-second tariffs only**. Supplier token/expression async tariffs are rejected before submission because aggregate-only polling cannot safely reconstruct all chargeable token lanes. A fixed per-second model still needs a supported request duration contract.
 
-Each new task stores a private transport fingerprint and its supplier/profile provenance. Polling, fetch, actions and media proxy requests verify them against the authoritative channel before forwarding any stored upstream ID or credential. Channel binding/connection changes are blocked while jobs remain unfinished. The fingerprint also catches a change made while submission was in flight, before the task row existed. A mismatch retains the unresolved task and its held quota for administrative review; it never sends the old credentials to the changed destination or automatically refunds an ambiguous request.
+Each new task stores a private transport fingerprint, supplier/profile provenance, and minimal result destination (channel type, effective base URL and proxy). Polling, realtime refresh and actions verify the fingerprint against the authoritative channel before forwarding any stored upstream ID or credential. Channel binding/connection changes are blocked while jobs remain unfinished. The fingerprint also catches a change made while submission was in flight, before the task row existed. A mismatch retains the unresolved task and its held quota for administrative review; it never sends the old credentials to the changed destination or automatically refunds an ambiguous request.
+
+Terminal status is read from the saved task, so later key rotation or channel replacement does not hide historical jobs. Completed video retrieval stays at the saved destination with its selected credential. A current enabled key may replace that credential only when the channel still has the identical type, effective base URL, proxy and supplier/profile. Changed destinations never receive an old task ID or credential. Older tasks without a result destination can still expose local status and saved public assets without channel credentials; authenticated content cannot be recovered if its original credential/destination is no longer available.
+
+Supplier-backed Suno keeps its protocol-specific response: submission returns `TaskResponse<string>` with the public task ID; fetch and batch fetch retain typed songs or lyrics. Supplier fields are redacted and audio/video/image URLs point to the owned-task media proxy. `GET /v1/tasks/:task_id/content?kind=audio|video|image|image-large&index=N` accepts a user session or inference token and serves an asset from that user's persisted Suno result. It accepts no arbitrary URL and forwards no channel credential to the asset host. Supplier media responses use a safe header allowlist and `Cache-Control: private, no-store`.
 
 Supplier-backed Midjourney requests are blocked until that legacy task path has complete immutable pricing snapshots. Existing unbound Midjourney behavior remains available. Do not bypass these guards by treating token/expr rates as per-request prices or stripping supplier metadata.
 
@@ -144,3 +148,17 @@ rtk env SUPPLIER_TEST_POSTGRES_DSN='<isolated PostgreSQL DSN>' \
 ```
 
 No paid provider inference, production migration, deployment, or production configuration change is claimed by these local checks.
+
+### Review corrections — 2026-11-04
+
+The follow-up on `codex/supplier-pricing`, based on `c7bfaa70`, corrects partial-usage settlement and overflow handling, locked-channel transport checks, Auto route isolation, stale legacy synchronization, supplier-only model discovery, completed-task retrieval, Suno and Responses wire contracts, request-feature validation, tool-price display, catalogue query growth, and pre-migration channel writes. Binding mutations resolve persisted groups rather than a stale cache. Pricing option queries quote the reserved `key` column through GORM conditions on every affected MySQL synchronization path.
+
+| Area | Final follow-up checks |
+|---|---|
+| Backend | Go 1.25.6: `go test ./... -count=1 -timeout=180s` passed: 2,095 tests across 90 packages. Regression tests use real local wallets, persisted tasks and HTTP test servers; no paid inference is involved. |
+| Persistence | `TestSupplierPersistenceDialects` passed without dialect skips on SQLite, PostgreSQL 15 and MySQL 8.4. It exercises two retail groups sharing one profile, mapped model tariffs, official references, private-field redaction, unavailable revisions, disabled suppliers, binding generations and stale JSON-price updates. |
+| Frontend | All 347 tests and `bun run build:check` passed. Targeted lint has no errors; one existing toolbar warning remains. Protected-header-safe formatting passes for changed files and all six locales. The full repository formatting check still reports pre-existing issues in unrelated frontend files. |
+| Browser | Desktop and 390 px mobile: tool fees, zero prices, USD/CNY conversion, recharge conversion, 1K token units, keyboard focus and overflow checked; no console warnings/errors. Token units never rescale per-call fees. Model-provider labels remain distinct from proxy suppliers. |
+| API contract | The new owned-task media operation and inference-token security declaration pass OpenAPI validation. Completed-task transport/key rotation, sanitized Suno results and supplier media headers have HTTP regressions. |
+
+Owned local servers and temporary database containers were stopped after verification. These checks do not recover missing historical credentials for old tasks without a saved result destination; their local status remains readable.

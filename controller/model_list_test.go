@@ -173,6 +173,7 @@ func decodeUserModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 }
 
 func TestListModelsAnthropicAllowsEmptyModelList(t *testing.T) {
+	setupModelListControllerTestDB(t)
 	originalGroups := ratio_setting.PricingGroups2JSONString()
 	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
 	t.Cleanup(func() {
