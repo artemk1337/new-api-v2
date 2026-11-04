@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.225 — 2026-11-05
+
+- Add model aliases that share canonical channels and billing without duplicate model records or pricing entries, while preserving API-key model restrictions and personal mappings.
+- Edit aliases alongside model names, expose available aliases in API model lists, and find or copy aliases from the pricing catalogue in all six interface languages.
+- Protect alias ownership during concurrent saves and preserve aliases when synchronizing upstream metadata.
+
 ## v1.1.224 — 2026-11-05
 
 - Bill 12-hour prompt-cache writes separately from short-lived and one-hour writes, preserving usage counts across Chat Completions and Responses conversions without double charging input tokens.
