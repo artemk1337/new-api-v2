@@ -33,7 +33,7 @@ export const SORT_OPTIONS = {
 } as const
 
 export type SortOption = (typeof SORT_OPTIONS)[keyof typeof SORT_OPTIONS]
-export const DEFAULT_SORT_OPTION = SORT_OPTIONS.PRICE_LOW
+export const DEFAULT_SORT_OPTION = SORT_OPTIONS.BENEFIT
 
 export function getSortLabels(
   t: TFunction
@@ -42,6 +42,7 @@ export function getSortLabels(
     [SORT_OPTIONS.NAME]: t('Name'),
     [SORT_OPTIONS.PRICE_LOW]: t('Price: Low to High'),
     [SORT_OPTIONS.PRICE_HIGH]: t('Price: High to Low'),
+    [SORT_OPTIONS.BENEFIT]: t('Benefit'),
   }
 }
 

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 
-import { FILTER_ALL, TOKEN_UNIT_DIVISORS } from '../constants'
+import { FILTER_ALL, QUOTA_TYPES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type {
   PricingGroupPrice,
   PricingModel,
@@ -59,8 +59,9 @@ export function isTokenGroupPrice(price: PricingGroupPrice): boolean {
 }
 
 export function getGroupPriceAmount(price: PricingGroupPrice): number | null {
-  const value = isTokenGroupPrice(price) ? price.input_usd : price.price_usd
-  return hasRetailRate(value) && !price.unavailable ? value : null
+  if (price.unavailable) return null
+  if (isTokenGroupPrice(price)) return getTokenPairAmount(price)
+  return hasRetailRate(price.price_usd) ? price.price_usd : null
 }
 
 export function compareGroupPrices(
@@ -84,17 +85,74 @@ export function compareGroupPrices(
   return a.group.localeCompare(b.group, undefined, { numeric: true })
 }
 
+function getTokenPairAmount(price: PricingRates): number | null {
+  if (!hasRetailRate(price.input_usd) || !hasRetailRate(price.output_usd)) {
+    return null
+  }
+  const amount = price.input_usd + price.output_usd
+  return Number.isFinite(amount) ? amount : null
+}
+
 export function getDisplayGroupPrice(
   model: PricingModel,
-  groupFilter?: string
+  groupFilter?: string,
+  quotaTypeFilter: string = QUOTA_TYPES.ALL
 ): PricingGroupPrice | undefined {
-  const prices = model.group_prices ?? []
-  if (groupFilter && groupFilter !== FILTER_ALL) {
-    return prices.find((price) => price.group === groupFilter)
+  const selectedGroup = Boolean(groupFilter && groupFilter !== FILTER_ALL)
+  let cheapest: PricingGroupPrice | undefined
+  for (const price of model.group_prices ?? []) {
+    if (selectedGroup && price.group !== groupFilter) continue
+    if (
+      quotaTypeFilter !== QUOTA_TYPES.ALL &&
+      isTokenGroupPrice(price) !== (quotaTypeFilter === QUOTA_TYPES.TOKEN)
+    ) {
+      continue
+    }
+    if (selectedGroup) return price
+    if (
+      !price.unavailable &&
+      (!cheapest || compareGroupPrices(price, cheapest) < 0)
+    ) {
+      cheapest = price
+    }
   }
-  return [...prices]
-    .sort(compareGroupPrices)
-    .find((price) => !price.unavailable)
+  return cheapest
+}
+
+export function getComparisonReference(
+  model: PricingModel
+): { input_usd: number; output_usd: number } | null {
+  const references = [
+    model.official_price?.comparison_enabled ? model.official_price : null,
+    model.base_reference,
+  ]
+  for (const reference of references) {
+    if (
+      reference?.price_unit === 'million_tokens' &&
+      hasRetailRate(reference.input_usd) &&
+      hasRetailRate(reference.output_usd) &&
+      (getTokenPairAmount(reference) ?? 0) > 0
+    ) {
+      return {
+        input_usd: reference.input_usd,
+        output_usd: reference.output_usd,
+      }
+    }
+  }
+  return null
+}
+
+export function getGroupPriceBenefit(
+  model: PricingModel,
+  price: PricingGroupPrice | undefined
+): number | null {
+  const reference = getComparisonReference(model)
+  if (!reference || !price || price.unavailable || !isTokenGroupPrice(price)) {
+    return null
+  }
+  const base = reference.input_usd + reference.output_usd
+  const amount = getTokenPairAmount(price)
+  return amount === null ? null : Math.max(0, (1 - amount / base) * 100)
 }
 
 export function getPricingRateFields(

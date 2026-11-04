@@ -81,6 +81,25 @@ Both nullable IDs must be provided together when changing a channel binding. Gen
 
 Official model-developer reference prices are a separate dataset with a source URL, quote timestamp, and unit. They are neither a billing fallback nor procurement data. Public display must retain their source/date and must not invent percentage-savings claims from incomparable tariffs.
 
+Public model-provider metadata (`vendor_id`, name, icon and description) remains separate from proxy supplier identities. The public provider facet uses the same catalogue metadata as model cards, including the existing default model-name rules when explicit metadata is missing. It must continue to list model developers such as OpenAI and Anthropic. Proxy suppliers never populate this facet.
+
+The optional public `base_reference` exposes the existing global/default input-output pair for display comparison. It never fills a missing supplier tariff or changes billing. Price cards select the minimum input-plus-output sum from an available group under the selected filters, keeping both rates and cache prices from that same group. Savings are `max(0, (1 - retail_sum / reference_sum) * 100)` using the input/output pair; cache/tool rates are excluded. Benefit is the default catalogue sort, with unknown savings last; explicit name and price sorts remain available. Official references take precedence when comparable, and unknown or incompatible units do not produce a guessed saving. A tiered global reference uses a valid configured base pair or its first standard tier, not an invented price for an unknown model. The card omits the redundant short-context heading; detailed group prices retain their actual context boundaries.
+
+For Auto routing, verifiable token quotes are ordered by the frozen retail input-plus-output sum for the applicable request context and tier. For one model this gives the same benefit order against a shared baseline. Both rates must be known; explicit zero is valid. Unavailable routes are skipped and the next eligible group is tried. Fixed-unit and opaque-expression candidates retain their existing quote-cost positions; their units are not guessed or compared as token pairs. Reservation remains sufficient for eligible retries and settlement still uses each request's actual frozen contract.
+
+## Administrator usage-log filters
+
+Common usage logs support an administrator-only `proxy_supplier_id` filter on the list, total and statistics. Omission selects all records; `0` selects records with no recorded supplier. Supplier choices and text suggestions are available only through authenticated administrator routes:
+
+- `GET /api/log/supplier-choices`: recorded positive supplier IDs and display names, independent of the channel's current binding.
+- `GET /api/log/suggestions`: existing model, group, token-name and username values from the current log-filter scope, excluding the field being edited.
+
+Both use literal substring search, an empty-query first page, `limit` up to 100, and a continuation cursor. Choices exclude their own active supplier filter so another supplier remains selectable. Ordinary users and limited API-key sessions cannot enumerate these values or apply supplier filters; the standard authorization layer may use its existing HTTP 200 `success:false` envelope. Numeric/request ID fields retain ordinary text entry. The client debounces option searches by 300 ms, cancels stale requests and partitions caches by actor and role. Masked fields do not show or query suggestions.
+
+New log records freeze the selected supplier ID before durable outbox delivery. A private metadata sidecar preserves it through JSON serialization and pre-migration writers; the indexed `logs.proxy_supplier_id` column is never part of public log JSON. Task completion/refund and error logs retain their original identity after channel rebinding or deletion. Historical records with no snapshot remain `0`; no backfill guesses their supplier from a live channel. Legacy privacy classification may still redact a record without assigning it a supplier ID.
+
+Supplier names are resolved separately from the main database, so a distinct log database remains supported. Missing/deleted identities use an ID label. Migrations add the log column without rewriting historical attribution; ClickHouse adds the column explicitly. ClickHouse reads keep synthetic display IDs and outbox replay preserves the original partition/order timestamp. The column-readiness cache avoids a metadata round trip on every stable log write.
+
 ## Async limits
 
 Supplier-backed asynchronous tasks currently support **fixed per-request or per-second tariffs only**. Supplier token/expression async tariffs are rejected before submission because aggregate-only polling cannot safely reconstruct all chargeable token lanes. A fixed per-second model still needs a supported request duration contract.

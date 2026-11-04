@@ -49,6 +49,7 @@ export interface PricingColumnsOptions {
   usdExchangeRate?: number
   showRechargePrice?: boolean
   groupFilter?: string
+  quotaTypeFilter?: string
 }
 
 export function usePricingColumns(
@@ -94,7 +95,11 @@ export function usePricingColumns(
       accessorKey: 'quota_type',
       header: t('Type'),
       cell: ({ row }) => {
-        const price = getDisplayGroupPrice(row.original, options.groupFilter)
+        const price = getDisplayGroupPrice(
+          row.original,
+          options.groupFilter,
+          options.quotaTypeFilter
+        )
         if (!price) return <span className='text-muted-foreground'>—</span>
         const isTokenBased = isTokenGroupPrice(price)
         let label = price.price_unit
@@ -125,6 +130,7 @@ export function usePricingColumns(
         <ModelPriceSummary
           model={row.original}
           groupFilter={options.groupFilter}
+          quotaTypeFilter={options.quotaTypeFilter}
           tokenUnit={tokenUnit}
           showRechargePrice={showRechargePrice}
           priceRate={priceRate}
@@ -140,7 +146,11 @@ export function usePricingColumns(
       id: 'cached_price',
       header: t('Cached'),
       cell: ({ row }) => {
-        const price = getDisplayGroupPrice(row.original, options.groupFilter)
+        const price = getDisplayGroupPrice(
+          row.original,
+          options.groupFilter,
+          options.quotaTypeFilter
+        )
         return (
           <div className='font-mono text-sm tabular-nums'>
             {formatRetailPrice(

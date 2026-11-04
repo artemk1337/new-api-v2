@@ -48,9 +48,9 @@ export function usePricingData() {
   )
 
   const models = useMemo(() => {
-    if (!data?.data || !data?.vendors) return []
+    if (!data?.data) return []
 
-    const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
+    const vendorMap = new Map((data.vendors ?? []).map((v) => [v.id, v]))
 
     return data.data.map((model) => {
       const vendor = model.vendor_id
@@ -59,9 +59,9 @@ export function usePricingData() {
       return {
         ...model,
         key: model.model_name,
-        vendor_name: vendor?.name,
-        vendor_icon: vendor?.icon,
-        vendor_description: vendor?.description,
+        vendor_name: vendor?.name ?? model.vendor_name,
+        vendor_icon: vendor?.icon ?? model.vendor_icon,
+        vendor_description: vendor?.description ?? model.vendor_description,
         enable_groups: (model.group_prices ?? []).map((price) => price.group),
         enable_group_refs: (model.group_prices ?? []).map((price) => ({
           id: price.group_id,

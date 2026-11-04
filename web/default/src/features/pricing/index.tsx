@@ -144,6 +144,7 @@ export function Pricing() {
           tokenUnit={tokenUnit}
           showRechargePrice={showRechargePrice}
           groupFilter={groupFilter}
+          quotaTypeFilter={quotaTypeFilter}
         />
       )
     }
@@ -152,6 +153,7 @@ export function Pricing() {
       <PricingTable
         models={filteredModels}
         groupFilter={groupFilter}
+        quotaTypeFilter={quotaTypeFilter}
         priceRate={priceRate}
         usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}

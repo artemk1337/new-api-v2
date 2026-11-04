@@ -81,6 +81,12 @@ export type PricingModel = {
   vendor_icon?: string
   vendor_description?: string
   group_prices?: PricingGroupPrice[]
+  /** Public default tariff for display comparison only, never a billing fallback. */
+  base_reference?: {
+    input_usd: number
+    output_usd: number
+    price_unit: 'million_tokens'
+  }
   official_price?: {
     input_usd?: number | null
     output_usd?: number | null

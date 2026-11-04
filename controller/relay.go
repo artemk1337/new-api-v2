@@ -579,6 +579,10 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		pricingGroup := errorLogPricingGroup(c)
 		channelId := channelError.ChannelId
 		other := make(map[string]interface{})
+		proxySupplierID := c.GetInt("proxy_supplier_id")
+		if len(relayInfos) > 0 && relayInfos[0].PriceData.SupplierTariff != nil {
+			proxySupplierID = relayInfos[0].PriceData.SupplierTariff.SupplierID
+		}
 		if c.GetBool("supplier_pricing") || len(relayInfos) > 0 && relayInfos[0].PriceData.SupplierTariff != nil {
 			other["supplier_pricing"] = true
 		}
@@ -609,6 +613,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
+		model.SetLogProxySupplier(other, proxySupplierID)
 		errorLogContent, rawError, normalized := relayErrorLogContent(err)
 		if normalized {
 			other["raw_error"] = rawError

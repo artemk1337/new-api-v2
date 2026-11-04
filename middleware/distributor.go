@@ -620,6 +620,11 @@ func setupContextForChannel(c *gin.Context, channel *model.Channel, modelName st
 		}
 	}
 	c.Set("supplier_pricing", channel.SupplierID != nil || channel.SupplierProfileID != nil)
+	proxySupplierID := 0
+	if channel.SupplierID != nil {
+		proxySupplierID = *channel.SupplierID
+	}
+	c.Set("proxy_supplier_id", proxySupplierID)
 	if c.Request != nil && !channelSupportsRequestPath(channel, c.Request.URL.Path) {
 		return types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}

@@ -117,6 +117,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var audioRatio float64
 	var audioCompletionRatio float64
 	var freeModel bool
+	quotaPerUnit := common.GetQuotaPerUnit()
 	if !usePrice {
 		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
 		if meta.MaxTokens != 0 {
@@ -149,7 +150,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.GetQuotaPerUnit() * groupRatioInfo.GroupRatio)
+		preConsumedQuota = int(modelPrice * quotaPerUnit * groupRatioInfo.GroupRatio)
 	}
 
 	// check if free model pre-consume is disabled
@@ -186,6 +187,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
+		QuotaPerUnit:         quotaPerUnit,
 	}
 
 	if common.DebugEnabled {
@@ -258,6 +260,7 @@ func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []s
 		common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
 		return relaycommon.AutoRouteState{}, unavailableErr
 	}
+	SortAutoRouteCandidates(state.Candidates)
 	state.InitialGroup = state.Candidates[0].Group
 	state.UsedGroup = state.InitialGroup
 	info.AutoRoute = state

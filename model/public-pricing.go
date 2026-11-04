@@ -33,11 +33,15 @@ type PublicPricingModel struct {
 	Icon                   string                          `json:"icon,omitempty"`
 	Tags                   string                          `json:"tags,omitempty"`
 	VendorID               int                             `json:"vendor_id,omitempty"`
+	VendorName             string                          `json:"vendor_name,omitempty"`
+	VendorIcon             string                          `json:"vendor_icon,omitempty"`
+	VendorDescription      string                          `json:"vendor_description,omitempty"`
 	EnableGroup            []string                        `json:"enable_groups"`
 	EnableGroupRefs        []ratio_setting.PricingGroupRef `json:"enable_group_refs,omitempty"`
 	SupportedEndpointTypes []constant.EndpointType         `json:"supported_endpoint_types"`
 	GroupPrices            []PublicGroupPrice              `json:"group_prices"`
 	OfficialPrice          *OfficialAPIPrice               `json:"official_price,omitempty"`
+	BaseReference          *PublicBaseReference            `json:"base_reference,omitempty"`
 }
 
 func retailPrice(price *float64, multiplier float64) *float64 {
@@ -131,6 +135,8 @@ func GetPublicPricingCatalog(usable map[string]string, multipliers map[string]fl
 		names = append(names, ability.Model)
 	}
 	metadata := buildPricingModelMap(data.metadata, names)
+	vendorByID, vendorByName := publicPricingVendorMaps(data.vendors)
+	pricingSources, hasMapping := buildModelPricingSources(data.abilities)
 	type groupTarget struct {
 		target   string
 		conflict bool
@@ -184,6 +190,12 @@ func GetPublicPricingCatalog(usable map[string]string, multipliers map[string]fl
 				continue
 			}
 			item.Description, item.Icon, item.Tags, item.VendorID = meta.Description, meta.Icon, meta.Tags, meta.VendorID
+		}
+		vendor := publicPricingVendor(name, item.VendorID, vendorByID, vendorByName)
+		item.VendorID, item.VendorName, item.VendorIcon, item.VendorDescription = vendor.ID, vendor.Name, vendor.Icon, vendor.Description
+		if !slices.Contains(item.SupportedEndpointTypes, constant.EndpointTypeImageGeneration) {
+			source := resolveModelPricingSource(name, pricingSources[name], hasMapping[name])
+			item.BaseReference = publicBaseReference(source)
 		}
 		keys := make([]string, 0, len(groups))
 		for key := range groups {

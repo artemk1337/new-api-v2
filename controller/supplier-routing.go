@@ -3,7 +3,6 @@ package controller
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -160,24 +159,8 @@ func previewTaskRoutes(c *gin.Context, info *relaycommon.RelayInfo, groups []str
 	return nil
 }
 
-// Estimates have a common quota/USD scale; group multipliers alone cannot
-// compare tariffs from different procurement profiles.
 func orderQuotedAutoRoute(c *gin.Context, info *relaycommon.RelayInfo, cheapestOnly bool) error {
-	slices.SortStableFunc(info.AutoRoute.Candidates, func(a, b relaycommon.AutoRouteCandidate) int {
-		if a.EstimatedQuota < b.EstimatedQuota {
-			return -1
-		}
-		if a.EstimatedQuota > b.EstimatedQuota {
-			return 1
-		}
-		if a.Group < b.Group {
-			return -1
-		}
-		if a.Group > b.Group {
-			return 1
-		}
-		return 0
-	})
+	helper.SortAutoRouteCandidates(info.AutoRoute.Candidates)
 	if len(info.AutoRoute.Candidates) == 0 {
 		return errors.New("no available priced route for this model")
 	}

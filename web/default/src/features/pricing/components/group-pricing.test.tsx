@@ -87,13 +87,102 @@ const model: PricingModel = {
 describe('public group pricing', () => {
   test('summary renders one group pair without a global baseline or expression', () => {
     const html = render(<ModelPriceSummary model={model} tokenUnit='M' />)
-    expect(html).toContain('Coding')
-    expect(html).toContain('$1')
-    expect(html).toContain('$20')
-    expect(html).not.toContain('$5')
+    expect(html).toContain('Chat')
+    expect(html).toContain('$2')
+    expect(html).toContain('$5')
+    expect(html).not.toContain('$20')
     expect(html).not.toContain('999')
     expect(html).not.toContain('private-procurement-expression')
-    expect(html).not.toContain('line-through')
+    expect(html).not.toContain('<del')
+    expect(html).not.toContain('Benefit')
+    expect(html).not.toContain('Short context')
+    expect(html).not.toContain('Up to')
+  })
+
+  test('summary strikes the public baseline and shows savings for the selected pair', () => {
+    const reference: PricingModel = {
+      ...model,
+      base_reference: {
+        input_usd: 10,
+        output_usd: 20,
+        price_unit: 'million_tokens',
+      },
+    }
+    const html = render(<ModelPriceSummary model={reference} tokenUnit='M' />)
+    expect(html).toContain('Benefit 77%')
+    expect(html).toContain('Chat')
+    expect(html).toContain('>$10</del>')
+    expect(html).toContain('>$20</del>')
+    expect(html).not.toContain('Short context')
+    expect(html).not.toContain('Up to')
+    const selected = render(
+      <ModelPriceSummary model={reference} tokenUnit='M' groupFilter='1' />
+    )
+    expect(selected).toContain('Coding')
+    expect(selected).toContain('Benefit 30%')
+    expect(selected).toContain('$1')
+    expect(selected).not.toContain('>$20</del>')
+    const missing = render(
+      <ModelPriceSummary
+        model={{ ...reference, group_prices: [] }}
+        tokenUnit='M'
+      />
+    )
+    expect(missing).toContain('Pricing unavailable')
+    expect(missing).not.toContain('Benefit')
+    expect(missing).not.toContain('$10')
+  })
+
+  test('the summary respects a billing-unit filter and keeps request prices incomparable', () => {
+    const mixed: PricingModel = {
+      ...model,
+      base_reference: {
+        input_usd: 10,
+        output_usd: 20,
+        price_unit: 'million_tokens',
+      },
+      group_prices: [
+        ...(model.group_prices ?? []).slice(0, 1),
+        {
+          group_id: 3,
+          group: '3',
+          group_name: 'Images',
+          billing_mode: 'fixed',
+          price_unit: 'request',
+          price_usd: 0.05,
+        },
+      ],
+    }
+    const html = render(
+      <ModelPriceSummary
+        model={mixed}
+        tokenUnit='M'
+        quotaTypeFilter='request'
+      />
+    )
+    expect(html).toContain('Images')
+    expect(html).toContain('$0.05')
+    expect(html).not.toContain('Benefit')
+    expect(html).not.toContain('<del')
+  })
+
+  test('does not advertise savings when the complete pair costs at least the reference', () => {
+    const reference: PricingModel = {
+      ...model,
+      base_reference: {
+        input_usd: 1,
+        output_usd: 2,
+        price_unit: 'million_tokens',
+      },
+      group_prices: (model.group_prices ?? [])
+        .slice(0, 1)
+        .map((price) => ({ ...price, input_usd: 0.5, output_usd: 3 })),
+    }
+    const html = render(<ModelPriceSummary model={reference} tokenUnit='M' />)
+    expect(html).toContain('$0.5')
+    expect(html).toContain('$3')
+    expect(html).not.toContain('Benefit')
+    expect(html).not.toContain('<del')
   })
 
   test('details render every group and its own cache and tier components', () => {

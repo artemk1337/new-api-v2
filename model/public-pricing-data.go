@@ -22,6 +22,7 @@ type publicPricingData struct {
 	targets   []string
 	channels  map[int]Channel
 	metadata  []Model
+	vendors   []Vendor
 	official  map[string]OfficialAPIPrice
 	bindings  map[int]PricingGroupSupplierBinding
 	profiles  map[int]publicPricingProfile
@@ -62,6 +63,11 @@ func loadPublicPricingData(usable map[string]string) (publicPricingData, error) 
 		}
 		if err := tx.Find(&data.metadata).Error; err != nil {
 			return err
+		}
+		if tx.Migrator().HasTable(&Vendor{}) {
+			if err := tx.Find(&data.vendors).Error; err != nil {
+				return err
+			}
 		}
 		groupIDs := make([]int, 0, len(usable))
 		for group := range usable {

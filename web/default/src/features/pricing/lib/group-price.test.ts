@@ -21,7 +21,10 @@ import { describe, expect, test } from 'bun:test'
 import type { PricingGroupPrice, PricingModel } from '../types'
 import {
   formatRetailPrice,
+  getComparisonReference,
   getDisplayGroupPrice,
+  getGroupPriceBenefit,
+  getGroupPriceAmount,
   getPricingRateFields,
   hasTwoContextTiers,
 } from './group-price'
@@ -74,10 +77,142 @@ describe('retail group prices', () => {
       quote('2', { input_usd: 2, output_usd: 5, cache_read_usd: 0.1 }),
     ])
     const selected = getDisplayGroupPrice(item)
-    expect(selected?.group).toBe('1')
-    expect(selected?.output_usd).toBe(20)
-    expect(selected?.cache_read_usd).toBe(0.3)
+    expect(selected?.group).toBe('2')
+    expect(selected?.output_usd).toBe(5)
+    expect(selected?.cache_read_usd).toBe(0.1)
     expect(getDisplayGroupPrice(item, '2')?.input_usd).toBe(2)
+  })
+
+  test('selects the cheapest input/output total from one group', () => {
+    const item: PricingModel = {
+      ...model([
+        quote('1', { input_usd: 0.01, output_usd: 2, cache_read_usd: 0 }),
+        quote('2', { input_usd: 0.02, output_usd: 0.03, cache_read_usd: 999 }),
+      ]),
+      base_reference: {
+        input_usd: 1,
+        output_usd: 3,
+        price_unit: 'million_tokens',
+      },
+    }
+    expect(getDisplayGroupPrice(item)?.group).toBe('2')
+    expect(getGroupPriceBenefit(item, getDisplayGroupPrice(item))).toBeCloseTo(
+      98.75
+    )
+    expect(
+      getGroupPriceBenefit(item, getDisplayGroupPrice(item, '1'))
+    ).toBeCloseTo(49.75)
+    expect(
+      getGroupPriceBenefit(item, getDisplayGroupPrice(item, 'missing'))
+    ).toBeNull()
+  })
+
+  test('comparison preserves the old uniform ratio result and ignores cache/tools', () => {
+    const item: PricingModel = {
+      ...model([
+        quote('1', {
+          input_usd: 1.5,
+          output_usd: 4.5,
+          cache_read_usd: 99,
+          tools: { web_search: 999 },
+        }),
+      ]),
+      base_reference: {
+        input_usd: 10,
+        output_usd: 30,
+        price_unit: 'million_tokens',
+      },
+    }
+    expect(getGroupPriceBenefit(item, getDisplayGroupPrice(item))).toBe(85)
+  })
+
+  test('unknown, zero-base and different units cannot create savings', () => {
+    const item = model([quote('1', { input_usd: 0.1, output_usd: 0.2 })])
+    expect(getGroupPriceBenefit(item, getDisplayGroupPrice(item))).toBeNull()
+    item.base_reference = {
+      input_usd: 0,
+      output_usd: 0,
+      price_unit: 'million_tokens',
+    }
+    expect(getComparisonReference(item)).toBeNull()
+    item.base_reference = {
+      input_usd: 1,
+      output_usd: 2,
+      price_unit: 'million_tokens',
+    }
+    expect(
+      getGroupPriceBenefit(item, quote('1', { input_usd: 0.1 }))
+    ).toBeNull()
+    expect(
+      getGroupPriceBenefit(
+        item,
+        quote('1', { price_unit: 'request', price_usd: 0.1 })
+      )
+    ).toBeNull()
+    expect(
+      getGroupPriceBenefit(
+        item,
+        quote('1', { input_usd: 0.1, output_usd: 0.2, unavailable: true })
+      )
+    ).toBeNull()
+    expect(
+      getGroupPriceBenefit(item, quote('1', { input_usd: 0, output_usd: 0 }))
+    ).toBe(100)
+    item.base_reference = {
+      input_usd: 1,
+      output_usd: 0,
+      price_unit: 'million_tokens',
+    }
+    expect(
+      getGroupPriceBenefit(item, quote('1', { input_usd: 0.1, output_usd: 0 }))
+    ).toBe(90)
+  })
+
+  test('only a valid enabled official comparison overrides the default reference', () => {
+    const official = {
+      input_usd: 10,
+      output_usd: 20,
+      price_unit: 'million_tokens',
+      source: 'https://example.com',
+      updated_at: 1,
+    }
+    const item: PricingModel = {
+      ...model([]),
+      base_reference: {
+        input_usd: 1,
+        output_usd: 2,
+        price_unit: 'million_tokens',
+      },
+      official_price: official,
+    }
+    expect(getComparisonReference(item)).toEqual({
+      input_usd: 1,
+      output_usd: 2,
+    })
+    item.official_price = { ...official, comparison_enabled: true }
+    expect(getComparisonReference(item)).toEqual({
+      input_usd: 10,
+      output_usd: 20,
+    })
+    item.official_price = {
+      ...official,
+      comparison_enabled: true,
+      price_unit: 'request',
+    }
+    expect(getComparisonReference(item)).toEqual({
+      input_usd: 1,
+      output_usd: 2,
+    })
+  })
+
+  test('a billing-unit filter limits the available display groups', () => {
+    const item = model([
+      quote('1', { input_usd: 1, output_usd: 2 }),
+      quote('2', { price_unit: 'request', price_usd: 0.1 }),
+    ])
+    expect(getDisplayGroupPrice(item, 'all', 'request')?.group).toBe('2')
+    expect(getDisplayGroupPrice(item, '1', 'request')).toBeUndefined()
+    expect(getDisplayGroupPrice(item, 'all', 'token')?.group).toBe('1')
   })
 
   test('does not fall back to another group or legacy global pricing', () => {
@@ -87,6 +222,33 @@ describe('retail group prices', () => {
     expect(
       getDisplayGroupPrice(model([quote('1', { unavailable: true })]))
     ).toBeUndefined()
+  })
+
+  test('skips an unavailable cheapest group and keeps the next group components together', () => {
+    const item = model([
+      quote('1', { input_usd: 0.01, output_usd: 2, unavailable: true }),
+      quote('2', { input_usd: 0.02, output_usd: 0.03, cache_read_usd: 0.004 }),
+      quote('3', { input_usd: 0.03, output_usd: 0.1, cache_read_usd: 0.001 }),
+    ])
+    const selected = getDisplayGroupPrice(item)
+    expect(selected?.group).toBe('2')
+    expect(selected?.input_usd).toBe(0.02)
+    expect(selected?.output_usd).toBe(0.03)
+    expect(selected?.cache_read_usd).toBe(0.004)
+    expect(getDisplayGroupPrice(item, '1')?.unavailable).toBe(true)
+  })
+
+  test('does not treat a missing input or output as free when selecting a pair', () => {
+    const embedding = quote('3', { input_usd: 0.02, output_usd: 0 })
+    const item = model([
+      quote('1', { input_usd: 0.001 }),
+      quote('2', { output_usd: 0.001 }),
+      embedding,
+    ])
+    expect(getDisplayGroupPrice(item)?.group).toBe('3')
+    expect(getGroupPriceAmount(quote('1', { input_usd: 0.001 }))).toBeNull()
+    expect(getGroupPriceAmount(quote('2', { output_usd: 0.001 }))).toBeNull()
+    expect(getGroupPriceAmount(embedding)).toBe(0.02)
   })
 
   test('preserves free rates and keeps missing components unknown', () => {

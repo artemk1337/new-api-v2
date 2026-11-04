@@ -81,6 +81,7 @@ type Log struct {
 	RequestId         string                         `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string                         `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string                         `json:"other"`
+	ProxySupplierID   int                            `json:"-" gorm:"index;default:0"`
 }
 
 // don't use iota, avoid change log type value
@@ -104,20 +105,12 @@ func ensureLogRequestId(log *Log) {
 func createLog(log *Log) error {
 	if log != nil {
 		log.Content = common.SanitizeLogText(log.Content)
-		if log.ChannelId > 0 {
-			var channel Channel
-			if err := DB.Select("supplier_id").First(&channel, "id = ?", log.ChannelId).Error; err == nil && channel.SupplierID != nil {
-				other, _ := common.StrToMap(log.Other)
-				if other == nil {
-					other = make(map[string]interface{})
-				}
-				other["supplier_pricing"] = true
-				log.Other = common.MapToJsonStr(other)
-			}
+		if !captureLogProxySupplier(log, log.ProxySupplierID) {
+			classifyLegacySupplierLog(log)
 		}
 	}
 	ensureLogRequestId(log)
-	return LOG_DB.Create(log).Error
+	return logSupplierWriteDB(LOG_DB).Create(log).Error
 }
 
 func clickHouseLogOrder(prefix string) string {
@@ -133,6 +126,7 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		logs[i].ProxySupplierID = 0
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if supplier, _ := otherMap["supplier_pricing"].(bool); supplier {
@@ -389,6 +383,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	captureLogProxySupplier(log, c.GetInt("proxy_supplier_id"))
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
@@ -454,7 +449,7 @@ func buildConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) 
 			needRecordIp = true
 		}
 	}
-	return &Log{
+	log := &Log{
 		UserId:           userId,
 		Username:         username,
 		CreatedAt:        createdAt,
@@ -480,6 +475,8 @@ func buildConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) 
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	captureLogProxySupplier(log, c.GetInt("proxy_supplier_id"))
+	return log
 }
 
 type RecordTaskBillingLogParams struct {
@@ -523,6 +520,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) error {
 		Group:     group,
 		Other:     common.MapToJsonStr(params.Other),
 	}
+	captureLogProxySupplier(log, 0)
 	err := persistBillingLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
@@ -550,39 +548,14 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) error {
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
-	var tx *gorm.DB
-	if logType == LogTypeUnknown {
-		tx = LOG_DB
-	} else {
-		tx = LOG_DB.Where("logs.type = ?", logType)
-	}
+	filter := LogFilter{Type: logType, StartTimestamp: startTimestamp, EndTimestamp: endTimestamp, ModelName: modelName, Username: username, TokenName: tokenName, Channel: channel, Group: group, RequestID: requestId, UpstreamRequestID: upstreamRequestId}
+	return GetAllLogsWithFilter(filter, startIdx, num)
+}
 
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
+func GetAllLogsWithFilter(filter LogFilter, startIdx, num int) (logs []*Log, total int64, err error) {
+	tx, err := queryLogs(filter)
+	if err != nil {
 		return nil, 0, err
-	}
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
-		return nil, 0, err
-	}
-	if tokenName != "" {
-		tx = tx.Where("logs.token_name = ?", tokenName)
-	}
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
-	}
-	if upstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("logs.created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("logs.created_at <= ?", endTimestamp)
-	}
-	if channel != 0 {
-		tx = tx.Where("logs.channel_id = ?", channel)
-	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
@@ -591,6 +564,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	order := "logs.created_at desc, logs.id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("logs.")
+		// ClickHouse IDs are synthesized below. Reading its constant legacy id
+		// column can trigger Sparse/Lazy block mismatches after schema expansion.
+		tx = tx.Select("logs.* EXCEPT (id)")
 	}
 	err = tx.Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
 	if err != nil {
@@ -701,59 +677,37 @@ type Stat struct {
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
-
-	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm")
-
-	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
-		return stat, err
-	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "username", username); err != nil {
-		return stat, err
-	}
-	if tokenName != "" {
-		tx = tx.Where("token_name = ?", tokenName)
-		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
-	}
-	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
-		return stat, err
-	}
-	if rpmTpmQuery, err = applyExplicitLogTextFilter(rpmTpmQuery, "model_name", modelName); err != nil {
-		return stat, err
-	}
-	if channel != 0 {
-		tx = tx.Where("channel_id = ?", channel)
-		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
-	}
-	if group != "" {
-		tx = tx.Where(logGroupCol+" = ?", group)
-		rpmTpmQuery = rpmTpmQuery.Where(logGroupCol+" = ?", group)
-	}
-
-	tx = tx.Where("type = ?", LogTypeConsume)
-	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
-
-	// 只统计最近60秒的rpm和tpm
-	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
-
-	// 执行查询
-	if err := tx.Scan(&stat).Error; err != nil {
+	filter := LogFilter{StartTimestamp: startTimestamp, EndTimestamp: endTimestamp, ModelName: modelName, Username: username, TokenName: tokenName, Channel: channel, Group: group}
+	recentFilter := filter
+	recentFilter.StartTimestamp, recentFilter.EndTimestamp = 0, 0
+	stat, err = sumUsedQuotaWithFilters(filter, recentFilter)
+	if err != nil {
 		common.SysError("failed to query log stat: " + err.Error())
 		return stat, errors.New("查询统计数据失败")
 	}
-	if err := rpmTpmQuery.Scan(&stat).Error; err != nil {
-		common.SysError("failed to query rpm/tpm stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
-	}
-
 	return stat, nil
+}
+
+func SumUsedQuotaWithFilter(filter LogFilter) (stat Stat, err error) {
+	return sumUsedQuotaWithFilters(filter, filter)
+}
+
+func sumUsedQuotaWithFilters(filter, recentFilter LogFilter) (stat Stat, err error) {
+	tx, err := queryLogs(filter)
+	if err != nil {
+		return stat, err
+	}
+	tx = tx.Where("logs.type = ?", LogTypeConsume)
+	if err = tx.Select("COALESCE(sum(quota), 0) quota").Scan(&stat).Error; err != nil {
+		return stat, err
+	}
+	recent, err := queryLogs(recentFilter)
+	if err != nil {
+		return stat, err
+	}
+	err = recent.Where("logs.type = ? AND logs.created_at >= ?", LogTypeConsume, time.Now().Add(-60*time.Second).Unix()).
+		Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm").Scan(&stat).Error
+	return stat, err
 }
 
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {

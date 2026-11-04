@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   SORT_OPTIONS,
+  DEFAULT_SORT_OPTION,
   FILTER_ALL,
   QUOTA_TYPES,
   QUOTA_TYPE_VALUES,
@@ -26,6 +27,7 @@ import {
 import type { PricingModel } from '../types'
 import {
   getDisplayGroupPrice,
+  getGroupPriceBenefit,
   getGroupPriceAmount,
   isTokenGroupPrice,
 } from './group-price'
@@ -132,10 +134,11 @@ function compareModelPrices(
   a: PricingModel,
   b: PricingModel,
   group: string,
+  quotaType: string,
   descending: boolean
 ): number {
-  const aPrice = getDisplayGroupPrice(a, group)
-  const bPrice = getDisplayGroupPrice(b, group)
+  const aPrice = getDisplayGroupPrice(a, group, quotaType)
+  const bPrice = getDisplayGroupPrice(b, group, quotaType)
   const aAmount = aPrice ? getGroupPriceAmount(aPrice) : null
   const bAmount = bPrice ? getGroupPriceAmount(bPrice) : null
   if (aAmount === null && bAmount !== null) return 1
@@ -154,8 +157,9 @@ function compareModelPrices(
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string,
-  groupFilter = FILTER_ALL
+  sortBy: string = DEFAULT_SORT_OPTION,
+  groupFilter = FILTER_ALL,
+  quotaTypeFilter: string = QUOTA_TYPES.ALL
 ): PricingModel[] {
   const sorted = [...models]
 
@@ -166,11 +170,32 @@ export function sortModels(
       )
       break
     case SORT_OPTIONS.PRICE_LOW:
-    case SORT_OPTIONS.BENEFIT:
-      sorted.sort((a, b) => compareModelPrices(a, b, groupFilter, false))
+      sorted.sort((a, b) =>
+        compareModelPrices(a, b, groupFilter, quotaTypeFilter, false)
+      )
       break
     case SORT_OPTIONS.PRICE_HIGH:
-      sorted.sort((a, b) => compareModelPrices(a, b, groupFilter, true))
+      sorted.sort((a, b) =>
+        compareModelPrices(a, b, groupFilter, quotaTypeFilter, true)
+      )
+      break
+    case SORT_OPTIONS.BENEFIT:
+      sorted.sort((a, b) => {
+        const aBenefit = getGroupPriceBenefit(
+          a,
+          getDisplayGroupPrice(a, groupFilter, quotaTypeFilter)
+        )
+        const bBenefit = getGroupPriceBenefit(
+          b,
+          getDisplayGroupPrice(b, groupFilter, quotaTypeFilter)
+        )
+        if (aBenefit === null && bBenefit !== null) return 1
+        if (aBenefit !== null && bBenefit === null) return -1
+        return (
+          (bBenefit ?? 0) - (aBenefit ?? 0) ||
+          a.model_name.localeCompare(b.model_name)
+        )
+      })
       break
   }
 
@@ -182,10 +207,10 @@ export function sortModels(
  */
 export function filterAndSortModels(
   models: PricingModel[],
-  filters: PricingFilterValues & { sortBy: string }
+  filters: PricingFilterValues & { sortBy?: string }
 ): PricingModel[] {
   let result = filterModelsForFacet(models, filters)
-  result = sortModels(result, filters.sortBy, filters.group)
+  result = sortModels(result, filters.sortBy, filters.group, filters.quotaType)
 
   return result
 }

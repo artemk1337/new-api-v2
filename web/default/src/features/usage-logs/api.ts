@@ -17,7 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { buildQueryParams } from './lib/utils'
+
+import { buildQueryParams } from './lib/query-params'
+import { logSuggestionScope, type LogFilterField } from './lib/suggestions'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -26,6 +28,7 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
   UserInfo,
+  LogFilterOptionsPage,
 } from './types'
 
 // ============================================================================
@@ -48,7 +51,9 @@ async function fetchLogs<T>(
     ...params,
   })
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}?${queryParams}`)
+  const res = await api.get(`${path}?${queryParams}`, {
+    disableDuplicate: endpoint === '/api/log',
+  })
   return res.data
 }
 
@@ -61,7 +66,9 @@ async function fetchLogStats<T>(
     params as unknown as Record<string, unknown>
   )
   const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}/stat?${queryParams}`)
+  const res = await api.get(`${path}/stat?${queryParams}`, {
+    disableDuplicate: endpoint === '/api/log',
+  })
   return res.data
 }
 
@@ -73,15 +80,59 @@ export const getAllLogs = (params: GetLogsParams = {}) =>
   fetchLogs('/api/log', params, true)
 
 export const getUserLogs = (
-  params: Omit<GetLogsParams, 'username' | 'channel'> = {}
+  params: Omit<GetLogsParams, 'username' | 'channel' | 'proxy_supplier_id'> = {}
 ) => fetchLogs('/api/log', params, false)
 
 export const getLogStats = (params: GetLogStatsParams = {}) =>
   fetchLogStats('/api/log', params, true)
 
 export const getUserLogStats = (
-  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
+  params: Omit<
+    GetLogStatsParams,
+    'username' | 'channel' | 'proxy_supplier_id'
+  > = {}
 ) => fetchLogStats('/api/log', params, false)
+
+export async function getLogFilterOptions(options: {
+  field: LogFilterField
+  query: string
+  cursor: string | null
+  filters: GetLogsParams
+  signal: AbortSignal
+}): Promise<LogFilterOptionsPage> {
+  const supplier = options.field === 'proxy_supplier_id'
+  const response = await api.get(
+    supplier ? '/api/log/supplier-choices' : '/api/log/suggestions',
+    {
+      params: {
+        ...logSuggestionScope(options.filters, options.field),
+        ...(supplier ? {} : { field: options.field }),
+        q: options.query,
+        cursor: options.cursor ?? undefined,
+        limit: 50,
+      },
+      signal: options.signal,
+      disableDuplicate: true,
+      skipBusinessError: true,
+      skipErrorHandler: true,
+    }
+  )
+  if (!response.data?.success) {
+    throw new Error(response.data?.message || 'Failed to load filter options')
+  }
+  if (!supplier) return response.data.data as LogFilterOptionsPage
+  const data = response.data.data as {
+    items: { id: number; name: string }[]
+    next_cursor: string | null
+  }
+  return {
+    items: data.items.map((item) => ({
+      value: String(item.id),
+      label: item.name,
+    })),
+    next_cursor: data.next_cursor,
+  }
+}
 
 export async function getUserInfo(
   userId: number

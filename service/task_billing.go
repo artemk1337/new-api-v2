@@ -40,6 +40,11 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, settlement 
 	}
 	other := make(map[string]interface{})
 	other["is_task"] = true
+	proxySupplierID := 0
+	if tariff := info.PriceData.SupplierTariff; tariff != nil {
+		proxySupplierID = tariff.SupplierID
+	}
+	model.SetLogProxySupplier(other, proxySupplierID)
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
 	if info.PriceData.ModelRatio > 0 {
@@ -134,6 +139,14 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
+	proxySupplierID := 0
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		proxySupplierID = bc.SupplierID
+		if bc.PriceSnapshot != nil && bc.PriceSnapshot.SupplierTariff != nil && bc.PriceSnapshot.SupplierTariff.SupplierID > 0 {
+			proxySupplierID = bc.PriceSnapshot.SupplierTariff.SupplierID
+		}
+	}
+	model.SetLogProxySupplier(other, proxySupplierID)
 	if task.PrivateData.BillingSource != "" {
 		other["billing_source"] = task.PrivateData.BillingSource
 	}

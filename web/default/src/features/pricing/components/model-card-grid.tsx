@@ -41,6 +41,7 @@ export interface ModelCardGridProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   groupFilter?: string
+  quotaTypeFilter?: string
 }
 
 export function ModelCardGrid(props: ModelCardGridProps) {
@@ -72,6 +73,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
             usdExchangeRate={props.usdExchangeRate}
             showRechargePrice={props.showRechargePrice}
             groupFilter={props.groupFilter}
+            quotaTypeFilter={props.quotaTypeFilter}
             onClick={() => props.onModelClick(model.model_name || '')}
           />
         ))}

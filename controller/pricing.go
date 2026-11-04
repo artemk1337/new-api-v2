@@ -144,7 +144,7 @@ func GetPricingV2(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{
-		"success": true, "data": catalog, "vendors": model.GetVendors(),
+		"success": true, "data": catalog, "vendors": model.GetPublicPricingVendors(catalog),
 		"group_ratio": neutral, "usable_group": usable, "pricing_groups": publicPricingGroups(usable, false),
 		"supported_endpoint": model.GetSupportedEndpointMap(), "auto_groups": service.GetUserAutoGroup(userGroup),
 		"pricing_version": "2",

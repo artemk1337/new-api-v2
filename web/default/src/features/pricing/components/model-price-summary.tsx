@@ -22,20 +22,29 @@ import { GroupBadge } from '@/components/group-badge'
 
 import {
   formatRetailPrice,
+  getComparisonReference,
   getDisplayGroupPrice,
   getGroupPriceAmount,
-  hasTwoContextTiers,
+  getGroupPriceBenefit,
+  hasRetailRate,
   isTokenGroupPrice,
   type RetailPriceOptions,
 } from '../lib/group-price'
 import type { PricingModel } from '../types'
-import { InputContext } from './input-context'
 
 export function ModelPriceSummary(
-  props: RetailPriceOptions & { model: PricingModel; groupFilter?: string }
+  props: RetailPriceOptions & {
+    model: PricingModel
+    groupFilter?: string
+    quotaTypeFilter?: string
+  }
 ) {
   const { t } = useTranslation()
-  const price = getDisplayGroupPrice(props.model, props.groupFilter)
+  const price = getDisplayGroupPrice(
+    props.model,
+    props.groupFilter,
+    props.quotaTypeFilter
+  )
 
   if (!price || price.unavailable) {
     return (
@@ -46,6 +55,9 @@ export function ModelPriceSummary(
   }
 
   const tokenBased = isTokenGroupPrice(price)
+  const reference = getComparisonReference(props.model)
+  const benefit = getGroupPriceBenefit(props.model, price)
+  const hasSavings = benefit !== null && benefit > 0
   const variable =
     getGroupPriceAmount(price) === null && price.billing_mode === 'tiered_expr'
   let unit = price.price_unit
@@ -55,7 +67,14 @@ export function ModelPriceSummary(
 
   return (
     <div className='flex min-w-0 flex-col items-start gap-1.5'>
-      <GroupBadge group={price.group_name || price.group} size='sm' />
+      <div className='flex flex-wrap items-center gap-2'>
+        <GroupBadge group={price.group_name || price.group} size='sm' />
+        {hasSavings && (
+          <span className='text-xs font-medium text-emerald-700 dark:text-emerald-400'>
+            {t('Benefit {{percent}}%', { percent: Math.round(benefit) })}
+          </span>
+        )}
+      </div>
       {variable ? (
         <span className='text-muted-foreground text-xs'>
           {t('Price depends on request conditions')}
@@ -64,28 +83,31 @@ export function ModelPriceSummary(
         <div className='space-y-1 font-mono text-sm tabular-nums'>
           {tokenBased ? (
             <>
-              <div>
-                {t('Input')} {formatRetailPrice(price.input_usd, props)} /{' '}
-                {unit}
-              </div>
-              <div>
-                {t('Output')} {formatRetailPrice(price.output_usd, props)} /{' '}
-                {unit}
-              </div>
+              {(['input_usd', 'output_usd'] as const).map((key) => (
+                <div
+                  key={key}
+                  className='flex flex-wrap items-baseline gap-x-2'
+                >
+                  <span className='font-semibold'>
+                    {t(key === 'input_usd' ? 'Input' : 'Output')}{' '}
+                    {formatRetailPrice(price[key], props)} / {unit}
+                  </span>
+                  {hasSavings &&
+                    reference &&
+                    hasRetailRate(price[key]) &&
+                    reference[key] > price[key] && (
+                      <del className='text-sm text-red-600/70 dark:text-red-400/70'>
+                        {formatRetailPrice(reference[key], props)}
+                      </del>
+                    )}
+                </div>
+              ))}
             </>
           ) : (
             <div>
               {formatRetailPrice(price.price_usd, props, false)} / {unit}
             </div>
           )}
-        </div>
-      )}
-      {price.tiers?.[0] && (
-        <div className='text-muted-foreground text-[10px]'>
-          <InputContext
-            tier={price.tiers[0]}
-            name={hasTwoContextTiers(price.tiers) ? 'short' : undefined}
-          />
         </div>
       )}
     </div>

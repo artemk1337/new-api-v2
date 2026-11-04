@@ -36,6 +36,7 @@ export interface ModelCardProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   groupFilter?: string
+  quotaTypeFilter?: string
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -79,6 +80,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               <ModelPriceSummary
                 model={props.model}
                 groupFilter={props.groupFilter}
+                quotaTypeFilter={props.quotaTypeFilter}
                 tokenUnit={tokenUnit}
                 showRechargePrice={showRechargePrice}
                 priceRate={priceRate}

@@ -17,7 +17,7 @@ import (
 func publicPricingCatalogFixture(t *testing.T, count int) []SupplierPricingProfile {
 	t.Helper()
 	first := supplierPricingTestDB(t)
-	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Model{}, &OfficialModelPrice{}))
+	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Model{}, &Vendor{}, &OfficialModelPrice{}))
 	originalGroups := ratio_setting.PricingGroups2JSONString()
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":1001,"name":"First","ratio":2,"selectable":true},{"id":1002,"name":"Second","ratio":3,"selectable":true}]`))
 	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(originalGroups)) })

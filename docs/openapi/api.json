@@ -3805,7 +3805,7 @@
       "get": {
         "summary": "获取所有日志",
         "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
+        "description": "👨‍💼 需要管理员权限（Admin）\nProxy supplier filtering requires administrator authentication and uses the supplier recorded for the request. It does not select a model developer or a channel tag.",
         "tags": [
           "日志"
         ],
@@ -3827,6 +3827,109 @@
             "schema": {
               "type": "integer"
             }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Existing log type filter."
+          },
+          {
+            "name": "start_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "end_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "token_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "upstream_request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": ""
+          },
+          {
+            "name": "proxy_supplier_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Administrator-only proxy supplier identity. Omit for all records; 0 selects records without a recorded supplier. Historical records are never attributed using a channel's current binding."
           }
         ],
         "responses": {
@@ -3872,11 +3975,115 @@
       "get": {
         "summary": "获取日志统计",
         "deprecated": false,
-        "description": "👨‍💼 需要管理员权限（Admin）",
+        "description": "👨‍💼 需要管理员权限（Admin）\nProxy supplier filtering requires administrator authentication and uses the supplier recorded for the request. It does not select a model developer or a channel tag.",
         "tags": [
           "日志"
         ],
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Existing log type filter."
+          },
+          {
+            "name": "start_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "end_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "token_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "upstream_request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": ""
+          },
+          {
+            "name": "proxy_supplier_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Administrator-only proxy supplier identity. Omit for all records; 0 selects records without a recorded supplier. Historical records are never attributed using a channel's current binding."
+          }
+        ],
         "responses": {
           "200": {
             "description": "成功",
@@ -3897,7 +4104,7 @@
       "get": {
         "summary": "获取个人日志统计",
         "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
+        "description": "🔐 需要登录（User权限）\nThe administrator-only proxy_supplier_id parameter is rejected. No supplier filter or suggestion catalogue is available to ordinary users.",
         "tags": [
           "日志"
         ],
@@ -3957,7 +4164,7 @@
       "get": {
         "summary": "获取个人日志",
         "deprecated": false,
-        "description": "🔐 需要登录（User权限）",
+        "description": "🔐 需要登录（User权限）\nThe administrator-only proxy_supplier_id parameter is rejected. No supplier filter or suggestion catalogue is available to ordinary users.",
         "tags": [
           "日志"
         ],
@@ -6505,6 +6712,374 @@
           }
         }
       }
+    },
+    "/api/log/suggestions": {
+      "get": {
+        "summary": "Suggest text values from administrator-visible usage logs",
+        "description": "Supports model_name, group, token_name and username only. Applies the current log filter scope except the field being edited. Raw IDs have no autocomplete endpoint. Values come from visible log records, not a global user/token catalogue. Administrator-only; ordinary and limited API-key sessions cannot enumerate these values. The shared AdminAuth middleware may reject an ordinary session with HTTP 200 and success=false; handler-level authorization also supports HTTP 403. Unavailable log data uses the standard success=false envelope.",
+        "tags": [
+          "Usage logs"
+        ],
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-access-policy": "AdminAuth",
+        "parameters": [
+          {
+            "name": "field",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "model_name",
+                "group",
+                "token_name",
+                "username"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Existing log type filter."
+          },
+          {
+            "name": "start_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "end_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "token_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "upstream_request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": ""
+          },
+          {
+            "name": "proxy_supplier_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Administrator-only proxy supplier identity. Omit for all records; 0 selects records without a recorded supplier. Historical records are never attributed using a channel's current binding."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "description": "Literal substring, not a SQL wildcard pattern. An empty query lists available values."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Continuation cursor from the previous page. Reuse it only with the same query and filter scope."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available values, or a standard success=false failure envelope without data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogTextSuggestionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid field, cursor, limit or filter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Administrator access required"
+          }
+        }
+      }
+    },
+    "/api/log/supplier-choices": {
+      "get": {
+        "summary": "List proxy suppliers recorded in administrator-visible usage logs",
+        "description": "Returns only recorded positive supplier IDs and display names. No profiles, tariffs, credentials or procurement details are returned. Supplier names may reflect the current name of the same stable supplier identity; deleted identities retain an ID fallback. The UI supplies a separate No recorded supplier option with filter value 0. Administrator-only; ordinary and limited API-key sessions cannot enumerate these values. The shared AdminAuth middleware may reject an ordinary session with HTTP 200 and success=false; handler-level authorization also supports HTTP 403. Unavailable log data uses the standard success=false envelope. Ignores the current proxy_supplier_id selection so other available suppliers remain selectable.",
+        "tags": [
+          "Usage logs"
+        ],
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ],
+        "x-access-policy": "AdminAuth",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Existing log type filter."
+          },
+          {
+            "name": "start_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "end_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Inclusive Unix timestamp in seconds."
+          },
+          {
+            "name": "model_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "token_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "upstream_request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": ""
+          },
+          {
+            "name": "proxy_supplier_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Administrator-only proxy supplier identity. Omit for all records; 0 selects records without a recorded supplier. Historical records are never attributed using a channel's current binding."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": ""
+            },
+            "description": "Literal substring, not a SQL wildcard pattern. An empty query lists available values."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Continuation cursor from the previous page. Reuse it only with the same query and filter scope."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": ""
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available values, or a standard success=false failure envelope without data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogSupplierChoicesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid field, cursor, limit or filter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Administrator access required"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7655,6 +8230,21 @@
           },
           "official_price": {
             "$ref": "#/components/schemas/OfficialAPIPrice"
+          },
+          "base_reference": {
+            "$ref": "#/components/schemas/PublicBaseReference"
+          },
+          "vendor_name": {
+            "type": "string",
+            "description": "Public model-provider metadata, separate from the administrator-only proxy supplier."
+          },
+          "vendor_icon": {
+            "type": "string",
+            "description": "Public model-provider metadata, separate from the administrator-only proxy supplier."
+          },
+          "vendor_description": {
+            "type": "string",
+            "description": "Public model-provider metadata, separate from the administrator-only proxy supplier."
           }
         },
         "required": [
@@ -7781,6 +8371,131 @@
           "usable_group",
           "pricing_groups",
           "pricing_version"
+        ]
+      },
+      "LogTextSuggestion": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "Stored filter value. Do not replace it with the display label."
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "LogSupplierChoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "LogTextSuggestionsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LogTextSuggestion"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "items",
+              "next_cursor"
+            ]
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "LogSupplierChoicesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LogSupplierChoice"
+                }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "items",
+              "next_cursor"
+            ]
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "PublicBaseReference": {
+        "type": "object",
+        "description": "Public global/default input-output reference used only for display comparison. Both rates are finite and nonnegative with a positive sum. This is independent of procurement and never a billing fallback for a supplier-bound group. Official model-provider reference prices remain a separate dataset.",
+        "properties": {
+          "input_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "output_usd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "price_unit": {
+            "type": "string",
+            "enum": [
+              "million_tokens"
+            ]
+          }
+        },
+        "required": [
+          "input_usd",
+          "output_usd",
+          "price_unit"
         ]
       }
     },

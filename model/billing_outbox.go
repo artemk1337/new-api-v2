@@ -433,6 +433,9 @@ func processBillingLogOutbox(event *BillingOutbox) error {
 }
 
 func deliverBillingOutboxLog(event *BillingOutbox, log *Log) error {
+	if !captureLogProxySupplier(log, log.ProxySupplierID) {
+		classifyLegacySupplierLog(log)
+	}
 	var count int64
 	if err := LOG_DB.Model(&Log{}).Where("request_id = ?", log.RequestId).Count(&count).Error; err != nil {
 		return err
@@ -445,7 +448,7 @@ func deliverBillingOutboxLog(event *BillingOutbox, log *Log) error {
 		// A staged held-reserve intent can be delivered after its grace period.
 		// If finalization later resumes, replace that preliminary view with the
 		// final charge instead of keeping a stale or duplicate consume log.
-		if err := LOG_DB.Model(&Log{}).Where("request_id = ?", log.RequestId).Updates(map[string]interface{}{
+		updates := map[string]interface{}{
 			"user_id":             log.UserId,
 			"created_at":          log.CreatedAt,
 			"type":                log.Type,
@@ -459,12 +462,18 @@ func deliverBillingOutboxLog(event *BillingOutbox, log *Log) error {
 			"use_time":            log.UseTime,
 			"is_stream":           log.IsStream,
 			"channel_id":          log.ChannelId,
+			"proxy_supplier_id":   log.ProxySupplierID,
 			"token_id":            log.TokenId,
 			"group":               log.Group,
 			"ip":                  log.Ip,
 			"upstream_request_id": log.UpstreamRequestId,
 			"other":               log.Other,
-		}).Error; err != nil {
+		}
+		if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+			// The original timestamp is a partition/sorting key in ClickHouse.
+			delete(updates, "created_at")
+		}
+		if err := logSupplierWriteDB(LOG_DB).Model(&Log{}).Where("request_id = ?", log.RequestId).Updates(updates).Error; err != nil {
 			return err
 		}
 	}
@@ -597,6 +606,11 @@ func refundTaskLog(event *BillingOutbox) error {
 		other["billing_overage_quota"] = task.PrivateData.BillingOverageQuota
 	}
 	if bc := task.PrivateData.BillingContext; bc != nil {
+		proxySupplierID := bc.SupplierID
+		if bc.PriceSnapshot != nil && bc.PriceSnapshot.SupplierTariff != nil && bc.PriceSnapshot.SupplierTariff.SupplierID > 0 {
+			proxySupplierID = bc.PriceSnapshot.SupplierTariff.SupplierID
+		}
+		SetLogProxySupplier(other, proxySupplierID)
 		other["model_price"] = bc.ModelPrice
 		if bc.ModelRatio > 0 {
 			other["model_ratio"] = bc.ModelRatio
