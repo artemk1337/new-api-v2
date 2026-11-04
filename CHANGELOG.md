@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.214 — 2026-11-04
+
+- Add expandable answers for balance top-ups, request pricing, model selection, and support below the home page connection steps.
+- Explain platform quota usage, including model prices, token counts, and group multipliers.
+- Add a final API-key action that opens registration for guests and key management for signed-in users; translate the new content into all six interface languages.
+
 ## v1.1.213 — 2026-11-04
 
 - Present password and API-key sign-in as equal tabs while preserving the existing site theme, header, and account authentication flow.
