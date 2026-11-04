@@ -62,6 +62,7 @@ import {
   OPENROUTER_CHANNEL_TYPE,
   OPENROUTER_ENDPOINT,
 } from './constants'
+import { PricingSyncReview } from './pricing-sync-review'
 import { PricingSyncSources } from './pricing-sync-sources'
 import {
   buildPricingSyncPatches,
@@ -143,6 +144,7 @@ export function UpstreamRatioSync() {
   >(null)
   const [resolutions, setResolutions] = useState<ResolutionsMap>({})
   const [pendingAutoModels, setPendingAutoModels] = useState<string[]>([])
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   const { data: channelsData } = useQuery({
     queryKey: ['upstream-channels'],
@@ -559,12 +561,15 @@ export function UpstreamRatioSync() {
     ]
   )
 
-  const handleApplySync = () => {
-    toast.info(t('Syncing prices, please wait...'))
-    performSync()
-  }
-
-  const hasSelections = Object.keys(resolutions).length > 0
+  const selectedFieldCount = Object.values(resolutions).reduce(
+    (count, fields) =>
+      count +
+      Object.keys(fields).filter(
+        (field) => field !== 'billing_mode' || !('billing_expr' in fields)
+      ).length,
+    0
+  )
+  const hasSelections = selectedFieldCount > 0
   const isPricingSyncReady =
     channelsData?.success === true &&
     syncConfigData?.success === true &&
@@ -588,22 +593,23 @@ export function UpstreamRatioSync() {
         onSave={() => saveConfigMutation.mutate()}
       />
 
-      <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='space-y-1'>
+          <p className='text-sm'>
+            {t(
+              'Select the values to copy. Checking prices does not change your settings.'
+            )}
+          </p>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'These are the rates charged to your users. Importing prices does not change provider charges.'
+            )}
+          </p>
+        </div>
         <div className='flex flex-col gap-2 sm:flex-row'>
           <Button onClick={handleFetchConfiguredSources} disabled={isLoading}>
             <RefreshCcw className='mr-2 h-4 w-4' />
             {t('Check prices')}
-          </Button>
-          <Button
-            variant='secondary'
-            onClick={handleApplySync}
-            disabled={!hasSelections || isLoading}
-          >
-            {isSyncPending && (
-              <span className='mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
-            )}
-            <CheckSquare className='mr-2 h-4 w-4' />
-            {t('Apply Sync')}
           </Button>
         </div>
       </div>
@@ -627,6 +633,7 @@ export function UpstreamRatioSync() {
             resolutions={resolutions}
             isDisabled={isLoading}
             isSyncing={fetchMutation.isPending}
+            hasChecked={pricingSnapshotVersion !== null}
             onSelectValue={handleSelectValue}
             onUnselectValue={handleUnselectValue}
           />
@@ -649,6 +656,7 @@ export function UpstreamRatioSync() {
             resolutions={resolutions}
             isDisabled={isLoading}
             isSyncing={fetchMutation.isPending}
+            hasChecked={pricingSnapshotVersion !== null}
             onSelectValue={handleSelectValue}
             onUnselectValue={handleUnselectValue}
             autoSources={automaticSources}
@@ -664,6 +672,36 @@ export function UpstreamRatioSync() {
           />
         </TabsContent>
       </Tabs>
+
+      {hasSelections && (
+        <div className='bg-background sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 shadow-sm'>
+          <p className='text-sm font-medium'>
+            {t('Selected fields: {{count}}', { count: selectedFieldCount })}
+          </p>
+          <div className='flex items-center gap-2'>
+            <Button
+              variant='ghost'
+              disabled={isLoading}
+              onClick={() => setResolutions({})}
+            >
+              {t('Clear selection')}
+            </Button>
+            <Button onClick={() => setReviewOpen(true)} disabled={isLoading}>
+              <CheckSquare className='mr-2 h-4 w-4' />
+              {t('Review changes')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <PricingSyncReview
+        open={reviewOpen && hasSelections}
+        onOpenChange={setReviewOpen}
+        differences={differences}
+        resolutions={resolutions}
+        isPending={isSyncPending}
+        onApply={performSync}
+      />
 
       <AlertDialog
         open={pendingAutoModels.length > 0}

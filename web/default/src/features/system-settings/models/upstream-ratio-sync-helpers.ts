@@ -331,10 +331,24 @@ export function buildPricingSyncPatches(
   return patches
 }
 
+export function formatSyncValue(field: string, value: number | string): string {
+  return RATIO_SYNC_FIELDS.includes(field as RatioType)
+    ? `×${value}`
+    : String(value)
+}
+
 export function getSyncFieldLabel(
   ratioType: string,
   t: (key: string) => string
 ): string {
+  if (ratioType === 'model_ratio') return t('Input tokens')
+  if (ratioType === 'completion_ratio') return t('Output tokens')
+  if (ratioType === 'cache_ratio') return t('Cache read price')
+  if (ratioType === 'create_cache_ratio') return t('Cache write price')
+  if (ratioType === 'model_price') return t('Per-request')
+  if (ratioType === 'image_ratio') return t('Image tokens')
+  if (ratioType === 'audio_ratio') return t('Input audio')
+  if (ratioType === 'audio_completion_ratio') return t('Output audio')
   const opt = RATIO_TYPE_OPTIONS.find((o) => o.value === ratioType)
   if (opt) return t(opt.label)
   return ratioType

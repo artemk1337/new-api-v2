@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.222 — 2026-11-04
+
+- Compare one upstream pricing source at a time using base USD token rates, projected prices after import, and percentage changes; keep raw coefficients in expandable details.
+- Review selected pricing changes before saving, account for selected base and audio dependencies, and preserve manual and automatic update preferences.
+- Clarify unchanged prices, unavailable price previews, and the distinction between user billing rates and provider charges in all six interface languages.
+
 ## v1.1.221 — 2026-11-04
 
 - Combine base prices and dynamic tiers into one compact catalogue table with input, output, cache, and other configured rates on the same row.

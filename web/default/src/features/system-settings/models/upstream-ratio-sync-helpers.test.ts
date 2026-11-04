@@ -23,6 +23,7 @@ import {
   buildPricingMapDiffPatches,
   buildPricingSyncPatches,
   getDisplaySyncFields,
+  formatSyncValue,
   getPricingSyncErrorMessage,
   getRunnablePricingSyncSources,
   isPricingSyncVersionConflict,
@@ -42,6 +43,17 @@ const ratioOptionKeys = [
 ]
 
 describe('pricing sync category patches', () => {
+  test('distinguishes multipliers from fixed prices and billing expressions', () => {
+    assert.equal(formatSyncValue('audio_ratio', 0.93), '×0.93')
+    assert.equal(formatSyncValue('audio_completion_ratio', 1.87), '×1.87')
+    assert.equal(formatSyncValue('image_ratio', 1), '×1')
+    assert.equal(formatSyncValue('model_price', 0.25), '0.25')
+    assert.equal(
+      formatSyncValue('billing_expr', 'input_tokens * 2'),
+      'input_tokens * 2'
+    )
+    assert.equal(formatSyncValue('billing_mode', 'tiered_expr'), 'tiered_expr')
+  })
   test('extracts pricing sync errors with the expected precedence', () => {
     assert.equal(
       getPricingSyncErrorMessage(
