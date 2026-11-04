@@ -40,7 +40,7 @@ import {
 } from '../constants'
 import { filterModelsForFacet, parseTags } from '../lib/filters'
 import { getModelType } from '../lib/model-type'
-import { sortGroupsByName } from '../lib/pricing-group-order'
+import { sortGroupsByRatio } from '../lib/pricing-group-order'
 import type { PricingModel, PricingVendor } from '../types'
 
 type FilterOption = {
@@ -236,7 +236,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
       label: t('All Groups'),
       count: groupModels.length,
     },
-    ...sortGroupsByName(props.groups, props.groupNames)
+    ...sortGroupsByRatio(props.groups, props.groupRatios ?? {})
       .map((group) => {
         const count = countBy(groupModels, (model) =>
           model.enable_groups?.includes(group)

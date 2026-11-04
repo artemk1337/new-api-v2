@@ -19,7 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { sortGroupsByName } from './pricing-group-order'
+import { sortGroupsByName, sortGroupsByRatio } from './pricing-group-order'
+
+test('sortGroupsByRatio orders by ascending ratio without changing the input', () => {
+  const groups = ['standard', 'beta', 'free', 'alpha', 'premium']
+
+  assert.deepEqual(
+    sortGroupsByRatio(groups, { beta: 0.1, free: 0, alpha: 0.1, premium: 2 }),
+    ['free', 'alpha', 'beta', 'standard', 'premium']
+  )
+  assert.deepEqual(groups, ['standard', 'beta', 'free', 'alpha', 'premium'])
+})
 
 test('sortGroupsByName sorts groups by display name', () => {
   const groups = sortGroupsByName(['zebra', 'alpha', 'beta'], {

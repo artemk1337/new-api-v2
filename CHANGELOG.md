@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.220 — 2026-11-04
+
+- Show pricing card benefits as “Save up to X%” in all six interface languages.
+- Sort catalogue group filters by ascending coefficient, keeping “All Groups” first.
+
 ## v1.1.219 — 2026-11-04
 
 - Revert supplier/profile pricing and the related administration and usage-log changes; restore shared channel/group tags, global model prices, group coefficients, and the previous pricing catalogue and Auto behavior.

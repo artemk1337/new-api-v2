@@ -650,7 +650,7 @@
     "Batch upstream model updates applied: {{channels}} channels, {{added}} added, {{removed}} removed, {{fails}} failed": "Batch upstream model updates applied: {{channels}} channels, {{added}} added, {{removed}} removed, {{fails}} failed",
     "Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.": "Before the request, Auto reserves the amount required by the most expensive selected group. Only the actual cost is charged.",
     "Benefit": "Benefit",
-    "Benefit {{percent}}%": "Benefit {{percent}}%",
+    "Benefit {{percent}}%": "Save up to {{percent}}%",
     "Best for single-tenant deployments. Pricing and billing options stay hidden.": "Best for single-tenant deployments. Pricing and billing options stay hidden.",
     "Best TTFT": "Best TTFT",
     "Billable input tokens": "Billable input tokens",
