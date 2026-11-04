@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.207 — 2026-11-04
+
+- Replace notification tabs with a single, wider updates timeline grouped by month, with concise localized dates and expandable long announcements.
+- Keep the updates button available on mobile and count only unread timeline entries.
+- Translate the timeline controls into all six interface languages.
+
 ## v1.1.206 — 2026-11-01
 
 - Advertise `/v1/audio/speech` for the OpenAI `tts-1` and `gpt-4o-mini-tts` model families instead of the chat endpoint.
