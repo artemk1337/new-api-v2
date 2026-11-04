@@ -136,7 +136,6 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               pricingGroups={form.watch('PricingGroups')}
               topupGroupRatio={form.watch('TopupGroupRatio')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
-              bindingsLocked={form.formState.isDirty || isSaving}
               onChange={(field, value) =>
                 handleFieldChange(field as keyof GroupFormValues, value)
               }

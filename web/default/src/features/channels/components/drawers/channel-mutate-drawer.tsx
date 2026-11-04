@@ -16,6 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  type ReactNode,
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react'
+import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -42,17 +51,9 @@ import {
   SlidersHorizontal,
   Wand2,
 } from 'lucide-react'
-import {
-  type ReactNode,
-  useEffect,
-  useState,
-  useMemo,
-  useCallback,
-  useRef,
-} from 'react'
-import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import type { PricingGroupRecord } from '@/features/users/api'
 
 import {
   sideDrawerContentClassName,
@@ -68,6 +69,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
+import { getTags } from '@/lib/tags'
 import {
   Form,
   FormControl,
@@ -108,7 +110,6 @@ import {
   SecureVerificationDialog,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
-import type { PricingGroupRecord } from '@/features/users/api'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useHiddenClickUnlock } from '@/hooks/use-hidden-click-unlock'
 import {
@@ -118,7 +119,6 @@ import {
 } from '@/lib/admin-permissions'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { ROLE } from '@/lib/roles'
-import { getTags } from '@/lib/tags'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -167,7 +167,6 @@ import {
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
-import { ChannelSupplierFields } from '../channel-supplier-fields'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
@@ -747,7 +746,9 @@ export function ChannelMutateDrawer({
   const currentAllowServiceTier = form.watch('allow_service_tier')
   const currentDisableStore = form.watch('disable_store')
   const currentAllowSafetyIdentifier = form.watch('allow_safety_identifier')
-  const currentAllowIncludeObfuscation = form.watch('allow_include_obfuscation')
+  const currentAllowIncludeObfuscation = form.watch(
+    'allow_include_obfuscation'
+  )
   const currentAllowInferenceGeo = form.watch('allow_inference_geo')
   const currentAllowSpeed = form.watch('allow_speed')
   const currentClaudeBetaQuery = form.watch('claude_beta_query')
@@ -965,56 +966,56 @@ export function ChannelMutateDrawer({
   const advancedSummary = advancedHaveErrors ? t('Error') : undefined
   const routingStrategyConfigured = Boolean(
     currentPriority ||
-    currentWeight ||
-    currentTestModel?.trim() ||
-    (currentAutoBan ?? 1) !== 1
+      currentWeight ||
+      currentTestModel?.trim() ||
+      (currentAutoBan ?? 1) !== 1
   )
   const internalNotesConfigured = Boolean(
     currentTag?.trim() || currentRemark?.trim()
   )
   const overrideRulesConfigured = Boolean(
     hasConfiguredOverrideValue(currentStatusCodeMapping) ||
-    hasConfiguredOverrideValue(currentParamOverride) ||
-    hasConfiguredOverrideValue(currentHeaderOverride)
+      hasConfiguredOverrideValue(currentParamOverride) ||
+      hasConfiguredOverrideValue(currentHeaderOverride)
   )
   const extraSettingsConfigured = Boolean(
     currentForceFormat ||
-    currentThinkingToContent ||
-    currentPassThroughBodyEnabled ||
-    currentDisableTaskPollingSleep ||
-    currentProxy?.trim() ||
-    currentSystemPrompt?.trim() ||
-    currentSystemPromptOverride
+      currentThinkingToContent ||
+      currentPassThroughBodyEnabled ||
+      currentDisableTaskPollingSleep ||
+      currentProxy?.trim() ||
+      currentSystemPrompt?.trim() ||
+      currentSystemPromptOverride
   )
   let fieldPassthroughConfigured = false
   if (currentType === 1) {
     fieldPassthroughConfigured = Boolean(
       currentAllowServiceTier ||
-      currentDisableStore ||
-      currentAllowSafetyIdentifier ||
-      currentAllowIncludeObfuscation ||
-      currentAllowInferenceGeo
+        currentDisableStore ||
+        currentAllowSafetyIdentifier ||
+        currentAllowIncludeObfuscation ||
+        currentAllowInferenceGeo
     )
   } else if (currentType === 14) {
     fieldPassthroughConfigured = Boolean(
       currentAllowServiceTier ||
-      currentAllowInferenceGeo ||
-      currentAllowSpeed ||
-      currentClaudeBetaQuery
+        currentAllowInferenceGeo ||
+        currentAllowSpeed ||
+        currentClaudeBetaQuery
     )
   }
   const upstreamModelDetectionConfigured = Boolean(
     upstreamModelUpdateCheckEnabled ||
-    currentUpstreamModelUpdateAutoSyncEnabled ||
-    currentUpstreamModelUpdateIgnoredModels?.trim()
+      currentUpstreamModelUpdateAutoSyncEnabled ||
+      currentUpstreamModelUpdateIgnoredModels?.trim()
   )
   const advancedConfigured = Boolean(
     routingStrategyConfigured ||
-    internalNotesConfigured ||
-    overrideRulesConfigured ||
-    extraSettingsConfigured ||
-    fieldPassthroughConfigured ||
-    upstreamModelDetectionConfigured
+      internalNotesConfigured ||
+      overrideRulesConfigured ||
+      extraSettingsConfigured ||
+      fieldPassthroughConfigured ||
+      upstreamModelDetectionConfigured
   )
   const advancedNavChildren: ChannelEditorNavChildItem[] = [
     {
@@ -1666,7 +1667,7 @@ export function ChannelMutateDrawer({
         }
       }
 
-      channelMutation.mutate(data)
+      await channelMutation.mutateAsync(data)
     },
     [
       isEditing,
@@ -2728,18 +2729,14 @@ export function ChannelMutateDrawer({
                                               </Badge>
                                             )
                                           )}
-                                          {hiddenAdvancedCustomRouteTypeCount >
-                                            0 && (
+                                          {hiddenAdvancedCustomRouteTypeCount > 0 && (
                                             <Badge
                                               variant='outline'
                                               title={
                                                 advancedCustomRouteTypeTitle
                                               }
                                             >
-                                              +
-                                              {
-                                                hiddenAdvancedCustomRouteTypeCount
-                                              }
+                                              +{hiddenAdvancedCustomRouteTypeCount}
                                             </Badge>
                                           )}
                                           {!advancedCustomStats.valid && (
@@ -2900,7 +2897,7 @@ export function ChannelMutateDrawer({
                                         />
                                       </FormControl>
                                       <FormDescription>
-                                        <span className='flex flex-col gap-2'>
+                                        <div className='flex flex-col gap-2'>
                                           <span>{keyDescription}</span>
                                           {isBatchMode && (
                                             <Button
@@ -2914,7 +2911,7 @@ export function ChannelMutateDrawer({
                                               {t('Remove Duplicates')}
                                             </Button>
                                           )}
-                                        </span>
+                                        </div>
                                       </FormDescription>
                                       {isEditing && canRevealChannelKey && (
                                         <div className='border-border/60 mt-4 flex flex-col gap-3 border-y border-dashed py-4'>
@@ -3479,11 +3476,6 @@ export function ChannelMutateDrawer({
                               )}
                             />
                           </div>
-
-                          <ChannelSupplierFields
-                            form={form}
-                            disabled={!canEditSensitive}
-                          />
 
                           <div className='border-border/60 rounded-lg border p-4'>
                             <FormField
@@ -4183,7 +4175,9 @@ export function ChannelMutateDrawer({
                           >
                             <CardHeading
                               title={t('Field passthrough controls')}
-                              icon={<SlidersHorizontal className='h-4 w-4' />}
+                              icon={
+                                <SlidersHorizontal className='h-4 w-4' />
+                              }
                             />
                             <fieldset
                               disabled={sensitiveLocked}

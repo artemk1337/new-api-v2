@@ -69,9 +69,6 @@ type upstreamPricingStep struct {
 }
 
 func isUpstreamPricingSyncChannel(channel *model.Channel, hosts map[string]struct{}) bool {
-	if supplierBoundPricingSyncChannel(channel) {
-		return false
-	}
 	baseURL, err := url.Parse(channel.GetBaseURL())
 	return err == nil && isUpstreamPricingSyncURL(baseURL, hosts)
 }
@@ -89,9 +86,6 @@ func fetchChannelPricing(ctx context.Context, channel *model.Channel, hosts map[
 }
 
 func fetchChannelPricingWithClient(ctx context.Context, channel *model.Channel, hosts map[string]struct{}, client *http.Client) (fetchedUpstreamPricing, error) {
-	if supplierBoundPricingSyncChannel(channel) {
-		return fetchedUpstreamPricing{}, model.ErrPricingSyncSupplierBound
-	}
 	return fetchPricingSyncURL(ctx, strings.TrimRight(channel.GetBaseURL(), "/")+defaultEndpoint, "pricing", hosts, "", client)
 }
 
@@ -445,12 +439,9 @@ func validPricingSyncContract(data map[string]any, modelName string) bool {
 }
 
 func pricingSyncSourceCurrentTx(tx *gorm.DB, source model.PricingSyncSource, expectedVersion int64) error {
-	if err := model.LockLegacyPricingSyncChannels(tx, []int{source.ChannelID}); err != nil {
-		return err
-	}
 	version := model.Option{}
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		First(&version, map[string]any{"key": "PricingSyncConfigVersion"}).Error; err != nil {
+		First(&version, "key = ?", "PricingSyncConfigVersion").Error; err != nil {
 		return err
 	}
 	if version.Value != strconv.FormatInt(expectedVersion, 10) {
@@ -684,9 +675,6 @@ func pricingSyncFetchTargetForSource(source model.PricingSyncSource, channel *mo
 	default:
 		if channel == nil {
 			return pricingSyncFetchTarget{}, fmt.Errorf("pricing sync channel %d was deleted", source.ChannelID)
-		}
-		if supplierBoundPricingSyncChannel(channel) {
-			return pricingSyncFetchTarget{}, model.ErrPricingSyncSupplierBound
 		}
 		baseURL = channel.GetBaseURL()
 		identity = pricingSourceIdentity(channel)
@@ -1254,9 +1242,6 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 			continue
 		}
 		channel := channelsByID[source.ChannelID]
-		if channel != nil && supplierBoundPricingSyncChannel(channel) {
-			continue
-		}
 		if source.ChannelID > 0 && (channel == nil || channel.Status != common.ChannelStatusEnabled) {
 			staleSources[source.ChannelID] = struct{}{}
 			continue
@@ -1402,7 +1387,7 @@ func runUpstreamPricingSyncTaskOnce(ctx context.Context, previousCandidateHash s
 			return summary, nil
 		}
 	}
-	if err := model.ApplyPricingSyncUpdateFromSourcesIfVersion(patches, states, activeIDs, configVersion); err != nil {
+	if err := model.ApplyPricingSyncUpdateIfVersion(patches, states, configVersion); err != nil {
 		return summary, fmt.Errorf("upstream pricing sync apply failed: %w", err)
 	}
 	summary.AppliedModels = applied

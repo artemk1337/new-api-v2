@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -27,10 +26,6 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	// the subsequent failure of the response body should be regarded as a non-recoverable error,
 	// and can be terminated directly.
 	defer service.CloseResponseBodyGracefully(resp)
-	bound := supplierResponseBound(c, info)
-	if bound {
-		c.Set("supplier_pricing", true)
-	}
 	usage := &dto.Usage{}
 	usage.PromptTokens = info.GetEstimatePromptTokens()
 	usage.TotalTokens = info.GetEstimatePromptTokens()
@@ -55,17 +50,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 					usage.TotalTokens = simpleResponse.TotalTokens
 				}
 			}
-			publicData := data
-			if bound {
-				projected, err := projectSupplierAudioResponse([]byte(data))
-				if err != nil {
-					_ = supplierStreamErrorData(c)
-					sr.Stop(err)
-					return
-				}
-				publicData = string(projected)
-			}
-			if err := helper.StringData(c, publicData); err != nil {
+			if err := helper.StringData(c, data); err != nil {
 				sr.Error(err)
 			}
 		})
@@ -80,15 +65,6 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		}
 
 		// 写入响应到客户端
-		if bound && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "json") {
-			publicData, projectErr := projectSupplierAudioResponse(bodyBytes)
-			if projectErr != nil {
-				publicData = []byte(`{"error":{"message":"Request could not be completed","type":"upstream_error","code":"request_failed"}}`)
-			}
-			c.Writer.WriteHeaderNow()
-			_, _ = c.Writer.Write(publicData)
-			return usage
-		}
 		c.Writer.WriteHeaderNow()
 		_, err = c.Writer.Write(bodyBytes)
 		if err != nil {
@@ -145,17 +121,8 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError), nil
 	}
-	publicBody := responseBody
-	if supplierResponseBound(c, info) {
-		c.Set("supplier_pricing", true)
-		if responseFormat == "" || responseFormat == "json" || responseFormat == "verbose_json" || strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "json") {
-			publicBody, err = projectSupplierAudioResponse(responseBody)
-			if err != nil {
-				return types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway), nil
-			}
-		}
-	}
-	service.IOCopyBytesGracefully(c, resp, publicBody)
+	// 写入新的 response body
+	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	var responseData struct {
 		Usage *dto.Usage `json:"usage"`

@@ -16,24 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
-
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { UsageLogs } from '@/features/usage-logs'
-import { parseProxySupplierId } from '@/features/usage-logs/lib/suggestions'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
 } from '@/features/usage-logs/section-registry'
-import { ROLE } from '@/lib/roles'
-import { useAuthStore } from '@/stores/auth-store'
 
 const logTypeValues = ['0', '1', '2', '3', '4', '5', '6', '7'] as const
 const logTypeSearchSchema = z
-  .preprocess((value) => {
-    if (value == null || value === '') return undefined
-    return Array.isArray(value) ? value : [value]
-  }, z.array(z.enum(logTypeValues)).optional())
+  .preprocess(
+    (value) => {
+      if (value == null || value === '') return undefined
+      return Array.isArray(value) ? value : [value]
+    },
+    z.array(z.enum(logTypeValues)).optional()
+  )
   .catch([])
 
 const usageLogsSearchSchema = z.object({
@@ -48,34 +47,16 @@ const usageLogsSearchSchema = z.object({
   username: z.string().optional().catch(''),
   requestId: z.string().optional().catch(''),
   upstreamRequestId: z.string().optional().catch(''),
-  proxySupplierId: z.preprocess(parseProxySupplierId, z.string().optional()),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })
 
 export const Route = createFileRoute('/_authenticated/usage-logs/$section')({
-  beforeLoad: ({ params, search, location }) => {
+  beforeLoad: ({ params, search }) => {
     if (!isUsageLogsSectionId(params.section)) {
       throw redirect({
         to: '/usage-logs/$section',
         params: { section: USAGE_LOGS_DEFAULT_SECTION },
-      })
-    }
-    const isAdmin = (useAuthStore.getState().auth.user?.role ?? 0) >= ROLE.ADMIN
-    const hasSupplierSearch = new URLSearchParams(location.searchStr).has(
-      'proxySupplierId'
-    )
-    if (
-      hasSupplierSearch &&
-      (!isAdmin ||
-        params.section !== 'common' ||
-        search.proxySupplierId === undefined)
-    ) {
-      throw redirect({
-        to: '/usage-logs/$section',
-        params: { section: params.section },
-        search: { ...search, proxySupplierId: undefined },
-        replace: true,
       })
     }
     // type 仅 common 使用，非 common 时清掉 URL 里的 type

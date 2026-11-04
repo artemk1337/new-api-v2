@@ -243,7 +243,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
     // Vendor column
     {
       accessorKey: 'vendor_id',
-      header: t('Model provider'),
+      header: t('Vendor'),
       cell: ({ row }) => {
         const vendorId = row.getValue('vendor_id') as number
         const vendor = vendorMap[vendorId]

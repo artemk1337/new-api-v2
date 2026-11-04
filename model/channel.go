@@ -48,8 +48,6 @@ type Channel struct {
 	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
 	OtherInfo         string  `json:"other_info"`
 	Tag               *string `json:"tag" gorm:"index"`
-	SupplierID        *int    `json:"supplier_id" gorm:"index"`
-	SupplierProfileID *int    `json:"supplier_profile_id" gorm:"index"`
 	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
@@ -556,24 +554,14 @@ func (channel *Channel) GetAutoBan() bool {
 }
 
 func (channel *Channel) Save() error {
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
-			return err
-		}
-		return channelSupplierWriteDB(tx).Save(channel).Error
-	})
+	return DB.Save(channel).Error
 }
 
 func (channel *Channel) SaveWithoutKey() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
-			return err
-		}
-		return channelSupplierWriteDB(tx, "key").Save(channel).Error
-	})
+	return DB.Omit("key").Save(channel).Error
 }
 
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
@@ -660,14 +648,10 @@ func BatchInsertChannels(channels []Channel) error {
 		}
 	}()
 
-	if err := lockChannelSupplierMutationTx(tx); err != nil {
-		tx.Rollback()
-		return err
-	}
 	for i := range channels {
-		if err := validateChannelSupplierMutationTx(tx, &channels[i]); err != nil {
-			tx.Rollback()
-			return err
+		channels[i].Group = ratio_setting.PricingGroupKeysCSV(channels[i].Group)
+		if channels[i].Group == "" {
+			channels[i].Group = ratio_setting.PricingGroupKey("default")
 		}
 	}
 
@@ -678,7 +662,7 @@ func BatchInsertChannels(channels []Channel) error {
 				return err
 			}
 		}
-		if err := channelSupplierWriteDB(tx).Create(&chunk).Error; err != nil {
+		if err := tx.Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -758,14 +742,15 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
+	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
+	if channel.Group == "" {
+		channel.Group = ratio_setting.PricingGroupKey("default")
+	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
-			return err
-		}
 		if err := registerPlatformTagTx(tx, channel.GetTag()); err != nil {
 			return err
 		}
-		if err := channelSupplierWriteDB(tx).Create(channel).Error; err != nil {
+		if err := tx.Create(channel).Error; err != nil {
 			return err
 		}
 		return channel.AddAbilities(tx)
@@ -778,10 +763,10 @@ func (channel *Channel) Insert() error {
 }
 
 func (channel *Channel) Update() error {
-	return channel.UpdateWithSupplierPermission(false)
-}
-
-func (channel *Channel) UpdateWithSupplierPermission(allowSupplierBindingChange bool) error {
+	channel.Group = ratio_setting.PricingGroupKeysCSV(channel.Group)
+	if channel.Group == "" {
+		channel.Group = ratio_setting.PricingGroupKey("default")
+	}
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -821,20 +806,11 @@ func (channel *Channel) UpdateWithSupplierPermission(allowSupplierBindingChange 
 		}
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := prepareChannelSupplierMutationTx(tx, channel, allowSupplierBindingChange); err != nil {
-			return err
-		}
 		if err := registerPlatformTagTx(tx, channel.GetTag()); err != nil {
 			return err
 		}
-		writeDB := channelSupplierWriteDB(tx)
-		if err := writeDB.Model(channel).Updates(channel).Error; err != nil {
+		if err := tx.Model(channel).Updates(channel).Error; err != nil {
 			return err
-		}
-		if channelSupplierColumnsReadyTx(tx) {
-			if err := tx.Model(channel).UpdateColumns(map[string]any{"supplier_id": channel.SupplierID, "supplier_profile_id": channel.SupplierProfileID}).Error; err != nil {
-				return err
-			}
 		}
 		if err := tx.Model(channel).First(channel, "id = ?", channel.Id).Error; err != nil {
 			return err
@@ -1084,7 +1060,7 @@ func DisableChannelByTag(tag string) error {
 	return nil
 }
 
-func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, priority *int64, weight *uint, paramOverride *string, headerOverride *string, allowSupplierGroupChange ...bool) error {
+func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, priority *int64, weight *uint, paramOverride *string, headerOverride *string) error {
 	updateData := Channel{}
 	shouldReCreateAbilities := false
 	updatedTag := tag
@@ -1121,25 +1097,6 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 	}
 
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := lockChannelSupplierMutationTx(tx); err != nil {
-			return err
-		}
-		if group != nil {
-			keys, err := supplierPricingGroupKeysTx(tx, *group)
-			if err != nil {
-				return err
-			}
-			updateData.Group = keys
-		}
-		if updateData.Group != "" && channelSupplierColumnsReadyTx(tx) && (len(allowSupplierGroupChange) == 0 || !allowSupplierGroupChange[0]) {
-			var count int64
-			if err := tx.Model(&Channel{}).Where("tag = ? AND supplier_id IS NOT NULL AND "+commonGroupCol+" != ?", tag, updateData.Group).Count(&count).Error; err != nil {
-				return err
-			}
-			if count > 0 {
-				return errors.New("insufficient permissions to change supplier channel groups")
-			}
-		}
 		if newTag != nil {
 			if err := registerPlatformTagTx(tx, *newTag); err != nil {
 				return err
@@ -1154,9 +1111,6 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 				return err
 			}
 			for _, channel := range channels {
-				if err := validateChannelSupplierMutationTx(tx, channel); err != nil {
-					return err
-				}
 				if err := channel.UpdateAbilities(tx); err != nil {
 					return err
 				}

@@ -45,9 +45,6 @@ func KeySessionInfo(c *gin.Context) {
 }
 
 func KeySessionLogs(c *gin.Context) {
-	if rejectUserProxySupplierFilter(c) {
-		return
-	}
 	token := c.MustGet("key_session_token").(*model.Token)
 	logs, err := model.GetLogByTokenId(token.Id)
 	if err != nil {

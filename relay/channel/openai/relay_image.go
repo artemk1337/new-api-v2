@@ -40,15 +40,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	}
 
 	// 写入新的 response body
-	publicBody := responseBody
-	if supplierResponseBound(c, info) {
-		c.Set("supplier_pricing", true)
-		publicBody, err = projectSupplierImageResponse(responseBody)
-		if err != nil {
-			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-		}
-	}
-	service.IOCopyBytesGracefully(c, resp, publicBody)
+	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
@@ -106,7 +98,6 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	// field (real OpenAI image events keep event == type).
 	usage := &dto.Usage{}
 	var lastStreamData []byte
-	var streamErr *types.NewAPIError
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
@@ -123,22 +114,8 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 				usage = &usageResp.Usage
 			}
 		}
-		publicData := raw
-		if supplierResponseBound(c, info) {
-			var err error
-			publicData, err = projectSupplierImageResponse(raw)
-			if err != nil {
-				writeOpenaiImageStreamChunk(c, []byte(`{"type":"error","error":{"message":"Request could not be completed","code":"request_failed"}}`))
-				streamErr = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-				sr.Stop(streamErr)
-				return
-			}
-		}
-		writeOpenaiImageStreamChunk(c, publicData)
+		writeOpenaiImageStreamChunk(c, raw)
 	})
-	if streamErr != nil {
-		return usage, streamErr
-	}
 
 	// StreamScannerHandler consumes the upstream [DONE]; re-emit it so the
 	// client still receives a terminal data: [DONE].
@@ -261,11 +238,7 @@ func OpenaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 			payload["revised_prompt"] = image.RevisedPrompt
 		}
 		if service.ValidUsage(&usageResp.Usage) {
-			publicUsage := usageResp.Usage
-			if supplierResponseBound(c, info) {
-				publicUsage = supplierPublicUsage(publicUsage)
-			}
-			payload["usage"] = publicUsage
+			payload["usage"] = usageResp.Usage
 		}
 		if err := writeOpenaiImageStreamPayload(c, "image_generation.completed", payload); err != nil {
 			if info != nil && info.StreamStatus != nil {

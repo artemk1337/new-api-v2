@@ -47,7 +47,6 @@ export interface CommonFilters {
  * Common logs specific filters
  */
 export interface CommonLogFilters extends CommonFilters {
-  proxySupplierId?: string
   model?: string
   token?: string
   group?: string
@@ -314,7 +313,6 @@ export interface GetLogsParams {
   group?: string
   request_id?: string
   upstream_request_id?: string
-  proxy_supplier_id?: number
 }
 
 export interface GetLogsResponse {
@@ -339,20 +337,6 @@ export interface GetLogStatsParams {
   group?: string
   request_id?: string
   upstream_request_id?: string
-  proxy_supplier_id?: number
-}
-
-export type LogSuggestionField =
-  | 'model_name'
-  | 'group'
-  | 'token_name'
-  | 'username'
-
-export type LogFilterOption = { value: string; label: string }
-
-export type LogFilterOptionsPage = {
-  items: LogFilterOption[]
-  next_cursor: string | null
 }
 
 export interface GetLogStatsResponse {

@@ -19,13 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-
-import { Skeleton } from '@/components/ui/skeleton'
-import { useIsAdmin } from '@/hooks/use-admin'
 import { formatLogQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth-store'
-
+import { useIsAdmin } from '@/hooks/use-admin'
+import { Skeleton } from '@/components/ui/skeleton'
 import { getLogStats, getUserLogStats } from '../api'
 import { DEFAULT_LOG_STATS } from '../constants'
 import { buildApiParams } from '../lib/utils'
@@ -52,12 +49,11 @@ function StatBadge(props: {
 export function CommonLogsStats() {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
-  const user = useAuthStore((state) => state.auth.user)
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['usage-logs-stats', user?.id, user?.role, isAdmin, searchParams],
+    queryKey: ['usage-logs-stats', isAdmin, searchParams],
     queryFn: async () => {
       const params = buildApiParams({
         page: 1,
@@ -75,11 +71,7 @@ export function CommonLogsStats() {
         ? result.data || DEFAULT_LOG_STATS
         : DEFAULT_LOG_STATS
     },
-    placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryKey[1] === user?.id &&
-      previousQuery?.queryKey[2] === user?.role
-        ? previousData
-        : undefined,
+    placeholderData: (previousData) => previousData,
   })
 
   if (isLoading) {

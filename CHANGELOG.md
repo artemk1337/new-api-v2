@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.219 — 2026-11-04
+
+- Revert supplier/profile pricing and the related administration and usage-log changes; restore shared channel/group tags, global model prices, group coefficients, and the previous pricing catalogue and Auto behavior.
+- Preserve unrelated About-page and Telegram announcement releases, existing data, and shared combobox keyboard fixes.
+- Keep procurement details hidden in historical usage logs. Check rollback compatibility before startup so native supplier bindings, task records, and incompatible pending billing work cannot silently use legacy pricing or transport.
+- Require preparation under the supplier-aware release before installing on a database containing native supplier configuration or tasks; see `docs/supplier-pricing-rollback.md`. The rollback does not drop supplier tables, erase historical records, or guess replacement coefficients.
+
 ## v1.1.218 — 2026-11-04
 
 - Add administrator-only proxy supplier filters and delayed, paginated text suggestions to common usage logs, with server-side access checks and isolated suggestion caches.

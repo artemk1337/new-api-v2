@@ -25,6 +25,8 @@ import { useTranslation } from 'react-i18next'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Tooltip,
   TooltipContent,
@@ -42,9 +44,9 @@ import {
   handleBatchDelete,
   handleBatchDisable,
   handleBatchEnable,
+  handleBatchSetTag,
 } from '../lib'
 import type { Channel } from '../types'
-import { SupplierBatchDialog } from './dialogs/supplier-batch-dialog'
 
 interface DataTableBulkActionsProps<TData> {
   table: Table<TData>
@@ -55,8 +57,9 @@ export function DataTableBulkActions<TData>({
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [showSupplierDialog, setShowSupplierDialog] = useState(false)
+  const [showTagDialog, setShowTagDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [tagValue, setTagValue] = useState('')
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
     currentUser,
@@ -91,6 +94,14 @@ export function DataTableBulkActions<TData>({
     if (!canEditSensitive) return
     handleBatchDelete(selectedIds, queryClient, () => {
       setShowDeleteConfirm(false)
+      handleClearSelection()
+    })
+  }
+
+  const handleSetTag = () => {
+    handleBatchSetTag(selectedIds, tagValue || null, queryClient, () => {
+      setShowTagDialog(false)
+      setTagValue('')
       handleClearSelection()
     })
   }
@@ -146,21 +157,20 @@ export function DataTableBulkActions<TData>({
               <Button
                 variant='outline'
                 size='icon'
-                onClick={() => setShowSupplierDialog(true)}
-                disabled={currentUser?.role !== 100}
+                onClick={() => setShowTagDialog(true)}
                 className='size-8'
-                aria-label={t('Set supplier for selected channels')}
-                title={t('Set supplier for selected channels')}
+                aria-label={t('Set tag for selected channels')}
+                title={t('Set tag for selected channels')}
               />
             }
           >
             <Tag />
             <span className='sr-only'>
-              {t('Set supplier for selected channels')}
+              {t('Set tag for selected channels')}
             </span>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('Set supplier for selected channels')}</p>
+            <p>{t('Set tag for selected channels')}</p>
           </TooltipContent>
         </Tooltip>
 
@@ -201,16 +211,47 @@ export function DataTableBulkActions<TData>({
         </Tooltip>
       </BulkActionsToolbar>
 
-      {showSupplierDialog && (
-        <SupplierBatchDialog
-          ids={selectedIds}
-          onClose={() => setShowSupplierDialog(false)}
-          onSuccess={() => {
-            setShowSupplierDialog(false)
-            handleClearSelection()
-          }}
-        />
-      )}
+      {/* Set Tag Dialog */}
+      <Dialog
+        open={showTagDialog}
+        onOpenChange={setShowTagDialog}
+        title={t('Set Tag')}
+        description={
+          <>
+            {t('Set a tag for')}
+            {selectedIds.length}{' '}
+            {t('selected channel(s). Leave empty to remove tag.')}
+          </>
+        }
+        contentHeight='auto'
+        bodyClassName='space-y-4'
+        footer={
+          <>
+            <Button
+              variant='outline'
+              onClick={() => {
+                setShowTagDialog(false)
+                setTagValue('')
+              }}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button onClick={handleSetTag}>{t('Set Tag')}</Button>
+          </>
+        }
+      >
+        <div className='grid gap-4 py-4'>
+          <div className='grid gap-2'>
+            <Label htmlFor='tag'>{t('Tag')}</Label>
+            <Input
+              id='tag'
+              placeholder={t('Enter tag name (optional)')}
+              value={tagValue}
+              onChange={(e) => setTagValue(e.target.value)}
+            />
+          </div>
+        </div>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog

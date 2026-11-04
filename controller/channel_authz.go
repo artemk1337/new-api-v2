@@ -3,15 +3,6 @@ package controller
 import "github.com/QuantumNous/new-api/model"
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
-	if _, ok := requestData["supplier_id"]; ok && !equalIntPtr(channel.SupplierID, origin.SupplierID) {
-		return true
-	}
-	if _, ok := requestData["supplier_profile_id"]; ok && !equalIntPtr(channel.SupplierProfileID, origin.SupplierProfileID) {
-		return true
-	}
-	if _, ok := requestData["group"]; ok && channel.Group != origin.Group && (channel.SupplierID != nil || origin.SupplierID != nil) {
-		return true
-	}
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
 		return true
 	}
@@ -65,17 +56,11 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 	return false
 }
 
-func equalIntPtr(a, b *int) bool {
-	return a == nil && b == nil || a != nil && b != nil && *a == *b
-}
-
 // channelSensitiveFields lists the channel fields whose modification requires
 // ChannelSensitiveWrite. They are each checked individually in
 // channelHasSensitiveChanges with a precise old-vs-new comparison; this set is
 // used to exclude them from the fail-closed scan for unknown fields.
 var channelSensitiveFields = map[string]struct{}{
-	"supplier_id":         {},
-	"supplier_profile_id": {},
 	"type":                {},
 	"key":                 {},
 	"base_url":            {},

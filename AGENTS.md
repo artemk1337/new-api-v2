@@ -19,7 +19,6 @@ web/default (React frontend; calls the HTTP API)
 - Optional scalar request fields forwarded upstream use pointers with `omitempty`, preserving explicit `0` and `false`.
 - Keep session signing keys stable across deployments: `SESSION_SECRET` takes precedence; otherwise persist `SESSION_SECRET_FILE` (default `.session-secret` in the working directory, `/data` in Docker). Multiple nodes must share the same key. Never log or commit it.
 - Tiered billing changes must first follow [`pkg/billingexpr/expr.md`](pkg/billingexpr/expr.md).
-- Supplier-bound pricing uses one exact supplier/profile and immutable real-USD tariffs without global fallback; procurement stays admin-only. See [docs/supplier-pricing.md](docs/supplier-pricing.md) for rollout and billing limits.
 - A chain event must not both credit a direct-crypto invoice and create an unmatched reconciliation record. Preserve invoice idempotency and read-only watcher behavior; see [service/AGENTS.md](service/AGENTS.md) and [model/AGENTS.md](model/AGENTS.md).
 - Production deployments use a ready registry image with an explicit tag. Before a runtime change, create and verify a fresh database backup; preserve data volumes and restart only the application service. Never build source on production.
 - GitHub Releases publish Linux amd64/arm64 binaries and checksums. Docker images support both architectures; macOS, Windows, and Electron release builds are disabled.

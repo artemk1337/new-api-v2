@@ -24,35 +24,7 @@ type PriceData struct {
 	UsePrice             bool
 	Quota                int // 按次计费的最终额度（MJ / Task）
 	QuotaToPreConsume    int // 按量计费的预消耗额度
-	QuotaPerUnit         float64
 	GroupRatioInfo       GroupRatioInfo
-	// SupplierTariff is an immutable, private procurement snapshot. A nil
-	// snapshot selects the legacy default pricing path.
-	SupplierTariff *SupplierModelTariff
-}
-
-func (p PriceData) Clone() PriceData {
-	if p.OtherRatios != nil {
-		p.OtherRatios = clonePriceRatios(p.OtherRatios)
-	}
-	if p.SupplierTariff != nil {
-		tariff := p.SupplierTariff.Clone()
-		p.SupplierTariff = &tariff
-	}
-	return p
-}
-
-func (p PriceData) Snapshot() *PriceData {
-	snapshot := p.Clone()
-	return &snapshot
-}
-
-func clonePriceRatios(source map[string]float64) map[string]float64 {
-	result := make(map[string]float64, len(source))
-	for key, value := range source {
-		result[key] = value
-	}
-	return result
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

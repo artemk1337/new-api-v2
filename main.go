@@ -148,7 +148,6 @@ func main() {
 	// schedules and executes them. Master-only execution and the UpdateTask
 	// switch are enforced inside the runner and each handler's Enabled().
 	controller.RegisterScheduledSystemTasks()
-	controller.StartSupplierPricingSyncTask()
 	service.StartSystemTaskRunner()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
@@ -293,6 +292,9 @@ func InitResources() error {
 	err = model.InitDB()
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+	if err = model.CheckLegacyPricingRollbackSafety(); err != nil {
 		return err
 	}
 	if err = authz.Init(model.DB); err != nil {

@@ -54,14 +54,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { GroupSupplierBindingEditor } from '@/features/suppliers/group-binding-editor'
 import { getGroups } from '@/features/users/api'
 import { getTags } from '@/lib/tags'
 
 import { safeJsonParse } from '../utils/json-parser'
 
 type GroupRatioVisualEditorProps = {
-  bindingsLocked?: boolean
   groupRatio: string
   pricingGroups: string
   topupGroupRatio: string
@@ -225,7 +223,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   pricingGroups,
   topupGroupRatio,
   groupGroupRatio,
-  bindingsLocked,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -443,11 +440,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 
   return (
     <div className='space-y-4'>
-      <GroupPricingTable
-        pricingGroups={pricingGroups}
-        onChange={onChange}
-        bindingsLocked={bindingsLocked}
-      />
+      <GroupPricingTable pricingGroups={pricingGroups} onChange={onChange} />
 
       {/* Topup Group Ratios */}
       <Card className={sectionCardClassName}>
@@ -686,7 +679,6 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 })
 
 type GroupPricingTableProps = {
-  bindingsLocked?: boolean
   pricingGroups: string
   onChange: (field: string, value: string) => void
 }
@@ -694,7 +686,6 @@ type GroupPricingTableProps = {
 function GroupPricingTable({
   pricingGroups,
   onChange,
-  bindingsLocked,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const { data: groupsData } = useQuery({
@@ -819,11 +810,6 @@ function GroupPricingTable({
       </CardHeader>
       <CardContent>
         <div className='space-y-3'>
-          {bindingsLocked && (
-            <p className='text-muted-foreground text-sm'>
-              {t('Save group changes before editing supplier bindings.')}
-            </p>
-          )}
           <StaticDataTable
             data={rows}
             getRowKey={(row) => row._id}
@@ -900,17 +886,6 @@ function GroupPricingTable({
                         normalizeRatio(event.target.value)
                       )
                     }
-                  />
-                ),
-              },
-              {
-                id: 'supplier',
-                header: t('Supplier'),
-                className: 'min-w-48',
-                cell: (row) => (
-                  <GroupSupplierBindingEditor
-                    groupId={row.id}
-                    disabled={bindingsLocked}
                   />
                 ),
               },
@@ -1040,6 +1015,7 @@ function GroupPricingTable({
                           updateRow(row._id, 'tag', value ?? '')
                         }
                         allowCustomValue
+                        clearOnReselect
                       />
                     </PopoverContent>
                   </Popover>

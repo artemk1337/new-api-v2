@@ -101,7 +101,7 @@ func TestValidateAutoTaskPricingContractAllowsEquivalentChannelTypes(t *testing.
 	require.NoError(t, validateAutoTaskPricingContractWithAbilities(groups, "task-model", "", abilities))
 }
 
-func TestValidateAutoTaskPricingContractAllowsDifferentTargetsAcrossGroups(t *testing.T) {
+func TestValidateAutoTaskPricingContractRejectsDifferentMappedModels(t *testing.T) {
 	priority := int64(10)
 	firstMapping := `{"task-model":"upstream-a"}`
 	secondMapping := `{"task-model":"upstream-b"}`
@@ -127,18 +127,7 @@ func TestValidateAutoTaskPricingContractAllowsDifferentTargetsAcrossGroups(t *te
 		},
 	}
 
-	require.NoError(t, validateAutoTaskPricingContractWithAbilities(groups, "task-model", "", abilities))
-}
-
-func TestValidateAutoTaskPricingContractRejectsDifferentTargetsWithinGroup(t *testing.T) {
-	firstMapping := `{"task-model":"upstream-a"}`
-	secondMapping := `{"task-model":"upstream-b"}`
-	abilities := []model.AbilityWithChannel{
-		{Ability: model.Ability{Group: "1", Model: "task-model"}, ChannelType: constant.ChannelTypeSora, ChannelModelMapping: &firstMapping},
-		{Ability: model.Ability{Group: "1", Model: "task-model"}, ChannelType: constant.ChannelTypeOpenAI, ChannelModelMapping: &secondMapping},
-	}
-
-	err := validateAutoTaskPricingContractWithAbilities([]string{"1"}, "task-model", "", abilities)
+	err := validateAutoTaskPricingContractWithAbilities(groups, "task-model", "", abilities)
 
 	require.ErrorContains(t, err, "same mapped upstream model")
 }

@@ -56,7 +56,6 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.LOG_DB = db
 
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Vendor{}))
-	require.NoError(t, db.AutoMigrate(&model.Supplier{}, &model.SupplierPricingProfile{}, &model.PricingGroupSupplierBinding{}, &model.SupplierBindingState{}, &model.SupplierPricingState{}, &model.SupplierPricingRevision{}, &model.SupplierModelPrice{}, &model.OfficialModelPrice{}))
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -173,7 +172,6 @@ func decodeUserModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 }
 
 func TestListModelsAnthropicAllowsEmptyModelList(t *testing.T) {
-	setupModelListControllerTestDB(t)
 	originalGroups := ratio_setting.PricingGroups2JSONString()
 	originalSpecialUsable := ratio_setting.GroupSpecialUsableGroup2JSONString()
 	t.Cleanup(func() {

@@ -67,22 +67,13 @@ func BuildAutoGroupSnapshot(param *RetryParam, userGroup string) ([]string, erro
 	}
 
 	requested := common.GetContextKeyStringSlice(param.Ctx, constant.ContextKeyTokenAutoGroupCandidates)
-	fetch := channelFetcher(getCompatibleSatisfiedChannel)
+	fetch := channelFetcher(model.GetRandomSatisfiedChannel)
 	if rawChannelID := strings.TrimSpace(common.GetContextKeyString(param.Ctx, constant.ContextKeyTokenSpecificChannelId)); rawChannelID != "" {
 		channelID, parseErr := strconv.Atoi(rawChannelID)
 		if parseErr != nil || channelID <= 0 {
 			return nil, fmt.Errorf("invalid specific channel id %q", rawChannelID)
 		}
-		selected, err := model.GetChannelById(channelID, true)
-		if err != nil {
-			return nil, fmt.Errorf("selected route is unavailable")
-		}
-		fetch = func(group, modelName string, _ int, _ string) (*model.Channel, error) {
-			if !model.IsChannelEnabledForGroupModel(group, modelName, channelID) || model.ValidateChannelPricingGroup(selected, group) != nil {
-				return nil, nil
-			}
-			return selected, nil
-		}
+		fetch = specificChannelAutoGroupFetcher(channelID, model.IsChannelEnabledForGroupModel)
 	}
 	groups, err := buildAutoGroupSnapshot(param, userGroup, requested, fetch)
 	if err != nil {
@@ -178,9 +169,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		if snapshotErr != nil {
 			return nil, selectGroup, snapshotErr
 		}
-		return selectAutoSnapshotChannel(param, autoGroups, getCompatibleSatisfiedChannel)
+		return selectAutoSnapshotChannel(param, autoGroups, model.GetRandomSatisfiedChannel)
 	default:
-		channel, err = getCompatibleSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
@@ -204,20 +195,7 @@ func selectAutoSnapshotChannel(param *RetryParam, groups []string, fetch channel
 }
 
 func SelectCheapestAvailableGroup(param *RetryParam, userGroup string) (*model.Channel, string, error) {
-	// Distributor preselection precedes request token/parameter parsing. Relay
-	// replaces this provisional choice using complete quotes before reserve.
-	return selectCheapestAvailableGroup(param, userGroup, getCompatibleSatisfiedChannel)
-}
-
-func getCompatibleSatisfiedChannel(group, modelName string, retry int, requestPath string) (*model.Channel, error) {
-	channel, err := model.GetRandomSatisfiedChannel(group, modelName, retry, requestPath)
-	if err != nil || channel == nil {
-		return channel, err
-	}
-	if model.ValidateChannelPricingGroup(channel, group) != nil {
-		return nil, fmt.Errorf("selected route is unavailable")
-	}
-	return channel, nil
+	return selectCheapestAvailableGroup(param, userGroup, model.GetRandomSatisfiedChannel)
 }
 
 func selectCheapestAvailableGroup(param *RetryParam, userGroup string, fetch channelFetcher) (*model.Channel, string, error) {
@@ -232,15 +210,13 @@ func selectCheapestAvailableGroup(param *RetryParam, userGroup string, fetch cha
 	slices.Sort(groupNames)
 
 	var selectedChannel *model.Channel
-	var lastFetchErr error
 	selectedGroup := "auto"
 	selectedRatio := 0.0
 
 	for _, group := range groupNames {
 		channel, err := fetch(group, param.ModelName, param.GetRetry(), param.RequestPath)
 		if err != nil {
-			lastFetchErr = err
-			continue
+			return nil, group, err
 		}
 		if channel == nil {
 			continue
@@ -256,9 +232,6 @@ func selectCheapestAvailableGroup(param *RetryParam, userGroup string, fetch cha
 	if selectedChannel != nil {
 		common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, selectedGroup)
 		logger.LogDebug(param.Ctx, "Auto selected cheapest group: %s", selectedGroup)
-	}
-	if selectedChannel == nil && lastFetchErr != nil {
-		return nil, selectedGroup, lastFetchErr
 	}
 
 	return selectedChannel, selectedGroup, nil

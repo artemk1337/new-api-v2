@@ -1,9 +1,7 @@
 package helper
 
 import (
-	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -20,34 +18,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type routePriceUnavailableError struct{ message string }
-
-func (e *routePriceUnavailableError) Error() string { return e.message }
-
-func newRoutePriceUnavailable(message string) error {
-	return &routePriceUnavailableError{message: message}
-}
-
-// IsRoutePriceUnavailable distinguishes a bad route quote from invalid caller
-// input, which must abort the request instead of trying another supplier.
-func IsRoutePriceUnavailable(err error) bool {
-	var unavailable *routePriceUnavailableError
-	return errors.As(err, &unavailable)
-}
-
 func modelPriceNotConfiguredError(modelName string, userId int) error {
 	if model.IsAdmin(userId) {
-		return newRoutePriceUnavailable(fmt.Sprintf(
+		return fmt.Errorf(
 			"模型 %s 的价格未配置。请前往「系统设置 → 运营设置」开启自用模式，或在「系统设置 → 分组与模型定价设置」中为该模型配置价格；"+
 				"Model %s price not configured. Go to System Settings → Operation Settings to enable self-use mode, or configure the model price in System Settings → Group & Model Pricing.",
 			modelName, modelName,
-		))
+		)
 	}
-	return newRoutePriceUnavailable(fmt.Sprintf(
+	return fmt.Errorf(
 		"模型 %s 的价格尚未由管理员配置，暂时无法使用，请联系站点管理员开启该模型；"+
 			"Model %s has not been priced by the administrator yet. Please contact the site administrator to enable this model.",
 		modelName, modelName,
-	))
+	)
 }
 
 // https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration
@@ -83,16 +66,6 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
-	if info.PriceData.SupplierTariff != nil {
-		return info.PriceData.Clone(), nil
-	}
-	groupRatioInfo := HandleGroupRatio(c, info)
-	if tariff, bound, err := model.ResolveSupplierModelTariff(info.UsingGroup, GetBillingModelName(info)); bound || err != nil {
-		if err != nil {
-			return types.PriceData{}, supplierPriceError(info)
-		}
-		return modelPriceHelperSupplier(c, info, promptTokens, meta, groupRatioInfo, tariff)
-	}
 	unlockPricing := ratio_setting.LockPricingConfigRead()
 	defer unlockPricing()
 	billingModelName := GetBillingModelName(info)
@@ -100,6 +73,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		return types.PriceData{}, modelPriceNotConfiguredError(info.OriginModelName, info.UserId)
 	}
 	modelPrice, usePrice := ratio_setting.GetModelPrice(billingModelName, false)
+
+	groupRatioInfo := HandleGroupRatio(c, info)
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(billingModelName) == billing_setting.BillingModeTieredExpr {
@@ -117,7 +92,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var audioRatio float64
 	var audioCompletionRatio float64
 	var freeModel bool
-	quotaPerUnit := common.GetQuotaPerUnit()
 	if !usePrice {
 		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
 		if meta.MaxTokens != 0 {
@@ -150,7 +124,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * quotaPerUnit * groupRatioInfo.GroupRatio)
+		preConsumedQuota = int(modelPrice * common.GetQuotaPerUnit() * groupRatioInfo.GroupRatio)
 	}
 
 	// check if free model pre-consume is disabled
@@ -187,7 +161,6 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation5mRatio: cacheCreationRatio5m,
 		CacheCreation1hRatio: cacheCreationRatio1h,
 		QuotaToPreConsume:    preConsumedQuota,
-		QuotaPerUnit:         quotaPerUnit,
 	}
 
 	if common.DebugEnabled {
@@ -204,29 +177,18 @@ func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []s
 	if len(groups) == 0 {
 		return state, nil
 	}
-	if err := validateAutoPricingRequest(c, info); err != nil {
-		return state, err
-	}
 
 	originalGroup := info.UsingGroup
 	requestInput := info.BillingRequestInput
-	var unavailableErr error
 	for _, group := range groups {
 		common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
 		candidateInfo := *info
 		candidateInfo.UsingGroup = group
-		if billingModel := info.GroupBillingModelNames[group]; billingModel != "" {
-			candidateInfo.BillingModelName = billingModel
-		}
 		candidateInfo.PriceData = types.PriceData{}
 		candidateInfo.TieredBillingSnapshot = nil
 
 		priceData, err := ModelPriceHelper(c, &candidateInfo, promptTokens, meta)
 		if err != nil {
-			if IsRoutePriceUnavailable(err) {
-				unavailableErr = err
-				continue
-			}
 			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
 			return relaycommon.AutoRouteState{}, err
 		}
@@ -234,12 +196,11 @@ func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []s
 			requestInput = candidateInfo.BillingRequestInput
 		}
 		state.Candidates = append(state.Candidates, relaycommon.AutoRouteCandidate{
-			Group:            group,
-			BillingModelName: GetBillingModelName(&candidateInfo),
-			Ratio:            priceData.GroupRatioInfo.GroupRatio,
-			EstimatedQuota:   priceData.QuotaToPreConsume,
-			PriceData:        priceData,
-			TieredSnapshot:   candidateInfo.TieredBillingSnapshot,
+			Group:          group,
+			Ratio:          priceData.GroupRatioInfo.GroupRatio,
+			EstimatedQuota: priceData.QuotaToPreConsume,
+			PriceData:      priceData,
+			TieredSnapshot: candidateInfo.TieredBillingSnapshot,
 		})
 		if candidateInfo.TieredBillingSnapshot != nil {
 			state.HasTokenReserveEstimate = true
@@ -256,13 +217,8 @@ func BuildAutoRouteState(c *gin.Context, info *relaycommon.RelayInfo, groups []s
 		}
 	}
 
-	if len(state.Candidates) == 0 {
-		common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
-		return relaycommon.AutoRouteState{}, unavailableErr
-	}
-	SortAutoRouteCandidates(state.Candidates)
-	state.InitialGroup = state.Candidates[0].Group
-	state.UsedGroup = state.InitialGroup
+	state.InitialGroup = groups[0]
+	state.UsedGroup = groups[0]
 	info.AutoRoute = state
 	info.BillingRequestInput = requestInput
 	info.ApplyAutoRouteCandidate(state.InitialGroup)
@@ -278,27 +234,16 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 	if len(groups) == 0 {
 		return state, nil
 	}
-	if err := validateAutoPricingRequest(c, info); err != nil {
-		return state, err
-	}
 
 	originalGroup := info.UsingGroup
-	var unavailableErr error
 	for _, group := range groups {
 		common.SetContextKey(c, constant.ContextKeyAutoGroup, group)
 		candidateInfo := *info
 		candidateInfo.UsingGroup = group
-		if billingModel := info.GroupBillingModelNames[group]; billingModel != "" {
-			candidateInfo.BillingModelName = billingModel
-		}
 		candidateInfo.PriceData = types.PriceData{}
 
 		priceData, err := ModelPriceHelperPerCall(c, &candidateInfo)
 		if err != nil {
-			if IsRoutePriceUnavailable(err) {
-				unavailableErr = err
-				continue
-			}
 			common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
 			return relaycommon.AutoRouteState{}, err
 		}
@@ -306,15 +251,7 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 		for name, ratio := range otherRatios {
 			priceData.OtherRatios[name] = ratio
 		}
-		if tariff := priceData.SupplierTariff; tariff != nil {
-			if err := ApplySupplierTaskPrice(&priceData, otherRatios); err != nil {
-				unavailableErr = newRoutePriceUnavailable(err.Error())
-				continue
-			}
-		} else if billing_setting.GetTaskPriceUnit(GetBillingModelName(&candidateInfo)) == billing_setting.TaskPriceUnitPerCall {
-			delete(priceData.OtherRatios, "seconds")
-		}
-		if priceData.SupplierTariff == nil && !common.StringsContains(constant.TaskPricePatches, GetBillingModelName(&candidateInfo)) {
+		if !common.StringsContains(constant.TaskPricePatches, GetBillingModelName(info)) {
 			for _, ratio := range priceData.OtherRatios {
 				if ratio != 1 {
 					priceData.Quota = int(float64(priceData.Quota) * ratio)
@@ -323,11 +260,10 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 		}
 
 		state.Candidates = append(state.Candidates, relaycommon.AutoRouteCandidate{
-			Group:            group,
-			BillingModelName: GetBillingModelName(&candidateInfo),
-			Ratio:            priceData.GroupRatioInfo.GroupRatio,
-			EstimatedQuota:   priceData.Quota,
-			PriceData:        priceData,
+			Group:          group,
+			Ratio:          priceData.GroupRatioInfo.GroupRatio,
+			EstimatedQuota: priceData.Quota,
+			PriceData:      priceData,
 		})
 		if priceData.Quota >= state.ReservedQuota {
 			state.ReservedQuota = priceData.Quota
@@ -335,19 +271,7 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 		}
 	}
 
-	if len(state.Candidates) == 0 {
-		common.SetContextKey(c, constant.ContextKeyAutoGroup, originalGroup)
-		return relaycommon.AutoRouteState{}, unavailableErr
-	}
-	sort.SliceStable(state.Candidates, func(i, j int) bool {
-		return state.Candidates[i].EstimatedQuota < state.Candidates[j].EstimatedQuota
-	})
-	quotedGroups := make([]string, 0, len(state.Candidates))
-	for _, candidate := range state.Candidates {
-		quotedGroups = append(quotedGroups, candidate.Group)
-	}
-	common.SetContextKey(c, constant.ContextKeyAutoGroupSnapshot, quotedGroups)
-	state.InitialGroup = state.Candidates[0].Group
+	state.InitialGroup = groups[0]
 	state.UsedGroup = originalGroup
 	info.AutoRoute = state
 	if !info.ApplyAutoRouteCandidate(state.UsedGroup) {
@@ -359,41 +283,16 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 	return state, nil
 }
 
-func validateAutoPricingRequest(c *gin.Context, info *relaycommon.RelayInfo) error {
-	input, err := ResolveIncomingBillingExprRequestInput(c, info)
-	if err != nil {
-		return err
-	}
-	if len(input.Body) > 0 {
-		var body any
-		if err := common.Unmarshal(input.Body, &body); err != nil {
-			return fmt.Errorf("invalid pricing request")
-		}
-	}
-	return nil
-}
-
 // ModelPriceHelperPerCall 按次/按量计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
-	if info.PriceData.SupplierTariff != nil {
-		return info.PriceData.Clone(), nil
-	}
-	groupRatioInfo := HandleGroupRatio(c, info)
-	if tariff, bound, err := model.ResolveSupplierModelTariff(info.UsingGroup, GetBillingModelName(info)); bound || err != nil {
-		if err != nil {
-			return types.PriceData{}, supplierPriceError(info)
-		}
-		if tariff.BillingMode != types.SupplierBillingModeFixed {
-			return types.PriceData{}, newRoutePriceUnavailable(fmt.Sprintf("model %s does not have a supported task price", info.OriginModelName))
-		}
-		return modelPriceHelperSupplier(c, info, 0, &types.TokenCountMeta{}, groupRatioInfo, tariff)
-	}
 	unlockPricing := ratio_setting.LockPricingConfigRead()
 	defer unlockPricing()
 	billingModelName := GetBillingModelName(info)
 	if !HasModelBillingConfig(billingModelName) {
 		return types.PriceData{}, modelPriceNotConfiguredError(info.OriginModelName, info.UserId)
 	}
+	groupRatioInfo := HandleGroupRatio(c, info)
+
 	modelPrice, success := ratio_setting.GetModelPrice(billingModelName, true)
 	usePrice := success
 	var modelRatio float64
@@ -493,17 +392,10 @@ func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptT
 	billingModelName := GetBillingModelName(info)
 	exprStr, ok := billing_setting.GetBillingExpr(billingModelName)
 	if !ok {
-		return types.PriceData{}, newRoutePriceUnavailable(fmt.Sprintf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName))
+		return types.PriceData{}, fmt.Errorf("model %s is configured as tiered_expr but has no billing expression", info.OriginModelName)
 	}
-	return modelPriceHelperExpression(c, info, promptTokens, meta, groupRatioInfo, exprStr)
-}
-
-func modelPriceHelperExpression(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo types.GroupRatioInfo, exprStr string) (types.PriceData, error) {
 	if !billingexpr.ReasoningSplitIsSafe(exprStr) {
-		return types.PriceData{}, newRoutePriceUnavailable(fmt.Sprintf("model %s uses unsupported reasoning pricing expression", info.OriginModelName))
-	}
-	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
-		return types.PriceData{}, newRoutePriceUnavailable(fmt.Sprintf("model %s has an invalid billing expression", info.OriginModelName))
+		return types.PriceData{}, fmt.Errorf("model %s uses unsupported reasoning pricing expression", info.OriginModelName)
 	}
 
 	estimatedCompletionTokens := 0

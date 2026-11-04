@@ -16,13 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState, useCallback, useMemo } from 'react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-
+import { useIsAdmin } from '@/hooks/use-admin'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -37,16 +37,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { useIsAdmin } from '@/hooks/use-admin'
-import { useAuthStore } from '@/stores/auth-store'
-
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { buildApiParams, getDefaultTimeRange } from '../lib/utils'
-import type { CommonLogFilters, LogSuggestionField } from '../types'
+import { getDefaultTimeRange } from '../lib/utils'
+import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
-import { LogFilterAutocomplete } from './log-filter-autocomplete'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -90,7 +86,6 @@ function buildSearchSourceKey(values: {
   username?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
-  proxySupplierId?: unknown
   type?: unknown
 }) {
   return [
@@ -103,7 +98,6 @@ function buildSearchSourceKey(values: {
     values.username,
     values.requestId,
     values.upstreamRequestId,
-    values.proxySupplierId,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -122,8 +116,6 @@ export function CommonLogsFilterBar<TData>(
   const queryClient = useQueryClient()
   const searchParams = route.useSearch()
   const isAdmin = useIsAdmin()
-  const user = useAuthStore((state) => state.auth.user)
-  const actor = { id: user?.id ?? 0, role: user?.role ?? 0 }
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
 
@@ -139,7 +131,6 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
-      proxySupplierId: isAdmin ? searchParams.proxySupplierId : undefined,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -154,7 +145,6 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
-      proxySupplierId: isAdmin ? searchParams.proxySupplierId : undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -172,25 +162,12 @@ export function CommonLogsFilterBar<TData>(
     searchParams.requestId,
     searchParams.upstreamRequestId,
     searchParams.type,
-    searchParams.proxySupplierId,
-    isAdmin,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
   const activeDraft =
     draft.sourceKey === searchState.sourceKey ? draft : searchState
   const filters = activeDraft.filters
   const logType = activeDraft.logType
-
-  useEffect(() => {
-    if (!isAdmin && searchParams.proxySupplierId !== undefined) {
-      void navigate({
-        to: '/usage-logs/$section',
-        params: { section: 'common' },
-        search: { ...searchParams, proxySupplierId: undefined },
-        replace: true,
-      })
-    }
-  }, [isAdmin, searchParams, navigate])
 
   const handleChange = useCallback(
     (field: keyof CommonLogFilters, value: Date | string | undefined) => {
@@ -208,13 +185,7 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleApply = useCallback(() => {
-    const filterParams = buildSearchParams(
-      {
-        ...filters,
-        proxySupplierId: isAdmin ? filters.proxySupplierId : undefined,
-      },
-      'common'
-    )
+    const filterParams = buildSearchParams(filters, 'common')
     navigate({
       to: '/usage-logs/$section',
       params: { section: 'common' },
@@ -226,7 +197,7 @@ export function CommonLogsFilterBar<TData>(
     })
     queryClient.invalidateQueries({ queryKey: ['logs'] })
     queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [filters, logType, isAdmin, navigate, queryClient])
+  }, [filters, logType, navigate, queryClient])
 
   const handleReset = useCallback(() => {
     const { start, end } = getDefaultTimeRange()
@@ -266,8 +237,7 @@ export function CommonLogsFilterBar<TData>(
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
-    !!filters.upstreamRequestId ||
-    (isAdmin && filters.proxySupplierId !== undefined)
+    !!filters.upstreamRequestId
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -279,8 +249,8 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
-    isAdmin ? filters.proxySupplierId : undefined,
   ].filter(Boolean).length
+  const sensitiveType = sensitiveVisible ? 'text' : 'password'
   const logTypeItems = useMemo(
     () =>
       LOG_TYPE_FILTERS.map((type) => ({
@@ -330,37 +300,26 @@ export function CommonLogsFilterBar<TData>(
       />
     </LogsFilterField>
   )
-  const suggestionFilters = buildApiParams({
-    page: 1,
-    pageSize: 1,
-    searchParams: { ...buildSearchParams(filters, 'common'), type: [logType] },
-    isAdmin,
-  })
-  const textFilter = (
-    field: LogSuggestionField,
-    key: 'model' | 'group' | 'token' | 'username',
-    placeholder: string,
-    masked = false
-  ) => (
+  const modelFilter = (
     <LogsFilterField>
-      <LogFilterAutocomplete
-        actor={actor}
-        field={field}
-        filters={suggestionFilters}
-        placeholder={placeholder}
-        value={filters[key] || ''}
-        masked={masked}
-        onValueChange={(value) => handleChange(key, value)}
-        onApply={handleApply}
+      <LogsFilterInput
+        placeholder={t('Model Name')}
+        value={filters.model || ''}
+        onChange={(e) => handleChange('model', e.target.value)}
+        onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
   )
-  const modelFilter = textFilter('model_name', 'model', t('Model Name'))
-  const groupFilter = textFilter(
-    'group',
-    'group',
-    t('Group'),
-    !sensitiveVisible
+  const groupFilter = (
+    <LogsFilterField>
+      <LogsFilterInput
+        placeholder={t('Group')}
+        type={sensitiveType}
+        value={filters.group || ''}
+        onChange={(e) => handleChange('group', e.target.value)}
+        onKeyDown={handleKeyDown}
+      />
+    </LogsFilterField>
   )
   const typeFilter = (
     <LogsFilterField>
@@ -400,22 +359,23 @@ export function CommonLogsFilterBar<TData>(
   )
   const advancedFilters = (
     <>
-      {textFilter('token_name', 'token', t('Token Name'), !sensitiveVisible)}
-      {isAdmin &&
-        textFilter('username', 'username', t('Username'), !sensitiveVisible)}
+      <LogsFilterField>
+        <LogsFilterInput
+          placeholder={t('Token Name')}
+          type={sensitiveType}
+          value={filters.token || ''}
+          onChange={(e) => handleChange('token', e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
       {isAdmin && (
         <LogsFilterField>
-          <LogFilterAutocomplete
-            actor={actor}
-            field='proxy_supplier_id'
-            filters={suggestionFilters}
-            placeholder={t('Proxy supplier')}
-            value={filters.proxySupplierId ?? ''}
-            masked={!sensitiveVisible}
-            onValueChange={(value) =>
-              handleChange('proxySupplierId', value || undefined)
-            }
-            onApply={handleApply}
+          <LogsFilterInput
+            placeholder={t('Username')}
+            type={sensitiveType}
+            value={filters.username || ''}
+            onChange={(e) => handleChange('username', e.target.value)}
+            onKeyDown={handleKeyDown}
           />
         </LogsFilterField>
       )}

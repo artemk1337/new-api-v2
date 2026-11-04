@@ -41,13 +41,6 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 
 	// 写入新的 response body
-	if supplierResponseBound(c, info) {
-		c.Set("supplier_pricing", true)
-		responseBody, err = projectSupplierResponses(c, info, responseBody, false)
-		if err != nil {
-			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-		}
-	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// compute usage
@@ -85,7 +78,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
-	var streamErr *types.NewAPIError
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -96,18 +88,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
-		publicData := data
-		if supplierResponseBound(c, info) {
-			projected, err := projectSupplierResponsesEvent(c, info, []byte(data))
-			if err != nil {
-				writeSupplierResponsesError(c)
-				streamErr = types.NewErrorWithStatusCode(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
-				sr.Stop(streamErr)
-				return
-			}
-			publicData = string(projected)
-		}
-		sendResponsesStreamData(c, streamResponse, publicData)
+		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed":
 			if streamResponse.Response != nil {
@@ -148,9 +129,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
-	if streamErr != nil {
-		return usage, streamErr
-	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量

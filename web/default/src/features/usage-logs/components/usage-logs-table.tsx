@@ -31,7 +31,6 @@ import { useMediaQuery } from '@/hooks'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth-store'
 
 import {
   DEFAULT_LOGS_DATA,
@@ -73,7 +72,6 @@ interface UsageLogsTableProps {
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
-  const user = useAuthStore((state) => state.auth.user)
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
 
@@ -119,8 +117,6 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     queryKey: [
       'logs',
       logCategory,
-      user?.id,
-      user?.role,
       isAdmin,
       pagination.pageIndex + 1,
       pagination.pageSize,
@@ -146,11 +142,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       return result.data || DEFAULT_LOGS_DATA
     },
     placeholderData: (previousData, previousQuery) => {
-      if (
-        previousQuery?.queryKey[1] === logCategory &&
-        previousQuery.queryKey[2] === user?.id &&
-        previousQuery.queryKey[3] === user?.role
-      ) {
+      if (previousQuery?.queryKey[1] === logCategory) {
         return previousData
       }
       return undefined

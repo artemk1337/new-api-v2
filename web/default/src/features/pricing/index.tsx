@@ -144,7 +144,6 @@ export function Pricing() {
           tokenUnit={tokenUnit}
           showRechargePrice={showRechargePrice}
           groupFilter={groupFilter}
-          quotaTypeFilter={quotaTypeFilter}
         />
       )
     }
@@ -152,8 +151,6 @@ export function Pricing() {
     return (
       <PricingTable
         models={filteredModels}
-        groupFilter={groupFilter}
-        quotaTypeFilter={quotaTypeFilter}
         priceRate={priceRate}
         usdExchangeRate={usdExchangeRate}
         tokenUnit={tokenUnit}
@@ -206,7 +203,7 @@ export function Pricing() {
               onChange={setSearchInput}
               onClear={clearSearch}
               placeholder={t(
-                'Search model name, model provider, endpoint, or tag...'
+                'Search model name, provider, endpoint, or tag...'
               )}
               className='mx-auto mt-4 max-w-2xl sm:mt-6'
             />

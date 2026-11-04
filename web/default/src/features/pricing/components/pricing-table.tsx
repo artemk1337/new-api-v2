@@ -38,8 +38,6 @@ export interface PricingTableProps {
   usdExchangeRate?: number
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
-  groupFilter?: string
-  quotaTypeFilter?: string
   onModelClick?: (modelName: string) => void
 }
 
@@ -65,8 +63,6 @@ export function PricingTable(props: PricingTableProps) {
     priceRate,
     usdExchangeRate,
     showRechargePrice,
-    groupFilter: props.groupFilter,
-    quotaTypeFilter: props.quotaTypeFilter,
   })
 
   const { table } = useDataTable({

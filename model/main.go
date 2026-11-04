@@ -317,14 +317,6 @@ func migrateDB() error {
 		&PricingSyncSource{},
 		&PricingSyncQuote{},
 		&PricingSyncModelState{},
-		&Supplier{},
-		&SupplierPricingProfile{},
-		&PricingGroupSupplierBinding{},
-		&SupplierBindingState{},
-		&SupplierPricingState{},
-		&SupplierPricingRevision{},
-		&SupplierModelPrice{},
-		&OfficialModelPrice{},
 		&CasbinRule{},
 		&AuthzRole{},
 		&CurrencyExchangeRate{},
@@ -451,14 +443,6 @@ func migrateDBFast() error {
 		{&PricingSyncSource{}, "PricingSyncSource"},
 		{&PricingSyncQuote{}, "PricingSyncQuote"},
 		{&PricingSyncModelState{}, "PricingSyncModelState"},
-		{&Supplier{}, "Supplier"},
-		{&SupplierPricingProfile{}, "SupplierPricingProfile"},
-		{&PricingGroupSupplierBinding{}, "PricingGroupSupplierBinding"},
-		{&SupplierBindingState{}, "SupplierBindingState"},
-		{&SupplierPricingState{}, "SupplierPricingState"},
-		{&SupplierPricingRevision{}, "SupplierPricingRevision"},
-		{&SupplierModelPrice{}, "SupplierModelPrice"},
-		{&OfficialModelPrice{}, "OfficialModelPrice"},
 		{&CurrencyExchangeRate{}, "CurrencyExchangeRate"},
 		{&PlatformCurrency{}, "PlatformCurrency"},
 	}
@@ -512,7 +496,6 @@ func migrateDBFast() error {
 }
 
 func migrateLOGDB() error {
-	invalidateLogSupplierColumnCache(LOG_DB)
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return migrateClickHouseLogDB()
 	}
@@ -522,9 +505,6 @@ func migrateLOGDB() error {
 func migrateClickHouseLogDB() error {
 	ttlDays := clickHouseLogTTLDays()
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
-		return err
-	}
-	if err := LOG_DB.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS proxy_supplier_id Int64 DEFAULT 0").Error; err != nil {
 		return err
 	}
 	return syncClickHouseLogTTL(ttlDays)
@@ -570,7 +550,6 @@ CREATE TABLE IF NOT EXISTS logs (
 	use_time Int32 DEFAULT 0,
 	is_stream UInt8 DEFAULT 0,
 	channel_id Int32 DEFAULT 0,
-	proxy_supplier_id Int64 DEFAULT 0,
 	token_id Int32 DEFAULT 0,
 	`+"`group`"+` String DEFAULT '',
 	ip String DEFAULT '',

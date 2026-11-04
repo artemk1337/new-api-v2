@@ -89,15 +89,12 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 	}
 
 	// 锁定到原始任务的渠道（重试时复用同一渠道，轮换 key）
-	ch, err := model.GetTaskChannel(originTask)
+	ch, err := model.GetChannelById(originTask.ChannelId, true)
 	if err != nil {
 		return service.TaskErrorWrapperLocal(err, "channel_not_found", http.StatusBadRequest)
 	}
 	if ch.Status != common.ChannelStatusEnabled {
 		return service.TaskErrorWrapperLocal(errors.New("the channel of the origin task is disabled"), "task_channel_disable", http.StatusBadRequest)
-	}
-	if err := model.ValidateChannelPricingGroup(ch, info.UsingGroup); err != nil {
-		return service.TaskErrorWrapperLocal(errors.New("the origin task is not available in the selected group"), "task_group_mismatch", http.StatusBadRequest)
 	}
 	info.LockedChannel = ch
 
@@ -110,7 +107,6 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		common.SetContextKey(c, constant.ContextKeyChannelType, ch.Type)
 		common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, ch.GetBaseURL())
 		common.SetContextKey(c, constant.ContextKeyChannelId, originTask.ChannelId)
-		c.Set("task_channel_transport_fingerprint", ch.TaskTransportFingerprint())
 		common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, ch.ChannelInfo.IsMultiKey)
 		if ch.ChannelInfo.IsMultiKey {
 			common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, index)
@@ -160,20 +156,8 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 // 估算计费(EstimateBilling) → 计算价格 → 预扣费（仅首次）→
 // 构建/发送/解析上游请求 → 提交后计费调整(AdjustBillingOnSubmit)。
 // 控制器负责 defer Refund 和成功后 Settle。
-func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskSubmitResult, taskError *dto.TaskError) {
-	defer func() {
-		if taskError != nil && info.PriceData.SupplierTariff != nil && info.AttemptDispatched {
-			taskError.Message = "Upstream task request failed"
-			taskError.Data = nil
-			if !taskError.LocalError {
-				taskError.Code = "upstream_task_failed"
-			}
-		}
-	}()
+func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitResult, *dto.TaskError) {
 	info.InitChannelMeta(c)
-	if c.GetBool("supplier_pricing") && info.ChannelTransportFingerprint == "" {
-		return nil, service.TaskErrorWrapperLocal(errors.New("task channel is unavailable"), "channel_unavailable", http.StatusServiceUnavailable)
-	}
 
 	// 1. 确定 platform → 创建适配器 → 验证请求
 	platform := constant.TaskPlatform(c.GetString("platform"))
@@ -210,10 +194,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskS
 	// 4. 价格计算：基础模型价格。Auto 重试复用请求开始时冻结的
 	// 分组价格，避免中途配置变更影响结算。
 	info.OriginModelName = modelName
-	autoRouteReady := (info.TokenGroup == "auto" || info.TokenGroup == "") && len(info.AutoRoute.Candidates) > 0
-	canQuoteAlternatives := !autoRouteReady && info.LockedChannel == nil && (info.TokenGroup == "auto" || info.TokenGroup == "") &&
-		len(common.GetContextKeyStringSlice(c, constant.ContextKeyAutoGroupSnapshot)) > 0
-	var selectedPriceErr error
+	autoRouteReady := info.TokenGroup == "auto" && len(info.AutoRoute.Candidates) > 0
 	if autoRouteReady {
 		if !info.ApplyAutoRouteCandidate(info.UsingGroup) {
 			return nil, service.TaskErrorWrapperLocal(
@@ -225,10 +206,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskS
 	} else {
 		priceData, err := helper.ModelPriceHelperPerCall(c, info)
 		if err != nil {
-			if !canQuoteAlternatives || !helper.IsRoutePriceUnavailable(err) {
-				return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
-			}
-			selectedPriceErr = err
+			return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 		}
 		info.PriceData = priceData
 	}
@@ -236,29 +214,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskS
 	// 5. 计费估算：让适配器根据用户请求提供 OtherRatios（时长、分辨率等）
 	//    必须在 ModelPriceHelperPerCall 之后调用（它会重建 PriceData）。
 	//    ResolveOriginTask 可能已在 remix 路径中预设了 OtherRatios，此处合并。
-	var estimatedPriceRatios map[string]float64
 	if !autoRouteReady {
 		if estimatedRatios := adaptor.EstimateBilling(c, info); len(estimatedRatios) > 0 {
 			for k, v := range estimatedRatios {
 				info.PriceData.AddOtherRatio(k, v)
 			}
 		}
-		estimatedPriceRatios = info.PriceData.Clone().OtherRatios
-		if selectedPriceErr == nil {
-			if tariff := info.PriceData.SupplierTariff; tariff != nil {
-				if err := helper.ApplySupplierTaskPrice(&info.PriceData, estimatedPriceRatios); err != nil {
-					if !canQuoteAlternatives {
-						return nil, service.TaskErrorWrapperLocal(err, "model_price_error", http.StatusBadRequest)
-					}
-					selectedPriceErr = err
-				}
-			} else {
-				applyTaskPriceUnit(helper.GetBillingModelName(info), info.PriceData.OtherRatios)
-			}
-		}
+		applyTaskPriceUnit(helper.GetBillingModelName(info), info.PriceData.OtherRatios)
 
 		// 6. 将 OtherRatios 应用到基础额度
-		if selectedPriceErr == nil && info.PriceData.SupplierTariff == nil && !common.StringsContains(constant.TaskPricePatches, helper.GetBillingModelName(info)) {
+		if !common.StringsContains(constant.TaskPricePatches, helper.GetBillingModelName(info)) {
 			for _, ra := range info.PriceData.OtherRatios {
 				if ra != 1.0 {
 					info.PriceData.Quota = int(float64(info.PriceData.Quota) * ra)
@@ -270,26 +235,14 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskS
 	// 6.5. Для Auto замораживаем цену каждой группы и резервируем максимум
 	// до первого upstream dispatch.
 	reserveQuota := info.PriceData.Quota
-	if (info.TokenGroup == "auto" || info.TokenGroup == "") && !autoRouteReady {
+	if info.TokenGroup == "auto" && !autoRouteReady {
 		groups := common.GetContextKeyStringSlice(c, constant.ContextKeyAutoGroupSnapshot)
 		if len(groups) > 0 {
-			selectedGroup := info.UsingGroup
-			autoRoute, err := helper.BuildAutoPerCallRouteState(c, info, groups, estimatedPriceRatios)
+			autoRoute, err := helper.BuildAutoPerCallRouteState(c, info, groups, info.PriceData.OtherRatios)
 			if err != nil {
 				return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
 			}
 			reserveQuota = autoRoute.ReservedQuota
-			if autoRoute.InitialGroup != selectedGroup {
-				return nil, service.TaskErrorWrapperLocal(errors.New("task route requires a different quoted group"), "auto_route_requote", http.StatusConflict)
-			}
-			if info.TokenGroup == "" {
-				candidate, _ := info.AutoRouteCandidate(selectedGroup)
-				info.AutoRoute.Candidates = []relaycommon.AutoRouteCandidate{candidate}
-				info.AutoRoute.ReservedQuota = candidate.EstimatedQuota
-				info.AutoRoute.ReserveGroup = selectedGroup
-				reserveQuota = candidate.EstimatedQuota
-				common.SetContextKey(c, constant.ContextKeyAutoGroupSnapshot, []string{selectedGroup})
-			}
 		}
 	}
 
@@ -353,45 +306,21 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (result *TaskS
 	c.Header("X-New-Api-Other-Ratios", string(ratiosJSON))
 
 	// 11. 解析响应
-	var upstreamTaskID string
-	var taskData []byte
-	var taskErr *dto.TaskError
-	if info.PriceData.SupplierTariff != nil {
-		upstreamTaskID, taskData, taskErr = parseSupplierTaskResponse(c, func() (string, []byte, *dto.TaskError) { return adaptor.DoResponse(c, resp, info) })
-	} else {
-		upstreamTaskID, taskData, taskErr = adaptor.DoResponse(c, resp, info)
-	}
+	upstreamTaskID, taskData, taskErr := adaptor.DoResponse(c, resp, info)
 	if strings.TrimSpace(upstreamTaskID) != "" {
 		info.MarkAttemptTaskAccepted()
 	}
 	if taskErr != nil {
 		return nil, taskErr
 	}
-	if info.PriceData.SupplierTariff != nil {
-		writeSupplierTaskAccepted(c, info)
-	}
 
 	// 11. 提交后计费调整：让适配器根据上游实际返回调整 OtherRatios
 	finalQuota := info.PriceData.Quota
 	if adjustedRatios := adaptor.AdjustBillingOnSubmit(info, taskData); len(adjustedRatios) > 0 {
-		if tariff := info.PriceData.SupplierTariff; tariff != nil {
-			if tariff.PriceUnit == "per_second" {
-				seconds := adjustedRatios["seconds"]
-				if seconds <= 0 {
-					seconds = info.PriceData.OtherRatios["seconds"]
-				}
-				adjustedRatios = map[string]float64{"seconds": seconds}
-			}
-			if err := helper.ApplySupplierTaskPrice(&info.PriceData, adjustedRatios); err != nil {
-				common.SysError("task duration adjustment is unavailable; retaining the frozen estimate")
-			} else {
-				finalQuota = info.PriceData.Quota
-			}
-		} else {
-			finalQuota = recalcQuotaFromRatios(info, adjustedRatios)
-			info.PriceData.OtherRatios = adjustedRatios
-			info.PriceData.Quota = finalQuota
-		}
+		// 基于调整后的 ratios 重新计算 quota
+		finalQuota = recalcQuotaFromRatios(info, adjustedRatios)
+		info.PriceData.OtherRatios = adjustedRatios
+		info.PriceData.Quota = finalQuota
 	}
 
 	return &TaskSubmitResult{
@@ -527,26 +456,15 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	}
 
 	isOpenAIVideoAPI := strings.HasPrefix(c.Request.RequestURI, "/v1/videos/")
-	// Historical status is local data. Only refresh an unfinished job while
-	// its original transport is still available; never send IDs to a new origin.
-	if originTask.Status != model.TaskStatusSuccess && originTask.Status != model.TaskStatusFailure {
-		if _, transportErr := model.GetTaskChannel(originTask); transportErr == nil {
-			if realtimeResp := tryRealtimeFetch(originTask, isOpenAIVideoAPI); len(realtimeResp) > 0 {
-				respBody = realtimeResp
-				return
-			}
-		}
+
+	// Gemini/Vertex 支持实时查询：用户 fetch 时直接从上游拉取最新状态
+	if realtimeResp := tryRealtimeFetch(originTask, isOpenAIVideoAPI); len(realtimeResp) > 0 {
+		respBody = realtimeResp
+		return
 	}
 
 	// OpenAI Video API 格式: 走各 adaptor 的 ConvertToOpenAIVideo
 	if isOpenAIVideoAPI {
-		if originTask.UsesSupplierPricing() {
-			respBody, err = supplierTaskVideoBody(originTask)
-			if err != nil {
-				taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
-			}
-			return
-		}
 		adaptor := GetTaskAdaptor(originTask.Platform)
 		if adaptor == nil {
 			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
@@ -580,9 +498,8 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 // 仅当渠道类型为 Gemini 或 Vertex 时触发；其他渠道或出错时返回 nil。
 // 当非 OpenAI Video API 时，还会构建自定义格式的响应体。
 func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
-	channelModel, err := model.GetTaskChannel(task)
+	channelModel, err := model.GetChannelById(task.ChannelId, true)
 	if err != nil {
-		common.SysError("task realtime fetch blocked: channel transport is unavailable")
 		return nil
 	}
 	if channelModel.Type != constant.ChannelTypeVertexAi && channelModel.Type != constant.ChannelTypeGemini {
@@ -658,12 +575,6 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		"task_id":  task.TaskID,
 		"url":      task.GetResultURL(),
 	}
-	if task.UsesSupplierPricing() {
-		out["url"] = ""
-		if task.Status == model.TaskStatusSuccess {
-			out["url"] = taskcommon.BuildProxyURL(task.TaskID)
-		}
-	}
 	respBody, _ := common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
 		Data: out,
@@ -711,28 +622,6 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
-	result := TaskModel2AdminDto(task)
-	if !task.UsesSupplierPricing() {
-		return result
-	}
-	result.ChannelId = 0
-	result.Properties = model.Properties{Input: task.Properties.Input, OriginModelName: task.PublicModelName()}
-	result.Data = nil
-	if task.Platform == constant.TaskPlatformSuno {
-		result.Data = supplierSunoData(task)
-	}
-	result.FailReason = ""
-	if task.Status == model.TaskStatusFailure {
-		result.FailReason = "Task failed"
-	}
-	result.ResultURL = ""
-	if task.Status == model.TaskStatusSuccess && task.Platform != constant.TaskPlatformSuno {
-		result.ResultURL = taskcommon.BuildProxyURL(task.TaskID)
-	}
-	return result
-}
-
-func TaskModel2AdminDto(task *model.Task) *dto.TaskDto {
 	groupRef, hasGroupRef := ratio_setting.PricingGroupRefByKey(task.Group)
 	var groupRefPtr *ratio_setting.PricingGroupRef
 	if hasGroupRef {

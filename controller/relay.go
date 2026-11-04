@@ -90,23 +90,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			prepareRelayResponseError(newAPIError, requestId)
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
-			responseError := newAPIError
-			if c.GetBool("supplier_pricing") {
-				responseError = publicSupplierRelayError(newAPIError)
-			}
-			prepareRelayResponseError(responseError, requestId)
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, responseError.ToOpenAIError())
+				helper.WssError(c, ws, newAPIError.ToOpenAIError())
 			case types.RelayFormatClaude:
-				c.JSON(responseError.StatusCode, gin.H{
+				c.JSON(newAPIError.StatusCode, gin.H{
 					"type":  "error",
-					"error": responseError.ToClaudeError(),
+					"error": newAPIError.ToClaudeError(),
 				})
 			default:
-				c.JSON(responseError.StatusCode, gin.H{
-					"error": responseError.ToOpenAIError(),
+				c.JSON(newAPIError.StatusCode, gin.H{
+					"error": newAPIError.ToOpenAIError(),
 				})
 			}
 		}
@@ -156,6 +152,30 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	if relayInfo.TokenGroup == "" {
+		if _, ok := common.GetContextKey(c, constant.ContextKeyAutoGroup); !ok {
+			channel, selectGroup, selectErr := service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+				Ctx:         c,
+				TokenGroup:  relayInfo.TokenGroup,
+				ModelName:   relayInfo.OriginModelName,
+				RequestPath: c.Request.URL.Path,
+				Retry:       common.GetPointer(0),
+			})
+			if selectErr != nil {
+				newAPIError = types.NewError(selectErr, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+				return
+			}
+			if channel == nil {
+				newAPIError = types.NewError(
+					fmt.Errorf("No available channel for model %s under group %s", relayInfo.OriginModelName, selectGroup),
+					types.ErrorCodeGetChannelFailed,
+					types.ErrOptionWithSkipRetry(),
+				)
+				return
+			}
+		}
+	}
+
 	var autoGroups []string
 	if relayInfo.TokenGroup == "auto" {
 		autoGroups, err = service.BuildAutoGroupSnapshot(&service.RetryParam{
@@ -180,16 +200,31 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		candidateGroups = []string{relayInfo.TokenGroup}
 	}
 
-	// Reserve each concrete group's own mapped tariff. Aliases can differ
-	// between procurement profiles without producing a cross-supplier conflict.
-	candidateGroups, mappingErr := resolveGroupBillingModels(c, relayInfo, candidateGroups)
+	// Pre-consume happens before relay handlers initialize ChannelMeta. Resolve
+	// mappings without initializing it: InitChannelMeta here would make
+	// getChannel treat the first attempt as a retry.
+	billingModelName, isModelMapped, mappingErr := helper.ResolveRelayModelMapping(c.GetString("model_mapping"), relayInfo.OriginModelName, relayInfo.RelayMode)
+	var mappings []string
+	mappings, mappingErr = model.GetEnabledChannelModelMappingsForModels(candidateGroups, candidateAbilityModelNames(relayInfo), c.Request.URL.Path)
+	if mappingErr == nil {
+		mappings = append(mappings, c.GetString("model_mapping"))
+		mappingErr = helper.ValidateModelMappingCandidates(
+			common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+			relayInfo.RequestedModelName,
+			relayInfo.RelayMode,
+			mappings,
+		)
+		if mappingErr == nil {
+			billingModelName, isModelMapped, mappingErr = helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+		}
+	}
 	if mappingErr != nil {
 		newAPIError = types.NewError(mappingErr, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 		return
 	}
-	if len(candidateGroups) == 0 {
-		newAPIError = types.NewError(errors.New("no available priced route for this model"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-		return
+	relayInfo.BillingModelName = ""
+	if isModelMapped {
+		relayInfo.BillingModelName = billingModelName
 	}
 
 	// Every dispatched request needs a real reserve. Otherwise a trusted
@@ -197,30 +232,28 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// no quota held to settle against.
 	relayInfo.ForcePreConsume = true
 	reserveQuota := 0
-	if relayInfo.TokenGroup == "auto" || relayInfo.TokenGroup == "" {
-		_, priceErr := helper.BuildAutoRouteState(c, relayInfo, candidateGroups, tokens, meta)
+	if relayInfo.TokenGroup == "auto" {
+		if len(autoGroups) == 0 {
+			newAPIError = types.NewError(
+				fmt.Errorf("no available concrete Auto group for model %s", relayInfo.OriginModelName),
+				types.ErrorCodeGetChannelFailed,
+				types.ErrOptionWithSkipRetry(),
+			)
+			return
+		}
+		autoRoute, priceErr := helper.BuildAutoRouteState(c, relayInfo, autoGroups, tokens, meta)
 		if priceErr != nil {
 			newAPIError = types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 			return
 		}
-		if orderErr := orderQuotedAutoRoute(c, relayInfo, relayInfo.TokenGroup == ""); orderErr != nil {
-			newAPIError = types.NewError(orderErr, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
-			return
-		}
-		reserveQuota = relayInfo.AutoRoute.ReservedQuota
+		reserveQuota = autoRoute.ReservedQuota
 	} else {
-		relayInfo.UsingGroup = candidateGroups[0]
-		relayInfo.BillingModelName = relayInfo.GroupBillingModelNames[relayInfo.UsingGroup]
 		priceData, priceErr := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 		if priceErr != nil {
 			newAPIError = types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 			return
 		}
 		reserveQuota = priceData.QuotaToPreConsume
-	}
-	if setupErr := setupQuotedInitialChannel(c, relayInfo); setupErr != nil {
-		newAPIError = types.NewError(setupErr, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-		return
 	}
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
@@ -270,11 +303,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
-	if relayInfo.TokenGroup == "" {
-		// The cheapest route is chosen from full request quotes once. A retry
-		// may change channel but cannot change the reserved procurement scope.
-		retryParam.TokenGroup = relayInfo.UsingGroup
-	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 	maxRetry := common.RetryTimes
@@ -285,7 +313,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	for ; retryParam.GetRetry() <= maxRetry; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		relayInfo.ResetAttempt()
-		relayInfo.OriginModelName = retryParam.ModelName
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
@@ -475,17 +502,17 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
 	if info.ChannelMeta == nil {
-		channel, err := model.GetChannelById(c.GetInt("channel_id"), true)
-		if err == nil {
-			err = validateSelectedRequestRoute(channel, info)
+		autoBan := c.GetBool("auto_ban")
+		autoBanInt := 1
+		if !autoBan {
+			autoBanInt = 0
 		}
-		if err != nil {
-			return nil, types.NewError(errors.New("selected route is unavailable"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-		}
-		if setupErr := middleware.SetupContextForLockedChannel(c, channel, info.OriginModelName); setupErr != nil {
-			return channel, setupErr
-		}
-		return channel, nil
+		return &model.Channel{
+			Id:      c.GetInt("channel_id"),
+			Type:    c.GetInt("channel_type"),
+			Name:    c.GetString("channel_name"),
+			AutoBan: &autoBanInt,
+		}, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if info.TokenGroup == "auto" {
@@ -517,8 +544,8 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			types.ErrOptionWithSkipRetry(),
 		)
 	}
-	if routeErr := validateSelectedRequestRoute(channel, info); routeErr != nil {
-		return channel, types.NewError(routeErr, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+	if info.TokenGroup != "auto" {
+		info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 	}
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
@@ -579,13 +606,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		pricingGroup := errorLogPricingGroup(c)
 		channelId := channelError.ChannelId
 		other := make(map[string]interface{})
-		proxySupplierID := c.GetInt("proxy_supplier_id")
-		if len(relayInfos) > 0 && relayInfos[0].PriceData.SupplierTariff != nil {
-			proxySupplierID = relayInfos[0].PriceData.SupplierTariff.SupplierID
-		}
-		if c.GetBool("supplier_pricing") || len(relayInfos) > 0 && relayInfos[0].PriceData.SupplierTariff != nil {
-			other["supplier_pricing"] = true
-		}
 		if c.Request != nil && c.Request.URL != nil {
 			other["request_path"] = c.Request.URL.Path
 		}
@@ -613,7 +633,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
-		model.SetLogProxySupplier(other, proxySupplierID)
 		errorLogContent, rawError, normalized := relayErrorLogContent(err)
 		if normalized {
 			other["raw_error"] = rawError
@@ -673,12 +692,8 @@ func RelayMidjourney(c *gin.Context) {
 			mjErr.Result = "The current group load is saturated. Please try again later or switch to another group."
 			statusCode = http.StatusTooManyRequests
 		}
-		description := fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result)
-		if c.GetBool("supplier_pricing") {
-			description = "Request could not be completed"
-		}
 		c.JSON(statusCode, gin.H{
-			"description": description,
+			"description": fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result),
 			"type":        "upstream_error",
 			"code":        mjErr.Code,
 		})
@@ -772,6 +787,12 @@ func RelayTask(c *gin.Context) {
 				"get_channel_failed",
 				http.StatusServiceUnavailable,
 			)
+		} else if contractErr := validateAutoTaskPricingContract(
+			groups,
+			relayInfo.OriginModelName,
+			constant.TaskPlatform(c.GetString("platform")),
+		); contractErr != nil {
+			taskErr = service.TaskErrorWrapperLocal(contractErr, "auto_task_pricing_contract_mismatch", http.StatusBadRequest)
 		} else {
 			candidateGroups = groups
 			maxRetry = len(groups) - 1
@@ -788,49 +809,37 @@ func RelayTask(c *gin.Context) {
 	}
 
 	if taskErr == nil {
+		mappings := []string{c.GetString("model_mapping")}
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			if setupErr := middleware.SetupContextForLockedChannel(c, lockedCh, relayInfo.OriginModelName); setupErr != nil {
 				taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
 			} else {
-				billingModel, _, mappingErr := helper.ResolveRelayModelMapping(lockedCh.GetModelMapping(), relayInfo.OriginModelName, relayInfo.RelayMode)
-				if mappingErr != nil {
-					taskErr = service.TaskErrorWrapperLocal(mappingErr, "model_mapping_failed", http.StatusBadRequest)
-				} else {
-					relayInfo.BillingModelName = billingModel
-				}
+				mappings = []string{lockedCh.GetModelMapping()}
 			}
 		} else {
 			var mappingErr error
-			candidateGroups, mappingErr = resolveGroupBillingModels(c, relayInfo, candidateGroups)
+			mappings, mappingErr = model.GetEnabledChannelModelMappingsForModels(candidateGroups, candidateAbilityModelNames(relayInfo), c.Request.URL.Path)
 			if mappingErr != nil {
 				taskErr = service.TaskErrorWrapperLocal(mappingErr, "model_mapping_failed", http.StatusBadRequest)
-			} else if len(candidateGroups) == 0 {
-				taskErr = service.TaskErrorWrapperLocal(errors.New("no available priced route for this model"), "get_channel_failed", http.StatusServiceUnavailable)
-			} else if relayInfo.TokenGroup == "auto" || relayInfo.TokenGroup == "" {
-				// This preliminary quote only orders candidates. The adapter adds
-				// request duration/resolution before freezing the actual reserve.
-				preview := *relayInfo
-				quoteErr := previewTaskRoutes(c, &preview, candidateGroups)
-				if quoteErr == nil {
-					quoteErr = orderQuotedAutoRoute(c, &preview, false)
-				}
-				if quoteErr != nil {
-					taskErr = service.TaskErrorWrapperLocal(quoteErr, "model_price_error", http.StatusBadRequest)
-				} else {
-					relayInfo.UsingGroup = preview.UsingGroup
-					relayInfo.BillingModelName = preview.BillingModelName
-					if relayInfo.TokenGroup == "" {
-						retryParam.TokenGroup = relayInfo.UsingGroup
-					} else {
-						maxRetry = len(preview.AutoRoute.Candidates) - 1
-					}
-					if setupErr := setupUnquotedTaskChannel(c, relayInfo); setupErr != nil {
-						taskErr = service.TaskErrorWrapperLocal(setupErr, "get_channel_failed", http.StatusServiceUnavailable)
-					}
-				}
 			} else {
-				relayInfo.UsingGroup = candidateGroups[0]
-				relayInfo.BillingModelName = relayInfo.GroupBillingModelNames[relayInfo.UsingGroup]
+				mappings = append(mappings, c.GetString("model_mapping"))
+			}
+		}
+		if taskErr == nil {
+			mappingErr := helper.ValidateModelMappingCandidates(
+				common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping),
+				relayInfo.RequestedModelName,
+				relayInfo.RelayMode,
+				mappings,
+			)
+			billingModelName, isMapped := "", false
+			if mappingErr == nil {
+				billingModelName, isMapped, mappingErr = helper.ResolveCandidateModelMapping(mappings, relayInfo.OriginModelName, relayInfo.RelayMode)
+			}
+			if mappingErr != nil {
+				taskErr = service.TaskErrorWrapperLocal(mappingErr, "model_mapping_failed", http.StatusBadRequest)
+			} else if isMapped {
+				relayInfo.BillingModelName = billingModelName
 			}
 		}
 	}
@@ -838,7 +847,6 @@ func RelayTask(c *gin.Context) {
 	for ; taskErr == nil && retryParam.GetRetry() <= maxRetry; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		relayInfo.ResetAttempt()
-		relayInfo.OriginModelName = retryParam.ModelName
 		var channel *model.Channel
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
@@ -899,21 +907,6 @@ func RelayTask(c *gin.Context) {
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
-		if taskErr != nil && taskErr.LocalError && taskErr.Code == "auto_route_requote" && !relayInfo.AttemptDispatched && relayInfo.Billing == nil {
-			// The final adapter quote changed candidate ordering. Re-enter once
-			// with the frozen plan before any upstream request or debit.
-			if orderErr := orderQuotedAutoRoute(c, relayInfo, relayInfo.TokenGroup == ""); orderErr != nil {
-				taskErr = service.TaskErrorWrapperLocal(orderErr, "model_price_error", http.StatusBadRequest)
-				break
-			}
-			if relayInfo.TokenGroup == "" {
-				retryParam.TokenGroup = relayInfo.UsingGroup
-			}
-			retryParam.SetRetry(0)
-			retryParam.ResetRetryNextTry()
-			taskErr = nil
-			continue
-		}
 		if taskErr == nil {
 			break
 		}
@@ -994,12 +987,6 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:     relayInfo.PriceData.OtherRatios,
 			OriginModelName: relayInfo.OriginModelName,
 			PerCallBilling:  common.StringsContains(constant.TaskPricePatches, helper.GetBillingModelName(relayInfo)) || relayInfo.PriceData.UsePrice,
-			PriceSnapshot:   relayInfo.PriceData.Snapshot(),
-		}
-		if tariff := relayInfo.PriceData.SupplierTariff; tariff != nil {
-			task.PrivateData.BillingContext.SupplierID = tariff.SupplierID
-			task.PrivateData.BillingContext.ProfileID = tariff.ProfileID
-			task.PrivateData.BillingContext.PriceRevision = tariff.Revision
 		}
 		applyTaskSettlementBaseline(task, settlement)
 		task.Data = result.TaskData
@@ -1010,9 +997,6 @@ func RelayTask(c *gin.Context) {
 	}
 
 	if taskErr != nil {
-		if c.GetBool("supplier_pricing") {
-			taskErr = &dto.TaskError{Code: "request_failed", Message: "Request could not be completed", StatusCode: taskErr.StatusCode}
-		}
 		respondTaskError(c, taskErr)
 	}
 }
@@ -1075,7 +1059,7 @@ func validateAutoTaskPricingContractWithAbilities(
 	}
 
 	contracts := make(map[string]struct{})
-	upstreamModels := make(map[string]string)
+	upstreamModels := make(map[string]struct{})
 	coveredGroups := make(map[string]struct{}, len(groups))
 	for _, ability := range abilities {
 		group := ratio_setting.PricingGroupKey(ability.Group)
@@ -1103,10 +1087,7 @@ func validateAutoTaskPricingContractWithAbilities(
 			return fmt.Errorf("Auto task group %s has invalid model mapping: %w", group, err)
 		}
 		contracts[contract] = struct{}{}
-		if previous, exists := upstreamModels[group]; exists && previous != upstreamModel {
-			return errors.New("Auto task fallback requires each group to use the same mapped upstream model")
-		}
-		upstreamModels[group] = upstreamModel
+		upstreamModels[upstreamModel] = struct{}{}
 		coveredGroups[group] = struct{}{}
 	}
 	if len(coveredGroups) != len(requested) {
@@ -1114,6 +1095,9 @@ func validateAutoTaskPricingContractWithAbilities(
 	}
 	if len(contracts) > 1 {
 		return errors.New("Auto task fallback requires all selected groups to use the same task pricing contract")
+	}
+	if len(upstreamModels) > 1 {
+		return errors.New("Auto task fallback requires all selected groups to use the same mapped upstream model")
 	}
 	return nil
 }

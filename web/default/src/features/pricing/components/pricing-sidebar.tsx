@@ -38,11 +38,7 @@ import {
   getModelTypeLabels,
   getQuotaTypeLabels,
 } from '../constants'
-import {
-  filterByQuotaType,
-  filterModelsForFacet,
-  parseTags,
-} from '../lib/filters'
+import { filterModelsForFacet, parseTags } from '../lib/filters'
 import { getModelType } from '../lib/model-type'
 import { sortGroupsByName } from '../lib/pricing-group-order'
 import type { PricingModel, PricingVendor } from '../types'
@@ -91,6 +87,14 @@ function countBy(
   predicate: (model: PricingModel) => boolean
 ): number {
   return models.reduce((count, model) => count + (predicate(model) ? 1 : 0), 0)
+}
+
+function formatGroupRatio(ratio: number | undefined): string | undefined {
+  if (ratio == null) return undefined
+  const formatted = Number.isInteger(ratio)
+    ? ratio.toString()
+    : ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+  return `x${formatted}`
 }
 
 function FilterChip(props: {
@@ -205,7 +209,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
   const vendorOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
-      label: t('All model providers'),
+      label: t('All Vendors'),
       count: vendorModels.length,
     },
     ...props.vendors
@@ -241,6 +245,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
           value: group,
           label: props.groupNames?.[group] ?? group,
           count,
+          suffix: formatGroupRatio(props.groupRatios?.[group]),
         }
       })
       .filter((group) => group.count > 0 || group.value === props.groupFilter),
@@ -255,20 +260,12 @@ export function PricingSidebar(props: PricingSidebarProps) {
     {
       value: QUOTA_TYPES.TOKEN,
       label: quotaTypeLabels[QUOTA_TYPES.TOKEN],
-      count: filterByQuotaType(
-        quotaModels,
-        QUOTA_TYPES.TOKEN,
-        props.groupFilter
-      ).length,
+      count: countBy(quotaModels, (model) => model.quota_type === 0),
     },
     {
       value: QUOTA_TYPES.REQUEST,
       label: quotaTypeLabels[QUOTA_TYPES.REQUEST],
-      count: filterByQuotaType(
-        quotaModels,
-        QUOTA_TYPES.REQUEST,
-        props.groupFilter
-      ).length,
+      count: countBy(quotaModels, (model) => model.quota_type === 1),
     },
   ].filter(
     (option) =>
@@ -323,7 +320,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
         <div>
           <h2 className='text-foreground text-sm font-bold'>{t('Filter')}</h2>
           <p className='text-muted-foreground mt-1 text-xs'>
-            {t('Refine models by model provider, group, type, and tags.')}
+            {t('Refine models by provider, group, type, and tags.')}
           </p>
         </div>
         <div className='flex shrink-0 flex-col items-end gap-1'>
@@ -360,7 +357,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
 
       <div className='space-y-1'>
         <FilterSection
-          title={t('All model providers')}
+          title={t('All Vendors')}
           value={props.vendorFilter}
           options={vendorOptions}
           onChange={props.onVendorChange}

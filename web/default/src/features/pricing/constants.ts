@@ -35,14 +35,12 @@ export const SORT_OPTIONS = {
 export type SortOption = (typeof SORT_OPTIONS)[keyof typeof SORT_OPTIONS]
 export const DEFAULT_SORT_OPTION = SORT_OPTIONS.BENEFIT
 
-export function getSortLabels(
-  t: TFunction
-): Partial<Record<SortOption, string>> {
+export function getSortLabels(t: TFunction): Record<SortOption, string> {
   return {
+    [SORT_OPTIONS.BENEFIT]: t('Benefit'),
     [SORT_OPTIONS.NAME]: t('Name'),
     [SORT_OPTIONS.PRICE_LOW]: t('Price: Low to High'),
     [SORT_OPTIONS.PRICE_HIGH]: t('Price: High to Low'),
-    [SORT_OPTIONS.BENEFIT]: t('Benefit'),
   }
 }
 

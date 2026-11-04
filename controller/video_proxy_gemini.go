@@ -3,7 +3,6 @@ package controller
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -16,9 +15,6 @@ import (
 func getGeminiVideoURL(channel *model.Channel, task *model.Task, apiKey string) (string, error) {
 	if channel == nil || task == nil {
 		return "", fmt.Errorf("invalid channel or task")
-	}
-	if err := model.ValidateTaskResultChannel(task, channel); err != nil {
-		return "", err
 	}
 
 	if url := extractGeminiVideoURLFromTaskData(task); url != "" {
@@ -153,9 +149,6 @@ func getVertexVideoURL(channel *model.Channel, task *model.Task) (string, error)
 	if channel == nil || task == nil {
 		return "", fmt.Errorf("invalid channel or task")
 	}
-	if err := model.ValidateTaskResultChannel(task, channel); err != nil {
-		return "", err
-	}
 	if url := strings.TrimSpace(task.GetResultURL()); url != "" && !isTaskProxyContentURL(url, task.TaskID) {
 		return url, nil
 	}
@@ -213,9 +206,6 @@ func isTaskProxyContentURL(url string, taskID string) bool {
 }
 
 func getVertexTaskKey(channel *model.Channel, task *model.Task) string {
-	if task != nil && task.Status == model.TaskStatusSuccess && task.PrivateData.ResultTransport != nil {
-		return channel.Key
-	}
 	if task != nil {
 		if key := strings.TrimSpace(task.PrivateData.Key); key != "" {
 			return key
@@ -294,12 +284,11 @@ func ensureAPIKey(uri, key string) string {
 	if key == "" || uri == "" {
 		return uri
 	}
-	target, err := url.Parse(uri)
-	if err != nil {
+	if strings.Contains(uri, "key=") {
 		return uri
 	}
-	query := target.Query()
-	query.Set("key", key)
-	target.RawQuery = query.Encode()
-	return target.String()
+	if strings.Contains(uri, "?") {
+		return fmt.Sprintf("%s&key=%s", uri, key)
+	}
+	return fmt.Sprintf("%s?key=%s", uri, key)
 }

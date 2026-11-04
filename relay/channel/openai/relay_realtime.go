@@ -79,10 +79,6 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						}
 					}
 				}
-				if err := helper.ValidateSupplierRealtimeMessage(info, message); err != nil {
-					errChan <- err
-					return
-				}
 
 				textToken, audioToken, err := service.CountTokenRealtime(info, *realtimeEvent, info.UpstreamModelName)
 				if err != nil {
@@ -215,15 +211,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					usageMu.Unlock()
 				}
 
-				publicMessage := message
-				if supplierResponseBound(c, info) {
-					publicMessage, err = projectSupplierRealtimeEvent(c, info, message)
-					if err != nil {
-						errChan <- err
-						return
-					}
-				}
-				err = helper.WssString(c, clientConn, string(publicMessage))
+				err = helper.WssString(c, clientConn, string(message))
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to client: %v", err)
 					return

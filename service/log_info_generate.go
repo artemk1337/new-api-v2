@@ -7,7 +7,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -136,11 +135,6 @@ func appendBillingInfo(relayInfo *relaycommon.RelayInfo, other map[string]interf
 	if relayInfo == nil || other == nil {
 		return
 	}
-	proxySupplierID := 0
-	if tariff := relayInfo.PriceData.SupplierTariff; tariff != nil {
-		proxySupplierID = tariff.SupplierID
-	}
-	model.SetLogProxySupplier(other, proxySupplierID)
 	// billing_source: "wallet" or "subscription"
 	if relayInfo.BillingSource != "" {
 		other["billing_source"] = relayInfo.BillingSource
@@ -353,21 +347,7 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 		return
 	}
 	other["billing_mode"] = "tiered_expr"
-	if relayInfo.PriceData.SupplierTariff == nil {
-		other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
-	} else {
-		other["supplier_pricing"] = true
-		admin, ok := other["admin_info"].(map[string]interface{})
-		if !ok {
-			admin = make(map[string]interface{})
-			other["admin_info"] = admin
-		}
-		admin["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
-		if result != nil {
-			admin["matched_tier"] = result.MatchedTier
-		}
-		return
-	}
+	other["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
 	if result != nil {
 		other["matched_tier"] = result.MatchedTier
 	}

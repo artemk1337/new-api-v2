@@ -57,11 +57,6 @@ func sweepTimedOutTasks(ctx context.Context) {
 	timedOutCount := 0
 
 	for _, task := range tasks {
-		if _, err := model.GetTaskChannel(task); err != nil &&
-			(task.PrivateData.TransportFingerprint != "" || task.UsesSupplierPricing() || errors.Is(err, model.ErrTaskChannelTransportChanged)) {
-			logger.LogError(ctx, fmt.Sprintf("task timeout requires review: task=%s channel=%d transport unavailable", task.TaskID, task.ChannelId))
-			continue
-		}
 		isLegacy := task.SubmitTime > 0 && task.SubmitTime < legacyTaskCutoff
 
 		oldStatus := task.Status
@@ -216,7 +211,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 	if len(taskIds) == 0 {
 		return nil
 	}
-	ch, err := model.GetChannelById(channelId, true)
+	ch, err := model.CacheGetChannel(channelId)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("CacheGetChannel: %v", err))
 		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
@@ -240,23 +235,9 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 	if adaptor == nil {
 		return errors.New("adaptor not found")
 	}
-	validatedIDs := make([]string, 0, len(taskIds))
-	validatedSet := make(map[string]bool, len(taskIds))
-	for _, id := range taskIds {
-		task := taskM[id]
-		if task == nil || model.ValidateTaskChannelTransport(task, ch) != nil {
-			logger.LogError(ctx, fmt.Sprintf("task polling blocked: channel=%d transport unavailable", channelId))
-			continue
-		}
-		validatedIDs = append(validatedIDs, id)
-		validatedSet[id] = true
-	}
-	if len(validatedIDs) == 0 {
-		return model.ErrTaskChannelTransportChanged
-	}
 	proxy := ch.GetSetting().Proxy
 	resp, err := adaptor.FetchTask(*ch.BaseURL, ch.Key, map[string]any{
-		"ids": validatedIDs,
+		"ids": taskIds,
 	}, proxy)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("Get Task Do req error: %v", err))
@@ -286,9 +267,6 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 	for _, responseItem := range responseItems.Data {
 		if ctx.Err() != nil {
 			return ctx.Err()
-		}
-		if !validatedSet[responseItem.TaskID] {
-			continue
 		}
 		task := taskM[responseItem.TaskID]
 		if task == nil {
@@ -418,7 +396,7 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	if len(taskIds) == 0 {
 		return nil
 	}
-	cacheGetChannel, err := model.GetChannelById(channelId, true)
+	cacheGetChannel, err := model.CacheGetChannel(channelId)
 	if err != nil {
 		// Collect DB primary key IDs for bulk update (taskIds are upstream IDs, not task_id column values)
 		var failedIDs []int64
@@ -483,9 +461,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if task == nil {
 		logger.LogError(ctx, fmt.Sprintf("Task %s not found in taskM", taskId))
 		return fmt.Errorf("task %s not found", taskId)
-	}
-	if err := model.ValidateTaskChannelTransport(task, ch); err != nil {
-		return err
 	}
 	key := ch.Key
 

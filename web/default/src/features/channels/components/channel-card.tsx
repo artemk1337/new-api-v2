@@ -24,7 +24,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { cn } from '@/lib/utils'
 
 import { CHANNEL_STATUS } from '../constants'
-import { isSupplierAggregateRow, parseGroupsList } from '../lib'
+import { isTagAggregateRow, parseGroupsList } from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -48,7 +48,7 @@ function ChannelCardComponent({
 }) {
   const { t } = useTranslation()
   const { sensitiveVisible } = useChannels()
-  const isSupplierRow = isSupplierAggregateRow(row.original)
+  const isTagRow = isTagAggregateRow(row.original)
   const cells = row.getAllCells()
 
   const renderCell = (id: string) => {
@@ -87,7 +87,7 @@ function ChannelCardComponent({
   // power toggle, so the plain "Enabled"/"Disabled" badge is redundant. Keep
   // only the informative states (e.g. auto-disabled, unknown) and tag rows.
   const showStatusBadge =
-    isSupplierRow ||
+    isTagRow ||
     (row.original.status !== CHANNEL_STATUS.ENABLED &&
       row.original.status !== CHANNEL_STATUS.MANUAL_DISABLED)
 
@@ -100,7 +100,7 @@ function ChannelCardComponent({
         {/* Row 1: selection + type, with status badge + actions menu */}
         <div className='flex items-center justify-between gap-2'>
           <div className='flex min-w-0 flex-1 items-center gap-2'>
-            {!isSupplierRow && selectCell && (
+            {!isTagRow && selectCell && (
               <span className='shrink-0'>{selectCell}</span>
             )}
             <div className='min-w-0 overflow-hidden'>{typeCell}</div>
@@ -117,7 +117,7 @@ function ChannelCardComponent({
           {/* Left column */}
           <div className='flex min-w-0 flex-1 flex-col gap-3 overflow-hidden'>
             <div className='min-w-0 text-sm'>
-              {!isSupplierRow && (
+              {!isTagRow && (
                 <div className={labelClass}>
                   #{sensitiveVisible ? row.original.id : SENSITIVE_MASK}
                 </div>
@@ -160,12 +160,6 @@ function ChannelCardComponent({
         </div>
 
         {/* Last row: groups span the full width, showing every group (no label) */}
-        {!isSupplierRow && (
-          <div className='flex flex-wrap items-center gap-2 text-xs'>
-            <span className={labelClass}>{t('Supplier')}</span>
-            {renderCell('supplier_id')}
-          </div>
-        )}
         <div className='min-w-0'>
           {groups.length > 0 ? (
             <div className='-ml-1.5 flex flex-wrap gap-1'>

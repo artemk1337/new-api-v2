@@ -1,9 +1,6 @@
 package service
 
 import (
-	"fmt"
-
-	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -189,14 +186,7 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 	}
 
 	tr, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
-	if err == nil {
-		err = supplierTieredResultError(relayInfo, tr)
-	}
 	if err != nil {
-		if relayInfo.PriceData.SupplierTariff != nil {
-			relayInfo.SupplierPricingError = fmt.Errorf("supplier billing expression could not be settled")
-			common.SysError(fmt.Sprintf("supplier billing settlement failed: channel=%d model=%s", relayInfo.ChannelId, relayInfo.OriginModelName))
-		}
 		quota = relayInfo.FinalPreConsumedQuota
 		if quota <= 0 {
 			quota = snap.EstimatedQuotaAfterGroup
@@ -218,17 +208,7 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 		completion.C += unknown
 		reasoningResult, reasoningErr := billingexpr.ComputeTieredQuotaWithRequest(snap, reasoning, requestInput)
 		completionResult, completionErr := billingexpr.ComputeTieredQuotaWithRequest(snap, completion, requestInput)
-		if reasoningErr == nil {
-			reasoningErr = supplierTieredResultError(relayInfo, reasoningResult)
-		}
-		if completionErr == nil {
-			completionErr = supplierTieredResultError(relayInfo, completionResult)
-		}
 		if reasoningErr != nil || completionErr != nil {
-			if relayInfo.PriceData.SupplierTariff != nil {
-				relayInfo.SupplierPricingError = fmt.Errorf("supplier reasoning usage could not be settled")
-				common.SysError(fmt.Sprintf("supplier reasoning settlement failed: channel=%d model=%s", relayInfo.ChannelId, relayInfo.OriginModelName))
-			}
 			safeQuota := tr.ActualQuotaAfterGroup
 			if snap.EstimatedQuotaAfterGroup > safeQuota {
 				safeQuota = snap.EstimatedQuotaAfterGroup

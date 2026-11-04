@@ -954,10 +954,7 @@ func validateOptionValue(key string, value string) error {
 		if err := ratio_setting.ValidatePricingGroupsJSONString(value); err != nil {
 			return err
 		}
-		if err := ratio_setting.ValidatePricingGroupIDStabilityJSONString(value); err != nil {
-			return err
-		}
-		return ValidateSupplierPricingGroupsJSON(value)
+		return ratio_setting.ValidatePricingGroupIDStabilityJSONString(value)
 	case "AutoGroups":
 		return ratio_setting.ValidateAutoGroupsJSONString(value)
 	case "billing_setting.task_price_unit":
@@ -1362,7 +1359,7 @@ func applyJSONOptionPatchesInTx(tx *gorm.DB, patches map[string]JSONObjectPatch,
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
 			return nil, nil, err
 		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, map[string]any{"key": optionKey}).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", optionKey).Error; err != nil {
 			return nil, nil, err
 		}
 
@@ -1469,7 +1466,7 @@ func UpdatePricingOptionManual(key, value string) error {
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&option).Error; err != nil {
 			return err
 		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, map[string]any{"key": key}).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&option, "key = ?", key).Error; err != nil {
 			return err
 		}
 		before := make(map[string]any)
@@ -1700,15 +1697,7 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 			}
 			values[announcementsOption] = normalized
 		}
-		if value, included := values["PricingGroups"]; included && tx.Migrator().HasTable(&PricingGroupSupplierBinding{}) {
-			if err := lockSupplierBindingsTx(tx); err != nil {
-				return err
-			}
-			if err := validateSupplierPricingGroupsJSONTx(tx, value); err != nil {
-				return err
-			}
-		}
-		if value, included := values["PricingGroups"]; included {
+		if value, ok := values["PricingGroups"]; ok {
 			if err := registerPricingGroupTagsTx(tx, value); err != nil {
 				return err
 			}

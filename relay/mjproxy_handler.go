@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -115,7 +116,7 @@ func RelayMidjourneyNotify(c *gin.Context) *dto.MidjourneyResponse {
 	midjourneyTask.FinishTime = midjRequest.FinishTime
 	midjourneyTask.ImageUrl = midjRequest.ImageUrl
 	midjourneyTask.VideoUrl = midjRequest.VideoUrl
-	videoUrlsStr, _ := common.Marshal(midjRequest.VideoUrls)
+	videoUrlsStr, _ := json.Marshal(midjRequest.VideoUrls)
 	midjourneyTask.VideoUrls = string(videoUrlsStr)
 	midjourneyTask.Status = midjRequest.Status
 	midjourneyTask.FailReason = midjRequest.FailReason
@@ -157,21 +158,21 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 	midjourneyTask.Prompt = originTask.Prompt
 	if originTask.Buttons != "" {
 		var buttons []dto.ActionButton
-		err := common.Unmarshal([]byte(originTask.Buttons), &buttons)
+		err := json.Unmarshal([]byte(originTask.Buttons), &buttons)
 		if err == nil {
 			midjourneyTask.Buttons = buttons
 		}
 	}
 	if originTask.VideoUrls != "" {
 		var videoUrls []dto.ImgUrls
-		err := common.Unmarshal([]byte(originTask.VideoUrls), &videoUrls)
+		err := json.Unmarshal([]byte(originTask.VideoUrls), &videoUrls)
 		if err == nil {
 			midjourneyTask.VideoUrls = videoUrls
 		}
 	}
 	if originTask.Properties != "" {
 		var properties dto.Properties
-		err := common.Unmarshal([]byte(originTask.Properties), &properties)
+		err := json.Unmarshal([]byte(originTask.Properties), &properties)
 		if err == nil {
 			midjourneyTask.Properties = &properties
 		}
@@ -187,9 +188,6 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	}
 
 	info.InitChannelMeta(c)
-	if mjErr := validateMidjourneySelectedChannel(c); mjErr != nil {
-		return mjErr
-	}
 
 	if swapFaceRequest.SourceBase64 == "" || swapFaceRequest.TargetBase64 == "" {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "sour_base64_and_target_base64_is_required")
@@ -274,7 +272,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
 	}
 	c.Writer.WriteHeader(mjResp.StatusCode)
-	respBody, err := common.Marshal(midjResponse)
+	respBody, err := json.Marshal(midjResponse)
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
 	}
@@ -299,9 +297,6 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 	if channel.Status != common.ChannelStatusEnabled {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
 	}
-	if mjErr := validateMidjourneyChannelPricing(c, channel); mjErr != nil {
-		return mjErr
-	}
 	c.Set("channel_id", originTask.ChannelId)
 	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", channel.Key))
 
@@ -313,7 +308,7 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 	}
 	midjResponse := &midjResponseWithStatus.Response
 	c.Writer.WriteHeader(midjResponseWithStatus.StatusCode)
-	respBody, err := common.Marshal(midjResponse)
+	respBody, err := json.Marshal(midjResponse)
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "unmarshal_response_body_failed")
 	}
@@ -336,7 +331,7 @@ func RelayMidjourneyTask(c *gin.Context, relayMode int) *dto.MidjourneyResponse 
 			}
 		}
 		midjourneyTask := coverMidjourneyTaskDto(c, originTask)
-		respBody, err = common.Marshal(midjourneyTask)
+		respBody, err = json.Marshal(midjourneyTask)
 		if err != nil {
 			return &dto.MidjourneyResponse{
 				Code:        4,
@@ -365,7 +360,7 @@ func RelayMidjourneyTask(c *gin.Context, relayMode int) *dto.MidjourneyResponse 
 		if tasks == nil {
 			tasks = make([]dto.MidjourneyDto, 0)
 		}
-		respBody, err = common.Marshal(tasks)
+		respBody, err = json.Marshal(tasks)
 		if err != nil {
 			return &dto.MidjourneyResponse{
 				Code:        4,
@@ -395,9 +390,6 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	}
 
 	relayInfo.InitChannelMeta(c)
-	if mjErr := validateMidjourneySelectedChannel(c); mjErr != nil {
-		return mjErr
-	}
 
 	if relayInfo.RelayMode == relayconstant.RelayModeMidjourneyAction { // midjourney plus，需要从customId中获取任务信息
 		mjErr := service.CoverPlusActionToNormalAction(&midjRequest)
@@ -478,9 +470,6 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			}
 			if channel.Status != common.ChannelStatusEnabled {
 				return service.MidjourneyErrorWrapper(constant.MjRequestError, "该任务所属渠道已被禁用")
-			}
-			if mjErr := validateMidjourneyChannelPricing(c, channel); mjErr != nil {
-				return mjErr
 			}
 			c.Set("base_url", channel.GetBaseURL())
 			c.Set("channel_id", originTask.ChannelId)
@@ -676,30 +665,6 @@ type taskChangeParams struct {
 	ID     string
 	Action string
 	Index  int
-}
-
-func validateMidjourneySelectedChannel(c *gin.Context) *dto.MidjourneyResponse {
-	channel, err := model.GetChannelById(common.GetContextKeyInt(c, constant.ContextKeyChannelId), false)
-	if err != nil {
-		return service.MidjourneyErrorWrapper(constant.MjRequestError, "get_channel_info_failed")
-	}
-	return validateMidjourneyChannelPricing(c, channel)
-}
-
-func validateMidjourneyChannelPricing(c *gin.Context, channel *model.Channel) *dto.MidjourneyResponse {
-	group := common.GetContextKeyString(c, constant.ContextKeyAutoGroup)
-	if group == "" {
-		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-	}
-	if channel.Status != common.ChannelStatusEnabled || model.ValidateChannelPricingGroup(channel, group) != nil {
-		return service.MidjourneyErrorWrapper(constant.MjRequestError, "model_pricing_unavailable_for_operation")
-	}
-	// Midjourney persists only the legacy fixed quota, not a supplier tariff
-	// snapshot. Reject bound routes until callbacks support that contract.
-	if channel.SupplierID != nil {
-		return service.MidjourneyErrorWrapper(constant.MjRequestError, "model_pricing_unavailable_for_operation")
-	}
-	return nil
 }
 
 func getMjRequestPath(path string) string {

@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	commonRelay "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
-	"github.com/QuantumNous/new-api/types"
 )
 
 type TaskStatus string
@@ -77,12 +76,11 @@ func (t *Task) GetData(v any) error {
 }
 
 type Properties struct {
-	Input              string `json:"input"`
-	RequestedModelName string `json:"requested_model_name,omitempty"`
-	UpstreamModelName  string `json:"upstream_model_name,omitempty"`
-	OriginModelName    string `json:"origin_model_name,omitempty"`
-	IsModelMapped      bool   `json:"is_model_mapped,omitempty"`
-	BillingModelName   string `json:"billing_model_name,omitempty"`
+	Input             string `json:"input"`
+	UpstreamModelName string `json:"upstream_model_name,omitempty"`
+	OriginModelName   string `json:"origin_model_name,omitempty"`
+	IsModelMapped     bool   `json:"is_model_mapped,omitempty"`
+	BillingModelName  string `json:"billing_model_name,omitempty"`
 }
 
 func (m *Properties) Scan(val interface{}) error {
@@ -102,11 +100,9 @@ func (m Properties) Value() (driver.Value, error) {
 }
 
 type TaskPrivateData struct {
-	TransportFingerprint string               `json:"transport_fingerprint,omitempty"`
-	ResultTransport      *TaskResultTransport `json:"result_transport,omitempty"`
-	Key                  string               `json:"key,omitempty"`
-	UpstreamTaskID       string               `json:"upstream_task_id,omitempty"` // 上游真实 task ID
-	ResultURL            string               `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
+	Key            string `json:"key,omitempty"`
+	UpstreamTaskID string `json:"upstream_task_id,omitempty"` // 上游真实 task ID
+	ResultURL      string `json:"result_url,omitempty"`       // 任务成功后的结果 URL（视频地址等）
 	// 计费上下文：用于异步退款/差额结算（轮询阶段读取）
 	BillingSource        string              `json:"billing_source,omitempty"`         // "wallet" 或 "subscription"
 	BillingOverageSource string              `json:"billing_overage_source,omitempty"` // 订阅超额部分的实际资金来源
@@ -119,10 +115,6 @@ type TaskPrivateData struct {
 
 // TaskBillingContext 记录任务提交时的计费参数，以便轮询阶段可以重新计算额度。
 type TaskBillingContext struct {
-	PriceSnapshot   *types.PriceData   `json:"price_snapshot,omitempty"`
-	SupplierID      int                `json:"supplier_id,omitempty"`
-	ProfileID       int                `json:"profile_id,omitempty"`
-	PriceRevision   int64              `json:"price_revision,omitempty"`
 	ModelPrice      float64            `json:"model_price,omitempty"`       // 模型单价
 	GroupRatio      float64            `json:"group_ratio,omitempty"`       // 分组倍率
 	ModelRatio      float64            `json:"model_ratio,omitempty"`       // 模型倍率
@@ -131,18 +123,6 @@ type TaskBillingContext struct {
 	PerCallBilling  bool               `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 	SettlementError string             `json:"settlement_error,omitempty"`
 	HeldReserve     bool               `json:"held_reserve,omitempty"`
-}
-
-func (t *Task) UsesSupplierPricing() bool {
-	context := t.PrivateData.BillingContext
-	return context != nil && (context.SupplierID > 0 || context.PriceSnapshot != nil && context.PriceSnapshot.SupplierTariff != nil)
-}
-
-func (t *Task) PublicModelName() string {
-	if t.Properties.RequestedModelName != "" {
-		return t.Properties.RequestedModelName
-	}
-	return t.Properties.OriginModelName
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）
@@ -161,12 +141,6 @@ func (t *Task) GetResultURL() string {
 		return t.PrivateData.ResultURL
 	}
 	return t.FailReason
-}
-
-func (t *Task) SunoSongs() ([]dto.SunoSong, error) {
-	var songs []dto.SunoSong
-	err := common.Unmarshal(t.Data, &songs)
-	return songs, err
 }
 
 // GenerateTaskID 生成对外暴露的 task_xxxx 格式 ID
@@ -206,20 +180,9 @@ type SyncTaskQueryParams struct {
 func InitTask(platform constant.TaskPlatform, relayInfo *commonRelay.RelayInfo) *Task {
 	properties := Properties{}
 	privateData := TaskPrivateData{}
-	if relayInfo != nil {
-		properties.RequestedModelName = relayInfo.RequestedModelName
-	}
 	if relayInfo != nil && relayInfo.ChannelMeta != nil {
-		privateData.TransportFingerprint = relayInfo.ChannelTransportFingerprint
-		baseURL := relayInfo.ChannelBaseUrl
-		if baseURL == "" && relayInfo.ChannelType >= 0 && relayInfo.ChannelType < len(constant.ChannelBaseURLs) {
-			baseURL = constant.ChannelBaseURLs[relayInfo.ChannelType]
-		}
-		privateData.ResultTransport = &TaskResultTransport{Type: relayInfo.ChannelType, BaseURL: baseURL, Proxy: relayInfo.ChannelSetting.Proxy}
 		if relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeGemini ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeOpenAI ||
-			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeSora {
+			relayInfo.ChannelMeta.ChannelType == constant.ChannelTypeVertexAi {
 			privateData.Key = relayInfo.ChannelMeta.ApiKey
 		}
 		if relayInfo.UpstreamModelName != "" {

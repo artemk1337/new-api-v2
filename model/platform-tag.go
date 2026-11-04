@@ -76,7 +76,7 @@ func migratePlatformTags() error {
 			}
 		}
 		var option Option
-		err := tx.Where(map[string]any{"key": "PricingGroups"}).First(&option).Error
+		err := tx.Where("key = ?", "PricingGroups").First(&option).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}

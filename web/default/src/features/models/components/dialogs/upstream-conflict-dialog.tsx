@@ -59,7 +59,7 @@ const FIELD_LABELS: Record<string, string> = {
   description: 'Description',
   icon: 'Icon',
   tags: 'Tags',
-  vendor: 'Model provider',
+  vendor: 'Vendor',
   name_rule: 'Name Rule',
   status: 'Status',
   endpoints: 'Endpoints',

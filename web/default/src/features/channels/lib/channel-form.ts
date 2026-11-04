@@ -157,8 +157,6 @@ export const channelFormSchema = z
         'Status code mapping must use valid HTTP status codes'
       ),
     tag: z.string().optional(),
-    supplier_id: z.number().int().positive().nullable().optional(),
-    supplier_profile_id: z.number().int().positive().nullable().optional(),
     remark: z
       .string()
       .max(255, 'Remark must be less than 255 characters')
@@ -213,13 +211,6 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    if (Boolean(data.supplier_id) !== Boolean(data.supplier_profile_id)) {
-      addRequiredIssue(
-        ctx,
-        'supplier_profile_id',
-        'Select a supplier and price profile together'
-      )
-    }
     if ([3, 8, 36, 45].includes(data.type) && !data.base_url?.trim()) {
       addRequiredIssue(
         ctx,
@@ -323,8 +314,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
-  supplier_id: null,
-  supplier_profile_id: null,
   remark: '',
   setting: '',
   param_override: '',
@@ -466,8 +455,6 @@ export function transformChannelToFormDefaults(
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
-    supplier_id: channel.supplier_id ?? null,
-    supplier_profile_id: channel.supplier_profile_id ?? null,
     remark: channel.remark || '',
     setting: channel.setting || '',
     param_override: channel.param_override || '',
@@ -674,8 +661,6 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     status: formData.status,
     status_code_mapping: formData.status_code_mapping || null,
     tag: formData.tag || null,
-    supplier_id: formData.supplier_id ?? null,
-    supplier_profile_id: formData.supplier_profile_id ?? null,
     remark: formData.remark || '',
     setting: buildSettingJSON(formData),
     param_override: formData.param_override || null,
@@ -723,8 +708,6 @@ export function transformFormDataToUpdatePayload(
     auto_ban: formData.auto_ban ?? 1,
     status_code_mapping: formData.status_code_mapping || null,
     tag: formData.tag || null,
-    supplier_id: formData.supplier_id ?? null,
-    supplier_profile_id: formData.supplier_profile_id ?? null,
     remark: formData.remark || '',
     setting: buildSettingJSON(formData),
     param_override: formData.param_override || null,

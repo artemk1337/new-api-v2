@@ -197,6 +197,7 @@ func TestChannelUpdateRollsBackWhenAbilityBatchFails(t *testing.T) {
 
 func TestEditChannelByTagStoresPricingGroupIDs(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&PlatformTag{}))
 
 	original := ratio_setting.PricingGroups2JSONString()
 	t.Cleanup(func() {
@@ -209,6 +210,7 @@ func TestEditChannelByTagStoresPricingGroupIDs(t *testing.T) {
 	]`))
 
 	tag := "pricing-tag"
+	t.Cleanup(func() { require.NoError(t, DB.Where("name = ?", tag).Delete(&PlatformTag{}).Error) })
 	channel := &Channel{
 		Name:   "group-tag-edit",
 		Key:    "test-key",
@@ -232,8 +234,10 @@ func TestEditChannelByTagStoresPricingGroupIDs(t *testing.T) {
 
 func TestEditChannelByTagRollsBackWhenAbilityBatchFails(t *testing.T) {
 	truncateTables(t)
+	require.NoError(t, DB.AutoMigrate(&PlatformTag{}))
 
 	tag := "ability-tag-rollback"
+	t.Cleanup(func() { require.NoError(t, DB.Where("name = ?", tag).Delete(&PlatformTag{}).Error) })
 	channel := &Channel{
 		Name:   "ability-tag-rollback",
 		Key:    "test-key",

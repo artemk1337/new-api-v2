@@ -39,7 +39,6 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
 } from '../types'
-import { parseProxySupplierId } from './suggestions'
 
 // ============================================================================
 // Type Checkers & Utilities
@@ -193,10 +192,6 @@ export function buildApiParams(config: {
       : {}),
     ...(isAdmin && searchParams.username
       ? { username: String(searchParams.username) }
-      : {}),
-    ...(isAdmin &&
-    parseProxySupplierId(searchParams.proxySupplierId) !== undefined
-      ? { proxy_supplier_id: Number(searchParams.proxySupplierId) }
       : {}),
     ...(searchParams.requestId
       ? { request_id: String(searchParams.requestId) }

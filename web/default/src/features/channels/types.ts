@@ -65,8 +65,6 @@ export const channelSchema = z.object({
   auto_ban: z.number().nullish(),
   other_info: z.string().default(''),
   tag: z.string().nullish(),
-  supplier_id: z.number().nullish(),
-  supplier_profile_id: z.number().nullish(),
   setting: z.string().nullish(),
   param_override: z.string().nullish(),
   header_override: z.string().nullish(),
@@ -270,7 +268,6 @@ export type ChannelSortBy =
 export type ChannelSortOrder = 'asc' | 'desc'
 
 export interface GetChannelsParams {
-  supplier_id?: number
   p?: number
   page_size?: number
   status?: string // 'enabled', 'disabled', or empty for all
@@ -283,7 +280,6 @@ export interface GetChannelsParams {
 }
 
 export interface SearchChannelsParams {
-  supplier_id?: number
   keyword?: string
   group?: string
   model?: string
@@ -361,8 +357,6 @@ export interface ChannelFormData {
   status: number
   status_code_mapping?: string
   tag?: string
-  supplier_id?: number | null
-  supplier_profile_id?: number | null
   remark?: string
   setting?: string
   param_override?: string

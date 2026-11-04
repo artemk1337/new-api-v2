@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
-
 import type { Model } from '../types'
 import { parseModelTags as parseTagsFromUtils } from './model-utils'
 
@@ -54,7 +53,7 @@ export type ModelFormValues = z.infer<typeof modelFormSchema>
  */
 export const vendorFormSchema = z.object({
   id: z.number().optional(),
-  name: z.string().min(1, 'Model provider name is required'),
+  name: z.string().min(1, 'Vendor name is required'),
   description: z.string().default(''),
   icon: z.string().default(''),
   status: z.number().default(1),

@@ -16,23 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
-
+import { useQuery } from '@tanstack/react-query'
 import { useStatus } from '@/hooks/use-status'
-import { useAuthStore } from '@/stores/auth-store'
-
 import { getPricing } from '../api'
 
 export function usePricingData() {
   const { status } = useStatus()
-  const pricingIdentity = useAuthStore((state) => {
-    const user = state.auth.user
-    return user ? `${user.id}:${user.group ?? ''}:${user.role}` : 'public'
-  })
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['pricing', 'v2', pricingIdentity],
+    queryKey: ['pricing'],
     queryFn: getPricing,
     staleTime: 5 * 60 * 1000,
   })
@@ -48,9 +41,9 @@ export function usePricingData() {
   )
 
   const models = useMemo(() => {
-    if (!data?.data) return []
+    if (!data?.data || !data?.vendors) return []
 
-    const vendorMap = new Map((data.vendors ?? []).map((v) => [v.id, v]))
+    const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
 
     return data.data.map((model) => {
       const vendor = model.vendor_id
@@ -59,14 +52,10 @@ export function usePricingData() {
       return {
         ...model,
         key: model.model_name,
-        vendor_name: vendor?.name ?? model.vendor_name,
-        vendor_icon: vendor?.icon ?? model.vendor_icon,
-        vendor_description: vendor?.description ?? model.vendor_description,
-        enable_groups: (model.group_prices ?? []).map((price) => price.group),
-        enable_group_refs: (model.group_prices ?? []).map((price) => ({
-          id: price.group_id,
-          name: price.group_name,
-        })),
+        vendor_name: vendor?.name,
+        vendor_icon: vendor?.icon,
+        vendor_description: vendor?.description,
+        group_ratio: data.group_ratio,
       }
     })
   }, [data])

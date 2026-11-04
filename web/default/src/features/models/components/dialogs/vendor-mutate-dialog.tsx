@@ -99,11 +99,7 @@ export function VendorMutateDialog({
 
       if (response.success) {
         toast.success(
-          t(
-            isEdit
-              ? 'Model provider updated successfully'
-              : 'Model provider created successfully'
-          )
+          isEdit ? 'Vendor updated successfully' : 'Vendor created successfully'
         )
         queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.lists() })
         queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
@@ -118,17 +114,20 @@ export function VendorMutateDialog({
     }
   }
 
+  let submitLabel = isEdit ? t('Update') : t('Create')
+  if (isSaving) submitLabel = t('Saving...')
+
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isEdit ? t('Edit model provider') : t('Add model provider')}
+      title={isEdit ? t('Edit Vendor') : t('Create Vendor')}
       description={
         isEdit
-          ? t('Update model provider information for {{name}}', {
+          ? t('Update vendor information for {{name}}', {
               name: currentVendor?.name,
             })
-          : t('Add a new model provider to the system')
+          : t('Add a new vendor to the system')
       }
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -150,7 +149,7 @@ export function VendorMutateDialog({
             {isSaving ? (
               <Loader2 className='mr-2 h-4 w-4 animate-spin' />
             ) : null}
-            {isSaving ? t('Saving...') : t(isEdit ? 'Update' : 'Create')}
+            {submitLabel}
           </Button>
         </>
       }
@@ -166,7 +165,7 @@ export function VendorMutateDialog({
             name='name'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Model provider name *')}</FormLabel>
+                <FormLabel>{t('Vendor Name *')}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder={t('OpenAI, Anthropic, etc.')}
@@ -174,7 +173,7 @@ export function VendorMutateDialog({
                   />
                 </FormControl>
                 <FormDescription>
-                  {t('The unique name for this model provider')}
+                  {t('The unique name for this vendor')}
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -189,7 +188,7 @@ export function VendorMutateDialog({
                 <FormLabel>{t('Description')}</FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder={t('Describe this model provider...')}
+                    placeholder={t('Describe this vendor...')}
                     rows={3}
                     {...field}
                   />

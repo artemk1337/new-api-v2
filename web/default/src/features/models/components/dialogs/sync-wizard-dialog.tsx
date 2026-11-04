@@ -16,20 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { Dialog } from '@/components/dialog'
-import { StatusBadge } from '@/components/status-badge'
+import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { useIsMobile } from '@/hooks/use-mobile'
-import { cn } from '@/lib/utils'
-
+import { Dialog } from '@/components/dialog'
+import { StatusBadge } from '@/components/status-badge'
 import { syncUpstream, previewUpstreamDiff } from '../../api'
 import { getSyncLocaleOptions, getSyncSourceOptions } from '../../constants'
 import { modelsQueryKeys, vendorsQueryKeys } from '../../lib'
@@ -104,14 +102,7 @@ export function SyncWizardDialog({
         const { created_models, created_vendors, updated_models } =
           response.data || {}
         toast.success(
-          t(
-            'Sync completed: {{created}} models created, {{updated}} updated, {{providers}} model providers added.',
-            {
-              created: created_models || 0,
-              updated: updated_models || 0,
-              providers: created_vendors || 0,
-            }
-          )
+          `Sync completed! Created ${created_models || 0} models, updated ${updated_models || 0}, and added ${created_vendors || 0} vendors.`
         )
         queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
         queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.lists() })
@@ -131,9 +122,7 @@ export function SyncWizardDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={t('Sync Upstream Models')}
-      description={t(
-        'Synchronize models and model providers from an upstream source'
-      )}
+      description={t('Synchronize models and vendors from an upstream source')}
       initialFocus={!isMobile}
       contentHeight='auto'
       bodyClassName='flex flex-col gap-6'
@@ -245,7 +234,7 @@ export function SyncWizardDialog({
       <div className='bg-muted/50 rounded-lg border p-4'>
         <p className='text-muted-foreground text-sm'>
           {t(
-            'The sync will fetch missing models and model providers from the selected source. Existing records are updated only when you approve conflicts.'
+            'The sync will fetch missing models and vendors from the selected source. Existing records are updated only when you approve conflicts.'
           )}
         </p>
       </div>

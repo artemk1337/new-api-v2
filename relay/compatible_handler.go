@@ -86,7 +86,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		var containAudioTokens = usage.CompletionTokenDetails.AudioTokens > 0 || usage.PromptTokensDetails.AudioTokens > 0
 		billingModelName := helper.GetBillingModelName(info)
-		var containsAudioRatios = info.PriceData.SupplierTariff == nil && (ratio_setting.ContainsAudioRatio(billingModelName) || ratio_setting.ContainsAudioCompletionRatio(billingModelName))
+		var containsAudioRatios = ratio_setting.ContainsAudioRatio(billingModelName) || ratio_setting.ContainsAudioCompletionRatio(billingModelName)
 
 		if containAudioTokens && containsAudioRatios {
 			service.PostAudioConsumeQuota(c, info, usage, "")
@@ -220,7 +220,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	var containAudioTokens = usage.(*dto.Usage).CompletionTokenDetails.AudioTokens > 0 || usage.(*dto.Usage).PromptTokensDetails.AudioTokens > 0
 	billingModelName := helper.GetBillingModelName(info)
-	var containsAudioRatios = info.PriceData.SupplierTariff == nil && (ratio_setting.ContainsAudioRatio(billingModelName) || ratio_setting.ContainsAudioCompletionRatio(billingModelName))
+	var containsAudioRatios = ratio_setting.ContainsAudioRatio(billingModelName) || ratio_setting.ContainsAudioCompletionRatio(billingModelName)
 
 	if containAudioTokens && containsAudioRatios {
 		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")
