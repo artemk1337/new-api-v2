@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.208 — 2026-11-04
+
+- Allow API key holders to sign in to a restricted view of their key’s spending, remaining quota, and recent usage logs without access to account settings or top-ups.
+- Revalidate the key, owner, expiry, and IP restrictions for each request, while allowing access after quota exhaustion.
+
 ## v1.1.207 — 2026-11-04
 
 - Replace notification tabs with a single, wider updates timeline grouped by month, with concise localized dates and expandable long announcements.

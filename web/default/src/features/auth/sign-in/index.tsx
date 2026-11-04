@@ -52,6 +52,14 @@ export function SignIn() {
         </div>
 
         <UserAuthForm redirectTo={redirect} />
+        <div className='text-center'>
+          <Link
+            to='/key-access'
+            className='text-muted-foreground hover:text-primary text-sm underline underline-offset-4'
+          >
+            {t('Sign in with API key')}
+          </Link>
+        </div>
       </div>
     </AuthLayout>
   )
