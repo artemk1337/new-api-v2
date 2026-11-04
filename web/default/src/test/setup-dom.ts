@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Window } from 'happy-dom'
 
+// Initialize the DOM before React and Base UI cache their browser environment.
 const browserWindow = new Window({ url: 'http://localhost' })
 const globals: Record<string, unknown> = {
   window: browserWindow,

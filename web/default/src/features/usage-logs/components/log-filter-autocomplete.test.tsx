@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import './log-filter-test-dom'
 import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
