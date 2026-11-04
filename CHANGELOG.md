@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.215 — 2026-11-04
+
+- Add optional proxy suppliers and pricing profiles for channels and pricing groups, with isolated real-USD model tariffs, immutable billing snapshots, and synchronization of supported OpenLux, relay.fast, and BBLABU catalogues.
+- Show final model prices by group, including context tiers, cache rates, and per-call tool fees; keep official model-provider reference prices separate from procurement and billing.
+- Restrict supplier configuration and procurement details to administrators, redact inference responses and task logs, and preserve limited API-key session access.
+- Preserve legacy unbound pricing, forced channels, shared tags, and Auto routing; prevent stale synchronization writes, partial-usage undercharging, quota overflow, and repeated duration charges for per-call tasks.
+- Preserve completed task history and media across safe key rotation, retain Suno song/lyrics and Responses protocol fields, and protect owned task assets without exposing upstream credentials.
+- Add repeatable database migration and rollback coverage; require every application node to support supplier pricing before enabling supplier bindings. Preserve existing bindings on the first rollout and disable bound traffic before reverting to an older release.
+
 ## v1.1.214 — 2026-11-04
 
 - Add expandable answers for balance top-ups, request pricing, model selection, and support below the home page connection steps.
