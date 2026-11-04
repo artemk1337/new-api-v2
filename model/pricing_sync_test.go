@@ -175,6 +175,7 @@ func TestPricingOptionChangedModels(t *testing.T) {
 func TestUpdatePricingOptionManualPersistsPriceAndStateTogether(t *testing.T) {
 	truncateTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}, &PricingSyncModelState{}))
+	setPricingPatchOption(t, "ModelPrice", "{}")
 	const modelName = "atomic-manual-model"
 	version, err := GetPricingSyncConfigVersion()
 	require.NoError(t, err)

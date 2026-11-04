@@ -316,7 +316,12 @@ func TestConfirmPricingSyncQuotesRequiresTwoIdenticalSnapshots(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 
 	first := map[string]any{
 		"model_ratio":      map[string]any{"model-a": 2.0},
@@ -345,7 +350,12 @@ func TestConfirmPricingSyncQuotesTreatsZeroBaseAsMissing(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 	require.NoError(t, db.Create(&model.PricingSyncQuote{
 		ChannelID: 8, ModelName: "model-a", Confirmations: 2,
 		Data: `{"model_ratio":2,"completion_ratio":3}`,
@@ -372,7 +382,12 @@ func TestConfirmPricingSyncQuotesDoesNotMarkPresentUnsupportedModelMissing(t *te
 	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 	require.NoError(t, db.Create(&model.PricingSyncQuote{
 		ChannelID: 8, ModelName: "duplicate", Confirmations: 2, MissingCount: 1,
 		Data: `{"model_ratio":2,"completion_ratio":3}`,
@@ -404,7 +419,12 @@ func TestPricingSyncMissingModelsRequiresOwnedAbsentPrice(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 	require.NoError(t, db.Create(&model.PricingSyncQuote{
 		ChannelID: 8, ModelName: "model-a", MissingCount: 2,
 	}).Error)
@@ -429,7 +449,12 @@ func TestPricingSyncMissingModelsDoesNotFallbackFromLostProvenance(t *testing.T)
 	require.NoError(t, db.AutoMigrate(&model.PricingSyncQuote{}))
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 	require.NoError(t, db.Create(&model.PricingSyncQuote{
 		ChannelID: 8, ModelName: "model-a", MissingCount: 2,
 	}).Error)
@@ -480,7 +505,12 @@ func TestPricingSyncSourceWritesRequireCurrentConfiguration(t *testing.T) {
 	require.NoError(t, db.Create(&current).Error)
 	originalDB := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = originalDB })
+	t.Cleanup(func() {
+		model.DB = originalDB
+		sqlDB, err := db.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 
 	stale := current
 	stale.Endpoint = "/api/ratio_config"

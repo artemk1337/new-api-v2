@@ -75,6 +75,11 @@ func TestApplyJSONOptionPatchesRejectsNonPricingOption(t *testing.T) {
 
 func setPricingPatchOption(t *testing.T, key, value string) {
 	t.Helper()
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMapRWMutex.Unlock()
 	require.NoError(t, DB.AutoMigrate(&Option{}))
 	var previous Option
 	err := DB.First(&previous, "key = ?", key).Error
