@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
 import { login, wechatLoginByCode } from '@/features/auth/api'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { TermsFooter } from '@/features/auth/components/terms-footer'
@@ -55,6 +56,8 @@ import {
 } from '@/lib/passkey'
 import { cn } from '@/lib/utils'
 
+import { SignInMethods } from './sign-in-methods'
+
 export function UserAuthForm({
   className,
   redirectTo,
@@ -62,6 +65,7 @@ export function UserAuthForm({
 }: AuthFormProps) {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
+  const [isKeyLoading, setIsKeyLoading] = useState(false)
   const [wechatCode, setWeChatCode] = useState('')
   const [passkeySupported, setPasskeySupported] = useState(false)
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
@@ -86,7 +90,9 @@ export function UserAuthForm({
   } = useTurnstile()
   const { handleLoginSuccess, redirectTo2FA } = useAuthRedirect()
 
-  const passkeyButtonDisabled = isPasskeyLoading || !passkeySupported
+  const isAuthenticating =
+    isLoading || isKeyLoading || isPasskeyLoading || isWeChatSubmitting
+  const passkeyButtonDisabled = isAuthenticating || !passkeySupported
   const hasWeChatLogin = Boolean(status?.wechat_login)
   const hasOAuthLogin = Boolean(
     status?.github_oauth ||
@@ -128,6 +134,7 @@ export function UserAuthForm({
   }, [status])
 
   async function onSubmit(data: z.infer<typeof loginFormSchema>) {
+    if (isAuthenticating) return
     if (!validateTurnstile()) return
 
     setIsLoading(true)
@@ -255,7 +262,7 @@ export function UserAuthForm({
   const alternativeLoginMethods = (
     <>
       {passkeyLoginEnabled && (
-        <div className='mt-2 space-y-1'>
+        <div className='grid gap-1'>
           <Button
             type='button'
             variant='outline'
@@ -281,7 +288,7 @@ export function UserAuthForm({
       {/* OAuth Providers */}
       <OAuthProviders
         status={status}
-        disabled={isLoading}
+        disabled={isAuthenticating}
         onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
         isWeChatLoading={isWeChatSubmitting}
       />
@@ -290,20 +297,17 @@ export function UserAuthForm({
 
   return (
     <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-4', className)}
-        {...props}
-      >
-        {hasAlternativeLogin && (
-          <>
-            <TermsFooter variant='sign-in' status={status} />
-            {alternativeLoginMethods}
-          </>
-        )}
-
-        {passwordLoginEnabled && (
-          <>
+      <div className='grid gap-6'>
+        <SignInMethods
+          passwordLoginEnabled={passwordLoginEnabled}
+          disabled={isAuthenticating}
+          onKeyPendingChange={setIsKeyLoading}
+        >
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className={cn('grid gap-4', className)}
+            {...props}
+          >
             {/* Username Field */}
             <FormField
               control={form.control}
@@ -346,15 +350,11 @@ export function UserAuthForm({
               )}
             />
 
-            {!hasAlternativeLogin && (
-              <TermsFooter variant='sign-in' status={status} />
-            )}
-
             {/* Submit Button */}
             <Button
               type='submit'
               className='mt-2 w-full justify-center gap-2'
-              disabled={isLoading}
+              disabled={isAuthenticating}
             >
               {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
               {t('Sign in')}
@@ -369,11 +369,16 @@ export function UserAuthForm({
                 />
               </div>
             )}
-          </>
+          </form>
+        </SignInMethods>
+        {hasAlternativeLogin && (
+          <div className='grid gap-4'>
+            <Separator />
+            {alternativeLoginMethods}
+          </div>
         )}
-
-        {!hasAlternativeLogin && alternativeLoginMethods}
-      </form>
+        <TermsFooter variant='sign-in' status={status} />
+      </div>
 
       {hasWeChatLogin && (
         <Dialog

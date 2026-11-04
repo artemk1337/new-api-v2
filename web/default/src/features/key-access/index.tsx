@@ -1,22 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { formatQuota } from '@/lib/format'
-import { useAuthStore } from '@/stores/auth-store'
 
-import { getKeyLogs, getKeySession, loginWithKey, logoutKey } from './api'
+import { getKeyLogs, getKeySession, logoutKey } from './api'
+import { KeyLoginForm } from './key-login-form'
+
+export { KeyLoginForm } from './key-login-form'
 
 export function KeyAccess() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [key, setKey] = useState('')
   const [pending, setPending] = useState(false)
   const session = useQuery({
     queryKey: ['key-session'],
@@ -29,23 +28,6 @@ export function KeyAccess() {
     enabled: !!session.data,
     retry: false,
   })
-
-  async function signIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setPending(true)
-    try {
-      await loginWithKey(key.trim())
-      setKey('')
-      useAuthStore.getState().auth.reset()
-      window.localStorage.removeItem('uid')
-      queryClient.clear()
-      queryClient.setQueryData(['key-session'], await getKeySession())
-    } catch {
-      toast.error(t('Login failed'))
-    } finally {
-      setPending(false)
-    }
-  }
 
   async function signOut() {
     setPending(true)
@@ -71,33 +53,14 @@ export function KeyAccess() {
           <CardHeader>
             <CardTitle>{t('Sign in with API key')}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={signIn} className='space-y-4'>
-              <div className='space-y-2'>
-                <Label htmlFor='api-key'>{t('API key')}</Label>
-                <Input
-                  id='api-key'
-                  type='password'
-                  autoComplete='off'
-                  required
-                  value={key}
-                  onChange={(event) => setKey(event.target.value)}
-                />
-              </div>
-              <Button
-                type='submit'
-                className='w-full'
-                disabled={pending || !key.trim()}
-              >
-                {t('Sign in')}
-              </Button>
-              <Link
-                to='/sign-in'
-                className='text-muted-foreground block text-center text-sm underline'
-              >
-                {t('Sign in')}
-              </Link>
-            </form>
+          <CardContent className='space-y-4'>
+            <KeyLoginForm />
+            <Link
+              to='/sign-in'
+              className='text-muted-foreground block text-center text-sm underline'
+            >
+              {t('Sign in')}
+            </Link>
           </CardContent>
         </Card>
       </main>

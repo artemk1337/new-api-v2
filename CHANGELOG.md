@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.213 — 2026-11-04
+
+- Present password and API-key sign-in as equal tabs while preserving the existing site theme, header, and account authentication flow.
+- Add smooth tab and form transitions without layout shifts; keep Passkey, GitHub, and Telegram below the form with provider buttons stacked vertically.
+- Preserve limited API-key sessions and prevent overlapping sign-in requests; translate the new labels into all six interface languages.
+
 ## v1.1.212 — 2026-11-04
 
 - Clarify referral rewards and activation requirements using the configured program rates and top-up threshold.
