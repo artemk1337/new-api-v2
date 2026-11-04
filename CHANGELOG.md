@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.211 — 2026-11-04
+
+- Rename the Russian About navigation and page title to «О нас».
+
 ## v1.1.210 — 2026-11-04
 
 - Rename the Russian footer link from «О проекте» to «О нас».
