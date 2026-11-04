@@ -26,6 +26,7 @@ declare module 'axios' {
     skipBusinessError?: boolean
     skipErrorHandler?: boolean
     disableDuplicate?: boolean
+    skipAuthReset?: boolean
   }
 }
 
@@ -101,10 +102,12 @@ api.interceptors.response.use(
     const status = error?.response?.status
 
     if (status === 401) {
-      try {
-        useAuthStore.getState().auth.reset()
-      } catch {
-        /* empty */
+      if (!error?.config?.skipAuthReset) {
+        try {
+          useAuthStore.getState().auth.reset()
+        } catch {
+          /* empty */
+        }
       }
 
       if (!skip) {

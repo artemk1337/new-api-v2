@@ -99,11 +99,11 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 				common.OptionMapRWMutex.Unlock()
 			})
 
-			allTables := []any{&OfficialModelPrice{}, &Model{}, &SupplierModelPrice{}, &SupplierPricingRevision{}, &SupplierPricingState{}, &PricingGroupSupplierBinding{}, &SupplierPricingProfile{}, &Supplier{}, &SupplierBindingState{}, &PricingSyncModelState{}, &PricingSyncSource{}, &Midjourney{}, &Ability{}, &Channel{}, &Option{}}
+			allTables := []any{&OfficialModelPrice{}, &Model{}, &SupplierModelPrice{}, &SupplierPricingRevision{}, &SupplierPricingState{}, &PricingGroupSupplierBinding{}, &SupplierPricingProfile{}, &Supplier{}, &SupplierBindingState{}, &PricingSyncModelState{}, &PricingSyncSource{}, &Midjourney{}, &Ability{}, &Channel{}, &PlatformTag{}, &Option{}}
 			// The database was verified empty; these are exclusively this test's
 			// tables. Cleanup makes repeated validation possible after failures.
 			t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(allTables...)) })
-			require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":2,"name":"coding","ratio":2,"selectable":true},{"id":3,"name":"other","ratio":3,"selectable":true}]`))
+			require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":2,"name":"coding","ratio":2,"selectable":true,"tag":"legacy-group"},{"id":3,"name":"other","ratio":3,"selectable":true}]`))
 			require.NoError(t, DB.AutoMigrate(&supplierDialectLegacyChannel{}, &Ability{}, &Option{}))
 			require.NoError(t, DB.Create(&Option{Key: "PricingGroups", Value: ratio_setting.PricingGroups2JSONString()}).Error)
 			tag := "legacy-provider"
@@ -121,8 +121,12 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.False(t, bound)
 
 			for pass := 0; pass < 2; pass++ {
-				require.NoError(t, DB.AutoMigrate(&Channel{}, &Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &SupplierModelPrice{}, &Midjourney{}, &PricingSyncSource{}, &PricingSyncModelState{}, &Model{}, &OfficialModelPrice{}), "supplier migrations must be additive and repeatable")
+				require.NoError(t, DB.AutoMigrate(&Channel{}, &PlatformTag{}, &Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &SupplierModelPrice{}, &Midjourney{}, &PricingSyncSource{}, &PricingSyncModelState{}, &Model{}, &OfficialModelPrice{}), "supplier migrations must be additive and repeatable")
+				require.NoError(t, migratePlatformTags())
 			}
+			tags, err := GetPlatformTags()
+			require.NoError(t, err)
+			require.ElementsMatch(t, []string{tag, "legacy-group"}, tags, "legacy channel and group tags remain independent of supplier identity")
 			loaded, err := GetChannelById(legacy.ID, true)
 			require.NoError(t, err)
 			require.Equal(t, legacy.ID, loaded.Id)
@@ -202,6 +206,11 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, &supplier.ID, loaded.SupplierID)
 			require.Equal(t, &first.ID, loaded.SupplierProfileID)
+			require.Equal(t, &tag, loaded.Tag, "supplier binding must preserve the legacy channel tag")
+			tags, err = GetPlatformTags()
+			require.NoError(t, err)
+			require.ElementsMatch(t, []string{tag, "legacy-group"}, tags)
+			require.Contains(t, ratio_setting.PricingGroups2JSONString(), `"tag":"legacy-group"`)
 			require.NoError(t, ValidateChannelPricingGroup(loaded, "2"))
 			require.Error(t, ValidateChannelPricingGroup(loaded, "1"))
 			resolved, bound, err := ResolveSupplierModelTariff("2", "model-a")
@@ -245,7 +254,7 @@ func TestSupplierPersistenceDialects(t *testing.T) {
 			require.Equal(t, inputReference, catalog[0].OfficialPrice.InputUSD)
 			publicJSON, err := common.Marshal(catalog)
 			require.NoError(t, err)
-			for _, private := range []string{"supplier_id", "profile_id", "model-a", "isolated-fixture-key", "second-private-key"} {
+			for _, private := range []string{"supplier_id", "profile_id", "model-a", "isolated-fixture-key", "second-private-key", tag, "legacy-group"} {
 				require.NotContains(t, string(publicJSON), private)
 			}
 

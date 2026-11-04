@@ -32,7 +32,7 @@
   font-weight: 500;
 }
 .studio-intro h1 em {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Georgia, 'Times New Roman', serif;
   font-weight: 400;
   letter-spacing: -0.065em;
   color: var(--studio-accent);
@@ -109,7 +109,7 @@
 .studio-network-pulse.studio-network-input {
   stroke: #83a9d1;
 }
-.studio-flow[data-moving="false"] .studio-network-pulse {
+.studio-flow[data-moving='false'] .studio-network-pulse {
   animation-play-state: paused;
 }
 .studio-network-endpoint {
@@ -188,7 +188,7 @@
   isolation: isolate;
 }
 .studio-step-link::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 4px -12px;
   border-radius: 10px;
@@ -220,6 +220,57 @@
   font-size: 10px;
   font-family: monospace;
   color: var(--studio-muted);
+}
+.studio-faq h2 {
+  max-width: 9ch;
+}
+.studio-faq-list {
+  min-width: 0;
+}
+.studio-faq-item {
+  border-color: var(--studio-line);
+}
+.studio-faq-trigger {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+  gap: 24px;
+  min-height: 70px;
+  padding: 20px 0;
+  border-radius: 0;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.studio-faq-trigger:hover {
+  color: var(--studio-accent);
+  text-decoration: none;
+}
+.studio-faq-icon {
+  flex-shrink: 0;
+  color: var(--studio-muted);
+  transition: transform 200ms;
+}
+.studio-faq-trigger[aria-expanded='true'] .studio-faq-icon {
+  transform: rotate(45deg);
+}
+.studio-faq-answer {
+  height: auto;
+  padding: 0 36px 24px 0;
+  color: var(--studio-muted);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.studio-faq-answer a {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--studio-ink);
+}
+.studio-cta {
+  align-items: center;
 }
 @media (max-width: 900px) {
   .studio-connect {

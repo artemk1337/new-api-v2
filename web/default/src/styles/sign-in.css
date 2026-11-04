@@ -1,0 +1,78 @@
+.sign-in-method-list {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--muted);
+}
+
+.sign-in-method-tab {
+  height: 36px;
+  padding-inline: 8px;
+  border-radius: calc(var(--radius-lg) - 2px);
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 200ms ease;
+}
+
+.sign-in-method-tab[data-active] {
+  color: var(--foreground);
+}
+
+.sign-in-method-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.sign-in-method-tab:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.sign-in-method-indicator {
+  position: absolute;
+  inset: 4px auto 4px 0;
+  z-index: -1;
+  width: var(--active-tab-width);
+  border-radius: calc(var(--radius-lg) - 2px);
+  background: var(--background);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+  transform: translateX(var(--active-tab-left));
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sign-in-method-panel {
+  display: block;
+  grid-area: 1 / 1;
+  align-self: start;
+  outline: none;
+  transition:
+    opacity 240ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sign-in-method-panel[data-hidden],
+.sign-in-method-panel[data-ending-style] {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(5px);
+}
+
+.sign-in-method-panel[data-starting-style] {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sign-in-method-tab,
+  .sign-in-method-indicator,
+  .sign-in-method-panel {
+    transition: none;
+  }
+}

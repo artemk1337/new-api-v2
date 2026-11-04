@@ -22,7 +22,7 @@ func setupSupplierBindingTest(t *testing.T) (Supplier, SupplierPricingProfile, S
 	require.NoError(t, err)
 	DB = db
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
-	require.NoError(t, DB.AutoMigrate(&Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &Channel{}, &Ability{}, &Midjourney{}, &Task{}, &Option{}, &PricingSyncSource{}))
+	require.NoError(t, DB.AutoMigrate(&Supplier{}, &SupplierPricingProfile{}, &PricingGroupSupplierBinding{}, &SupplierBindingState{}, &SupplierPricingState{}, &SupplierPricingRevision{}, &Channel{}, &PlatformTag{}, &Ability{}, &Midjourney{}, &Task{}, &Option{}, &PricingSyncSource{}))
 	require.NoError(t, ratio_setting.UpdatePricingGroupsByJSONString(`[{"id":1,"name":"default","ratio":1,"selectable":true},{"id":2,"name":"coding","ratio":2,"selectable":true},{"id":3,"name":"other","ratio":2,"selectable":true}]`))
 	t.Cleanup(func() {
 		DB = originalDB

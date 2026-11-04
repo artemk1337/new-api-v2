@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.1.214 — 2026-11-04
+
+- Add expandable answers for balance top-ups, request pricing, model selection, and support below the home page connection steps.
+- Explain platform quota usage, including model prices, token counts, and group multipliers.
+- Add a final API-key action that opens registration for guests and key management for signed-in users; translate the new content into all six interface languages.
+
+## v1.1.213 — 2026-11-04
+
+- Present password and API-key sign-in as equal tabs while preserving the existing site theme, header, and account authentication flow.
+- Add smooth tab and form transitions without layout shifts; keep Passkey, GitHub, and Telegram below the form with provider buttons stacked vertically.
+- Preserve limited API-key sessions and prevent overlapping sign-in requests; translate the new labels into all six interface languages.
+
+## v1.1.212 — 2026-11-04
+
+- Clarify referral rewards and activation requirements using the configured program rates and top-up threshold.
+- Add a dashboard action and replace four rule cards with two step-by-step guides for invited users and inviters, without repeated footnotes.
+- Translate the updated page into all six interface languages and preserve desktop and mobile layouts.
+
+## v1.1.211 — 2026-11-04
+
+- Rename the Russian About navigation and page title to «О нас».
+
+## v1.1.210 — 2026-11-04
+
+- Rename the Russian footer link from «О проекте» to «О нас».
+
+## v1.1.209 — 2026-11-04
+
+- Show pricing group channel usage and channel details, with administrator-only notes and a compact group name field.
+- Share a persistent tag catalog between channels and pricing groups, preserving existing tags and allowing tags to be cleared.
+
+## v1.1.208 — 2026-11-04
+
+- Allow API key holders to sign in to a restricted view of their key’s spending, remaining quota, and recent usage logs without access to account settings or top-ups.
+- Revalidate the key, owner, expiry, and IP restrictions for each request, while allowing access after quota exhaustion.
+
+## v1.1.207 — 2026-11-04
+
+- Replace notification tabs with a single, wider updates timeline grouped by month, with concise localized dates and expandable long announcements.
+- Keep the updates button available on mobile and count only unread timeline entries.
+- Translate the timeline controls into all six interface languages.
+
 ## v1.1.206 — 2026-11-01
 
 - Advertise `/v1/audio/speech` for the OpenAI `tts-1` and `gpt-4o-mini-tts` model families instead of the chat endpoint.

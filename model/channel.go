@@ -71,16 +71,23 @@ type ChannelGroupStats struct {
 	Inactive int `json:"inactive"`
 }
 
+type GroupChannel struct {
+	Id     int    `json:"id"`
+	Name   string `json:"name"`
+	Status int    `json:"status"`
+}
+
 // GetChannelGroupStats returns channel counts grouped by pricing group key.
 // Only one small query is used so the result stays compatible with all
 // supported database dialects.
-func GetChannelGroupStats() (map[string]ChannelGroupStats, error) {
+func GetChannelGroupStats() (map[string]ChannelGroupStats, map[string][]GroupChannel, error) {
 	var channels []Channel
-	if err := DB.Model(&Channel{}).Select(commonGroupCol + ", status").Find(&channels).Error; err != nil {
-		return nil, err
+	if err := DB.Model(&Channel{}).Select(commonGroupCol + ", id, name, status").Order("id").Find(&channels).Error; err != nil {
+		return nil, nil, err
 	}
 
 	stats := make(map[string]ChannelGroupStats)
+	groupChannels := make(map[string][]GroupChannel)
 	for _, channel := range channels {
 		for _, group := range channel.GetGroups() {
 			key := ratio_setting.PricingGroupKey(group)
@@ -95,9 +102,10 @@ func GetChannelGroupStats() (map[string]ChannelGroupStats, error) {
 				current.Inactive++
 			}
 			stats[key] = current
+			groupChannels[key] = append(groupChannels[key], GroupChannel{Id: channel.Id, Name: channel.Name, Status: channel.Status})
 		}
 	}
-	return stats, nil
+	return stats, groupChannels, nil
 }
 
 type ChannelInfo struct {
@@ -664,6 +672,12 @@ func BatchInsertChannels(channels []Channel) error {
 	}
 
 	for _, chunk := range lo.Chunk(channels, 50) {
+		for _, channel := range chunk {
+			if err := registerPlatformTagTx(tx, channel.GetTag()); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
 		if err := channelSupplierWriteDB(tx).Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
@@ -748,6 +762,9 @@ func (channel *Channel) Insert() error {
 		if err := prepareChannelSupplierMutationTx(tx, channel, false); err != nil {
 			return err
 		}
+		if err := registerPlatformTagTx(tx, channel.GetTag()); err != nil {
+			return err
+		}
 		if err := channelSupplierWriteDB(tx).Create(channel).Error; err != nil {
 			return err
 		}
@@ -805,6 +822,9 @@ func (channel *Channel) UpdateWithSupplierPermission(allowSupplierBindingChange 
 	}
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := prepareChannelSupplierMutationTx(tx, channel, allowSupplierBindingChange); err != nil {
+			return err
+		}
+		if err := registerPlatformTagTx(tx, channel.GetTag()); err != nil {
 			return err
 		}
 		writeDB := channelSupplierWriteDB(tx)
@@ -1120,6 +1140,11 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 				return errors.New("insufficient permissions to change supplier channel groups")
 			}
 		}
+		if newTag != nil {
+			if err := registerPlatformTagTx(tx, *newTag); err != nil {
+				return err
+			}
+		}
 		if err := tx.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error; err != nil {
 			return err
 		}
@@ -1408,6 +1433,12 @@ func BatchSetChannelTag(ids []int, tag *string) error {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return tx.Error
+	}
+	if tag != nil {
+		if err := registerPlatformTagTx(tx, *tag); err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
 
 	// 更新标签

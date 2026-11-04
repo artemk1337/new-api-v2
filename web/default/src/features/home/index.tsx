@@ -26,6 +26,8 @@ import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { Hero, HowItWorks } from './components'
+import { CTA } from './components/sections/cta'
+import { FAQ } from './components/sections/faq'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -76,6 +78,8 @@ export function Home() {
       <main className='home-redesign'>
         <Hero isAuthenticated={isAuthenticated} />
         <HowItWorks />
+        <FAQ />
+        <CTA isAuthenticated={isAuthenticated} />
       </main>
       <Footer hideBrand />
     </PublicLayout>

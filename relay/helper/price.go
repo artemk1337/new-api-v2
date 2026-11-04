@@ -308,6 +308,8 @@ func BuildAutoPerCallRouteState(c *gin.Context, info *relaycommon.RelayInfo, gro
 				unavailableErr = newRoutePriceUnavailable(err.Error())
 				continue
 			}
+		} else if billing_setting.GetTaskPriceUnit(GetBillingModelName(&candidateInfo)) == billing_setting.TaskPriceUnitPerCall {
+			delete(priceData.OtherRatios, "seconds")
 		}
 		if priceData.SupplierTariff == nil && !common.StringsContains(constant.TaskPricePatches, GetBillingModelName(&candidateInfo)) {
 			for _, ratio := range priceData.OtherRatios {

@@ -64,7 +64,13 @@ func resolveGroupBillingModels(c *gin.Context, info *relaycommon.RelayInfo, grou
 		group := ratio_setting.PricingGroupKey(rawGroup)
 		var mappings []string
 		if forced != nil {
-			if !channelSupportsCandidateModels(forced.Id, group, info) || model.ValidateChannelPricingGroup(forced, group) != nil {
+			if model.ValidateChannelPricingGroup(forced, group) != nil {
+				continue
+			}
+			// Legacy forced unbound channels may serve models omitted from their
+			// advertised abilities. The subsequent quote still requires a global
+			// billing contract; supplier routes retain their exact model boundary.
+			if (forced.SupplierID != nil || forced.SupplierProfileID != nil) && !channelSupportsCandidateModels(forced.Id, group, info) {
 				continue
 			}
 			mappings = []string{forced.GetModelMapping()}

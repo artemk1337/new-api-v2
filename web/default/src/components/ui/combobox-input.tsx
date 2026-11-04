@@ -38,6 +38,7 @@ type ComboboxInputProps = {
   id?: string
   allowCustomValue?: boolean
   openOnFocus?: boolean
+  clearOnReselect?: boolean
 } &
   Omit<
     React.ComponentProps<typeof Input>,
@@ -62,6 +63,7 @@ export function ComboboxInput({
   id,
   allowCustomValue = false,
   openOnFocus = true,
+  clearOnReselect = false,
   ...inputProps
 }: ComboboxInputProps) {
   const { t } = useTranslation()
@@ -112,7 +114,7 @@ export function ComboboxInput({
   }, [open])
 
   const handleSelect = (selectedValue: string) => {
-    onValueChange(selectedValue)
+    onValueChange(clearOnReselect && selectedValue === value ? '' : selectedValue)
     setOpen(false)
     setSearchValue('')
     inputRef.current?.focus()

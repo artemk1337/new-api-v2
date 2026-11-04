@@ -38,8 +38,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -50,6 +56,7 @@ import {
 } from '@/components/ui/select'
 import { GroupSupplierBindingEditor } from '@/features/suppliers/group-binding-editor'
 import { getGroups } from '@/features/users/api'
+import { getTags } from '@/lib/tags'
 
 import { safeJsonParse } from '../utils/json-parser'
 
@@ -70,6 +77,8 @@ type GroupPricingRow = {
   ratio: number
   selectable: boolean
   description: string
+  note: string
+  tag: string
 }
 
 type SimpleGroup = {
@@ -127,6 +136,8 @@ function parsePricingGroupRows(pricingGroups: string): GroupPricingRow[] {
         selectable: row.selectable === true,
         description:
           typeof row.description === 'string' ? row.description.trim() : '',
+        note: typeof row.note === 'string' ? row.note : '',
+        tag: typeof row.tag === 'string' ? row.tag : '',
       })
     }
     return rows.sort((a, b) => a.id - b.id)
@@ -145,6 +156,8 @@ function parsePricingGroupRows(pricingGroups: string): GroupPricingRow[] {
       ratio: normalizeRatio(value),
       selectable: index === 0 || name === 'default',
       description: '',
+      note: '',
+      tag: '',
     }))
   }
 
@@ -159,6 +172,8 @@ function serializePricingGroupRows(rows: GroupPricingRow[]) {
       ratio: normalizeRatio(row.ratio),
       selectable: row.selectable,
       description: row.description.trim(),
+      note: row.note.trim(),
+      tag: row.tag.trim(),
     }))
     .filter((row) => row.name.length > 0)
     .sort((a, b) => a.id - b.id)
@@ -184,6 +199,8 @@ function pricingGroupSignature(rows: GroupPricingRow[]): string {
         ratio: normalizeRatio(row.ratio),
         selectable: row.selectable,
         description: row.description.trim(),
+        note: row.note.trim(),
+        tag: row.tag.trim(),
       }))
       .sort((a, b) => a.id - b.id)
   )
@@ -197,6 +214,8 @@ function sourcePricingGroupSignature(pricingGroups: string): string {
       ratio: normalizeRatio(row.ratio),
       selectable: row.selectable,
       description: row.description.trim(),
+      note: row.note.trim(),
+      tag: row.tag.trim(),
     }))
   )
 }
@@ -682,15 +701,16 @@ function GroupPricingTable({
     queryKey: ['pricing-groups', 'channel-stats'],
     queryFn: getGroups,
   })
+  const { data: tagsData } = useQuery({
+    queryKey: ['platform-tags'],
+    queryFn: getTags,
+  })
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
     parsePricingGroupRows(pricingGroups)
   )
 
   const channelStatsById = useMemo(
-    () =>
-      new Map(
-        (groupsData?.data ?? []).map((group) => [group.id, group.channel_stats])
-      ),
+    () => new Map((groupsData?.data ?? []).map((group) => [group.id, group])),
     [groupsData]
   )
 
@@ -737,6 +757,8 @@ function GroupPricingTable({
         ratio: 1,
         selectable: true,
         description: '',
+        note: '',
+        tag: '',
       },
     ])
   }, [emitRows, rows])
@@ -763,6 +785,19 @@ function GroupPricingTable({
       .filter(([, count]) => count > 1)
       .map(([name]) => name)
   }, [rows])
+
+  const tagOptions = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...(tagsData?.data ?? []),
+          ...rows.map((row) => row.tag).filter(Boolean),
+        ]),
+      ]
+        .sort()
+        .map((tag) => ({ label: tag, value: tag })),
+    [tagsData, rows]
+  )
 
   return (
     <Card className={sectionCardClassName}>
@@ -800,15 +835,40 @@ function GroupPricingTable({
                 header: 'ID',
                 className: 'w-20',
                 cell: (row) => (
-                  <span className='text-muted-foreground font-mono text-sm'>
-                    {row.id}
-                  </span>
+                  <div className='flex items-center gap-2'>
+                    <span className='text-muted-foreground font-mono text-sm'>
+                      {row.id}
+                    </span>
+                    {(row.isNew || channelStatsById.has(row.id)) && (
+                      <span
+                        className={
+                          row.isNew ||
+                          !channelStatsById.get(row.id)?.channel_stats?.total
+                            ? 'size-2 rounded-full bg-green-500'
+                            : 'size-2 rounded-full bg-red-500'
+                        }
+                        title={
+                          row.isNew ||
+                          !channelStatsById.get(row.id)?.channel_stats?.total
+                            ? t('Unused')
+                            : t('Used')
+                        }
+                        aria-label={
+                          row.isNew ||
+                          !channelStatsById.get(row.id)?.channel_stats?.total
+                            ? t('Unused')
+                            : t('Used')
+                        }
+                        role='img'
+                      />
+                    )}
+                  </div>
                 ),
               },
               {
                 id: 'group',
                 header: t('Group name'),
-                className: 'min-w-52',
+                className: 'min-w-36 w-40',
                 cell: (row) => (
                   <div className='space-y-2'>
                     <div className='flex flex-wrap items-center gap-2'>
@@ -859,25 +919,60 @@ function GroupPricingTable({
                 header: t('Channels'),
                 className: 'w-28',
                 cell: (row) => {
-                  const stats = (row.isNew
+                  const group = row.isNew
                     ? undefined
-                    : channelStatsById.get(row.id)) ?? {
-                    total: 0,
-                    active: 0,
-                    inactive: 0,
+                    : channelStatsById.get(row.id)
+                  const stats = group?.channel_stats
+                  if (!stats && !row.isNew) {
+                    return <span className='text-muted-foreground'>—</span>
                   }
-                  const label = t(
-                    'Channels: {{total}} total · {{active}} active · {{inactive}} inactive',
-                    stats
-                  )
+                  const channels = group?.channels ?? []
                   return (
-                    <span
-                      className='text-muted-foreground text-xs tabular-nums'
-                      title={label}
-                      aria-label={label}
-                    >
-                      {stats.total}/{stats.active}/{stats.inactive}
-                    </span>
+                    <Popover>
+                      <PopoverTrigger
+                        openOnHover
+                        closeDelay={150}
+                        render={
+                          <button
+                            type='button'
+                            className='text-muted-foreground text-xs tabular-nums underline decoration-dotted underline-offset-4'
+                          />
+                        }
+                      >
+                        {stats?.total ?? 0}
+                      </PopoverTrigger>
+                      <PopoverContent className='w-64'>
+                        <div className='mb-2 font-medium'>{t('Channels')}</div>
+                        {channels.length ? (
+                          <ul className='max-h-56 space-y-1 overflow-y-auto'>
+                            {channels.map((channel) => (
+                              <li
+                                key={channel.id}
+                                className='flex items-center gap-2'
+                              >
+                                <span
+                                  className={
+                                    channel.status === 1
+                                      ? 'size-2 shrink-0 rounded-full bg-green-500'
+                                      : 'size-2 shrink-0 rounded-full bg-red-500'
+                                  }
+                                />
+                                <span className='min-w-0 truncate'>
+                                  {channel.name}
+                                </span>
+                                <span className='text-muted-foreground ml-auto text-xs'>
+                                  #{channel.id}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className='text-muted-foreground'>
+                            {t('No channels')}
+                          </span>
+                        )}
+                      </PopoverContent>
+                    </Popover>
                   )
                 },
               },
@@ -915,6 +1010,55 @@ function GroupPricingTable({
                       -
                     </span>
                   ),
+              },
+              {
+                id: 'tag',
+                header: t('Tag'),
+                className: 'min-w-32',
+                cell: (row) => (
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          type='button'
+                          variant='outline'
+                          className='w-full justify-between'
+                          aria-label={t('Tag')}
+                        />
+                      }
+                    >
+                      <span className='truncate'>{row.tag}</span>
+                      <ChevronDown className='ml-2 size-4 shrink-0' />
+                    </PopoverTrigger>
+                    <PopoverContent align='start'>
+                      <Combobox
+                        options={tagOptions}
+                        value={row.tag}
+                        aria-label={t('Tag')}
+                        placeholder=''
+                        onValueChange={(value) =>
+                          updateRow(row._id, 'tag', value ?? '')
+                        }
+                        allowCustomValue
+                        clearOnReselect
+                      />
+                    </PopoverContent>
+                  </Popover>
+                ),
+              },
+              {
+                id: 'note',
+                header: t('Admin notes'),
+                className: 'min-w-48',
+                cell: (row) => (
+                  <Input
+                    value={row.note}
+                    aria-label={t('Admin notes')}
+                    onChange={(event) =>
+                      updateRow(row._id, 'note', event.target.value)
+                    }
+                  />
+                ),
               },
               {
                 id: 'actions',

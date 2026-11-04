@@ -280,6 +280,7 @@ func migrateDB() error {
 
 	err := DB.AutoMigrate(
 		&Channel{},
+		&PlatformTag{},
 		&Token{},
 		&User{},
 		&PasskeyCredential{},
@@ -329,6 +330,9 @@ func migrateDB() error {
 		&PlatformCurrency{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := migratePlatformTags(); err != nil {
 		return err
 	}
 	if err := releaseDeletedUserOAuthBindings(DB); err != nil {
@@ -410,6 +414,7 @@ func migrateDBFast() error {
 		name  string
 	}{
 		{&Channel{}, "Channel"},
+		{&PlatformTag{}, "PlatformTag"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
@@ -477,6 +482,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migratePlatformTags(); err != nil {
+		return err
 	}
 	if err := releaseDeletedUserOAuthBindings(DB); err != nil {
 		return err

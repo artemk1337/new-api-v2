@@ -118,6 +118,7 @@ import {
 } from '@/lib/admin-permissions'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { ROLE } from '@/lib/roles'
+import { getTags } from '@/lib/tags'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -324,6 +325,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     hasConfiguredOverrideValue(values.header_override) ||
     values.advanced_custom?.trim() ||
     hasConfiguredOverrideValue(values.status_code_mapping) ||
+    values.tag?.trim() ||
     values.remark?.trim() ||
     values.priority ||
     values.weight ||
@@ -651,6 +653,21 @@ export function ChannelMutateDrawer({
     queryFn: getAllModels,
   })
 
+  const { data: channelTagsData } = useQuery({
+    queryKey: ['platform-tags'],
+    queryFn: getTags,
+    enabled: open,
+  })
+
+  const tagOptions = useMemo(
+    () =>
+      (channelTagsData?.data ?? []).map((tag) => ({
+        label: tag,
+        value: tag,
+      })),
+    [channelTagsData]
+  )
+
   // Fetch prefill model groups
   const { data: prefillGroupsData } = useQuery({
     queryKey: ['prefill_groups', 'model'],
@@ -713,6 +730,7 @@ export function ChannelMutateDrawer({
   const currentWeight = form.watch('weight')
   const currentTestModel = form.watch('test_model')
   const currentAutoBan = form.watch('auto_ban')
+  const currentTag = form.watch('tag')
   const currentRemark = form.watch('remark')
   const currentStatusCodeMapping = form.watch('status_code_mapping')
   const currentParamOverride = form.watch('param_override')
@@ -951,7 +969,9 @@ export function ChannelMutateDrawer({
     currentTestModel?.trim() ||
     (currentAutoBan ?? 1) !== 1
   )
-  const internalNotesConfigured = Boolean(currentRemark?.trim())
+  const internalNotesConfigured = Boolean(
+    currentTag?.trim() || currentRemark?.trim()
+  )
   const overrideRulesConfigured = Boolean(
     hasConfiguredOverrideValue(currentStatusCodeMapping) ||
     hasConfiguredOverrideValue(currentParamOverride) ||
@@ -1476,6 +1496,7 @@ export function ChannelMutateDrawer({
   // Handle successful submission
   const handleSuccess = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+    queryClient.invalidateQueries({ queryKey: ['platform-tags'] })
     if (channelId) {
       queryClient.invalidateQueries({
         queryKey: channelsQueryKeys.detail(channelId),
@@ -3637,6 +3658,29 @@ export function ChannelMutateDrawer({
                               icon={<FileText className='h-3.5 w-3.5' />}
                             />
                             <div className='grid gap-4 sm:grid-cols-2'>
+                              <FormField
+                                control={form.control}
+                                name='tag'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{t('Tag')}</FormLabel>
+                                    <FormControl>
+                                      <Combobox
+                                        options={tagOptions}
+                                        value={field.value}
+                                        onValueChange={field.onChange}
+                                        placeholder={t(FIELD_PLACEHOLDERS.TAG)}
+                                        allowCustomValue
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(FIELD_DESCRIPTIONS.TAG)}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
                               <FormField
                                 control={form.control}
                                 name='remark'

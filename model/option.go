@@ -1695,6 +1695,11 @@ func persistOptionsAndRuntimeWithTxGuard(values map[string]string, paymentCurren
 				return err
 			}
 		}
+		if value, included := values["PricingGroups"]; included {
+			if err := registerPricingGroupTagsTx(tx, value); err != nil {
+				return err
+			}
+		}
 		if values[setting.AccountVerificationEnabledOption] == "false" {
 			accountVerificationResetUserIDs, err = clearAccountVerificationLifecycleTx(tx)
 			if err != nil {

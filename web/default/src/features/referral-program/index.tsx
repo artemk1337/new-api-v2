@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Gift, Link2, ShieldCheck, UserPlus, WalletCards } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ArrowUpRight, Gift, Link2, UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -32,6 +34,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { getReferralProgram, type ReferralProgram } from './api'
+import { ReferralPathCard } from './referral-path-card'
 
 export function ReferralProgramPage() {
   const { t } = useTranslation()
@@ -43,7 +46,7 @@ export function ReferralProgramPage() {
 
   return (
     <PublicLayout showMainContainer={false}>
-      <PageTransition className='mx-auto w-full max-w-5xl space-y-8 px-4 py-14 sm:px-6 sm:py-20'>
+      <PageTransition className='mx-auto w-full max-w-5xl space-y-8 px-4 py-14 sm:px-6 sm:py-24'>
         <section className='mx-auto max-w-3xl space-y-4 text-center'>
           <div className='bg-primary/10 text-primary mx-auto flex size-12 items-center justify-center rounded-2xl'>
             <Gift className='size-6' />
@@ -51,17 +54,20 @@ export function ReferralProgramPage() {
           <h1 className='text-3xl font-semibold tracking-tight sm:text-4xl'>
             {t('Referral Program')}
           </h1>
-          <p className='text-muted-foreground text-base sm:text-lg'>
-            {t(
-              'Invite friends, earn rewards from their top-ups, and give new users increased cashback.'
-            )}
-          </p>
+          {program && (
+            <p className='text-muted-foreground text-base sm:text-lg'>
+              {t(
+                'Earn {{percent}}% from friends’ top-ups and give them up to +{{bonus}}% cashback.',
+                {
+                  percent: program.referral_deposit_percent,
+                  bonus: program.referral_cashback_bonus_percent ?? 0,
+                }
+              )}
+            </p>
+          )}
         </section>
 
-        <ReferralProgramContent
-          isLoading={query.isLoading}
-          program={program}
-        />
+        <ReferralProgramContent isLoading={query.isLoading} program={program} />
       </PageTransition>
     </PublicLayout>
   )
@@ -88,81 +94,93 @@ function ReferralProgramContent(props: {
     <>
       <div className='grid gap-4 sm:grid-cols-3'>
         <ProgramValue
-          label={t('Additional referral cashback up to')}
-          value={`+${program.referral_cashback_bonus_percent ?? 0}%`}
+          label={t('Additional cashback for your friend')}
+          value={t('Up to +{{percent}}%', {
+            percent: program.referral_cashback_bonus_percent ?? 0,
+          })}
         />
         <ProgramValue
-          label={t('Inviter reward from top-ups')}
+          label={t('Your reward from friends’ top-ups')}
           value={`${program.referral_deposit_percent}%`}
         />
         <ProgramValue
-          label={t('Required top-up to share')}
+          label={t('Top-ups to activate your link')}
           value={`$${program.required_topup_usd}`}
         />
       </div>
 
-      <section className='grid gap-4 md:grid-cols-2'>
-        <RuleCard
+      <div className='flex flex-col items-start justify-between gap-6 border-y py-5 sm:flex-row sm:items-center'>
+        <div>
+          <p className='font-medium'>{t('Invite friends to VibeCode API')}</p>
+          <p className='text-muted-foreground mt-1 text-sm'>
+            {t(
+              'Your invitation link is available in your dashboard after top-ups totaling ${{amount}}.',
+              { amount: program.required_topup_usd }
+            )}
+          </p>
+        </div>
+        <Button
+          className='h-10 gap-3 rounded-full px-4'
+          render={<Link to='/dashboard' />}
+        >
+          {t('Go to dashboard')}
+          <ArrowUpRight aria-hidden='true' />
+        </Button>
+      </div>
+
+      <section
+        aria-label={t('How to participate')}
+        className='grid gap-4 md:grid-cols-2'
+      >
+        <ReferralPathCard
           icon={UserPlus}
-          title={t('Register with a referral code')}
-          description={t(
-            'Follow an invitation link or enter the code during account creation. Existing accounts cannot add a referral code later.'
-          )}
+          title={t('You were invited')}
+          steps={[
+            {
+              title: t('Sign up using your friend’s link'),
+              description: t(
+                'Or enter their referral code when creating your account.'
+              ),
+            },
+            {
+              title: t('Receive increased cashback'),
+              description: t(
+                'Top up your balance to receive a referral cashback bonus. The bonus depends on your top-up tier.'
+              ),
+            },
+          ]}
         />
-        <RuleCard
-          icon={WalletCards}
-          title={t('Receive increased cashback')}
-          description={t(
-            'Referral cashback uses the cashback rate configured for each top-up tier.'
-          )}
-        />
-        <RuleCard
-          icon={ShieldCheck}
-          title={t('Qualify before sharing')}
-          description={t(
-            'To activate your referral link, first complete successful top-ups totaling at least ${{amount}}.',
-            { amount: program.required_topup_usd }
-          )}
-        />
-        <RuleCard
+        <ReferralPathCard
           icon={Link2}
-          title={t('Invite and earn')}
-          description={t(
-            'After activation, share your link and receive {{percent}}% from successful wallet top-ups made by your referrals.',
-            { percent: program.referral_deposit_percent }
-          )}
+          title={t('You invite friends')}
+          steps={[
+            {
+              title: t('Activate your link'),
+              description: t(
+                'Top up your balance by a total of ${{amount}} to unlock your invitation link in the dashboard.',
+                { amount: program.required_topup_usd }
+              ),
+            },
+            {
+              title: t('Share your link with friends'),
+              description: t(
+                'Earn {{percent}}% from successful wallet top-ups by friends who signed up using your invitation.',
+                { percent: program.referral_deposit_percent }
+              ),
+            },
+          ]}
         />
       </section>
-
     </>
   )
 }
 
 function ProgramValue(props: { label: string; value: string }) {
   return (
-    <Card className='text-center'>
+    <Card className='min-h-25 justify-center text-center'>
       <CardHeader>
         <CardTitle className='text-2xl'>{props.value}</CardTitle>
         <CardDescription>{props.label}</CardDescription>
-      </CardHeader>
-    </Card>
-  )
-}
-
-function RuleCard(props: {
-  icon: typeof Gift
-  title: string
-  description: string
-}) {
-  const Icon = props.icon
-  return (
-    <Card>
-      <CardHeader>
-        <div className='bg-muted mb-2 flex size-9 items-center justify-center rounded-lg'>
-          <Icon className='size-4' />
-        </div>
-        <CardTitle>{props.title}</CardTitle>
-        <CardDescription>{props.description}</CardDescription>
       </CardHeader>
     </Card>
   )
@@ -177,8 +195,8 @@ function ReferralProgramSkeleton() {
         ))}
       </div>
       <div className='grid gap-4 md:grid-cols-2'>
-        {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className='h-36 rounded-xl' />
+        {Array.from({ length: 2 }, (_, index) => (
+          <Skeleton key={index} className='h-72 rounded-xl' />
         ))}
       </div>
     </div>

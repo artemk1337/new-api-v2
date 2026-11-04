@@ -16,6 +16,8 @@ A supplier is the procurement identity, separate from a model provider/developer
 
 An unbound group keeps the legacy global pricing path. A bound group and every channel serving it must have the same supplier/profile pair. Both channel fields are selected together or both absent; bindings use stable pricing-group IDs outside the public `PricingGroups` option. Group multiplier is a retail margin over the normalized procurement tariff, not a second provider-group coefficient.
 
+Shared platform tags and private group notes remain independent administrative metadata. Tags can classify channels and groups, but never select a supplier, profile or tariff. Supplier bindings use their dedicated controls. Public pricing responses omit private notes and tags.
+
 Missing tariffs, incompatible bindings, disabled suppliers/profiles, and invalidated profile configurations make the route unavailable. They never fall back to global/default prices or another supplier profile. Pre-consume and settlement use the request's frozen tariff revision. Changing the active catalogue does not reprice an already reserved request.
 
 ## Funding conversion and markup
@@ -118,7 +120,7 @@ The BBLABU capture checks explicitly supplied `usd_per_credit = 0.006` as an ill
 1. Confirm the running deployment supports supplier pricing through authenticated capability reads. A local branch or a frontend control does not establish live server capability. An old server must stay on its legacy workflow.
 2. Obtain a read-only migration preview. Legacy tags are hints for classification, not proof of supplier identity, upstream binding, or real funding conversion. No automatic binding migration is safe from tags alone.
 3. Verify procurement conversion, provider credential binding, complete tariff coverage, protocols, and the intended retail margin. Preserve every existing group ID and unrelated resource.
-4. Create/review supplier profiles and tariffs within the authorized scope. Preview the exact channel/group changes and bind them atomically only after the tariffs and credentials are verified. Preserve the legacy `tag` database field for compatibility and rollback even though it is removed from the channel frontend.
+4. Create/review supplier profiles and tariffs within the authorized scope. Preview the exact channel/group changes and bind them atomically only after the tariffs and credentials are verified. Preserve channel/group tags and the shared tag registry for compatibility and classification; keep them separate from supplier controls.
 5. Verify retail prices, source/profile membership, discovery boundaries, and user-access redaction. Keep supplier-bound channels out of global price-sync sources. An unpriced newly discovered model must remain unavailable until its tariff is published.
 
 Deploy only after an explicit deployment instruction, following the registry-image/database-backup procedure. Upgrade **all application nodes before activating supplier bindings**: an older node cannot enforce these rules. Preserve data volumes and supplier tables. For rollback, first disable bound channels while the supplier-aware release is still running, then follow the rollback procedure; do not drop supplier data or leave bound traffic running on an older binary.

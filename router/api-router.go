@@ -22,6 +22,14 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
+		apiRouter.POST("/key-login", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, middleware.DisableCache(), controller.KeySessionLogin)
+		apiRouter.POST("/key-session/logout", middleware.DisableCache(), controller.Logout)
+		keySessionRoute := apiRouter.Group("/key-session")
+		keySessionRoute.Use(middleware.DisableCache(), middleware.KeySessionAuth())
+		{
+			keySessionRoute.GET("", controller.KeySessionInfo)
+			keySessionRoute.GET("/logs", controller.KeySessionLogs)
+		}
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
@@ -349,6 +357,12 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
+		}
+		tagRoute := apiRouter.Group("/tags")
+		tagRoute.Use(middleware.AdminAuth())
+		{
+			tagRoute.GET("/", controller.GetPlatformTags)
+			tagRoute.POST("/", controller.CreatePlatformTag)
 		}
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())
