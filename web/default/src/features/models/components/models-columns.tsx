@@ -134,13 +134,23 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
       cell: ({ row }) => {
         const name = row.getValue('model_name') as string
         return (
-          <StatusBadge
-            label={name}
-            variant='neutral'
-            copyText={name}
-            size='sm'
-            className='-ml-1.5 font-mono'
-          />
+          <div className='space-y-1'>
+            <StatusBadge
+              label={name}
+              variant='neutral'
+              copyText={name}
+              size='sm'
+              className='-ml-1.5 font-mono'
+            />
+            {Boolean(row.original.aliases?.length) && (
+              <p
+                className='text-muted-foreground max-w-72 truncate text-xs'
+                title={row.original.aliases?.join(', ')}
+              >
+                {t('Model aliases')}: {row.original.aliases?.join(', ')}
+              </p>
+            )}
+          </div>
         )
       },
       minSize: 200,

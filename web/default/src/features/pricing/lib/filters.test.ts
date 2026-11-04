@@ -11,7 +11,7 @@ import { describe, test } from 'node:test'
 
 import { SORT_OPTIONS } from '../constants'
 import type { PricingModel } from '../types'
-import { filterAndSortModels } from './filters'
+import { filterAndSortModels, filterBySearch } from './filters'
 
 function model(
   model_name: string,
@@ -77,4 +77,16 @@ describe('filterAndSortModels benefit sorting', () => {
       ['zeta', 'alpha', 'surcharge']
     )
   })
+})
+
+test('finds the canonical pricing entry by an alias without duplicating it', () => {
+  const canonical = {
+    ...model('claude-opus', ['default'], { default: 1 }),
+    aliases: ['cursor-opus', 'opus-latest'],
+  }
+  const unrelated = model('other', ['default'], { default: 1 })
+  assert.deepEqual(filterBySearch([canonical, unrelated], 'CURSOR-OPUS'), [
+    canonical,
+  ])
+  assert.deepEqual(filterBySearch([canonical, unrelated], 'opus'), [canonical])
 })

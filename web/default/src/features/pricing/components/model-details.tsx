@@ -570,6 +570,24 @@ function ModelHeader(props: { model: PricingModel }) {
           aria-label={t('Copy model name')}
         />
       </div>
+      {Boolean(model.aliases?.length) && (
+        <div className='mt-3 flex flex-wrap items-center gap-2 text-xs'>
+          <span className='text-muted-foreground'>{t('Model aliases')}</span>
+          {model.aliases?.map((alias) => (
+            <span
+              key={alias}
+              className='bg-muted inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1'
+            >
+              <span className='font-mono break-all'>{alias}</span>
+              <CopyButton
+                value={alias}
+                tooltip={t('Copy model name')}
+                aria-label={t('Copy model name')}
+              />
+            </span>
+          ))}
+        </div>
+      )}
       <div className='mt-1 flex flex-wrap items-center gap-1.5 text-xs'>
         {model.vendor_name && (
           <span className='text-muted-foreground'>{model.vendor_name}</span>
@@ -1299,7 +1317,11 @@ export function ModelDetails() {
 
   const model = useMemo(() => {
     if (!models || !modelId) return null
-    return models.find((m) => m.model_name === modelId) || null
+    return (
+      models.find(
+        (m) => m.model_name === modelId || m.aliases?.includes(modelId)
+      ) || null
+    )
   }, [models, modelId])
 
   const handleBack = () => {

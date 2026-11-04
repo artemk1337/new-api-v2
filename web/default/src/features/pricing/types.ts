@@ -41,6 +41,7 @@ export type PricingGroupRecord = PricingGroupRef & {
 export type PricingModel = {
   id: number
   model_name: string
+  aliases?: string[]
   description?: string
   icon?: string
   vendor_id?: number

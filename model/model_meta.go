@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,7 @@ type BoundChannel struct {
 type Model struct {
 	Id           int            `json:"id"`
 	ModelName    string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
+	Aliases      ModelAliases   `json:"aliases" gorm:"type:text"`
 	Description  string         `json:"description,omitempty" gorm:"type:text"`
 	Icon         string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
 	Tags         string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
@@ -47,6 +49,9 @@ type Model struct {
 }
 
 func (mi *Model) Insert() error {
+	if strings.TrimSpace(mi.ModelName) == "" {
+		return errors.New("model name is required")
+	}
 	now := common.GetTimestamp()
 	mi.CreatedTime = now
 	mi.UpdatedTime = now
@@ -55,16 +60,15 @@ func (mi *Model) Insert() error {
 	originalStatus := mi.Status
 	originalSyncOfficial := mi.SyncOfficial
 
-	// 先创建记录（GORM 会对零值字段应用默认值）
-	if err := DB.Create(mi).Error; err != nil {
-		return err
-	}
-
-	// 使用保存的原始值进行更新，确保零值能正确保存
-	return DB.Model(&Model{}).Where("id = ?", mi.Id).Updates(map[string]interface{}{
-		"status":        originalStatus,
-		"sync_official": originalSyncOfficial,
-	}).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(mi).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Model{}).Where("id = ?", mi.Id).Updates(map[string]interface{}{
+			"status":        originalStatus,
+			"sync_official": originalSyncOfficial,
+		}).Error
+	})
 }
 
 func IsModelNameDuplicated(id int, name string) (bool, error) {
@@ -77,10 +81,13 @@ func IsModelNameDuplicated(id int, name string) (bool, error) {
 }
 
 func (mi *Model) Update() error {
+	if strings.TrimSpace(mi.ModelName) == "" {
+		return errors.New("model name is required")
+	}
 	mi.UpdatedTime = common.GetTimestamp()
 	// 使用 Select 强制更新所有字段，包括零值
-	return DB.Model(&Model{}).Where("id = ?", mi.Id).
-		Select("model_name", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").
+	return DB.Model(mi).Where("id = ?", mi.Id).
+		Select("model_name", "aliases", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").
 		Updates(mi).Error
 }
 
@@ -217,7 +224,7 @@ func SearchModels(keyword string, vendor string, offset int, limit int) ([]*Mode
 	db := DB.Model(&Model{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		db = db.Where("model_name LIKE ? OR description LIKE ? OR tags LIKE ?", like, like, like)
+		db = db.Where("model_name LIKE ? OR aliases LIKE ? OR description LIKE ? OR tags LIKE ?", like, like, like, like)
 	}
 	if vendor != "" {
 		if vid, err := strconv.Atoi(vendor); err == nil {

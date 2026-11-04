@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
+
 import type { Model } from '../types'
 import { parseModelTags as parseTagsFromUtils } from './model-utils'
 
@@ -30,6 +31,7 @@ import { parseModelTags as parseTagsFromUtils } from './model-utils'
 export const modelFormSchema = z.object({
   id: z.number().optional(),
   model_name: z.string().min(1, 'Model name is required'),
+  aliases: z.array(z.string()).default([]),
   description: z.string().default(''),
   icon: z.string().default(''),
   tags: z.array(z.string()).default([]),
@@ -72,6 +74,7 @@ export function transformModelToFormDefaults(model: Model): ModelFormValues {
   return {
     id: model.id,
     model_name: model.model_name,
+    aliases: model.aliases || [],
     description: model.description || '',
     icon: model.icon || '',
     tags: parseTagsFromUtils(model.tags),
@@ -94,6 +97,7 @@ export function transformFormDataToModelPayload(
   return {
     id: formData.id,
     model_name: formData.model_name,
+    aliases: formData.aliases,
     description: formData.description || '',
     icon: formData.icon || '',
     tags: formatTagsArray(formData.tags),

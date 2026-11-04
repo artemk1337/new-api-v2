@@ -97,6 +97,10 @@ func validateTokenModelMapping(userGroup, group string, candidates []string, raw
 	if len(modelMapping) == 0 {
 		return nil
 	}
+	effectiveMapping, err := helper.WithModelAliases(rawMapping)
+	if err != nil {
+		return err
+	}
 
 	availableModels := map[string]bool{}
 	groups := []string{group}
@@ -116,7 +120,7 @@ func validateTokenModelMapping(userGroup, group string, candidates []string, raw
 		if strings.TrimSpace(sourceModel) == "" || strings.TrimSpace(targetModel) == "" {
 			return fmt.Errorf("model mapping keys and values must not be empty")
 		}
-		resolvedTarget, _, err := helper.ResolveModelMapping(rawMapping, sourceModel)
+		resolvedTarget, _, err := helper.ResolveModelMapping(effectiveMapping, sourceModel)
 		if err != nil {
 			return err
 		}

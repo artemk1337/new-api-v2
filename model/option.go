@@ -2243,6 +2243,9 @@ func updateOptionMap(key string, value string) error {
 }
 
 func updateOptionMapWithPricingReferenceNormalization(key string, value string, normalizePricingReferences bool) (err error) {
+	if key == modelAliasesGuardOption {
+		return nil
+	}
 	if key == removedChatsOptionKey {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)

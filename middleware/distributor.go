@@ -60,6 +60,12 @@ func Distribute() func(c *gin.Context) {
 		}
 
 		if shouldSelectChannel && modelRequest.Model != "" {
+			mapping, mappingErr := helper.WithModelAliases(common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping))
+			if mappingErr != nil {
+				abortWithOpenAiMessage(c, http.StatusBadRequest, mappingErr.Error(), types.ErrorCodeChannelModelMappedError)
+				return
+			}
+			common.SetContextKey(c, constant.ContextKeyTokenModelMapping, mapping)
 			relayMode := c.GetInt("relay_mode")
 			if relayMode == relayconstant.RelayModeUnknown {
 				relayMode = relayconstant.Path2RelayMode(c.Request.URL.Path)

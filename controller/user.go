@@ -699,7 +699,7 @@ func GetUserModels(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"message": "",
-				"data":    models,
+				"data":    model.AppendModelAliases(models),
 			})
 			return
 		}
@@ -715,7 +715,7 @@ func GetUserModels(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
-			"data":    model.GetGroupEnabledModels(group),
+			"data":    model.AppendModelAliases(model.GetGroupEnabledModels(group)),
 		})
 		return
 	}
@@ -731,7 +731,7 @@ func GetUserModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    models,
+		"data":    model.AppendModelAliases(models),
 	})
 	return
 }

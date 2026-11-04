@@ -16,14 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useRef, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
+import { useState, useRef, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface TagInputProps {
+  id?: string
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean
   value: string[]
   onChange: (tags: string[]) => void
   placeholder?: string
@@ -32,6 +36,9 @@ interface TagInputProps {
 }
 
 export function TagInput({
+  id,
+  'aria-describedby': ariaDescribedBy,
+  'aria-invalid': ariaInvalid,
   value = [],
   onChange,
   placeholder,
@@ -60,7 +67,7 @@ export function TagInput({
       e.preventDefault()
       addTag(inputValue)
     } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
-      removeTag(value[value.length - 1])
+      removeTag(value.at(-1) ?? '')
     }
   }
 
@@ -86,7 +93,7 @@ export function TagInput({
               type='button'
               variant='ghost'
               size='icon-sm'
-              aria-label='Remove tag'
+              aria-label={t('Remove {{name}}', { name: tag })}
               onClick={(e) => {
                 e.stopPropagation()
                 removeTag(tag)
@@ -99,6 +106,9 @@ export function TagInput({
         </Badge>
       ))}
       <input
+        id={id}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         ref={inputRef}
         type='text'
         value={inputValue}

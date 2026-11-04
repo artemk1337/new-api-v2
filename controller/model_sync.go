@@ -406,6 +406,10 @@ func SyncUpstreamModels(c *gin.Context) {
 			if local.SyncOfficial == 0 {
 				continue
 			}
+			if containsField(ow.Fields, "name_rule") && up.NameRule != model.NameRuleExact && len(local.Aliases) > 0 {
+				skipped = append(skipped, ow.ModelName)
+				continue
+			}
 
 			// 映射 vendor
 			newVendorID := ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)

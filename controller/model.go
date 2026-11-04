@@ -130,7 +130,15 @@ func channelOwnerName(channelType int) string {
 }
 
 func getPreferredModelOwners(modelNames []string, groups []string) map[string]string {
-	channelTypes, err := model.GetPreferredModelOwnerChannelTypes(modelNames, groups)
+	aliases := model.GetModelAliases()
+	lookupNames := make([]string, 0, len(modelNames))
+	for _, name := range modelNames {
+		if canonical, ok := aliases[name]; ok {
+			name = canonical
+		}
+		lookupNames = append(lookupNames, name)
+	}
+	channelTypes, err := model.GetPreferredModelOwnerChannelTypes(lookupNames, groups)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("GetPreferredModelOwnerChannelTypes error: %v", err))
 		return map[string]string{}
@@ -146,6 +154,11 @@ func getPreferredModelOwners(modelNames []string, groups []string) map[string]st
 		}
 		if owner != "" {
 			owners[modelName] = owner
+		}
+	}
+	for alias, canonical := range aliases {
+		if owner, ok := owners[canonical]; ok {
+			owners[alias] = owner
 		}
 	}
 	return owners
@@ -166,7 +179,11 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	if owner, ok := ownerByModel[modelName]; ok && owner != "" {
 		oaiModel.OwnedBy = owner
 	}
-	oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(modelName)
+	endpointModel := modelName
+	if canonical, ok := model.GetModelAliases()[modelName]; ok {
+		endpointModel = canonical
+	}
+	oaiModel.SupportedEndpointTypes = model.GetModelSupportEndpointTypes(endpointModel)
 	return oaiModel
 }
 
@@ -302,7 +319,11 @@ func ListModels(c *gin.Context, modelType int) {
 			availableModels[modelName] = struct{}{}
 		}
 	}
-	keyMapping := common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping)
+	keyMapping, mappingErr := helper.WithModelAliases(common.GetContextKeyString(c, constant.ContextKeyTokenModelMapping))
+	if mappingErr != nil {
+		common.ApiError(c, mappingErr)
+		return
+	}
 	if keyMapping != "" {
 		modelMapping := map[string]string{}
 		if err := common.UnmarshalJsonStr(keyMapping, &modelMapping); err == nil {

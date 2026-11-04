@@ -8,11 +8,32 @@ import (
 	basecommon "github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
+
+// WithModelAliases composes platform aliases with key-specific overrides.
+// Reusing the mapping pipeline preserves routing, billing and cycle checks.
+func WithModelAliases(keyMapping string) (string, error) {
+	aliases := model.GetModelAliases()
+	if len(aliases) == 0 {
+		return keyMapping, nil
+	}
+	if keyMapping != "" {
+		var overrides map[string]string
+		if err := basecommon.UnmarshalJsonStr(keyMapping, &overrides); err != nil {
+			return "", fmt.Errorf("unmarshal_model_mapping_failed")
+		}
+		for source, target := range overrides {
+			aliases[source] = target
+		}
+	}
+	data, err := basecommon.Marshal(aliases)
+	return string(data), err
+}
 
 func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Request) error {
 	if info.ChannelMeta == nil {
