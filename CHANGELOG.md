@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.231 — 2026-11-06
+
+- Collect final upstream usage for up to two seconds after a streaming client disconnects, while suppressing further downstream writes and preserving disconnect diagnostics.
+- Close the upstream response before waiting for scanner and ping workers, keeping late token and cache usage available to the existing billing settlement.
+
 ## v1.1.230 — 2026-11-06
 
 - Hide the dashboard API information panel when no API addresses are configured, while preserving the visibility setting for configured addresses.
