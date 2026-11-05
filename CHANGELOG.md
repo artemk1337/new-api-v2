@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.226 — 2026-11-05
+
+- Raise platform announcement content limits to 5000 Unicode characters in both the editor and server validation, counting Cyrillic text and emoji consistently instead of UTF-8 bytes.
+- Show one localized error for failed announcement saves and Telegram retries, preserving editor contents and revision-conflict handling.
+- Translate the updated content limit and validation message into all six interface languages.
+
 ## v1.1.225 — 2026-11-05
 
 - Add model aliases that share canonical channels and billing without duplicate model records or pricing entries, while preserving API-key model restrictions and personal mappings.

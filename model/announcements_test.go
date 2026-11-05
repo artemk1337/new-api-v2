@@ -58,7 +58,7 @@ func TestAnnouncementSaveIsAtomicAndRevisionChecksTelegramText(t *testing.T) {
 	require.NotEqual(t, stale.Revision, changed.Revision)
 	_, err = SaveAnnouncementSettings(stale)
 	require.ErrorIs(t, err, ErrAnnouncementRevisionConflict)
-	changed.Announcements[0].Content = strings.Repeat("x", 501)
+	changed.Announcements[0].Content = strings.Repeat("x", 5001)
 	changed.Announcements[0].TelegramText = "This change must roll back too"
 	_, err = SaveAnnouncementSettings(changed)
 	require.Error(t, err)

@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 
 import { api } from '@/lib/api'
 
@@ -47,6 +48,16 @@ type AnnouncementResponse = {
 
 const queryKey = ['announcement-settings']
 
+export function getAnnouncementErrorMessage(
+  error: unknown,
+  fallback: string
+): string {
+  if (isAxiosError<{ message?: string }>(error)) {
+    return error.response?.data?.message?.trim() || fallback
+  }
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 function unwrap(response: AnnouncementResponse) {
   if (!response.success) {
     throw new Error(response.message || 'Failed to save announcements')
@@ -76,9 +87,12 @@ export function useSaveAnnouncements() {
         (
           await api.put<AnnouncementResponse>('/api/announcements/', settings, {
             skipBusinessError: true,
+            skipErrorHandler: true,
           })
         ).data
       ),
+    // The caller owns error feedback, including revision conflicts.
+    onError: () => {},
     onSuccess: (settings) => {
       client.setQueryData(queryKey, settings)
       void client.invalidateQueries({ queryKey: ['status'] })
@@ -96,10 +110,12 @@ export function useRetryAnnouncement() {
           await api.post<AnnouncementResponse>(
             `/api/announcements/${encodeURIComponent(request.id)}/retry`,
             { confirmUnknown: request.confirmUnknown },
-            { skipBusinessError: true }
+            { skipBusinessError: true, skipErrorHandler: true }
           )
         ).data
       ),
+    // The caller owns error feedback, including revision conflicts.
+    onError: () => {},
     onSuccess: (settings) => client.setQueryData(queryKey, settings),
   })
 }

@@ -58,7 +58,10 @@ export function AnnouncementEditor(props: {
         .string()
         .trim()
         .min(1, t('Content is required'))
-        .max(500, t('Content must be less than 500 characters')),
+        .refine(
+          (content) => [...content].length <= 5000,
+          t('Announcement content must not exceed 5000 characters')
+        ),
       publishDate: z
         .string()
         .datetime({ offset: true, message: t('Publish date is required') }),
@@ -166,7 +169,7 @@ export function AnnouncementEditor(props: {
                     <Textarea rows={4} {...field} />
                   </FormControl>
                   <FormDescription>
-                    {t('Maximum 500 characters. Supports Markdown and HTML.')}
+                    {t('Maximum 5000 characters. Supports Markdown and HTML.')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

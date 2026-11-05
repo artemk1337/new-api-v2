@@ -47,6 +47,7 @@ import { useUpdateOption } from '../hooks/use-update-option'
 import { AnnouncementDelivery } from './announcement-delivery'
 import { AnnouncementEditor } from './announcement-editor'
 import {
+  getAnnouncementErrorMessage,
   useRetryAnnouncement,
   useSaveAnnouncements,
   type Announcement,
@@ -98,11 +99,7 @@ export function AnnouncementsSection(props: {
         setConflict(true)
       } else {
         toast.error(
-          t(
-            error instanceof Error
-              ? error.message
-              : 'Failed to save announcements'
-          )
+          t(getAnnouncementErrorMessage(error, 'Failed to save announcements'))
         )
       }
     }
@@ -121,9 +118,10 @@ export function AnnouncementsSection(props: {
     } catch (error) {
       toast.error(
         t(
-          error instanceof Error
-            ? error.message
-            : 'Failed to retry Telegram publication'
+          getAnnouncementErrorMessage(
+            error,
+            'Failed to retry Telegram publication'
+          )
         )
       )
     }
