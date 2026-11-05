@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.227 — 2026-11-05
+
+- Label pricing catalogue aliases as alternative names and explain their use in the API model field through an accessible info tooltip in all six interface languages.
+- Hide alternative names beneath model names in the pricing card list while keeping them available in model details.
+
 ## v1.1.226 — 2026-11-05
 
 - Raise platform announcement content limits to 5000 Unicode characters in both the editor and server validation, counting Cyrillic text and emoji consistently instead of UTF-8 bytes.
