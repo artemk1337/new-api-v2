@@ -25,7 +25,12 @@ import {
   usePlaygroundState,
 } from './hooks'
 
-export function Playground() {
+interface PlaygroundProps {
+  initialModel?: string
+  initialGroup?: string
+}
+
+export function Playground(props: PlaygroundProps) {
   const {
     config,
     parameterEnabled,
@@ -38,7 +43,7 @@ export function Playground() {
     setGroups,
     updateConfig,
     clearMessages,
-  } = usePlaygroundState()
+  } = usePlaygroundState(props.initialModel, props.initialGroup)
 
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config,

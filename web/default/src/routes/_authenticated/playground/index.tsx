@@ -17,17 +17,31 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute } from '@tanstack/react-router'
+import z from 'zod'
+
 import { Main } from '@/components/layout'
 import { Playground } from '@/features/playground'
 
+const playgroundSearchSchema = z.object({
+  model: z.string().trim().min(1).optional().catch(undefined),
+  group: z.string().trim().min(1).optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/_authenticated/playground/')({
+  validateSearch: playgroundSearchSchema,
   component: PlaygroundPage,
 })
 
 function PlaygroundPage() {
+  const search = Route.useSearch()
+
   return (
     <Main className='p-0'>
-      <Playground />
+      <Playground
+        key={JSON.stringify([search.model, search.group])}
+        initialModel={search.model}
+        initialGroup={search.group}
+      />
     </Main>
   )
 }

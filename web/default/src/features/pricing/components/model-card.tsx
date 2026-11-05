@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChevronRight, Copy } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ChevronRight, Copy, MessageCircle } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -85,6 +86,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     props.model,
     hasGroupFilter ? props.groupFilter : undefined
   )
+  const chatGroup = hasGroupFilter
+    ? props.groupFilter
+    : props.model.enable_groups?.find(
+        (group) => props.model.group_ratio?.[group] === displayRatio
+      ) || props.model.enable_groups?.[0]
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
@@ -241,7 +247,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         'hover:bg-muted/20'
       )}
     >
-      {/* Header: icon + name + price + actions */}
+      {/* Header: icon + name + actions */}
       <div className='flex items-start justify-between gap-2.5 sm:gap-3'>
         <div className='flex min-w-0 items-start gap-2.5 sm:gap-3'>
           <div className='bg-muted/40 flex size-9 shrink-0 items-center justify-center rounded-lg sm:size-10 sm:rounded-xl'>
@@ -255,11 +261,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
               {props.model.model_name}
             </h3>
-            <div className='mt-1 flex flex-wrap items-start justify-start gap-x-5 gap-y-3 text-xs'>
+            <div className='mt-1 text-xs'>
               <span className='text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
                 {pricingCaption}
               </span>
-              {pricingContent}
             </div>
           </div>
         </div>
@@ -282,6 +287,18 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <ChevronRight className='size-3.5' />
           </button>
         </div>
+      </div>
+      <div className='mt-3 ml-[46px] flex flex-wrap items-end justify-between gap-x-4 gap-y-3 sm:ml-[52px]'>
+        <div className='min-w-0'>{pricingContent}</div>
+        <Link
+          to='/playground'
+          search={{ model: props.model.model_name, group: chatGroup }}
+          title={t('Open in chat')}
+          className='text-muted-foreground hover:text-foreground hover:bg-muted ml-auto inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors'
+        >
+          <MessageCircle className='size-3.5' />
+          {t('Chat')}
+        </Link>
       </div>
     </div>
   )

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.228 — 2026-11-05
+
+- Add a Chat button to each pricing model card, opening Playground with the selected model and pricing group.
+- Preserve the selected model through sign-in and keep card prices and actions readable on narrow screens.
+
 ## v1.1.227 — 2026-11-05
 
 - Label pricing catalogue aliases as alternative names and explain their use in the API model field through an accessible info tooltip in all six interface languages.
