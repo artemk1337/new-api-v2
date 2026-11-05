@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.232 — 2026-11-06
+
+- Add a separate optional plain-text announcement title, validated up to 200 Unicode characters and stored independently from message content.
+- Show titles in the updates timeline, dashboard, and news editor; move legacy Markdown titles into the title field when editing existing announcements.
+- Preserve legacy news and independent Telegram publication text, with title labels and validation translated into all six interface languages.
+
 ## v1.1.231 — 2026-11-06
 
 - Collect final upstream usage for up to two seconds after a streaming client disconnects, while suppressing further downstream writes and preserving disconnect diagnostics.
