@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useStatus } from '@/hooks/use-status'
+
 import type { AnnouncementItem, ApiInfoItem, FAQItem } from '../types'
 
 /**
@@ -65,7 +66,11 @@ export function useDashboardContentVisibility() {
   const hasStatus = Boolean(status)
 
   return {
-    apiInfo: hasStatus && status?.api_info_enabled !== false,
+    apiInfo:
+      hasStatus &&
+      status?.api_info_enabled !== false &&
+      Array.isArray(status?.api_info) &&
+      status.api_info.length > 0,
     announcements: hasStatus && status?.announcements_enabled !== false,
     faq: hasStatus && status?.faq_enabled !== false,
   }

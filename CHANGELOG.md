@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.230 — 2026-11-06
+
+- Hide the dashboard API information panel when no API addresses are configured, while preserving the visibility setting for configured addresses.
+
 ## v1.1.229 — 2026-11-05
 
 - Present platform updates as a timeline with separate titles and collapsible message bodies.
