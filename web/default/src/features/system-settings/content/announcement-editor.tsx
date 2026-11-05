@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { splitAnnouncementContent } from '@/lib/announcement-content'
 import { isTelegramPostUrl } from '@/lib/announcement-telegram'
 
 import type { Announcement } from './announcements-api'
@@ -54,6 +55,13 @@ export function AnnouncementEditor(props: {
   const { t } = useTranslation()
   const schema = z
     .object({
+      title: z
+        .string()
+        .trim()
+        .refine(
+          (title) => [...title].length <= 200,
+          t('Announcement title must not exceed 200 characters')
+        ),
       content: z
         .string()
         .trim()
@@ -93,10 +101,15 @@ export function AnnouncementEditor(props: {
       }
     })
   type Values = z.infer<typeof schema>
+  const initial = splitAnnouncementContent(
+    props.announcement?.content || '',
+    props.announcement?.title
+  )
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
-      content: props.announcement?.content || '',
+      title: initial.title,
+      content: initial.body,
       publishDate: props.announcement?.publishDate || new Date().toISOString(),
       extra: props.announcement?.extra || '',
       telegramMode: props.announcement?.telegramMode || 'platform',
@@ -159,6 +172,22 @@ export function AnnouncementEditor(props: {
             disabled={form.formState.isSubmitting}
             className='space-y-4'
           >
+            <FormField
+              control={form.control}
+              name='title'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Announcement title')}</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Optional. Plain text, up to 200 characters.')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name='content'

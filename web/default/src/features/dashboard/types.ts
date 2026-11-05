@@ -241,6 +241,7 @@ export interface ProcessedUserChartData {
 // ============================================================================
 
 export interface AnnouncementItem {
+  title?: string
   id?: number | string
   content: string
   publishDate?: string

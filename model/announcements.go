@@ -24,6 +24,7 @@ var announcementIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 type Announcement struct {
 	ID          string `json:"id"`
+	Title       string `json:"title,omitempty"`
 	Content     string `json:"content"`
 	PublishDate string `json:"publishDate"`
 	Type        string `json:"type,omitempty"`

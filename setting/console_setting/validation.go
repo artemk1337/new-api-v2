@@ -149,6 +149,15 @@ func validateAnnouncements(announcementsStr string) error {
 		"default": true, "ongoing": true, "success": true, "warning": true, "error": true,
 	}
 	for i, ann := range list {
+		if title, exists := ann["title"]; exists {
+			titleStr, ok := title.(string)
+			if !ok {
+				return fmt.Errorf("Announcement title must be a string")
+			}
+			if utf8.RuneCountInString(titleStr) > 200 {
+				return fmt.Errorf("Announcement title must not exceed 200 characters")
+			}
+		}
 		content, ok := ann["content"].(string)
 		if !ok || content == "" {
 			return fmt.Errorf("第%d个公告缺少内容字段", i+1)

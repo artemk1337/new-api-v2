@@ -234,3 +234,59 @@ func TestAnnouncementFailedCreateCanUseCorrectedChannelWithoutAutomaticRetry(t *
 	require.True(t, claimed)
 	require.Equal(t, "@correct_channel", attempt.Channel)
 }
+
+func TestAnnouncementTitlePersistsSeparatelyFromContent(t *testing.T) {
+	setupAnnouncementsTest(t)
+	settings := announcementSettingsForTest(t)
+	settings.Announcements[0].Title = "Новые модели <API> **без Markdown**"
+	saved, err := SaveAnnouncementSettings(settings)
+	require.NoError(t, err)
+	require.Equal(t, settings.Announcements[0].Title, saved.Announcements[0].Title)
+	require.Equal(t, "Short platform announcement", saved.Announcements[0].Content)
+	public, err := PublicAnnouncements()
+	require.NoError(t, err)
+	require.Equal(t, settings.Announcements[0].Title, public[0].Title)
+	var delivery AnnouncementTelegramDelivery
+	require.NoError(t, DB.First(&delivery, "announcement_id = ?", "news-1").Error)
+	require.Equal(t, "Long Telegram post", delivery.DesiredText)
+
+	previousRevision := saved.Revision
+	saved.Announcements[0].Title = "Updated title"
+	changed, err := SaveAnnouncementSettings(saved)
+	require.NoError(t, err)
+	require.NotEqual(t, previousRevision, changed.Revision)
+	reloaded, err := GetAnnouncementSettings()
+	require.NoError(t, err)
+	require.Equal(t, "Updated title", reloaded.Announcements[0].Title)
+	require.Equal(t, "Short platform announcement", reloaded.Announcements[0].Content)
+}
+
+func TestAnnouncementTitleLimitCountsUnicodeCharacters(t *testing.T) {
+	setupAnnouncementsTest(t)
+	settings := announcementSettingsForTest(t)
+	settings.Announcements[0].Title = strings.Repeat("я", 199) + "🚀"
+	saved, err := SaveAnnouncementSettings(settings)
+	require.NoError(t, err)
+	require.Equal(t, settings.Announcements[0].Title, saved.Announcements[0].Title)
+	saved.Announcements[0].Title += "!"
+	_, err = SaveAnnouncementSettings(saved)
+	require.EqualError(t, err, "Announcement title must not exceed 200 characters")
+	after, err := GetAnnouncementSettings()
+	require.NoError(t, err)
+	require.Equal(t, settings.Announcements[0].Title, after.Announcements[0].Title)
+}
+
+func TestAnnouncementWithoutTitleRemainsCompatible(t *testing.T) {
+	setupAnnouncementsTest(t)
+	raw := `[{"id":"legacy-news","content":"**Legacy heading**\n\nLegacy content","publishDate":"2026-11-04T12:00:00Z"}]`
+	require.NoError(t, UpdateOption(announcementsOption, raw))
+	settings, err := GetAnnouncementSettings()
+	require.NoError(t, err)
+	require.Empty(t, settings.Announcements[0].Title)
+	saved, err := SaveAnnouncementSettings(settings)
+	require.NoError(t, err)
+	require.Equal(t, "**Legacy heading**\n\nLegacy content", saved.Announcements[0].Content)
+	public, err := PublicAnnouncements()
+	require.NoError(t, err)
+	require.Equal(t, saved.Announcements[0].Announcement, public[0])
+}

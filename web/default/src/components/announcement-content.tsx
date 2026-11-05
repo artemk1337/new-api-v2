@@ -25,10 +25,13 @@ import { Button } from '@/components/ui/button'
 import { splitAnnouncementContent } from '@/lib/announcement-content'
 import { cn } from '@/lib/utils'
 
-export function AnnouncementContent(props: { content: string }) {
+export function AnnouncementContent(props: {
+  content: string
+  title?: string
+}) {
   const { t } = useTranslation()
   const id = useId()
-  const { title, body } = splitAnnouncementContent(props.content)
+  const { title, body } = splitAnnouncementContent(props.content, props.title)
   const previewRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
@@ -42,11 +45,16 @@ export function AnnouncementContent(props: { content: string }) {
     observer.observe(preview)
     measure()
     return () => observer.disconnect()
-  }, [props.content])
+  }, [body])
 
   return (
     <div>
-      {title ? (
+      {props.title?.trim() ? (
+        <h4 className='announcement-title mb-3 text-base leading-snug font-semibold tracking-tight'>
+          {title}
+        </h4>
+      ) : null}
+      {!props.title?.trim() && title ? (
         <RichContent
           content={title}
           className='announcement-title mb-3 text-base leading-snug font-semibold tracking-tight [&_p]:m-0'

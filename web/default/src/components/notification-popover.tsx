@@ -44,6 +44,7 @@ interface AnnouncementItem {
   isUnread?: boolean
   id?: number | string
   type?: string
+  title?: string
   content?: string
   extra?: string
   publishDate?: string | Date
@@ -195,7 +196,10 @@ export function NotificationPopover(props: NotificationPopoverProps) {
                           <Badge variant='destructive'>{t('Error')}</Badge>
                         ) : null}
                       </div>
-                      <AnnouncementContent content={item.content || ''} />
+                      <AnnouncementContent
+                        title={item.title}
+                        content={item.content || ''}
+                      />
                       <AnnouncementTelegramLink url={item.telegramUrl} />
                       {item.extra ? (
                         <RichContent

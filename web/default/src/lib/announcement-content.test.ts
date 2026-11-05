@@ -21,6 +21,11 @@ import { describe, expect, test } from 'bun:test'
 import { splitAnnouncementContent } from './announcement-content'
 
 describe('announcement title and preview', () => {
+  test('explicit plain title preserves the full body, including Markdown headings', () => {
+    expect(
+      splitAnnouncementContent('## Body section\nDetails', ' A separate title ')
+    ).toEqual({ title: 'A separate title', body: '## Body section\nDetails' })
+  })
   test('keeps a Markdown heading outside the collapsible body', () => {
     expect(
       splitAnnouncementContent('## Model updates\n\nFirst paragraph\n- A\n- B')

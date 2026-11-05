@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { splitAnnouncementContent } from '@/lib/announcement-content'
 import dayjs from '@/lib/dayjs'
 
 import { SettingsSwitchField } from '../components/settings-form-layout'
@@ -295,7 +296,20 @@ export function AnnouncementsSection(props: {
               id: 'content',
               header: t('Content'),
               cellClassName: 'max-w-xs truncate',
-              cell: (item) => item.content,
+              cell: (item) => {
+                const { title, body } = splitAnnouncementContent(
+                  item.content,
+                  item.title
+                )
+                return (
+                  <div>
+                    <p className='truncate font-medium'>{title}</p>
+                    <p className='text-muted-foreground truncate text-xs'>
+                      {body}
+                    </p>
+                  </div>
+                )
+              },
             },
             {
               id: 'publish-date',

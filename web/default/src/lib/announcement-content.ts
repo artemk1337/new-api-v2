@@ -17,10 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /** Separate an explicit leading Markdown heading from the collapsible body. */
-export function splitAnnouncementContent(content: string): {
+export function splitAnnouncementContent(
+  content: string,
+  title?: string
+): {
   title: string
   body: string
 } {
+  if (title?.trim()) return { title: title.trim(), body: content }
   const match = content
     .trimStart()
     .match(/^(?:#{1,6} +(.+?)|\*\*(.+?)\*\*)[ \t]*(?:\r?\n|$)/)

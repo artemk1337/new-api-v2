@@ -23,6 +23,7 @@ import { api } from '@/lib/api'
 
 export type Announcement = {
   id: string
+  title?: string
   content: string
   publishDate: string
   type: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
