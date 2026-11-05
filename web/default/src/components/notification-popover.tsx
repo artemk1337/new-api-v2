@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import '@/styles/notifications.css'
 import { Bell, Megaphone, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -40,6 +41,7 @@ import {
 import { cn } from '@/lib/utils'
 
 interface AnnouncementItem {
+  isUnread?: boolean
   id?: number | string
   type?: string
   content?: string
@@ -110,9 +112,9 @@ export function NotificationPopover(props: NotificationPopoverProps) {
         align='end'
         sideOffset={12}
         collisionPadding={8}
-        className='w-[min(35rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-2xl p-0 shadow-xl'
+        className='updates-popover w-[min(37rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-2xl p-0 shadow-xl'
       >
-        <PopoverHeader className='flex-row items-center justify-between px-5 py-4 sm:px-6'>
+        <PopoverHeader className='flex-row items-center justify-between border-b px-5 py-4 sm:px-6'>
           <PopoverTitle className='text-xl font-semibold tracking-tight'>
             {t('Platform updates')}
           </PopoverTitle>
@@ -150,7 +152,10 @@ export function NotificationPopover(props: NotificationPopoverProps) {
                   month !==
                   (previousDate ? monthFormat.format(previousDate) : '')
                 return (
-                  <li key={getAnnouncementRenderKey(item)}>
+                  <li
+                    key={getAnnouncementRenderKey(item)}
+                    className='update-item'
+                  >
                     {startsMonth ? (
                       <h3
                         className={cn(
@@ -162,9 +167,10 @@ export function NotificationPopover(props: NotificationPopoverProps) {
                       </h3>
                     ) : null}
                     <article
+                      data-unread={item.isUnread || undefined}
                       className={cn(
-                        'min-w-0 pb-5',
-                        index > 0 && !startsMonth && 'border-t pt-5'
+                        'update-article min-w-0',
+                        item.isUnread && 'update-unread'
                       )}
                     >
                       <div className='text-muted-foreground mb-2 flex flex-wrap items-center gap-2 text-xs'>
@@ -172,6 +178,12 @@ export function NotificationPopover(props: NotificationPopoverProps) {
                           <time dateTime={date.toISOString()}>
                             {dayFormat.format(date)}
                           </time>
+                        ) : null}
+                        {item.isUnread ? (
+                          <span className='update-new inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold'>
+                            <span className='size-1.5 rounded-full bg-current' />
+                            {t('Unread update')}
+                          </span>
                         ) : null}
                         {item.type === 'ongoing' ? (
                           <Badge variant='secondary'>{t('Ongoing')}</Badge>

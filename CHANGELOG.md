@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.229 — 2026-11-05
+
+- Present platform updates as a timeline with separate titles and collapsible message bodies.
+- Highlight unread entries with accent dots and localized new badges that remain visible while the updates panel is open.
+
 ## v1.1.228 — 2026-11-05
 
 - Add a Chat button to each pricing model card, opening Playground with the selected model and pricing group.

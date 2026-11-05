@@ -60,7 +60,8 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  * Track unread timeline updates and mark visible entries as read.
  */
 export function useNotifications() {
-  const [popoverOpen, setPopoverOpen] = useState(false)
+  const [popoverOpen, setOpen] = useState(false)
+  const [openedUnreadKeys, setOpenedUnreadKeys] = useState<string[]>([])
   const { status, loading } = useStatus()
   const readAnnouncementKeys = useNotificationStore(
     (state) => state.readAnnouncementKeys
@@ -92,10 +93,18 @@ export function useNotifications() {
   }, [popoverOpen, unreadKeys, markAnnouncementsRead])
 
   return {
-    announcements,
+    announcements: announcements.map((item) => ({
+      ...item,
+      isUnread: (popoverOpen ? openedUnreadKeys : unreadKeys).includes(
+        getAnnouncementKey(item)
+      ),
+    })),
     loading,
     unreadCount: unreadKeys.length,
     popoverOpen,
-    setPopoverOpen,
+    setPopoverOpen: (open: boolean) => {
+      if (open) setOpenedUnreadKeys(unreadKeys)
+      setOpen(open)
+    },
   }
 }

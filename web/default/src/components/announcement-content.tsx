@@ -22,11 +22,13 @@ import { useTranslation } from 'react-i18next'
 
 import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
+import { splitAnnouncementContent } from '@/lib/announcement-content'
 import { cn } from '@/lib/utils'
 
 export function AnnouncementContent(props: { content: string }) {
   const { t } = useTranslation()
   const id = useId()
+  const { title, body } = splitAnnouncementContent(props.content)
   const previewRef = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
@@ -44,12 +46,18 @@ export function AnnouncementContent(props: { content: string }) {
 
   return (
     <div>
+      {title ? (
+        <RichContent
+          content={title}
+          className='announcement-title mb-3 text-base leading-snug font-semibold tracking-tight [&_p]:m-0'
+        />
+      ) : null}
       <div id={id}>
         <div ref={previewRef} className={cn(!expanded && 'line-clamp-4')}>
           <RichContent
             breaks
-            content={props.content}
-            className='text-[15px] leading-relaxed [&_h1]:text-base [&_h2]:text-base [&_h3]:text-base [&_p]:my-2 [&_strong]:font-semibold'
+            content={body}
+            className='announcement-body text-muted-foreground text-sm leading-relaxed [&_h1]:text-base [&_h2]:text-base [&_h3]:text-base [&_p]:my-2 [&_strong]:font-semibold'
           />
         </div>
       </div>

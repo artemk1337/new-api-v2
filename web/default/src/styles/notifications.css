@@ -1,0 +1,39 @@
+/* Keep update titles visible and use timeline dots to distinguish unread entries. */
+.updates-popover {
+  --update-accent: #2563eb;
+}
+.dark .updates-popover {
+  --update-accent: #93b4ff;
+}
+.update-new {
+  color: var(--update-accent);
+  background: color-mix(in srgb, var(--update-accent) 12%, transparent);
+}
+.update-article {
+  position: relative;
+  margin-left: 7px;
+  margin-bottom: 0;
+  padding: 0 0 26px 24px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+.update-article::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  box-shadow: 0 0 0 4px var(--popover);
+}
+.update-unread::before {
+  background: var(--update-accent);
+}
+.announcement-title {
+  border: 0;
+  padding-bottom: 0;
+}
