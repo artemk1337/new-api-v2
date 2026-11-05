@@ -26,6 +26,9 @@ func FlushWriter(c *gin.Context) (err error) {
 	}
 
 	if c.Request != nil && c.Request.Context().Err() != nil {
+		if _, draining := c.Writer.(*streamDrainWriter); draining {
+			return nil
+		}
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
@@ -84,6 +87,9 @@ func StringData(c *gin.Context, str string) error {
 	}
 
 	if c.Request != nil && c.Request.Context().Err() != nil {
+		if _, draining := c.Writer.(*streamDrainWriter); draining {
+			return nil
+		}
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
