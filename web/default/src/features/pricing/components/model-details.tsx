@@ -49,6 +49,11 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { getPerfMetrics } from '@/features/performance-metrics/api'
 import {
   formatLatency,
@@ -572,7 +577,19 @@ function ModelHeader(props: { model: PricingModel }) {
       </div>
       {Boolean(model.aliases?.length) && (
         <div className='mt-3 flex flex-wrap items-center gap-2 text-xs'>
-          <span className='text-muted-foreground'>{t('Model aliases')}</span>
+          <span className='text-muted-foreground'>{t('Alternative name')}</span>
+          <Tooltip>
+            <TooltipTrigger
+              type='button'
+              aria-label={t('Alternative name')}
+              className='text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm focus-visible:ring-2 focus-visible:outline-none'
+            >
+              <Info className='size-3.5' aria-hidden='true' />
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('You can use this name in the model field of an API request.')}
+            </TooltipContent>
+          </Tooltip>
           {model.aliases?.map((alias) => (
             <span
               key={alias}

@@ -255,14 +255,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
               {props.model.model_name}
             </h3>
-            {Boolean(props.model.aliases?.length) && (
-              <p
-                className='text-muted-foreground mt-1 truncate font-mono text-xs'
-                title={props.model.aliases?.join(', ')}
-              >
-                {props.model.aliases?.join(', ')}
-              </p>
-            )}
             <div className='mt-1 flex flex-wrap items-start justify-start gap-x-5 gap-y-3 text-xs'>
               <span className='text-[11px] font-medium text-emerald-600 dark:text-emerald-400'>
                 {pricingCaption}
