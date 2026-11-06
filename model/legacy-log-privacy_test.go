@@ -45,10 +45,13 @@ func TestHistoricalSupplierLogColumnIsReadOnlyAndProtectsTokenAndUserViews(t *te
 
 	tokenLogs, err := GetLogByTokenId(7)
 	require.NoError(t, err)
+	pagedTokenLogs, tokenTotal, err := GetTokenLogs(7, 0, 50)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, tokenTotal)
 	userLogs, total, err := GetUserLogs(1, LogTypeUnknown, 0, 0, "", "", 0, 10, "", "", "")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
-	for _, logs := range [][]*Log{tokenLogs, userLogs} {
+	for _, logs := range [][]*Log{tokenLogs, pagedTokenLogs, userLogs} {
 		require.Len(t, logs, 1)
 		require.Empty(t, logs[0].ModelName)
 		require.Empty(t, logs[0].Content)

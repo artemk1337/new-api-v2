@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"math"
 	"net/http"
 	"strings"
 
@@ -46,7 +47,16 @@ func KeySessionInfo(c *gin.Context) {
 
 func KeySessionLogs(c *gin.Context) {
 	token := c.MustGet("key_session_token").(*model.Token)
-	logs, err := model.GetLogByTokenId(token.Id)
+	pageInfo := common.GetPageQuery(c)
+	pageInfo.PageSize = 50
+	if pageInfo.Page < 1 {
+		pageInfo.Page = 1
+	}
+	if pageInfo.Page > math.MaxInt/pageInfo.PageSize {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid page"})
+		return
+	}
+	logs, total, err := model.GetTokenLogs(token.Id, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -60,5 +70,7 @@ func KeySessionLogs(c *gin.Context) {
 			"use_time": log.UseTime, "is_stream": log.IsStream,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": items})
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
 }

@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatQuota } from '@/lib/format'
 
-import { getKeyLogs, getKeySession, logoutKey } from './api'
+import { getKeySession, logoutKey } from './api'
 import { KeyLoginForm } from './key-login-form'
+import { KeyUsageLogs } from './key-usage-logs'
 
 export { KeyLoginForm } from './key-login-form'
 
@@ -20,12 +21,6 @@ export function KeyAccess() {
   const session = useQuery({
     queryKey: ['key-session'],
     queryFn: getKeySession,
-    retry: false,
-  })
-  const logs = useQuery({
-    queryKey: ['key-session', 'logs'],
-    queryFn: getKeyLogs,
-    enabled: !!session.data,
     retry: false,
   })
 
@@ -42,13 +37,13 @@ export function KeyAccess() {
     }
   }
 
-  if (session.isPending || session.isFetching) {
-    return <main className='p-8'>{t('Loading')}</main>
+  if (session.isPending) {
+    return <main className='px-4 pt-24'>{t('Loading')}</main>
   }
 
   if (!session.data) {
     return (
-      <main className='flex min-h-svh items-center justify-center px-4'>
+      <main className='flex min-h-svh items-center justify-center px-4 pt-20'>
         <Card className='w-full max-w-md'>
           <CardHeader>
             <CardTitle>{t('Sign in with API key')}</CardTitle>
@@ -68,7 +63,7 @@ export function KeyAccess() {
   }
 
   return (
-    <main className='mx-auto max-w-5xl space-y-6 px-4 py-8'>
+    <main className='mx-auto max-w-5xl space-y-6 px-4 pt-24 pb-8'>
       <header className='flex flex-wrap items-center justify-between gap-4'>
         <div>
           <h1 className='text-2xl font-semibold'>{t('Usage')}</h1>
@@ -108,50 +103,18 @@ export function KeyAccess() {
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('Usage logs')}</CardTitle>
-        </CardHeader>
-        <CardContent className='overflow-x-auto'>
-          {logs.isError && <p>{t('Request failed')}</p>}
-          {logs.isPending && <p>{t('Loading')}</p>}
-          {logs.isSuccess && logs.data.length === 0 && (
-            <p className='text-muted-foreground'>{t('No data')}</p>
-          )}
-          {logs.isSuccess && logs.data.length > 0 && (
-            <table className='w-full text-left text-sm'>
-              <thead>
-                <tr className='border-b'>
-                  <th className='p-2'>{t('Time')}</th>
-                  <th className='p-2'>{t('Model')}</th>
-                  <th className='p-2'>{t('Input tokens')}</th>
-                  <th className='p-2'>{t('Output tokens')}</th>
-                  <th className='p-2'>{t('Usage')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.data.map((log) => (
-                  <tr key={log.id} className='border-b last:border-0'>
-                    <td className='p-2 whitespace-nowrap'>
-                      {new Date(log.created_at * 1000).toLocaleString()}
-                    </td>
-                    <td className='p-2'>{log.model_name}</td>
-                    <td className='p-2'>
-                      {log.prompt_tokens.toLocaleString()}
-                    </td>
-                    <td className='p-2'>
-                      {log.completion_tokens.toLocaleString()}
-                    </td>
-                    <td className='p-2 whitespace-nowrap'>
-                      {formatQuota(log.quota)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+      <aside className='bg-primary/5 border-primary/15 flex flex-col gap-4 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='space-y-1'>
+          <p className='font-medium'>{t('Get more from the platform')}</p>
+          <p className='text-muted-foreground text-sm'>
+            {t('Register to access detailed statistics and advanced features.')}
+          </p>
+        </div>
+        <Button className='shrink-0' render={<Link to='/sign-up' />}>
+          {t('Sign up')}
+        </Button>
+      </aside>
+      <KeyUsageLogs />
     </main>
   )
 }

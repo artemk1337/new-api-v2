@@ -35,7 +35,10 @@ export function KeyLoginForm(props: KeyLoginFormProps) {
       setKey('')
       useAuthStore.getState().auth.reset()
       window.localStorage.removeItem('uid')
-      queryClient.clear()
+      queryClient.removeQueries({
+        predicate: (query) =>
+          query.queryKey.length !== 1 || query.queryKey[0] !== 'key-session',
+      })
       queryClient.setQueryData(['key-session'], await getKeySession())
       navigate({ to: '/key-access' })
     } catch {

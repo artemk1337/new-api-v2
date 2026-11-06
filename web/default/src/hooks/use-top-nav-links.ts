@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { getKeySession } from '@/lib/key-session'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -57,6 +59,13 @@ export function useTopNavLinks(): TopNavLink[] {
   }, [status])
 
   const isAuthed = !!auth?.user
+  const keySession = useQuery({
+    queryKey: ['key-session'],
+    queryFn: getKeySession,
+    enabled: !isAuthed,
+    retry: false,
+    staleTime: 60_000,
+  })
 
   const links: TopNavLink[] = []
 
@@ -67,7 +76,10 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Dashboard -> /dashboard
   if (modules?.console !== false) {
-    links.push({ title: t('Dashboard tab'), href: '/dashboard' })
+    links.push({
+      title: t('Dashboard tab'),
+      href: !isAuthed && keySession.data ? '/key-access' : '/dashboard',
+    })
   }
 
   if (modules?.referralProgram !== false) {

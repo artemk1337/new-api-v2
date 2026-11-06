@@ -171,6 +171,22 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 	return logs, err
 }
 
+func GetTokenLogs(tokenId, startIdx, num int) (logs []*Log, total int64, err error) {
+	tx := LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId)
+	if err = tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	order := "id desc"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = clickHouseLogOrder("")
+	}
+	if err = tx.Order(order).Offset(startIdx).Limit(num).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	formatUserLogs(logs, startIdx)
+	return logs, total, nil
+}
+
 func RecordLog(userId int, logType int, content string) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return

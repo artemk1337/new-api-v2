@@ -1,12 +1,6 @@
 import { api } from '@/lib/api'
 
-export interface KeySession {
-  name: string
-  used_quota: number
-  remain_quota: number
-  unlimited_quota: boolean
-  expired_time: number
-}
+export { getKeySession } from '@/lib/key-session'
 
 export interface KeyLog {
   id: number
@@ -29,18 +23,6 @@ const config = {
   skipAuthReset: true,
 }
 
-export async function getKeySession(): Promise<KeySession | null> {
-  try {
-    const response = await api.get<Response<KeySession>>(
-      '/api/key-session',
-      config
-    )
-    return response.data.success ? response.data.data : null
-  } catch {
-    return null
-  }
-}
-
 export async function loginWithKey(key: string): Promise<void> {
   const response = await api.post<Response<unknown>>(
     '/api/key-login',
@@ -50,13 +32,20 @@ export async function loginWithKey(key: string): Promise<void> {
   if (!response.data.success) throw new Error(response.data.message)
 }
 
-export async function getKeyLogs(): Promise<KeyLog[]> {
-  const response = await api.get<Response<KeyLog[]>>(
+export interface KeyLogsPage {
+  page: number
+  page_size: number
+  total: number
+  items: KeyLog[]
+}
+
+export async function getKeyLogs(page: number): Promise<KeyLogsPage> {
+  const response = await api.get<Response<KeyLogsPage>>(
     '/api/key-session/logs',
-    config
+    { ...config, params: { p: page } }
   )
   if (!response.data.success) throw new Error(response.data.message)
-  return response.data.data || []
+  return response.data.data
 }
 
 export async function logoutKey(): Promise<void> {

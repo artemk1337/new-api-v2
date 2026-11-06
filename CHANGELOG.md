@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.233 — 2026-11-06
+
+- Paginate API-key usage logs on the server with 50 entries per page and access to older records.
+- Keep the shared site header on the API-key cabinet without a sidebar, and route the Cabinet link to it for key sessions.
+- Invite key users to register for detailed statistics and advanced features, with copy in all six interface languages.
+
 ## v1.1.232 — 2026-11-06
 
 - Add a separate optional plain-text announcement title, validated up to 200 Unicode characters and stored independently from message content.
