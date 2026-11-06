@@ -44,6 +44,19 @@ func TestTokenAuthReturnsEnglishForUnavailableTokenGroup(t *testing.T) {
 	assert.Equal(t, "new_api_error", body.Get("error.type").String())
 }
 
+func TestTokenAuthRejectsAdminDisabledKeyBeforeRelay(t *testing.T) {
+	resetTokenAuthTestState(t)
+	createTokenAuthUserAndToken(t, "default", "auto")
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("key = ?", "test").Update("status", common.TokenStatusAdminDisabled).Error)
+	var countBefore, countAfter int64
+	require.NoError(t, model.DB.Model(&model.Log{}).Count(&countBefore).Error)
+	body := performTokenAuthRequest(t, http.StatusUnauthorized)
+	require.Equal(t, "new_api_error", body.Get("error.type").String())
+	require.False(t, body.Get("using_group").Exists())
+	require.NoError(t, model.DB.Model(&model.Log{}).Count(&countAfter).Error)
+	require.Equal(t, countBefore, countAfter)
+}
+
 func TestTokenAuthRejectsDeprecatedTokenGroup(t *testing.T) {
 	resetTokenAuthTestState(t)
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))

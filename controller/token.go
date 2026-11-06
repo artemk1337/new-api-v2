@@ -439,6 +439,10 @@ func UpdateToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if cleanToken.Status == common.TokenStatusAdminDisabled {
+		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)
+		return
+	}
 	if token.Status == common.TokenStatusEnabled {
 		if cleanToken.Status == common.TokenStatusExpired && cleanToken.ExpiredTime <= common.GetTimestamp() && cleanToken.ExpiredTime != -1 {
 			common.ApiErrorI18n(c, i18n.MsgTokenExpiredCannotEnable)
@@ -450,6 +454,10 @@ func UpdateToken(c *gin.Context) {
 		}
 	}
 	if statusOnly != "" {
+		if token.Status != common.TokenStatusEnabled && token.Status != common.TokenStatusDisabled {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
 		cleanToken.Status = token.Status
 	} else {
 		// If you add more fields, please also update token.Update()

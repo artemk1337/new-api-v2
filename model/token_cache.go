@@ -1,12 +1,18 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/go-redis/redis/v8"
 )
+
+func tokenAdminDisabledCacheKey(key string) string {
+	return "token-admin-disabled:" + common.GenerateHMAC(key)
+}
 
 func cacheSetToken(token Token) error {
 	key := common.GenerateHMAC(token.Key)
@@ -20,6 +26,8 @@ func cacheSetToken(token Token) error {
 }
 
 func cacheDeleteToken(key string) error {
+	// Retain administrative block markers as revocation tombstones: an older
+	// asynchronous cache fill may still recreate the deleted token's cache.
 	key = common.GenerateHMAC(key)
 	err := common.RedisDelKey(fmt.Sprintf("token:%s", key))
 	if err != nil {
@@ -67,5 +75,14 @@ func cacheGetTokenByKey(key string) (*Token, error) {
 	}
 	token.Key = key
 	token.NormalizeRouting()
+	_, err = common.RedisGet(tokenAdminDisabledCacheKey(key))
+	if err == nil {
+		token.Status = common.TokenStatusAdminDisabled
+	} else if !errors.Is(err, redis.Nil) {
+		return nil, err
+	} else if token.Status == common.TokenStatusAdminDisabled {
+		// An older asynchronous cache fill may finish after an administrator unblocks the key.
+		return nil, fmt.Errorf("administrative token status needs database refresh")
+	}
 	return &token, nil
 }

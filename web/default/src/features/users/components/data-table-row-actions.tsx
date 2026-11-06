@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import type { Row } from '@tanstack/react-table'
 import {
   Pencil,
@@ -30,22 +29,25 @@ import {
   Link2,
   CreditCard,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
 } from '@/components/ui/dropdown-menu'
-import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
+
 import { manageUser, resetUserPasskey, resetUserTwoFA } from '../api'
 import {
   USER_STATUS,
@@ -56,6 +58,7 @@ import {
 import { getUserActionMessage } from '../lib'
 import type { User, ManageUserAction } from '../types'
 import { UserBindingDialog } from './dialogs/user-binding-dialog'
+import { UserTokensDialog } from './dialogs/user-tokens-dialog'
 import { useUsers } from './users-provider'
 
 interface DataTableRowActionsProps {
@@ -70,6 +73,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const [tokensDialogOpen, setTokensDialogOpen] = useState(false)
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -155,7 +159,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         <TooltipContent>{t('Edit')}</TooltipContent>
       </Tooltip>
 
-      <DataTableRowActionMenu ariaLabel={t('Open menu')} contentClassName='w-48'>
+      <DataTableRowActionMenu
+        ariaLabel={t('Open menu')}
+        contentClassName='w-48'
+      >
+        <DropdownMenuItem onClick={() => setTokensDialogOpen(true)}>
+          {t('API Keys')}
+          <DropdownMenuShortcut>
+            <KeyRound size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
         {isDisabled ? (
           <DropdownMenuItem onClick={() => handleManage('enable')}>
             {t('Enable')}
@@ -175,88 +188,88 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuItem>
         )}
 
-          {isAdmin && !isRoot && (
-            <DropdownMenuItem onClick={() => handleManage('demote')}>
-              {t('Demote')}
-              <DropdownMenuShortcut>
-                <ArrowDown size={16} />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
-          )}
-
-          {!isAdmin && (
-            <DropdownMenuItem onClick={() => handleManage('promote')}>
-              {t('Promote')}
-              <DropdownMenuShortcut>
-                <ArrowUp size={16} />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
-          )}
-
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault()
-              setBindingDialogOpen(true)
-            }}
-          >
-            {t('Manage Bindings')}
+        {isAdmin && !isRoot && (
+          <DropdownMenuItem onClick={() => handleManage('demote')}>
+            {t('Demote')}
             <DropdownMenuShortcut>
-              <Link2 size={16} />
+              <ArrowDown size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
+        )}
 
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault()
-              setSubscriptionsDialogOpen(true)
-            }}
-          >
-            {t('Manage Subscriptions')}
+        {!isAdmin && (
+          <DropdownMenuItem onClick={() => handleManage('promote')}>
+            {t('Promote')}
             <DropdownMenuShortcut>
-              <CreditCard size={16} />
+              <ArrowUp size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
+        )}
 
-          <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            setBindingDialogOpen(true)
+          }}
+        >
+          {t('Manage Bindings')}
+          <DropdownMenuShortcut>
+            <Link2 size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
 
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault()
-              setResetPasskeyOpen(true)
-            }}
-            disabled={isRoot}
-          >
-            {t('Reset Passkey')}
-            <DropdownMenuShortcut>
-              <KeyRound size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            setSubscriptionsDialogOpen(true)
+          }}
+        >
+          {t('Manage Subscriptions')}
+          <DropdownMenuShortcut>
+            <CreditCard size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
 
-          <DropdownMenuItem
-            onSelect={(event) => {
-              event.preventDefault()
-              setResetTwoFAOpen(true)
-            }}
-            disabled={isRoot}
-          >
-            {t('Reset 2FA')}
-            <DropdownMenuShortcut>
-              <ShieldAlert size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+        <DropdownMenuSeparator />
 
-          <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            setResetPasskeyOpen(true)
+          }}
+          disabled={isRoot}
+        >
+          {t('Reset Passkey')}
+          <DropdownMenuShortcut>
+            <KeyRound size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
 
-          <DropdownMenuItem
-            onClick={handleDelete}
-            className='text-destructive focus:text-destructive'
-            disabled={isRoot}
-          >
-            {t('Delete')}
-            <DropdownMenuShortcut>
-              <Trash2 size={16} />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            setResetTwoFAOpen(true)
+          }}
+          disabled={isRoot}
+        >
+          {t('Reset 2FA')}
+          <DropdownMenuShortcut>
+            <ShieldAlert size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          onClick={handleDelete}
+          className='text-destructive focus:text-destructive'
+          disabled={isRoot}
+        >
+          {t('Delete')}
+          <DropdownMenuShortcut>
+            <Trash2 size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
       </DataTableRowActionMenu>
 
       <ConfirmDialog
@@ -289,6 +302,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         userId={user.id}
         onUnbindSuccess={triggerRefresh}
       />
+
+      {tokensDialogOpen && (
+        <UserTokensDialog user={user} onOpenChange={setTokensDialogOpen} />
+      )}
 
       <UserSubscriptionsDialog
         open={subscriptionsDialogOpen}

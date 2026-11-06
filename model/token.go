@@ -51,6 +51,8 @@ var ErrTokenModelMappingMigrationPending = errors.New(
 
 var ErrUserTokenLimitReached = errors.New("user token limit reached")
 
+var ErrTokenAdminDisabled = errors.New("API key disabled by administrator")
+
 const tokenModelMappingColumnRefreshInterval = 5 * time.Second
 
 var tokenModelMappingColumnCache struct {
@@ -588,7 +590,15 @@ func (token *Token) Update() (err error) {
 	if hasCandidatesColumn {
 		fields = append(fields, "auto_group_candidates")
 	}
-	err = DB.Model(token).Select(fields).Updates(token).Error
+	result := DB.Model(token).Where("status <> ?", common.TokenStatusAdminDisabled).Select(fields).Updates(token)
+	err = result.Error
+	if err == nil && result.RowsAffected == 0 {
+		var status int
+		err = DB.Model(&Token{}).Where("id = ?", token.Id).Select("status").Scan(&status).Error
+		if err == nil && status == common.TokenStatusAdminDisabled {
+			err = ErrTokenAdminDisabled
+		}
+	}
 	return err
 }
 
@@ -604,7 +614,17 @@ func (token *Token) SelectUpdate() (err error) {
 		}
 	}()
 	// This can update zero values
-	return DB.Model(token).Select("accessed_time", "status").Updates(token).Error
+	result := DB.Model(token).Where("status <> ?", common.TokenStatusAdminDisabled).Select("accessed_time", "status").Updates(token)
+	if result.Error == nil && result.RowsAffected == 0 {
+		var status int
+		if err := DB.Model(&Token{}).Where("id = ?", token.Id).Select("status").Scan(&status).Error; err != nil {
+			return err
+		}
+		if status == common.TokenStatusAdminDisabled {
+			return ErrTokenAdminDisabled
+		}
+	}
+	return result.Error
 }
 
 func (token *Token) Delete() (err error) {

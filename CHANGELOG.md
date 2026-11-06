@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.234 — 2026-11-06
+
+- Let administrators list a user's API keys and disable or re-enable individual keys from the user menu, with confirmation and translations in all six interface languages.
+- Reject new requests using administrator-disabled keys with HTTP 401 before usage logging, and prevent users or stale cache updates from removing the administrative block.
+- Preserve expired and exhausted states when restoring access, and keep API-key secrets out of administrator list responses.
+
 ## v1.1.233 — 2026-11-06
 
 - Paginate API-key usage logs on the server with 50 entries per page and access to older records.

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useState } from 'react'
 import type { Row } from '@tanstack/react-table'
 import {
   Trash2,
@@ -28,6 +27,7 @@ import {
   Link,
   Loader2,
 } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -94,7 +94,9 @@ export function DataTableRowActions<TData>({
   const resolvedRealKey = resolvedKeys[apiKey.id]
   const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
 
-  const toggleLabel = isEnabled ? t('Disable') : t('Enable')
+  const isAdminDisabled = apiKey.status === API_KEY_STATUS.ADMIN_DISABLED
+  let toggleLabel = isEnabled ? t('Disable') : t('Enable')
+  if (isAdminDisabled) toggleLabel = t('Disabled by administrator')
 
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
@@ -155,7 +157,7 @@ export function DataTableRowActions<TData>({
               variant='ghost'
               size='icon-sm'
               onClick={handleToggleStatus}
-              disabled={isTogglingStatus}
+              disabled={isTogglingStatus || isAdminDisabled}
               aria-label={toggleLabel}
               className={
                 isEnabled

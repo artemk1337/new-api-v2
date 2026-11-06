@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type StatusBadgeProps } from '@/components/status-badge'
+import type { StatusBadgeProps } from '@/components/status-badge'
 
 // ============================================================================
 // API Key Status Configuration
@@ -28,6 +28,7 @@ export const API_KEY_STATUS = {
   DISABLED: 2,
   EXPIRED: 3,
   EXHAUSTED: 4,
+  ADMIN_DISABLED: 5,
 } as const
 
 export const API_KEY_STATUSES: Record<
@@ -56,6 +57,11 @@ export const API_KEY_STATUSES: Record<
     label: 'Exhausted',
     variant: 'danger',
     value: API_KEY_STATUS.EXHAUSTED,
+  },
+  [API_KEY_STATUS.ADMIN_DISABLED]: {
+    label: 'Disabled by administrator',
+    variant: 'danger',
+    value: API_KEY_STATUS.ADMIN_DISABLED,
   },
 } as const
 
