@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.236 — 2026-11-07
+
+- Reject API generation requests with a zero or negative wallet balance before channel selection and billing reservation, without creating usage or application error logs for these rejections.
+- Respect active subscriptions and billing preferences, while keeping model discovery and existing task results accessible.
+
 ## v1.1.235 — 2026-11-07
 
 - Show the percentage saved beside each group name in model pricing details.

@@ -39,6 +39,11 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		if shouldSelectChannel || c.GetInt("relay_mode") == relayconstant.RelayModeVideoSubmit {
+			if rejectEmptyBalance(c) {
+				return
+			}
+		}
 		// Model limits are defined in terms of the model the client requested,
 		// before a key-level alias changes routing and billing.
 		modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
