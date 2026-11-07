@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.237 — 2026-11-08
+
+- Replace the scrolling documentation page with a collapsible desktop/mobile application menu and one article at a time, preserving existing section links.
+- Add connection guides for Claude Code, ChatGPT / Codex, Cherry Studio, Chatbox AI, Cline, Continue, Cursor, RikkaHub and ChatterUI, with copy buttons for API hosts, URLs and paths.
+- Consolidate initial setup into a short quick-start guide, refresh FAQ and troubleshooting, and remove duplicate application and URL reference pages.
+- Keep menu groups closed initially, preserve user-controlled expansion, add keyboard-accessible animations, and translate the new interface copy into all six languages.
+
 ## v1.1.236 — 2026-11-07
 
 - Reject API generation requests with a zero or negative wallet balance before channel selection and billing reservation, without creating usage or application error logs for these rejections.

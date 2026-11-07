@@ -27,9 +27,8 @@ export type DocsSection = {
  */
 export const DOCS_SECTIONS: readonly DocsSection[] = [
   { id: 'quick-start', title: 'Быстрый старт' },
-  { id: 'initial-setup', title: '1. Первичная настройка' },
   { id: 'claude-code-install', title: '2. Установка Claude Code CLI' },
-  { id: 'claude-code', title: '3. Claude Code' },
+  { id: 'claude-code', title: '3. Подключение Claude Code' },
   { id: 'openai-compatible', title: '4. OpenAI-compatible приложения' },
   { id: 'diagnostics', title: '5. Проверка ключа и диагностика' },
   { id: 'troubleshooting', title: '6. Алгоритм решения проблем' },
@@ -38,9 +37,7 @@ export const DOCS_SECTIONS: readonly DocsSection[] = [
   { id: 'hotkeys', title: '9. Горячие клавиши' },
   { id: 'context', title: '10. Как не потерять контекст' },
   { id: 'faq', title: '11. FAQ' },
-  { id: 'support-checklist', title: '12. Чек-лист поддержки' },
-  { id: 'compatible-apps', title: '13. Совместимые приложения' },
-  { id: 'url-reference', title: '14. Шпаргалка по URL' },
+  { id: 'support-checklist', title: '12. Чек-лист поиска неисправности' },
 ]
 
 export const DOCS_URLS = {
