@@ -1014,7 +1014,7 @@ function GroupPricingSection(props: {
                       }
                       size='sm'
                     />
-                    <span className='text-muted-foreground text-xs'>
+                    <span className='text-emerald-600 text-xs dark:text-emerald-400'>
                       {t('Savings {{percent}}%', {
                         percent: Math.max(0, Math.round((1 - ratio) * 100)),
                       })}

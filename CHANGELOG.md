@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.238 — 2026-11-08
+
+- Show group pricing savings in the same green accent color used by the main navigation.
+
 ## v1.1.237 — 2026-11-08
 
 - Replace the scrolling documentation page with a collapsible desktop/mobile application menu and one article at a time, preserving existing section links.
