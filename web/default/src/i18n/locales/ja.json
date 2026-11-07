@@ -4319,6 +4319,7 @@
     "Save Worker settings": "Worker設定を保存",
     "Saved successfully": "保存しました",
     "Saving...": "保存中...",
+    "Savings {{percent}}%": "{{percent}}% お得",
     "Scan QR Code": "QRコードをスキャン",
     "Scan the QR code to follow the official account and reply with “验证码” to receive your verification code.": "公式アカウントのQRコードを読み取り、「验证码」と返信して認証コードを受け取ってください。",
     "Scan the QR code with WeChat to bind your account": "WeChatでQRコードをスキャンしてアカウントをバインド",

@@ -1006,13 +1006,20 @@ function GroupPricingSection(props: {
             return (
               <div key={group} className='overflow-hidden rounded-lg border'>
                 <div className='bg-muted/20 flex items-center justify-between gap-3 border-b px-3 py-2'>
-                  <GroupBadge
-                    group={
-                      props.groupNames?.[group] ??
-                      getPricingGroupDisplayName(props.model, group)
-                    }
-                    size='sm'
-                  />
+                  <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                    <GroupBadge
+                      group={
+                        props.groupNames?.[group] ??
+                        getPricingGroupDisplayName(props.model, group)
+                      }
+                      size='sm'
+                    />
+                    <span className='text-muted-foreground text-xs'>
+                      {t('Savings {{percent}}%', {
+                        percent: Math.max(0, Math.round((1 - ratio) * 100)),
+                      })}
+                    </span>
+                  </div>
                   <span className='text-muted-foreground font-mono text-xs'>
                     {ratio}x
                   </span>
@@ -1100,13 +1107,23 @@ function GroupPricingSection(props: {
             className: thClass,
             cellClassName: 'py-2.5',
             cell: (group) => (
-              <GroupBadge
-                group={
-                  props.groupNames?.[group] ??
-                  getPricingGroupDisplayName(props.model, group)
-                }
-                size='sm'
-              />
+              <div className='flex flex-wrap items-center gap-2'>
+                <GroupBadge
+                  group={
+                    props.groupNames?.[group] ??
+                    getPricingGroupDisplayName(props.model, group)
+                  }
+                  size='sm'
+                />
+                <span className='text-muted-foreground text-xs'>
+                  {t('Savings {{percent}}%', {
+                    percent: Math.max(
+                      0,
+                      Math.round((1 - (props.groupRatio[group] || 1)) * 100)
+                    ),
+                  })}
+                </span>
+              </div>
             ),
           },
           {

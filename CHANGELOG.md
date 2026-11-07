@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.235 — 2026-11-07
+
+- Show the percentage saved beside each group name in model pricing details.
+
 ## v1.1.234 — 2026-11-06
 
 - Let administrators list a user's API keys and disable or re-enable individual keys from the user menu, with confirmation and translations in all six interface languages.
