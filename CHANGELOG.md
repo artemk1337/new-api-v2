@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.240 — 2026-11-08
+
+- Use multipart image-edit request fields in tiered pricing so quality-dependent image prices match the requested resolution.
+
 ## v1.1.239 — 2026-11-08
 
 - Add separate cleanup controls for Docker images unused by containers for 30 days and backups older than 30 days, preserving the two newest backups and all working volumes.

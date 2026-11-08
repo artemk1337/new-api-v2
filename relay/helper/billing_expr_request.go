@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,7 +27,7 @@ func ResolveIncomingBillingExprRequestInput(c *gin.Context, info *relaycommon.Re
 		input.Headers = cloneStringMap(info.RequestHeaders)
 	}
 
-	bodyBytes, err := readIncomingBillingExprBody(c)
+	bodyBytes, err := readIncomingBillingExprBody(c, info)
 	if err != nil {
 		return billingexpr.RequestInput{}, err
 	}
@@ -50,8 +51,30 @@ func BuildBillingExprRequestInputFromRequest(request dto.Request, headers map[st
 	return input, nil
 }
 
-func readIncomingBillingExprBody(c *gin.Context) ([]byte, error) {
-	if c == nil || c.Request == nil || !isJSONContentType(c.Request.Header.Get("Content-Type")) {
+func readIncomingBillingExprBody(c *gin.Context, info *relaycommon.RelayInfo) ([]byte, error) {
+	if c == nil || c.Request == nil {
+		return nil, nil
+	}
+	contentType := strings.ToLower(strings.TrimSpace(c.Request.Header.Get("Content-Type")))
+	if info != nil && info.RelayMode == relayconstant.RelayModeImagesEdits && strings.HasPrefix(contentType, "multipart/form-data") {
+		form := c.Request.MultipartForm
+		if form == nil {
+			var err error
+			form, err = common.ParseMultipartFormReusable(c)
+			if err != nil {
+				return nil, err
+			}
+			defer form.RemoveAll()
+		}
+		values := make(map[string]string, len(form.Value))
+		for key, entries := range form.Value {
+			if len(entries) > 0 {
+				values[key] = entries[0]
+			}
+		}
+		return common.Marshal(values)
+	}
+	if !isJSONContentType(contentType) {
 		return nil, nil
 	}
 	storage, err := common.GetBodyStorage(c)
