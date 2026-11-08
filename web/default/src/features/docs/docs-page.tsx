@@ -26,12 +26,15 @@ import { useApplicationGuides } from './application-guides'
 import { ApplicationArticle } from './applications-guide'
 import {
   CLAUDE_SECTION_IDS,
+  INSTALLATION_SECTIONS,
   guideSections,
   withoutGuideHeading,
 } from './docs-content'
 import { DocsNavigation } from './docs-navigation'
 import { DOCS_SECTIONS } from './docs-sections'
 import { QuickStartGuide } from './quick-start-guide'
+import { useRecommendationGuides } from './recommendation-guides'
+import { VscodeGuide } from './vscode-guide'
 
 const LEGACY_DOCUMENTS: Record<string, string> = {
   'initial-setup': 'quick-start',
@@ -45,6 +48,7 @@ const LEGACY_DOCUMENTS: Record<string, string> = {
 export function DocsPage() {
   const { t } = useTranslation()
   const apps = useApplicationGuides()
+  const recommendations = useRecommendationGuides()
   const [hash, setHash] = useState(() => window.location.hash.slice(1))
   const articleRef = useRef<HTMLHeadingElement>(null)
   const mobileMenuRef = useRef<HTMLDetailsElement>(null)
@@ -55,22 +59,37 @@ export function DocsPage() {
   const mobileApp = apps.mobile.find(
     (entry) => `mobile-${entry.id}` === requestedId
   )
+  const recommendation = recommendations.find(
+    (guide) => guide.id === requestedId
+  )
   const app = desktopApp ?? mobileApp
   const claudeSection = CLAUDE_SECTION_IDS.includes(requestedId)
   const section = DOCS_SECTIONS.find(
     (entry) => entry.id === requestedId && guideSections[entry.id]
   )
   const selectedId =
-    app || claudeSection || section ? requestedId : 'quick-start'
+    app || claudeSection || section || recommendation
+      ? requestedId
+      : 'quick-start'
   const selectedApp = claudeSection
     ? apps.desktop.find((entry) => entry.id === 'claude-code')
     : app
   let title = section?.title.replace(/^\d+\.\s*/, '') ?? t('Guide sections')
   let category =
     selectedId === 'quick-start' ? t('Connection guide') : t('General guide')
+  const installationSection = INSTALLATION_SECTIONS.find(
+    (section) => section.id === selectedId
+  )
+  if (installationSection) {
+    title = `${t('Installation')} / ${installationSection.title}`
+  }
+  if (selectedId === 'claude-code-vscode') title = 'VsCode'
   if (selectedApp) {
     title = claudeSection ? title : selectedApp.name
     category = `${t('Application setup')} / ${selectedId.startsWith('mobile-') ? t('Mobile apps') : t('Desktop apps')}`
+  } else if (recommendation) {
+    title = recommendation.title
+    category = t('Recommendations')
   } else if (!section) {
     title = DOCS_SECTIONS[0].title
   }
@@ -94,7 +113,8 @@ export function DocsPage() {
     articleRef.current?.scrollIntoView({ block: 'start' })
   }
 
-  const generalContent = guideSections[selectedId] ?? ''
+  const generalContent =
+    recommendation?.content ?? guideSections[selectedId] ?? ''
   let article = (
     <RichContent
       mode='markdown'
@@ -104,6 +124,8 @@ export function DocsPage() {
   )
   if (selectedId === 'quick-start') {
     article = <QuickStartGuide />
+  } else if (selectedId === 'claude-code-vscode') {
+    article = <VscodeGuide />
   } else if (selectedApp) {
     article = (
       <ApplicationArticle
@@ -115,6 +137,7 @@ export function DocsPage() {
 
   const navigation = (
     <DocsNavigation
+      recommendations={recommendations}
       desktop={apps.desktop}
       mobile={apps.mobile}
       selectedId={selectedId}

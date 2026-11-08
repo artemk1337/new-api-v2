@@ -44,7 +44,10 @@ describe('API-key guide', () => {
     assert.equal(new URL(DOCS_URLS.gateway).pathname, '/')
     assert.equal(new URL(DOCS_URLS.openAI).pathname, '/v1')
     assert.equal(new URL(DOCS_URLS.models).pathname, '/v1/models')
-    assert.match(guide, /ANTHROPIC_BASE_URL="https:\/\/vibecode-api\.online"/)
+    assert.match(
+      guide,
+      /"ANTHROPIC_BASE_URL": "https:\/\/vibecode-api\.online"/
+    )
     assert.match(guide, /apiBase: https:\/\/vibecode-api\.online\/v1/)
     assert.match(guide, /https:\/\/vibecode-api\.online\/v1\/models/)
   })
@@ -56,16 +59,10 @@ describe('API-key guide', () => {
     assert.match(guide, /wire_api = "responses"/)
     assert.doesNotMatch(guide, /export VIBECODE_API_KEY/)
     assert.doesNotMatch(guide, /env_key = "VIBECODE_API_KEY"/)
-    assert.match(guide, /https:\/\/developers\.openai\.com\/codex\/config-file\/config-advanced#custom-model-providers/)
-  })
-
-  test('warns before exposing the dangerous permissions bypass', () => {
-    const warningIndex = guide.indexOf('> **Опасный режим.')
-    const commandIndex = guide.indexOf('claude --dangerously-skip-permissions')
-
-    assert.notEqual(warningIndex, -1)
-    assert.notEqual(commandIndex, -1)
-    assert.ok(warningIndex < commandIndex)
+    assert.match(
+      guide,
+      /https:\/\/developers\.openai\.com\/codex\/config-file\/config-advanced#custom-model-providers/
+    )
   })
 
   test('documents the current native installer and npm requirements', () => {
@@ -83,33 +80,21 @@ describe('API-key guide', () => {
     assert.doesNotMatch(guide, /claude-(?:sonnet|opus)-\d+\.\d+/)
   })
 
-  test('describes continue and resume without swapping their behavior', () => {
-    assert.match(
-      guide,
-      /`claude --continue` \(`-c`\)\s*\|\s*Продолжить последнюю сессию в текущей папке/
-    )
-    assert.match(
-      guide,
-      /`claude --resume` \(`-r`\)\s*\|\s*Выбрать сессию из списка или продолжить её по ID\/имени/
-    )
-  })
-
-  test('requires one successful CLI request before opening Claude Code integrations', () => {
-    const setupIndex = guide.indexOf(
-      '**Для Claude Code обязательно сначала настройте CLI:**'
-    )
-    const requestIndex = guide.indexOf(
-      'отправьте в CLI минимум один запрос',
-      setupIndex
-    )
-    const integrationIndex = guide.indexOf(
-      'Только после первого успешного запроса в CLI открывайте приложение',
-      requestIndex
-    )
-
-    assert.notEqual(setupIndex, -1)
-    assert.ok(requestIndex > setupIndex)
-    assert.ok(integrationIndex > requestIndex)
-    assert.match(guide, /Убедитесь, что модель успешно ответила/)
+  test('provides persistent CLI settings and a connection check', () => {
+    const connection = guide
+      .split('<h2 id="claude-code"')[1]
+      .split('<h2 id="openai-compatible"')[0]
+    const example = connection.match(/```json\n([\s\S]*?)```/)
+    assert.ok(example)
+    assert.deepEqual(JSON.parse(example[1]), {
+      env: {
+        ANTHROPIC_AUTH_TOKEN: 'sk-xxxxxxxx',
+        ANTHROPIC_BASE_URL: DOCS_URLS.gateway,
+      },
+    })
+    assert.match(connection, /~\/\.claude\/settings\.json/)
+    assert.ok(connection.includes('%USERPROFILE%'))
+    assert.match(connection, /Отправьте любой запрос и дождитесь ответа модели/)
+    assert.match(connection, /#claude-code-vscode/)
   })
 })

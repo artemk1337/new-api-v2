@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.242 — 2026-11-09
+
+- Add a Claude Code guide for VS Code and organize recommendations into skill and code-indexer pages, with the new navigation and guide content translated into all six interface languages.
+- Require documentation pages to translate all user-visible content and verify rendered pages across all six locales.
+
 ## v1.1.241 — 2026-11-08
 
 - Add a mobile Chatbox AI screenshot showing OpenAI provider connection settings and available models.

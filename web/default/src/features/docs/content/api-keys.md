@@ -13,165 +13,117 @@
 
 <h2 id="claude-code-install" class="scroll-mt-24">2. Установка Claude Code CLI</h2>
 
-### macOS, Linux и WSL
+Выберите свою ОС и выполните шаги в её разделе.
 
-#### 2.1. Нативный установщик
+### macOS
 
-Он не требует Node.js и обновляется автоматически. Выполните команду в системном терминале:
+1. Откройте приложение «Терминал» и установите Claude Code:
 
-```shell
-curl -fsSL https://claude.ai/install.sh | bash
-```
+   ```shell
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
 
-Скрипт загружается с домена `claude.ai` и сразу запускается. В корпоративной среде сначала сохраните его и проверьте по правилам безопасности. На macOS есть другой вариант:
+2. Откройте новое окно терминала и проверьте установку:
 
-```shell
-brew install --cask claude-code
-```
+   ```shell
+   claude --version
+   claude doctor
+   ```
 
-Homebrew обновляет такую установку командой `brew upgrade claude-code`.
+Если пользуетесь Homebrew, вместо команды из первого шага можно выполнить `brew install --cask claude-code`. Обновление такой установки выполняется командой `brew upgrade claude-code`.
 
-После установки откройте новый терминал и проверьте CLI:
+### Linux и WSL
 
-```shell
-claude --version
-claude doctor
-```
+В Windows с WSL выполняйте эти шаги в терминале Linux-дистрибутива, например Ubuntu.
 
-Если команда `claude` не найдена, добавьте `~/.local/bin` в `PATH` по подсказке установщика и снова откройте терминал.
+1. Откройте терминал Linux и установите Claude Code:
 
-Альтернатива через npm нужна только при недоступном нативном установщике. Для актуального пакета требуется Node.js 22 или новее:
+   ```shell
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
 
-```shell
-npm install -g @anthropic-ai/claude-code@latest
-```
+2. Откройте новый терминал и проверьте установку:
 
-Не используйте `sudo npm install -g`, чтобы не получить проблемы с правами.
+   ```shell
+   claude --version
+   claude doctor
+   ```
 
-### Windows
+Если команда `claude` не найдена на macOS или Linux, добавьте `~/.local/bin` в `PATH` по подсказке установщика и снова откройте терминал.
 
-1. Откройте PowerShell.
-2. Установите Claude Code:
+Нативный установщик для macOS и Linux обновляется автоматически и не требует Node.js. Скрипт загружается с домена `claude.ai` и сразу запускается. В корпоративной среде сначала сохраните его и проверьте по правилам безопасности.
+
+### Windows без WSL
+
+1. Откройте PowerShell и установите Claude Code:
 
    ```powershell
    winget install Anthropic.ClaudeCode
    ```
-3. Проверьте установку командами `claude --version` и `claude doctor`.
 
-Если WinGet недоступен, используйте официальный PowerShell-установщик:
+   Если WinGet недоступен, используйте вместо него официальный PowerShell-установщик:
 
-```powershell
-irm https://claude.ai/install.ps1 | iex
-```
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   ```
+
+2. Откройте новое окно PowerShell и проверьте установку:
+
+   ```powershell
+   claude --version
+   claude doctor
+   ```
+
+### Запасной способ через npm
+
+Используйте его, если основной способ для вашей ОС недоступен.
+
+1. Установите Node.js 22 или новее.
+2. Установите Claude Code:
+
+   ```shell
+   npm install -g @anthropic-ai/claude-code@latest
+   ```
+
+   На macOS и Linux не используйте `sudo npm install -g`, чтобы не получить проблемы с правами.
+
+3. Откройте новый терминал и проверьте установку командами `claude --version` и `claude doctor`.
 
 <h2 id="claude-code" class="scroll-mt-24">3. Подключение Claude Code</h2>
 
-### macOS, Linux и WSL
+Сначала [установите Claude Code](#claude-code-install).
 
-#### 2.2. Переменные окружения
+1. Откройте или создайте файл настроек в домашней папке пользователя:
 
-Для zsh на macOS задайте переменные один раз:
+   - macOS, Linux и WSL: `~/.claude/settings.json`
+   - Windows: `%USERPROFILE%\.claude\settings.json`
 
-```shell
-echo 'export ANTHROPIC_AUTH_TOKEN="sk-xxxxxxxx"' >> ~/.zshrc
-echo 'export ANTHROPIC_BASE_URL="https://vibecode-api.online"' >> ~/.zshrc
-echo 'export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"' >> ~/.zshrc
-source ~/.zshrc
-```
+   Если папки `.claude` нет, создайте её.
 
-Для bash используйте `~/.bashrc`:
+2. Добавьте настройки. Замените `sk-xxxxxxxx` своим API-ключом. Если файл уже содержит настройки, добавьте поля в существующий блок `env`.
 
-```shell
-echo 'export ANTHROPIC_AUTH_TOKEN="sk-xxxxxxxx"' >> ~/.bashrc
-echo 'export ANTHROPIC_BASE_URL="https://vibecode-api.online"' >> ~/.bashrc
-echo 'export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"' >> ~/.bashrc
-source ~/.bashrc
-```
+   ```json
+   {
+     "env": {
+       "ANTHROPIC_AUTH_TOKEN": "sk-xxxxxxxx",
+       "ANTHROPIC_BASE_URL": "https://vibecode-api.online"
+     }
+   }
+   ```
 
-#### 2.3. Файл `~/.claude/settings.json`
+   Адрес указывайте без `/v1`. Храните ключ в личном файле настроек вне репозитория.
 
-Выберите этот вариант, если переменные окружения не подхватываются или настройки удобнее хранить в одном файле. В файле будет секрет, поэтому не добавляйте его в репозиторий и ограничьте доступ.
-
-```shell
-mkdir -p ~/.claude
-cd ~/.claude
-touch settings.json
-chmod 600 settings.json
-```
-
-Откройте `settings.json` в редакторе. На macOS подойдёт команда `open settings.json`, в Linux используйте привычный редактор.
-
-Пример содержимого. Замените только значение токена:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_AUTH_TOKEN": "sk-xxxxxxxx",
-    "ANTHROPIC_BASE_URL": "https://vibecode-api.online",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-  }
-}
-```
-
-`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` отключает телеметрию, отчёты об ошибках и автоматические обновления. При такой настройке периодически запускайте `claude update`. `API_TIMEOUT_MS` по умолчанию равен 600000 мс, то есть 10 минут. Добавляйте его только для другого таймаута. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` нужен только при подтверждённой несовместимости шлюза с beta-заголовками.
-
-Команды `cd`, `touch` и редактирование файла выполняются в системном терминале. При первом запуске подтвердите доверие к папке проекта. Если появится `Auth Conflict`, оставьте только `ANTHROPIC_AUTH_TOKEN` и удалите `ANTHROPIC_API_KEY` из окружения или настроек.
-
-### Windows
-
-Постоянные переменные через Command Prompt:
-
-```bat
-setx ANTHROPIC_AUTH_TOKEN "sk-xxxxxxxx"
-setx ANTHROPIC_BASE_URL "https://vibecode-api.online"
-setx CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC "1"
-```
-
-Только для текущей сессии PowerShell:
-
-```powershell
-$env:ANTHROPIC_AUTH_TOKEN="sk-xxxxxxxx"
-$env:ANTHROPIC_BASE_URL="https://vibecode-api.online"
-$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
-claude
-```
-
-Чтобы сохранить переменные из PowerShell без `setx`, используйте `[Environment]::SetEnvironmentVariable('ANTHROPIC_AUTH_TOKEN', 'sk-xxxxxxxx', 'User')` и так же задайте `ANTHROPIC_BASE_URL`. После этого откройте новый терминал.
-
-После изменения постоянных переменных через `setx` закройте терминал и откройте новый.
-
-**Для Claude Code обязательно сначала настройте CLI:** задайте `ANTHROPIC_AUTH_TOKEN` и `ANTHROPIC_BASE_URL`, запустите `claude` и отправьте в CLI минимум один запрос. Дождитесь успешного ответа.
-
-Только после первого успешного запроса в CLI открывайте приложение или интеграцию Claude Code.
-
-Настройте CLI по предыдущему разделу, затем отправьте через него один запрос и дождитесь ответа.
-
-1. Откройте папку проекта в системном терминале.
-2. Запустите CLI:
+3. Откройте терминал в папке проекта и запустите Claude Code:
 
    ```shell
    claude
    ```
 
-3. Подтвердите доверие к папке и отправьте запрос, например: `Ответь одним словом: работает`.
-4. Убедитесь, что модель успешно ответила. Ошибка авторизации, повторная попытка или зависший запрос не считаются успешной проверкой.
-5. Закройте CLI и откройте приложение или интеграцию Claude Code.
+4. Отправьте любой запрос и дождитесь ответа модели.
 
-Переменные окружения и `~/.claude/settings.json` применяются к CLI и интеграциям, которые запускают Claude Code CLI. Claude Desktop и облачные сессии на сайте могут использовать другие настройки.
+Модель можно сменить командой `/model`. При ошибке подключения откройте [диагностику](#diagnostics).
 
-При первом запуске проверьте путь к папке и доверяйте только каталогам с понятным содержимым.
-
-> **Опасный режим.** `--dangerously-skip-permissions` отключает интерактивные подтверждения команд. Используйте его только в доверенной папке, не храните там секреты и проверяйте команды перед запуском.
-
-Для доверенной папки:
-
-```shell
-claude --dangerously-skip-permissions
-```
-
-Не сохраняйте этот флаг в глобальном alias. Иначе его легко запустить в другой папке.
-
-Модель можно сменить командой `/model`. В актуальных версиях Claude Code список моделей шлюза можно загрузить из `/v1/models` с помощью `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`. Сначала обновите CLI и убедитесь, что ваша версия поддерживает эту переменную.
+Для работы в редакторе используйте [инструкцию для VS Code](#claude-code-vscode).
 
 <h2 id="openai-compatible" class="scroll-mt-24">4. OpenAI-compatible приложения</h2>
 
@@ -281,36 +233,6 @@ unset VIBECODE_API_KEY
 | `ECONNRESET` | `Retrying` | Соединение сброшено. Повторите `/v1/models`, проверьте сеть и прокси. |
 | - | Нужной модели нет в списке | Модель недоступна группе, ограничена ключом или выключена на сервере. Проверьте `/v1/models`, группу и ограничения ключа. |
 | - | `/v1/models` работает, приложение нет | Проверьте провайдера, model ID, адрес и ключ. Значения полей возьмите из инструкции приложения. |
-
-<h2 id="commands" class="scroll-mt-24">8. Полезные команды Claude Code</h2>
-
-| Команда | Назначение |
-| --- | --- |
-| `claude` | Запустить интерактивную сессию |
-| `claude --dangerously-skip-permissions` | Запуск без лишних подтверждений в доверенной папке |
-| `claude update` | Обновить Claude Code |
-| `claude doctor` | Проверить установку, PATH и обновления |
-| `claude --continue` (`-c`) | Продолжить последнюю сессию в текущей папке |
-| `claude --resume` (`-r`) | Выбрать сессию из списка или продолжить её по ID/имени |
-| `/exit` | Выйти из сессии |
-| `/model` | Посмотреть или переключить модель |
-| `/compact` | Сжать контекст диалога |
-| `/logout` | Сбросить авторизацию при конфликте ключей |
-
-<h2 id="hotkeys" class="scroll-mt-24">9. Горячие клавиши</h2>
-
-| Клавиши | Действие |
-| --- | --- |
-| `Ctrl+C` | Отменить ввод или генерацию |
-| `Ctrl+D` | Выйти из сессии |
-| `Ctrl+L` | Очистить экран терминала |
-| `↑` / `↓` | Навигация по истории команд |
-| `Esc Esc` | Вернуться к предыдущему сообщению и изменить его |
-| `Tab` | Автодополнение команд и путей |
-
-<h2 id="context" class="scroll-mt-24">10. Как не потерять контекст</h2>
-
-Для длинной задачи попросите Claude Code вести `todo.md` или `plan.md`. Записывайте туда цель, шаги, статус и решения. Перед `/compact` сохраните в файле важные требования. После сбоя запустите новую сессию и попросите продолжить работу по этому файлу.
 
 <h2 id="faq" class="scroll-mt-24">11. FAQ</h2>
 

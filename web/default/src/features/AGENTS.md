@@ -6,4 +6,6 @@ Each `features/<name>/` area owns its page-level components and feature-specific
 
 Split large TSX modules at stable responsibilities such as independent dialogs, forms, editors, or domain hooks. Preserve props and callback contracts when extracting components. User-facing text must continue through i18next and all six locales; follow the parent frontend rules.
 
+Documentation pages must translate all user-visible content, including static Markdown, tables, headings, and notes, into all six locales. Translating navigation alone is insufficient; review the rendered page in each locale and check the i18n sync report.
+
 Complex feature guidance: [system-settings/AGENTS.md](system-settings/AGENTS.md).

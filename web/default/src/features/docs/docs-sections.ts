@@ -33,9 +33,6 @@ export const DOCS_SECTIONS: readonly DocsSection[] = [
   { id: 'diagnostics', title: '5. Проверка ключа и диагностика' },
   { id: 'troubleshooting', title: '6. Алгоритм решения проблем' },
   { id: 'error-table', title: '7. Таблица ошибок' },
-  { id: 'commands', title: '8. Полезные команды' },
-  { id: 'hotkeys', title: '9. Горячие клавиши' },
-  { id: 'context', title: '10. Как не потерять контекст' },
   { id: 'faq', title: '11. FAQ' },
   { id: 'support-checklist', title: '12. Чек-лист поиска неисправности' },
 ]

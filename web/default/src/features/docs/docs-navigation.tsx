@@ -21,6 +21,7 @@ import {
   BookOpen,
   ChevronRight,
   Monitor,
+  Lightbulb,
   Rocket,
   Smartphone,
   type LucideIcon,
@@ -36,12 +37,18 @@ import {
 import { cn } from '@/lib/utils'
 
 import type { ApplicationGuide } from './application-guides'
-import { DESKTOP_SECTION_IDS } from './docs-content'
+import {
+  CLAUDE_SECTION_IDS,
+  DESKTOP_SECTION_IDS,
+  INSTALLATION_SECTIONS,
+} from './docs-content'
 import { DOCS_SECTIONS } from './docs-sections'
+import type { RecommendationGuide } from './recommendation-guides'
 
 type DocsNavigationProps = {
   desktop: ApplicationGuide[]
   mobile: ApplicationGuide[]
+  recommendations: RecommendationGuide[]
   selectedId: string
   onNavigate?: () => void
 }
@@ -49,10 +56,11 @@ type DocsNavigationProps = {
 function DocsNavGroup(props: {
   title: string
   icon?: LucideIcon
+  active: boolean
   children: ReactNode
 }) {
   return (
-    <Collapsible>
+    <Collapsible defaultOpen={props.active}>
       <CollapsibleTrigger className='group/docs-trigger text-muted-foreground hover:text-foreground hover:bg-muted/60 focus-visible:ring-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none'>
         {props.icon && (
           <props.icon
@@ -78,16 +86,24 @@ function DocsNavGroup(props: {
 export function DocsNavigation(props: DocsNavigationProps) {
   const { t } = useTranslation()
   const claudeLinks = [
-    { id: 'claude-code-install', title: t('Installation') },
     { id: 'claude-code', title: t('Connection') },
-    { id: 'commands', title: t('Commands') },
-    { id: 'hotkeys', title: t('Keyboard shortcuts') },
-    { id: 'context', title: t('Conversation context') },
+    { id: 'claude-code-vscode', title: 'VsCode' },
   ]
 
   const generalSections = DOCS_SECTIONS.filter(
     (section) =>
       section.id !== 'quick-start' && !DESKTOP_SECTION_IDS.includes(section.id)
+  )
+
+  const claudeActive = CLAUDE_SECTION_IDS.includes(props.selectedId)
+  const desktopActive =
+    claudeActive ||
+    props.desktop.some((app) => `desktop-${app.id}` === props.selectedId)
+  const mobileActive = props.mobile.some(
+    (app) => `mobile-${app.id}` === props.selectedId
+  )
+  const generalActive = generalSections.some(
+    (section) => section.id === props.selectedId
   )
 
   function sectionLink(id: string, title: string) {
@@ -114,16 +130,42 @@ export function DocsNavigation(props: DocsNavigationProps) {
 
   return (
     <nav
+      key={props.selectedId}
       aria-label={t('Guide sections')}
       className='bg-card/40 space-y-1 rounded-xl border p-2'
     >
       {sectionLink('quick-start', DOCS_SECTIONS[0].title)}
-      <DocsNavGroup title={t('Application setup')} icon={AppWindow}>
-        <DocsNavGroup title={t('Desktop apps')} icon={Monitor}>
+      <DocsNavGroup
+        title={t('Application setup')}
+        icon={AppWindow}
+        active={desktopActive || mobileActive}
+      >
+        <DocsNavGroup
+          title={t('Desktop apps')}
+          icon={Monitor}
+          active={desktopActive}
+        >
           {props.desktop.map((app) => {
             if (app.id === 'claude-code') {
               return (
-                <DocsNavGroup key={app.id} title={app.name}>
+                <DocsNavGroup
+                  key={app.id}
+                  title={app.name}
+                  active={claudeActive}
+                >
+                  <DocsNavGroup
+                    title={t('Installation')}
+                    active={
+                      props.selectedId === 'claude-code-install' ||
+                      INSTALLATION_SECTIONS.some(
+                        (section) => section.id === props.selectedId
+                      )
+                    }
+                  >
+                    {INSTALLATION_SECTIONS.map((section) =>
+                      sectionLink(section.id, section.title)
+                    )}
+                  </DocsNavGroup>
                   {claudeLinks.map((section) =>
                     sectionLink(section.id, section.title)
                   )}
@@ -133,11 +175,41 @@ export function DocsNavigation(props: DocsNavigationProps) {
             return sectionLink(`desktop-${app.id}`, app.name)
           })}
         </DocsNavGroup>
-        <DocsNavGroup title={t('Mobile apps')} icon={Smartphone}>
+        <DocsNavGroup
+          title={t('Mobile apps')}
+          icon={Smartphone}
+          active={mobileActive}
+        >
           {props.mobile.map((app) => sectionLink(`mobile-${app.id}`, app.name))}
         </DocsNavGroup>
       </DocsNavGroup>
-      <DocsNavGroup title={t('General guide')} icon={BookOpen}>
+      <DocsNavGroup
+        title={t('Recommendations')}
+        icon={Lightbulb}
+        active={props.recommendations.some(
+          (guide) => guide.id === props.selectedId
+        )}
+      >
+        {props.recommendations
+          .filter((guide) => !guide.group)
+          .map((guide) => sectionLink(guide.id, guide.title))}
+        <DocsNavGroup
+          title={t('Code indexers')}
+          active={props.recommendations.some(
+            (guide) =>
+              guide.group === 'indexers' && guide.id === props.selectedId
+          )}
+        >
+          {props.recommendations
+            .filter((guide) => guide.group === 'indexers')
+            .map((guide) => sectionLink(guide.id, guide.title))}
+        </DocsNavGroup>
+      </DocsNavGroup>
+      <DocsNavGroup
+        title={t('General guide')}
+        icon={BookOpen}
+        active={generalActive}
+      >
         {generalSections.map((section) =>
           sectionLink(section.id, section.title)
         )}

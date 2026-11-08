@@ -28,12 +28,31 @@ const sections = Object.fromEntries(
   ])
 )
 
+const installationContent = sections['claude-code-install']
+const installationHeadings = [...installationContent.matchAll(/^### (.+)$/gm)]
+export const INSTALLATION_SECTIONS = installationHeadings.map(
+  (heading, index) => ({
+    id: [
+      'claude-install-macos',
+      'claude-install-linux',
+      'claude-install-windows',
+      'claude-install-npm',
+    ][index],
+    title: ['macOS', 'Linux / WSL', 'Windows', 'npm'][index],
+    content: installationContent
+      .slice(
+        heading.index + heading[0].length,
+        installationHeadings[index + 1]?.index
+      )
+      .trim(),
+  })
+)
+
 export const CLAUDE_SECTION_IDS = [
   'claude-code-install',
+  ...INSTALLATION_SECTIONS.map((section) => section.id),
   'claude-code',
-  'commands',
-  'hotkeys',
-  'context',
+  'claude-code-vscode',
 ]
 
 export const DESKTOP_SECTION_IDS = [...CLAUDE_SECTION_IDS, 'openai-compatible']
@@ -60,6 +79,13 @@ export const guideSections = Object.fromEntries(
     withoutSectionNumbers(content),
   ])
 )
+
+for (const section of INSTALLATION_SECTIONS) {
+  guideSections[section.id] = section.content
+}
+guideSections['claude-code-install'] = INSTALLATION_SECTIONS.map(
+  (section) => `- [${section.title}](#${section.id})`
+).join('\n')
 
 export function withoutGuideHeading(content: string): string {
   return content.replace(/^\s*<h[23][^>]*>.*?<\/h[23]>\s*/, '')
