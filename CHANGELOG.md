@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.239 — 2026-11-08
+
+- Add separate cleanup controls for Docker images unused by containers for 30 days and backups older than 30 days, preserving the two newest backups and all working volumes.
+- Report backup storage location and clarify that updater backups remain on the server without an off-host copy.
+
 ## v1.1.238 — 2026-11-08
 
 - Show group pricing savings in the same green accent color used by the main navigation.

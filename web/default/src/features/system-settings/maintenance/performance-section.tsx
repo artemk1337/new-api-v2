@@ -62,6 +62,7 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { DockerCachePanel } from './docker-cache-panel'
+import { StorageCleanupPanel } from './storage-cleanup-panel'
 
 /**
  * IMPORTANT: react-hook-form 7 interprets dotted `name` strings as nested
@@ -646,6 +647,7 @@ export function PerformanceSection(props: Props) {
         )}
 
         <DockerCachePanel onCleanup={fetchStats} />
+        <StorageCleanupPanel onCleanup={fetchStats} />
 
         {stats && (
           <>

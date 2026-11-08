@@ -35,3 +35,11 @@ This feature covers the connected Docker Engine builder. Separate Buildx builder
 using the `docker-container`, remote, or Kubernetes drivers have their own cache
 stores and are not included. Image layers, container logs, and volume data also
 need separate accounting; a small build cache does not imply low Docker disk use.
+
+Old Docker images and database backups have separate controls in the same
+performance settings page. Image cleanup removes only images unused by every
+container for at least 30 days. Backup cleanup only operates in the updater's
+configured compose directory under `backups/`, removes entries older than 30
+days, and keeps the two newest entries. Neither operation removes containers or
+volumes. See [backup storage](backup-storage.md) for the current backup location
+and copy behavior.

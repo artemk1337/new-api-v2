@@ -69,9 +69,9 @@ func handleDockerBuildCache(w http.ResponseWriter, r *http.Request) {
 		writeAnyJSON(w, http.StatusOK, stats)
 	case http.MethodDelete:
 		updateMu.Lock()
-		if updating || dockerCachePruning {
+		if updating || dockerCachePruning || dockerStoragePruning {
 			updateMu.Unlock()
-			writeAnyJSON(w, http.StatusConflict, map[string]string{"message": "update or Docker build cache cleanup is already running"})
+			writeAnyJSON(w, http.StatusConflict, map[string]string{"message": "update or storage cleanup is already running"})
 			return
 		}
 		dockerCachePruning = true

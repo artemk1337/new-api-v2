@@ -338,6 +338,8 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
   'performance.clear_docker_cache': 'Cleared Docker build cache',
+  'performance.clear_docker_images': 'Cleaned old Docker images',
+  'performance.clear_backups': 'Cleaned old server backups',
   'performance.gc': 'Triggered garbage collection',
   'performance.clear_logs': 'Cleared log files',
   // Channel
