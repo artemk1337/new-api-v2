@@ -1,3 +1,5 @@
+import { useQuery } from '@tanstack/react-query'
+import { Check, ChevronsUpDown } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,9 +19,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState, type ComponentProps } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -35,6 +36,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { api } from '@/lib/api'
+import { getLobeIcon } from '@/lib/lobe-icon'
+import { cn } from '@/lib/utils'
+
+import {
+  getGroupProviders,
+  type GroupProviderCatalog,
+} from '../lib/group-providers'
 
 export type ApiKeyGroupOption = {
   value: string
@@ -111,13 +120,28 @@ export function ApiKeyGroupCombobox({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  const [providerId, setProviderId] = useState<number | null>(null)
+  const { data: catalog } = useQuery({
+    queryKey: ['api-key-group-providers'],
+    queryFn: async () => {
+      const response = await api.get<GroupProviderCatalog>('/api/pricing')
+      return response.data
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  })
+  const providers = useMemo(
+    () => getGroupProviders(options, catalog),
+    [options, catalog]
+  )
+  const provider = providers.find((item) => item.id === providerId)
   const selectedOption = options.find((option) => option.value === value)
 
   const filteredOptions = useMemo(() => {
     const search = searchValue.trim().toLowerCase()
-    if (!search) return options
-
     return options.filter((option) => {
+      if (provider && !provider.groups.includes(option.value)) return false
+      if (!search) return true
       const ratioText = String(option.ratio ?? '').toLowerCase()
       return (
         option.value.toLowerCase().includes(search) ||
@@ -126,16 +150,26 @@ export function ApiKeyGroupCombobox({
         ratioText.includes(search)
       )
     })
-  }, [options, searchValue])
+  }, [options, searchValue, provider])
 
   const handleSelect = (selectedValue: string) => {
     onValueChange(selectedValue)
+    setProviderId(null)
     setOpen(false)
     setSearchValue('')
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) {
+          setSearchValue('')
+          setProviderId(null)
+        }
+      }}
+    >
       <PopoverTrigger
         render={
           <Button
@@ -157,7 +191,7 @@ export function ApiKeyGroupCombobox({
               {selectedOption?.label || placeholder || t('Select a group')}
             </span>
             {selectedOption?.desc && (
-              <span className='text-muted-foreground block break-words whitespace-normal text-[11px] sm:text-xs'>
+              <span className='text-muted-foreground block text-[11px] break-words whitespace-normal sm:text-xs'>
                 {selectedOption.desc}
               </span>
             )}
@@ -174,6 +208,43 @@ export function ApiKeyGroupCombobox({
         onTouchMove={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
+        {providers.length > 0 && (
+          <div
+            role='group'
+            aria-label={t('All Vendors')}
+            className='flex gap-1.5 overflow-x-auto border-b p-2'
+          >
+            {[
+              {
+                id: null,
+                name: t('All'),
+                icon: undefined,
+                groups: options.map((option) => option.value),
+              },
+              ...providers,
+            ].map((item) => (
+              <Button
+                key={item.id ?? 'all'}
+                type='button'
+                variant={providerId === item.id ? 'secondary' : 'outline'}
+                size='sm'
+                aria-pressed={providerId === item.id}
+                onClick={() => setProviderId(item.id)}
+                className={cn(
+                  'h-8 shrink-0 gap-1.5 rounded-full px-3 text-xs shadow-none',
+                  providerId === item.id &&
+                    'border-primary/30 bg-primary/10 text-primary'
+                )}
+              >
+                {item.icon && getLobeIcon(item.icon, 16)}
+                {item.name}
+                <span className='text-muted-foreground bg-background/60 rounded-full px-1.5 text-[10px]'>
+                  {item.groups.length}
+                </span>
+              </Button>
+            ))}
+          </div>
+        )}
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={t('Search...')}

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.243 — 2026-11-09
+
+- Add provider filters with icons and available-group counts to the API key group selector, combining provider selection with text search.
+
 ## v1.1.242 — 2026-11-09
 
 - Add a Claude Code guide for VS Code and organize recommendations into skill and code-indexer pages, with the new navigation and guide content translated into all six interface languages.
