@@ -36,6 +36,7 @@ export type ApplicationGuide = {
   steps: string[]
   note?: string
   content?: string
+  image?: { src: string; alt: string }
 }
 
 export function useApplicationGuides(): {
@@ -171,7 +172,14 @@ export function useApplicationGuides(): {
       },
     ],
     mobile: [
-      { ...chatbox, platform: 'iOS · Android' },
+      {
+        ...chatbox,
+        platform: 'iOS · Android',
+        image: {
+          src: '/docs/openai-provider-models.jpg',
+          alt: t('OpenAI provider settings and model list'),
+        },
+      },
       {
         id: 'rikkahub',
         name: 'RikkaHub',

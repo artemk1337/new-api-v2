@@ -72,6 +72,13 @@ export function ApplicationArticle(props: {
       {props.app.fields.length > 0 && (
         <ConnectionSettings fields={props.app.fields} />
       )}
+      {props.app.image && (
+        <img
+          className='mt-6 w-full max-w-sm rounded-lg border'
+          src={props.app.image.src}
+          alt={props.app.image.alt}
+        />
+      )}
       <div className='text-muted-foreground mt-4 space-y-3 text-xs leading-5'>
         {props.app.note && <p>{props.app.note}</p>}
         <a

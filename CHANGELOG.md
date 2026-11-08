@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.241 — 2026-11-08
+
+- Add a mobile Chatbox AI screenshot showing OpenAI provider connection settings and available models.
+
 ## v1.1.240 — 2026-11-08
 
 - Use multipart image-edit request fields in tiered pricing so quality-dependent image prices match the requested resolution.
