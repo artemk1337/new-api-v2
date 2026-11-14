@@ -310,7 +310,17 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	requestContext := context.WithoutCancel(c.Request.Context())
+	var cancelRequest context.CancelFunc
+	if info.IsStream {
+		requestContext, cancelRequest = context.WithCancel(requestContext)
+		defer func() {
+			if cancelRequest != nil {
+				cancelRequest()
+			}
+		}()
+	}
+	req, err := http.NewRequestWithContext(requestContext, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -330,6 +340,10 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
+	}
+	if cancelRequest != nil {
+		resp.Body = &upstreamStreamBody{ReadCloser: resp.Body, cancel: cancelRequest}
+		cancelRequest = nil
 	}
 	return resp, nil
 }
