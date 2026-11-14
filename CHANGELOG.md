@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.245 — 2026-11-14
+
+- Keep one response ID across all Chat Completions streaming chunks, including upstream preludes and final usage, while preserving tool calls and provider fields.
+- Cancel streaming HTTP requests when the upstream response body closes, preserving the final usage collection window after client disconnects for billing.
+
 ## v1.1.244 — 2026-11-14
 
 - Generate and download GPT Image and DALL-E images directly from the playground chat, using the selected pricing group and normal image billing.
