@@ -369,6 +369,41 @@ export function loadMessages(): Message[] | null {
   return null
 }
 
+function serializeMessages(messages: Message[]): string {
+  const payload: StoredEnvelope<Message[]> = {
+    version: STORAGE_VERSION,
+    data: messages,
+  }
+  return JSON.stringify(payload)
+}
+
+function serializeMessagesWithinBudget(messages: Message[]): string | null {
+  let serialized = serializeMessages(messages)
+
+  for (const message of messages) {
+    for (const version of message.versions) {
+      while (
+        serialized.length > MAX_STORED_MESSAGES_BYTES &&
+        version.images?.length
+      ) {
+        version.images = version.images.slice(1)
+        version.imagesOmitted = true
+        serialized = serializeMessages(messages)
+      }
+    }
+  }
+
+  if (serialized.length <= MAX_STORED_MESSAGES_BYTES) {
+    return serialized
+  }
+
+  const normalized = messages.map(normalizeStoredMessageForLoad)
+  const trimmed = trimMessagesByContentSize(normalized)
+  serialized = serializeMessages(trimmed)
+
+  return serialized.length <= MAX_STORED_MESSAGES_BYTES ? serialized : null
+}
+
 /**
  * Save messages to localStorage
  */
@@ -376,7 +411,10 @@ export function saveMessages(messages: Message[]): void {
   try {
     const trimmed = trimMessages(messages)
     const parsed = messagesSchema.parse(trimmed) as Message[]
-    writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+    const serialized = serializeMessagesWithinBudget(parsed)
+    if (serialized !== null) {
+      localStorage.setItem(STORAGE_KEYS.MESSAGES, serialized)
+    }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save messages:', error)

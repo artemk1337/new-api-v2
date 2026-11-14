@@ -56,6 +56,8 @@ const messageStatusSchema = z.enum([
 const messageVersionSchema = z.object({
   id: z.string(),
   content: z.string(),
+  images: z.array(z.string()).optional(),
+  imagesOmitted: z.boolean().optional(),
 })
 
 const sourceSchema = z.object({

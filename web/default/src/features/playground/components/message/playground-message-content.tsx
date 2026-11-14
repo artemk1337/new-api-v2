@@ -44,6 +44,7 @@ import { MESSAGE_STATUS } from '../../constants'
 import {
   getMessageAlignmentClass,
   getMessageContentState,
+  getCurrentVersion,
   isErrorMessage,
   type MessageAlignment,
 } from '../../lib'
@@ -79,6 +80,7 @@ export function PlaygroundMessageContent({
     showMessageContent,
     sources,
   } = getMessageContentState(message, versionContent)
+  const version = getCurrentVersion(message)
   const isError = isErrorMessage(message)
   const isMessageFinal =
     message.status !== MESSAGE_STATUS.LOADING &&
@@ -157,6 +159,30 @@ export function PlaygroundMessageContent({
               className={cn(getMessageContentStyles())}
             >
               <Response final={isMessageFinal}>{displayContent}</Response>
+              {version.imagesOmitted && (
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Some images were too large to save. Generate them again.'
+                  )}
+                </p>
+              )}
+              {version.images?.map((url) => (
+                <a
+                  key={url}
+                  href={url}
+                  download={
+                    url.startsWith('data:') ? 'generated-image' : undefined
+                  }
+                  target='_blank'
+                  rel='noopener noreferrer'
+                >
+                  <img
+                    src={url}
+                    alt={t('Generated image')}
+                    className='my-3 h-auto max-h-[70vh] max-w-full rounded-lg object-contain'
+                  />
+                </a>
+              ))}
             </MessageContent>
           )}
           <MessageMetadata alignment={alignment} message={message} />

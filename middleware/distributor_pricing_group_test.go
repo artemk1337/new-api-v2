@@ -24,18 +24,22 @@ func TestGetModelRequestNormalizesPlaygroundGroupName(t *testing.T) {
 		{"id":2,"name":"vip","ratio":1,"selectable":true}
 	]`))
 
-	req := httptest.NewRequest(http.MethodPost, "/pg/chat/completions", strings.NewReader(`{"model":"gpt-test","group":"vip"}`))
-	req.Header.Set("Content-Type", "application/json")
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Request = req
+	for _, path := range []string{"/pg/chat/completions", "/pg/images/generations"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-test","group":"vip"}`))
+			req.Header.Set("Content-Type", "application/json")
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = req
 
-	modelRequest, shouldSelectChannel, err := getModelRequest(ctx)
+			modelRequest, shouldSelectChannel, err := getModelRequest(ctx)
 
-	require.NoError(t, err)
-	require.True(t, shouldSelectChannel)
-	assert.Equal(t, "gpt-test", modelRequest.Model)
-	assert.Equal(t, "2", modelRequest.Group)
-	assert.Empty(t, common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+			require.NoError(t, err)
+			require.True(t, shouldSelectChannel)
+			assert.Equal(t, "gpt-test", modelRequest.Model)
+			assert.Equal(t, "2", modelRequest.Group)
+			assert.Empty(t, common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+		})
+	}
 }
 
 func TestCanUsePlaygroundPricingGroupUsesUserGroupDomain(t *testing.T) {

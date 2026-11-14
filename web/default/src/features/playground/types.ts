@@ -26,6 +26,8 @@ export type PlaygroundMessageLayoutMode = 'alternating' | 'left'
 export interface MessageVersion {
   id: string
   content: string
+  images?: string[]
+  imagesOmitted?: boolean
 }
 
 export interface Message {
@@ -113,6 +115,21 @@ export interface ChatCompletionResponse {
     completion_tokens: number
     total_tokens: number
   }
+}
+
+export interface ImageGenerationRequest {
+  model: string
+  group: string
+  prompt: string
+  n: number
+}
+
+export interface ImageGenerationResponse {
+  data?: Array<{
+    url?: string
+    b64_json?: string
+  }>
+  output_format?: string
 }
 
 // Configuration types

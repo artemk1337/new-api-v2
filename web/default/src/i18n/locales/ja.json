@@ -4686,6 +4686,7 @@
     "Solana RPC API key": "Solana RPC API キー",
     "Solana token account is required": "Solana トークンアカウントが必要です",
     "Some channels failed: {{errorMsg}}": "一部のチャネルが失敗しました：{{errorMsg}}",
+    "Some images were too large to save. Generate them again.": "一部の画像はサイズが大きすぎるため保存できませんでした。もう一度生成してください。",
     "Something went wrong!": "問題が発生しました！",
     "Sonnet Model": "Sonnet モデル",
     "Sora": "Sora",

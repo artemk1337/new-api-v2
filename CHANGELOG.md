@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.244 — 2026-11-14
+
+- Generate and download GPT Image and DALL-E images directly from the playground chat, using the selected pricing group and normal image billing.
+- Support cancellation, regeneration, URL/base64 image responses and bounded image history without losing conversation text.
+- Show image API error details and preserve the browser session when an upstream supplier returns HTTP 401.
+
 ## v1.1.243 — 2026-11-09
 
 - Add provider filters with icons and available-group counts to the API key group selector, combining provider selection with text search.

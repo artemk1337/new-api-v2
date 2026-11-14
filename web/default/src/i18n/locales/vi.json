@@ -4686,6 +4686,7 @@
     "Solana RPC API key": "Khóa API Solana RPC",
     "Solana token account is required": "Cần tài khoản token Solana",
     "Some channels failed: {{errorMsg}}": "Một số kênh thất bại: {{errorMsg}}",
+    "Some images were too large to save. Generate them again.": "Một số hình ảnh quá lớn để lưu. Vui lòng tạo lại.",
     "Something went wrong!": "Có gì đó không ổn!",
     "Sonnet Model": "Mô hình Sonnet",
     "Sora": "Sora",
