@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.247 — 2026-11-17
+
+### Fixed
+
+- Fix the documentation redirect loop by leaving asset directory paths to the frontend router while preserving static file delivery.
+
 ## v1.1.246 — 2026-11-17
 
 ### Added
