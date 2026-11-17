@@ -101,6 +101,50 @@ export function useApplicationGuides(): {
         content: codexSetup,
       },
       {
+        id: 'opencode',
+        name: 'OpenCode',
+        platform: 'Windows · macOS · Linux',
+        download: 'https://opencode.ai/download',
+        source: 'https://opencode.ai/docs/providers/#custom-provider',
+        fields: [],
+        steps: [],
+        content: [
+          t(
+            'Install OpenCode with npm, then open a terminal in your project folder.'
+          ),
+          '```sh\nnpm install -g opencode-ai\n```',
+          t(
+            'Create opencode.json in your project. Replace YOUR_MODEL_ID with an exact model ID from /v1/models that supports tool calling. Set VIBECODE_API_KEY in your terminal environment to your API key; keep the real key out of the configuration file.'
+          ),
+          'Bash / Zsh:\n```sh\nexport VIBECODE_API_KEY="sk-xxxxxxxx"\n```\n\nPowerShell:\n```powershell\n$env:VIBECODE_API_KEY="sk-xxxxxxxx"\n```',
+          '```json\n' +
+            JSON.stringify(
+              {
+                $schema: 'https://opencode.ai/config.json',
+                provider: {
+                  vibecode: {
+                    npm: '@ai-sdk/openai-compatible',
+                    name: 'VibeCode',
+                    options: {
+                      baseURL: DOCS_URLS.openAI,
+                      apiKey: '{env:VIBECODE_API_KEY}',
+                    },
+                    models: { YOUR_MODEL_ID: { name: 'YOUR_MODEL_ID' } },
+                  },
+                },
+                model: 'vibecode/YOUR_MODEL_ID',
+              },
+              null,
+              2
+            ) +
+            '\n```',
+          t(
+            'Run opencode, select your VibeCode model with /models and send a request. Restart OpenCode after changing environment variables.'
+          ),
+          '```sh\nopencode\n```',
+        ].join('\n\n'),
+      },
+      {
         id: 'cherry-studio',
         name: 'Cherry Studio',
         platform: 'Windows · macOS · Linux',

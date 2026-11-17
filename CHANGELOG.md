@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.246 — 2026-11-17
+
+### Added
+
+- Document OpenCode installation and VibeCode provider setup, including API-key environment variables and model selection, in all six interface languages.
+
 ## v1.1.245 — 2026-11-14
 
 - Keep one response ID across all Chat Completions streaming chunks, including upstream preludes and final usage, while preserving tool calls and provider fields.
