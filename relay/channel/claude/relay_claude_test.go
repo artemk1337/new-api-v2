@@ -348,6 +348,43 @@ func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *tes
 	require.Nil(t, claudeRequest.TopK)
 }
 
+func TestRequestOpenAI2ClaudeMessage_Opus55UsesEffortWithoutThinkingBudget(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		t.Run(effort, func(t *testing.T) {
+			request := dto.GeneralOpenAIRequest{
+				Model:           "claude-opus-5-5",
+				ReasoningEffort: effort,
+				Reasoning:       []byte(`{"max_tokens":4096}`),
+				Temperature:     commonPointer(0.7),
+				TopP:            commonPointer(0.9),
+				TopK:            commonPointer(40),
+				Messages:        []dto.Message{{Role: "user", Content: "hello"}},
+			}
+
+			result, err := RequestOpenAI2ClaudeMessage(nil, request)
+			require.NoError(t, err)
+			require.Equal(t, effort, result.GetEfforts())
+			require.Nil(t, result.Thinking)
+			require.Nil(t, result.Temperature)
+			require.Nil(t, result.TopP)
+			require.Nil(t, result.TopK)
+		})
+	}
+}
+
+func TestRequestOpenAI2ClaudeMessage_Opus55EffortSuffix(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model:    "claude-opus-5-5-xhigh",
+		Messages: []dto.Message{{Role: "user", Content: "hello"}},
+	}
+
+	result, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Equal(t, "claude-opus-5-5", result.Model)
+	require.Equal(t, "xhigh", result.GetEfforts())
+	require.Nil(t, result.Thinking)
+}
+
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48ThinkingUsesAdaptiveHighEffort(t *testing.T) {
 	request := dto.GeneralOpenAIRequest{
 		Model:       "claude-opus-4-8-thinking",

@@ -222,6 +222,7 @@ type ClaudeRequest struct {
 	Tools             any             `json:"tools,omitempty"`
 	ContextManagement json.RawMessage `json:"context_management,omitempty"`
 	OutputConfig      json.RawMessage `json:"output_config,omitempty"`
+	ReasoningEffort   *string         `json:"reasoning_effort,omitempty"`
 	OutputFormat      json.RawMessage `json:"output_format,omitempty"`
 	Container         json.RawMessage `json:"container,omitempty"`
 	ToolChoice        any             `json:"tool_choice,omitempty"`

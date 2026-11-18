@@ -153,7 +153,12 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
+	opus55, err := ConfigureOpus55Reasoning(&claudeRequest, textRequest.ReasoningEffort, textRequest.Model)
+	if err != nil {
+		return nil, err
+	}
+	baseModel, effortLevel, hasEffortSuffix := reasoning.TrimEffortSuffix(textRequest.Model)
+	if !opus55 && hasEffortSuffix &&
 		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
 			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
@@ -174,7 +179,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 			claudeRequest.TopP = nil
 			claudeRequest.Temperature = common.GetPointer[float64](1.0)
 		}
-	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
+	} else if !opus55 && model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
 		strings.HasSuffix(textRequest.Model, "-thinking") {
 
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
@@ -207,7 +212,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		}
 	}
 
-	if textRequest.ReasoningEffort != "" {
+	if !opus55 && textRequest.ReasoningEffort != "" {
 		switch textRequest.ReasoningEffort {
 		case "low":
 			claudeRequest.Thinking = &dto.Thinking{
@@ -228,7 +233,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	}
 
 	// 指定了 reasoning 参数,覆盖 budgetTokens
-	if textRequest.Reasoning != nil {
+	if !opus55 && textRequest.Reasoning != nil {
 		var reasoning openrouter.RequestReasoning
 		if err := common.Unmarshal(textRequest.Reasoning, &reasoning); err != nil {
 			return nil, err

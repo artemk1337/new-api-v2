@@ -1,14 +1,100 @@
 package relay
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
+
+func TestClaudeHelperSendsOpus55EffortToUpstream(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType int
+		input       string
+		wantPath    string
+		wantFields  map[string]string
+	}{
+		{
+			name:        "Anthropic preserves structured output",
+			channelType: constant.ChannelTypeAnthropic,
+			input:       `"reasoning_effort":"xhigh","output_config":{"format":{"type":"json_schema"}},"thinking":{"type":"enabled","budget_tokens":1280}`,
+			wantPath:    "/v1/messages",
+			wantFields: map[string]string{
+				"output_config.effort":      "xhigh",
+				"output_config.format.type": "json_schema",
+				"thinking.type":             "adaptive",
+			},
+		},
+		{
+			name:        "OpenAI prefers native effort",
+			channelType: constant.ChannelTypeOpenAI,
+			input:       `"reasoning_effort":"low","output_config":{"effort":"max"}`,
+			wantPath:    "/v1/chat/completions",
+			wantFields:  map[string]string{"reasoning_effort": "max"},
+		},
+	}
+
+	service.InitHttpClient()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Error(err)
+				}
+				if r.URL.Path != tt.wantPath {
+					t.Errorf("upstream path = %q, want %q", r.URL.Path, tt.wantPath)
+				}
+				for field, want := range tt.wantFields {
+					if got := gjson.GetBytes(body, field).String(); got != want {
+						t.Errorf("%s = %q, want %q", field, got, want)
+					}
+				}
+				for _, field := range []string{"thinking.budget_tokens", "temperature"} {
+					if gjson.GetBytes(body, field).Exists() {
+						t.Errorf("unexpected upstream field %s", field)
+					}
+				}
+				if tt.channelType == constant.ChannelTypeAnthropic && gjson.GetBytes(body, "reasoning_effort").Exists() {
+					t.Error("unexpected reasoning_effort in Anthropic request")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, `{"error":{"message":"test upstream response"}}`)
+			}))
+			defer server.Close()
+
+			const model = "claude-opus-5-5"
+			body := `{"model":"` + model + `","temperature":0.7,"messages":[{"role":"user","content":"hello"}],` + tt.input + `}`
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			common.SetContextKey(ctx, constant.ContextKeyChannelType, tt.channelType)
+			common.SetContextKey(ctx, constant.ContextKeyChannelBaseUrl, server.URL)
+			common.SetContextKey(ctx, constant.ContextKeyOriginalModel, model)
+			request, err := helper.GetAndValidateClaudeRequest(ctx)
+			require.NoError(t, err)
+			info := &relaycommon.RelayInfo{Request: request, OriginModelName: model, RelayFormat: types.RelayFormatClaude}
+			apiErr := ClaudeHelper(ctx, info)
+			require.NotNil(t, apiErr)
+			require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+			require.Contains(t, apiErr.Error(), "test upstream response")
+		})
+	}
+}
 
 func TestNormalizeClaudeHelperUsageSemanticMarksOpenAITotals(t *testing.T) {
 	usage := &dto.Usage{

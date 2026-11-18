@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relay/channel/claude"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -74,7 +75,19 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
+	var effort string
+	if request.ReasoningEffort != nil {
+		effort = *request.ReasoningEffort
+		request.ReasoningEffort = nil
+	}
+	opus55, err := claude.ConfigureOpus55Reasoning(request, effort, info.OriginModelName)
+	if err != nil {
+		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+	if opus55 {
+		info.UpstreamModelName = request.Model
+		info.SentUpstreamModelName = request.Model
+	} else if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
 		(strings.HasPrefix(request.Model, "claude-opus-4-6") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-8")) {

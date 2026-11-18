@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.248 — 2026-11-19
+
+### Fixed
+
+- Honor `reasoning_effort` for Claude Opus 5.5 on `/v1/messages` and preserve the selected effort across Anthropic and OpenAI-compatible channels. Requests converted to Anthropic use `output_config.effort` with adaptive thinking.
+
 ## v1.1.247 — 2026-11-17
 
 ### Fixed

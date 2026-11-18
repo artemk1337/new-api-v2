@@ -57,6 +57,8 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 			}
 			openAIRequest.Reasoning = reasoningJSON
 		}
+	} else if claudeRequest.Model == "claude-opus-5-5" {
+		openAIRequest.ReasoningEffort = claudeRequest.GetEfforts()
 	} else {
 		thinkingSuffix := "-thinking"
 		if strings.HasSuffix(info.OriginModelName, thinkingSuffix) &&
