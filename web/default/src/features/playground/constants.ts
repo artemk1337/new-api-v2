@@ -79,8 +79,9 @@ export const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Network connection failed or server not responding',
   PARSE_ERROR: 'Error parsing response data',
   STREAM_START_ERROR: 'Error establishing connection',
-  CONNECTION_CLOSED: 'Connection closed',
   INTERRUPTED: 'Generation was interrupted',
+  OUTPUT_LIMIT_REACHED:
+    'The model reached its output limit before answering. Try a shorter request.',
 } as const
 
 // Message action button styles

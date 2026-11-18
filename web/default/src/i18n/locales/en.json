@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "The history remains available, but new host metrics will not be collected.",
     "The legacy period remains effective until the server confirms activation.": "The legacy period remains effective until the server confirms activation.",
     "The mapped upstream model(s)": "The mapped upstream model(s)",
+    "The model reached its output limit before answering. Try a shorter request.": "The model reached its output limit before answering. Try a shorter request.",
     "The model that was requested": "The model that was requested",
     "The model you're looking for doesn't exist.": "The model you're looking for doesn't exist.",
     "The name displayed across the application": "The name displayed across the application",

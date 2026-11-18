@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
+import { init } from 'i18next'
+
+import { ERROR_MESSAGES, MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 import type { Message } from '../../types'
+import { getMessageContentState } from './message-content-utils'
 import {
   applyStreamingChunk,
   completeAssistantMessage,
   createStreamingContentAccumulator,
   finalizeMessage,
+  requireAssistantReply,
+  sanitizeMessagesOnLoad,
 } from './message-streaming-utils'
-import { getMessageContentState } from './message-content-utils'
 
 function createAssistantMessage(
   content = '',
@@ -155,4 +159,31 @@ describe('streaming content accumulator', () => {
     assert.equal(finalized.versions[0].content, 'answer <thi')
     assert.equal(finalized.reasoning, undefined)
   })
+})
+
+test('shows the output limit for reasoning-only replies and preserves visible replies', async () => {
+  await init({ lng: 'en', resources: {} })
+  const reasoningOnly = applyStreamingChunk(
+    createAssistantMessage(),
+    'reasoning',
+    'Thinking'
+  )
+  const limited = requireAssistantReply(
+    completeAssistantMessage(reasoningOnly),
+    'length'
+  )
+  assert.equal(limited.status, MESSAGE_STATUS.ERROR)
+  assert.ok(
+    limited.versions[0].content.includes(ERROR_MESSAGES.OUTPUT_LIMIT_REACHED)
+  )
+  assert.equal(limited.reasoning?.content, 'Thinking')
+
+  const answered = completeAssistantMessage(
+    createAssistantMessage('Partial answer')
+  )
+  assert.equal(requireAssistantReply(answered, 'length'), answered)
+  assert.equal(
+    sanitizeMessagesOnLoad([reasoningOnly])[0].status,
+    MESSAGE_STATUS.ERROR
+  )
 })

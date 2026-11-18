@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -95,7 +96,17 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	return RequestOpenAI2ClaudeMessage(c, *request)
+	input := *request
+	if info.IsPlayground && request.GetMaxTokens() == 0 {
+		switch request.Model {
+		case "claude-opus-5-5", "claude-fable-5-2":
+			limits := model_setting.GetClaudeSettings().DefaultMaxTokens
+			if _, configured := limits[request.Model]; !configured && limits["default"] == 8192 {
+				input.MaxTokens = common.GetPointer[uint](16384)
+			}
+		}
+	}
+	return RequestOpenAI2ClaudeMessage(c, input)
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

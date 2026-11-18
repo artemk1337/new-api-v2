@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "历史数据仍可用，但不会再收集新的主机指标。",
     "The legacy period remains effective until the server confirms activation.": "在服务器确认启用之前，旧周期仍然有效。",
     "The mapped upstream model(s)": "映射的上游模型",
+    "The model reached its output limit before answering. Try a shorter request.": "模型在给出回答前达到了输出上限。请尝试缩短请求。",
     "The model that was requested": "被请求的模型",
     "The model you're looking for doesn't exist.": "您查找的模型不存在。",
     "The name displayed across the application": "在整个应用程序中显示的名称",

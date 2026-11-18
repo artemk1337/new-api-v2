@@ -25,7 +25,7 @@ import { ERROR_MESSAGES } from '../constants'
 import {
   applyStreamingChunk,
   buildChatCompletionPayload,
-  updateAssistantMessageWithError,
+  setAssistantMessageError,
   updateLastAssistantMessage,
   parseRequestErrorDetails,
   applyChatCompletionResponse,
@@ -34,6 +34,8 @@ import {
   isAssistantMessageFinal,
   isAssistantMessagePending,
   createStreamingContentAccumulator,
+  hasMessageContent,
+  requireAssistantReply,
 } from '../lib'
 import {
   buildImageGenerationPayload,
@@ -149,13 +151,6 @@ export function useChatHandler({
         return t(error)
       }
 
-      const connectionClosedSuffix = `: ${ERROR_MESSAGES.CONNECTION_CLOSED}`
-      if (error.endsWith(connectionClosedSuffix)) {
-        return `${error.slice(0, -ERROR_MESSAGES.CONNECTION_CLOSED.length)}${t(
-          ERROR_MESSAGES.CONNECTION_CLOSED
-        )}`
-      }
-
       return error
     },
     [t]
@@ -173,19 +168,25 @@ export function useChatHandler({
   )
 
   // Handle stream complete
-  const handleStreamComplete = useCallback(() => {
-    finishStreamContent()
-    flushStreamUpdates()
-    streamContentAccumulatorRef.current.reset()
-    setIsRequesting(false)
-    onMessageUpdate((prev) =>
-      updateLastAssistantMessage(prev, (message) =>
-        isAssistantMessageFinal(message)
-          ? message
-          : completeAssistantMessage(message)
+  const handleStreamComplete = useCallback(
+    (finishReason?: string) => {
+      finishStreamContent()
+      flushStreamUpdates()
+      streamContentAccumulatorRef.current.reset()
+      setIsRequesting(false)
+      onMessageUpdate((prev) =>
+        updateLastAssistantMessage(prev, (message) =>
+          isAssistantMessageFinal(message)
+            ? message
+            : requireAssistantReply(
+                completeAssistantMessage(message),
+                finishReason
+              )
+        )
       )
-    )
-  }, [finishStreamContent, flushStreamUpdates, onMessageUpdate])
+    },
+    [finishStreamContent, flushStreamUpdates, onMessageUpdate]
+  )
 
   // Handle stream error
   const handleStreamError = useCallback(
@@ -198,12 +199,17 @@ export function useChatHandler({
       toast.error(displayError)
       const errorTitle = t(ERROR_MESSAGES.API_REQUEST_ERROR)
       onMessageUpdate((prev) =>
-        updateAssistantMessageWithError(
-          prev,
-          displayError,
-          errorCode,
-          errorTitle
-        )
+        updateLastAssistantMessage(prev, (message) => {
+          const finalized = completeAssistantMessage(message)
+          return hasMessageContent(finalized)
+            ? finalized
+            : setAssistantMessageError(
+                finalized,
+                displayError,
+                errorCode,
+                errorTitle
+              )
+        })
       )
     },
     [
@@ -301,7 +307,12 @@ export function useChatHandler({
               response
             )
 
-            return updatedMessage ?? message
+            return updatedMessage
+              ? requireAssistantReply(
+                  updatedMessage,
+                  response.choices[0].finish_reason
+                )
+              : message
           })
         )
       } catch (error: unknown) {

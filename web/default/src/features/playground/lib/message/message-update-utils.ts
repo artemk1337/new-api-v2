@@ -21,27 +21,17 @@ import type { Message } from '../../types'
 import { completeAssistantTiming } from './message-timing-utils'
 import { updateCurrentVersionContent } from './message-utils'
 
-/**
- * Update the last assistant message with an error.
- */
-export function updateAssistantMessageWithError(
-  messages: Message[],
+export function setAssistantMessageError(
+  message: Message,
   errorMessage: string,
   errorCode?: string,
   title: string = ERROR_MESSAGES.API_REQUEST_ERROR
-): Message[] {
-  return updateLastAssistantMessage(messages, (message) => {
-    const updatedMessage = updateCurrentVersionContent(
-      message,
-      `${title}: ${errorMessage}`
-    )
-
-    return completeAssistantTiming({
-      ...updatedMessage,
-      status: MESSAGE_STATUS.ERROR,
-      isReasoningStreaming: false,
-      errorCode: errorCode || null,
-    })
+): Message {
+  return completeAssistantTiming({
+    ...updateCurrentVersionContent(message, `${title}: ${errorMessage}`),
+    status: MESSAGE_STATUS.ERROR,
+    isReasoningStreaming: false,
+    errorCode: errorCode || null,
   })
 }
 

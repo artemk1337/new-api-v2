@@ -16,18 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SSE } from 'sse.js'
 
 import { getCommonHeaders } from '@/lib/api'
 
 import { API_ENDPOINTS, ERROR_MESSAGES } from '../constants'
 import {
-  getStreamReadyStateError,
-  isStreamClosedReadyState,
   isStreamDoneMessage,
   parseStreamErrorDetails,
-  parseStreamMessageUpdates,
+  parseStreamMessage,
 } from '../lib'
 import type { ChatCompletionRequest } from '../types'
 
@@ -36,57 +34,69 @@ import type { ChatCompletionRequest } from '../types'
  */
 export function useStreamRequest() {
   const sseSourceRef = useRef<SSE | null>(null)
-  const isStreamCompleteRef = useRef(false)
   const [isStreaming, setIsStreaming] = useState(false)
 
-  const closeActiveStream = useCallback((source?: SSE) => {
-    const streamSource = source ?? sseSourceRef.current
-    streamSource?.close()
-
-    if (!source || sseSourceRef.current === source) {
-      sseSourceRef.current = null
-      setIsStreaming(false)
-    }
+  const disposeStream = useCallback(() => {
+    const source = sseSourceRef.current
+    sseSourceRef.current = null
+    source?.close()
   }, [])
+
+  useEffect(() => disposeStream, [disposeStream])
+
+  const stopStream = useCallback(() => {
+    disposeStream()
+    setIsStreaming(false)
+  }, [disposeStream])
 
   const sendStreamRequest = useCallback(
     (
       payload: ChatCompletionRequest,
       onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
-      onComplete: () => void,
+      onComplete: (finishReason?: string) => void,
       onError: (error: string, errorCode?: string) => void
     ) => {
-      sseSourceRef.current?.close()
+      disposeStream()
 
       const source = new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
         headers: getCommonHeaders(),
         method: 'POST',
         payload: JSON.stringify(payload),
+        start: false,
       })
 
       sseSourceRef.current = source
-      isStreamCompleteRef.current = false
       setIsStreaming(true)
+      let finishReason: string | undefined
+      const isActive = () => sseSourceRef.current === source
+
+      const handleComplete = () => {
+        stopStream()
+        onComplete(finishReason)
+      }
 
       const handleError = (errorMessage: string, errorCode?: string) => {
-        if (!isStreamCompleteRef.current) {
-          onError(errorMessage, errorCode)
-          closeActiveStream(source)
-        }
+        if (!isActive()) return
+        stopStream()
+        onError(errorMessage, errorCode)
       }
 
       source.addEventListener('message', (e: MessageEvent) => {
+        if (!isActive()) return
         if (isStreamDoneMessage(e.data)) {
-          isStreamCompleteRef.current = true
-          closeActiveStream(source)
-          onComplete()
+          handleComplete()
           return
         }
 
         try {
-          const updates = parseStreamMessageUpdates(e.data)
+          const message = parseStreamMessage(e.data)
+          if (message.error) {
+            handleError(message.error.errorMessage, message.error.errorCode)
+            return
+          }
+          finishReason = message.finishReason ?? finishReason
 
-          for (const update of updates) {
+          for (const update of message.updates) {
             onUpdate(update.type, update.chunk)
           }
         } catch (error) {
@@ -97,23 +107,17 @@ export function useStreamRequest() {
       })
 
       source.addEventListener('error', (e: Event & { data?: string }) => {
-        // Only handle errors if stream didn't complete normally
-        if (!isStreamClosedReadyState(source.readyState)) {
-          // eslint-disable-next-line no-console
-          console.error('SSE Error:', e)
-          const { errorCode, errorMessage } = parseStreamErrorDetails(e.data)
-          handleError(errorMessage, errorCode)
-        }
+        if (!isActive()) return
+        const { errorCode, errorMessage } = parseStreamErrorDetails(e.data)
+        handleError(errorMessage, errorCode)
       })
 
       source.addEventListener(
         'readystatechange',
         (e: Event & { readyState?: number }) => {
-          const errorMessage = getStreamReadyStateError(e.readyState, source)
-
-          if (errorMessage) {
-            handleError(errorMessage)
-          }
+          if (!isActive() || e.readyState !== SSE.CLOSED) return
+          if (finishReason) handleComplete()
+          else handleError(ERROR_MESSAGES.INTERRUPTED)
         }
       )
 
@@ -122,16 +126,11 @@ export function useStreamRequest() {
       } catch (error: unknown) {
         // eslint-disable-next-line no-console
         console.error('Failed to start SSE stream:', error)
-        onError(ERROR_MESSAGES.STREAM_START_ERROR)
-        closeActiveStream(source)
+        handleError(ERROR_MESSAGES.STREAM_START_ERROR)
       }
     },
-    [closeActiveStream]
+    [disposeStream, stopStream]
   )
-
-  const stopStream = useCallback(() => {
-    closeActiveStream()
-  }, [closeActiveStream])
 
   return {
     sendStreamRequest,

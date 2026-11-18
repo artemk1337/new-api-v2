@@ -26,6 +26,7 @@ import {
   completeReasoningTiming,
   startReasoningTiming,
 } from './message-timing-utils'
+import { setAssistantMessageError } from './message-update-utils'
 import {
   getCurrentVersion,
   hasMessageContent,
@@ -35,7 +36,10 @@ import {
 type StreamingContentMode = 'content' | 'reasoning'
 
 export type StreamingContentAccumulator = {
-  append: (type: StreamChunkType, chunk: string) => {
+  append: (
+    type: StreamChunkType,
+    chunk: string
+  ) => {
     content: string
     reasoning: string
   }
@@ -276,6 +280,24 @@ export function completeAssistantMessage(message: Message): Message {
   })
 }
 
+export function requireAssistantReply(
+  message: Message,
+  finishReason?: string
+): Message {
+  if (hasMessageContent(message)) return message
+
+  return setAssistantMessageError(
+    message,
+    t(
+      finishReason === 'length'
+        ? ERROR_MESSAGES.OUTPUT_LIMIT_REACHED
+        : ERROR_MESSAGES.INTERRUPTED
+    ),
+    undefined,
+    t(ERROR_MESSAGES.API_REQUEST_ERROR)
+  )
+}
+
 export function isAssistantMessageFinal(message: Message): boolean {
   return (
     message.status === MESSAGE_STATUS.COMPLETE ||
@@ -349,27 +371,9 @@ export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
 
   if (targetIndex === -1) return messages
 
-  const finalized = finalizeMessage(messages[targetIndex])
-  const hasContent = hasMessageContent(finalized)
-  const hasReasoning = finalized.reasoning?.content?.trim()
-
-  const sanitized: Message =
-    hasContent || hasReasoning
-      ? completeAssistantTiming({
-          ...finalized,
-          status: MESSAGE_STATUS.COMPLETE,
-          isReasoningStreaming: false,
-        })
-      : completeAssistantTiming({
-          ...updateCurrentVersionContent(
-            finalized,
-            `${t(ERROR_MESSAGES.API_REQUEST_ERROR)}: ${t(
-              ERROR_MESSAGES.INTERRUPTED
-            )}`
-          ),
-          status: MESSAGE_STATUS.ERROR,
-          isReasoningStreaming: false,
-        })
+  const sanitized = requireAssistantReply(
+    completeAssistantMessage(messages[targetIndex])
+  )
 
   const result = [...messages]
   result[targetIndex] = sanitized

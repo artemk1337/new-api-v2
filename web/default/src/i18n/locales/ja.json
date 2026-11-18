@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "履歴は引き続き利用できますが、新しいホストメトリクスは収集されません。",
     "The legacy period remains effective until the server confirms activation.": "サーバーが有効化を確認するまで、従来の期間が引き続き有効です。",
     "The mapped upstream model(s)": "マッピングされたアップストリームモデル",
+    "The model reached its output limit before answering. Try a shorter request.": "モデルは回答する前に出力上限に達しました。リクエストを短くしてお試しください。",
     "The model that was requested": "リクエストされたモデル",
     "The model you're looking for doesn't exist.": "お探しのモデルは存在しません。",
     "The name displayed across the application": "アプリケーション全体に表示される名前",

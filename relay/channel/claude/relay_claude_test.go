@@ -5,13 +5,53 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func commonPointer[T any](value T) *T {
 	return &value
+}
+
+func TestPlaygroundClaudeOutputLimit(t *testing.T) {
+	const opus = "claude-opus-5-5"
+	settings := model_setting.GetClaudeSettings()
+	originalLimits := settings.DefaultMaxTokens
+	t.Cleanup(func() { settings.DefaultMaxTokens = originalLimits })
+
+	for _, tc := range []struct {
+		name       string
+		model      string
+		playground bool
+		requestMax *uint
+		limits     map[string]int
+		want       uint
+	}{
+		{name: "Opus playground", model: opus, playground: true, want: 16384},
+		{name: "Fable playground", model: "claude-fable-5-2", playground: true, want: 16384},
+		{name: "public API", model: opus, want: 8192},
+		{name: "unaffected playground model", model: "claude-opus-4-8", playground: true, want: 8192},
+		{name: "client limit", model: opus, playground: true, requestMax: commonPointer[uint](2048), want: 2048},
+		{name: "configured model limit", model: opus, playground: true, limits: map[string]int{"default": 8192, opus: 4096}, want: 4096},
+		{name: "configured global limit", model: opus, playground: true, limits: map[string]int{"default": 4096}, want: 4096},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings.DefaultMaxTokens = tc.limits
+			if tc.limits == nil {
+				settings.DefaultMaxTokens = map[string]int{"default": 8192}
+			}
+			request := dto.GeneralOpenAIRequest{Model: tc.model, MaxCompletionTokens: tc.requestMax}
+			result, err := (&Adaptor{}).ConvertOpenAIRequest(nil, &relaycommon.RelayInfo{IsPlayground: tc.playground}, &request)
+			require.NoError(t, err)
+			converted := result.(*dto.ClaudeRequest)
+			require.NotNil(t, converted.MaxTokens)
+			assert.Equal(t, tc.want, *converted.MaxTokens)
+			assert.Nil(t, request.MaxTokens)
+		})
+	}
 }
 
 func TestResponseOpenAI2ClaudeToolUseInputIsObject(t *testing.T) {

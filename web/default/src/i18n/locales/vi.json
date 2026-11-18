@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "Lịch sử vẫn khả dụng nhưng sẽ không thu thập số liệu máy chủ mới.",
     "The legacy period remains effective until the server confirms activation.": "Chu kỳ cũ vẫn có hiệu lực cho đến khi máy chủ xác nhận kích hoạt.",
     "The mapped upstream model(s)": "Mô hình(s) thượng nguồn được ánh xạ",
+    "The model reached its output limit before answering. Try a shorter request.": "Mô hình đã đạt giới hạn đầu ra trước khi trả lời. Hãy thử yêu cầu ngắn hơn.",
     "The model that was requested": "Mô hình đã được yêu cầu",
     "The model you're looking for doesn't exist.": "Mô hình bạn đang tìm kiếm không tồn tại.",
     "The name displayed across the application": "Tên hiển thị trên ứng dụng",

@@ -20,7 +20,6 @@ import { ERROR_MESSAGES } from '../../constants'
 import type { ChatCompletionChunk } from '../../types'
 
 const STREAM_DONE_MESSAGE = '[DONE]'
-const STREAM_CLOSED_READY_STATE = 2
 
 export type StreamUpdateType = 'reasoning' | 'content'
 
@@ -64,49 +63,37 @@ export function parseStreamErrorDetails(data?: string): StreamErrorDetails {
   }
 }
 
-export function parseStreamMessageUpdates(data: string): StreamMessageUpdate[] {
-  const chunk = JSON.parse(data) as ChatCompletionChunk
-  const delta = chunk.choices?.[0]?.delta
-
-  if (!delta) {
-    return []
+export function parseStreamMessage(data: string): {
+  updates: StreamMessageUpdate[]
+  finishReason?: string
+  error?: StreamErrorDetails
+} {
+  const chunk = JSON.parse(data) as ChatCompletionChunk & StreamErrorPayload
+  if (chunk.error) {
+    return {
+      updates: [],
+      error: {
+        errorCode: chunk.error.code || undefined,
+        errorMessage: chunk.error.message || ERROR_MESSAGES.API_REQUEST_ERROR,
+      },
+    }
   }
 
+  const choice = chunk.choices?.[0]
+  const delta = choice?.delta
   const updates: StreamMessageUpdate[] = []
 
-  if (delta.reasoning_content) {
+  if (delta?.reasoning_content) {
     updates.push({ type: 'reasoning', chunk: delta.reasoning_content })
   }
 
-  if (delta.content) {
+  if (delta?.content) {
     updates.push({ type: 'content', chunk: delta.content })
   }
 
-  return updates
+  return { updates, finishReason: choice?.finish_reason ?? undefined }
 }
 
 export function isStreamDoneMessage(data: string): boolean {
   return data === STREAM_DONE_MESSAGE
-}
-
-export function isStreamClosedReadyState(readyState?: number): boolean {
-  return readyState === STREAM_CLOSED_READY_STATE
-}
-
-export function getStreamReadyStateError(
-  eventReadyState: number | undefined,
-  source: unknown
-): string | null {
-  const status = (source as { status?: number }).status
-
-  if (
-    eventReadyState !== undefined &&
-    eventReadyState >= STREAM_CLOSED_READY_STATE &&
-    status !== undefined &&
-    status !== 200
-  ) {
-    return `HTTP ${status}: ${ERROR_MESSAGES.CONNECTION_CLOSED}`
-  }
-
-  return null
 }

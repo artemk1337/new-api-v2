@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "L’historique reste disponible, mais aucune nouvelle métrique hôte ne sera collectée.",
     "The legacy period remains effective until the server confirms activation.": "L’ancienne période reste effective jusqu’à la confirmation du serveur.",
     "The mapped upstream model(s)": "Le(s) modèle(s) amont mappé(s)",
+    "The model reached its output limit before answering. Try a shorter request.": "Le modèle a atteint sa limite de sortie avant de répondre. Essayez une demande plus courte.",
     "The model that was requested": "Le modèle qui a été demandé",
     "The model you're looking for doesn't exist.": "Le modèle que vous recherchez n'existe pas.",
     "The name displayed across the application": "Le nom affiché dans l'application",

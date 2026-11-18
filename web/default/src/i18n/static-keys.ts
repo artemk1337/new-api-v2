@@ -491,6 +491,7 @@ export const STATIC_I18N_KEYS = [
   'Error establishing connection',
   'Connection closed',
   'Generation was interrupted',
+  'The model reached its output limit before answering. Try a shorter request.',
   'Note',
   'Tip',
   'Important',

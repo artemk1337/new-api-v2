@@ -5008,6 +5008,7 @@
     "The history remains available, but new host metrics will not be collected.": "История останется доступной, но новые метрики хоста собираться не будут.",
     "The legacy period remains effective until the server confirms activation.": "Старый период действует, пока сервер не подтвердит активацию.",
     "The mapped upstream model(s)": "Сопоставленные upstream модель(и)",
+    "The model reached its output limit before answering. Try a shorter request.": "Модель исчерпала лимит токенов до того, как успела ответить. Попробуйте сократить запрос.",
     "The model that was requested": "Запрошенная модель",
     "The model you're looking for doesn't exist.": "Модель, которую вы ищете, не существует.",
     "The name displayed across the application": "Имя, отображаемое в приложении",
