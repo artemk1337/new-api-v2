@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.249 — 2026-11-19
+
+### Fixed
+
+- Give Claude Opus 5.5 and Claude Fable 5.2 more room to answer in Playground by raising their standard output limit to 16,384 tokens. Explicit limits still take precedence.
+- End interrupted Playground streams, keep any answer text already received, and explain when a model reaches its output limit before producing an answer.
+
 ## v1.1.248 — 2026-11-19
 
 ### Fixed
