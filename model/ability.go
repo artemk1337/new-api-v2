@@ -30,13 +30,14 @@ type Ability struct {
 type AbilityWithChannel struct {
 	Ability
 	ChannelType         int     `json:"channel_type"`
+	ChannelBaseURL      string  `json:"-"`
 	ChannelModelMapping *string `json:"channel_model_mapping"`
 }
 
 func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 	var abilities []AbilityWithChannel
 	err := DB.Table("abilities").
-		Select("abilities.*, channels.type as channel_type, channels.model_mapping as channel_model_mapping").
+		Select("abilities.*, channels.type as channel_type, channels.base_url as channel_base_url, channels.model_mapping as channel_model_mapping").
 		Joins("left join channels on abilities.channel_id = channels.id").
 		Where("abilities.enabled = ?", true).
 		Scan(&abilities).Error

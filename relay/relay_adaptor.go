@@ -49,7 +49,6 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/xunfei"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
-	"github.com/gin-gonic/gin"
 )
 
 func GetAdaptor(apiType int) channel.Adaptor {
@@ -128,12 +127,14 @@ func GetAdaptor(apiType int) channel.Adaptor {
 	return nil
 }
 
-func GetTaskPlatform(c *gin.Context) constant.TaskPlatform {
-	channelType := c.GetInt("channel_type")
+func TaskPlatformForChannel(channelType int, baseURL, modelName string) constant.TaskPlatform {
+	if channelType == constant.ChannelTypeOpenAI && taskali.UsesOpenLuxWAN(baseURL, modelName) {
+		channelType = constant.ChannelTypeAli
+	}
 	if channelType > 0 {
 		return constant.TaskPlatform(strconv.Itoa(channelType))
 	}
-	return constant.TaskPlatform(c.GetString("platform"))
+	return ""
 }
 
 func GetTaskAdaptor(platform constant.TaskPlatform) channel.TaskAdaptor {

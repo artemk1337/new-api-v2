@@ -101,6 +101,25 @@ func TestValidateAutoTaskPricingContractAllowsEquivalentChannelTypes(t *testing.
 	require.NoError(t, validateAutoTaskPricingContractWithAbilities(groups, "task-model", "", abilities))
 }
 
+func TestValidateAutoTaskPricingContractUsesBailianForOpenLuxWAN(t *testing.T) {
+	const modelName = "wan2.6-i2v"
+	groups := []string{"1", "2"}
+	abilities := []model.AbilityWithChannel{
+		{Ability: model.Ability{Group: "1", Model: modelName}, ChannelType: constant.ChannelTypeAli},
+		{
+			Ability:        model.Ability{Group: "2", Model: modelName},
+			ChannelType:    constant.ChannelTypeOpenAI,
+			ChannelBaseURL: "https://api.openlux.ai",
+		},
+	}
+
+	require.NoError(t, validateAutoTaskPricingContractWithAbilities(groups, modelName, "", abilities))
+
+	abilities[1].ChannelBaseURL = "https://other.example"
+	require.ErrorContains(t, validateAutoTaskPricingContractWithAbilities(groups, modelName, "", abilities),
+		"same task pricing contract")
+}
+
 func TestValidateAutoTaskPricingContractRejectsDifferentMappedModels(t *testing.T) {
 	priority := int64(10)
 	firstMapping := `{"task-model":"upstream-a"}`

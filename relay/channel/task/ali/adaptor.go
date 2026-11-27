@@ -127,7 +127,23 @@ func (a *TaskAdaptor) ValidateRequestAndSetAction(c *gin.Context, info *relaycom
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	return fmt.Sprintf("%s/api/v1/services/aigc/video-generation/video-synthesis", a.baseURL), nil
+	return videoAPIBaseURL(a.baseURL) + "/services/aigc/video-generation/video-synthesis", nil
+}
+
+func UsesOpenLuxWAN(baseURL, model string) bool {
+	return model == "wan2.6-i2v" && isOpenLuxBaseURL(baseURL)
+}
+
+func isOpenLuxBaseURL(baseURL string) bool {
+	return strings.EqualFold(strings.TrimRight(baseURL, "/"), "https://api.openlux.ai")
+}
+
+func videoAPIBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if isOpenLuxBaseURL(baseURL) {
+		baseURL += "/alibailian"
+	}
+	return baseURL + "/api/v1"
 }
 
 // BuildRequestHeader sets required headers for Ali API
@@ -425,7 +441,7 @@ func (a *TaskAdaptor) FetchTask(baseUrl, key string, body map[string]any, proxy 
 		return nil, fmt.Errorf("invalid task_id")
 	}
 
-	uri := fmt.Sprintf("%s/api/v1/tasks/%s", baseUrl, taskID)
+	uri := fmt.Sprintf("%s/tasks/%s", videoAPIBaseURL(baseUrl), taskID)
 
 	req, err := http.NewRequest(http.MethodGet, uri, nil)
 	if err != nil {

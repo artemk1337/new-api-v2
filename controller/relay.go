@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1075,8 +1074,8 @@ func validateAutoTaskPricingContractWithAbilities(
 		}
 
 		platform := fallbackPlatform
-		if platform == "" && ability.ChannelType > 0 {
-			platform = constant.TaskPlatform(strconv.Itoa(ability.ChannelType))
+		if platform == "" {
+			platform = relay.TaskPlatformForChannel(ability.ChannelType, ability.ChannelBaseURL, modelName)
 		}
 		contract := relay.TaskPricingContract(platform)
 		if contract == "" {

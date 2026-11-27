@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.250 — 2026-11-27
+
+### Fixed
+
+- Route OpenLux `wan2.6-i2v` video submissions and status checks through the Alibaba Bailian API. Clients can submit through `/v1/videos` or `/v1/video/generations`.
+
 ## v1.1.249 — 2026-11-19
 
 ### Fixed
